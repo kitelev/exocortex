@@ -1443,4 +1443,254 @@ describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Prope
     expect(viaGraph).toEqual(viaFS);
     expect((viaFS as Shape).range).toEqual([`${XSD_NS}integer`]);
   });
+
+  // ── ticket 32d44596: pure-UID domain / range ──────────────────────────────
+  //
+  // After RFC-004 strip-canon a domain/range names its class by bare UID
+  // (`[[1b20a8f0-…]]`), which no branch of wikilinkToIRI could parse — the
+  // value resolved to null, `domain` came out empty and registerCandidate
+  // dropped the whole def silently. The fix indexes `uid → symbolic label`
+  // during the SAME scanDir pass and consults it LAST.
+
+  const TASK_UID = "1b20a8f0-d745-4e93-91db-4531b3df120e";
+  const TASK_IRI = `${EMS}Task`;
+
+  /** A def typed `exo__Property` (needs no class files) with a configurable domain/range. */
+  const V_DEF = (domainValue: string, rangeLine = 'exo__Property_range: "xsd:integer"') =>
+    [
+      "---",
+      "exo__Asset_uid: 9d2f1a11-0000-4000-8000-000000000001",
+      "exo__Instance_class:",
+      '  - "[[exo__Property]]"',
+      "exo__Asset_label: flow__Stage_order",
+      "exo__Property_domain:",
+      `  - "${domainValue}"`,
+      rangeLine,
+      'exo__Property_cardinality: "[[59a37aa7-ffbe-4e0d-ba60-06ae370d880f]]"',
+      "---",
+      "",
+    ].join("\n");
+
+  it("V1 @req:94b302e0-eecd-4809-a5b1-0d1677c38d9c loadFromVaultFS: a bare-UID exo__Property_domain [[1b20a8f0-…]] (the RFC-004 strip-canon form) resolves through the uid → label index the same pass collects, so the def registers instead of being dropped", async () => {
+    await withVault(
+      {
+        "flow/def.md": V_DEF(`[[${TASK_UID}]]`),
+        [`ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
+      },
+      async (dir) => {
+        const shape = (await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI);
+        expect(shape).toBeDefined();
+        expect(shape!.domain).toEqual([TASK_IRI]);
+        expect(shape!.range).toEqual([`${XSD_NS}integer`]);
+        expect(shape!.cardinality).toBe("Multiple");
+      },
+    );
+  });
+
+  it("V2 @req:94b302e0-eecd-4809-a5b1-0d1677c38d9c loadFromVaultFS: when the alias half of [[<uid>|alias]] does not parse as <prefix>__<Local>, the UID half still resolves the domain", async () => {
+    await withVault(
+      {
+        "flow/def.md": V_DEF(`[[${TASK_UID}|Some Human Label]]`),
+        [`ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.domain).toEqual([
+          TASK_IRI,
+        ]);
+      },
+    );
+  });
+
+  it("V3 @req:94b302e0-eecd-4809-a5b1-0d1677c38d9c loadFromVaultFS: registration waits for the index to be COMPLETE — the def resolves even when its class file is visited AFTER it in scan order (this is what makes the single-pass design correct)", async () => {
+    // scanDir sorts entries by name, so `a-flow/` is walked before `z-ems/`:
+    // the def is collected while the index still lacks its class.
+    await withVault(
+      {
+        "a-flow/def.md": V_DEF(`[[${TASK_UID}]]`),
+        [`z-ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.domain).toEqual([
+          TASK_IRI,
+        ]);
+      },
+    );
+    // Control: the opposite order must behave identically.
+    await withVault(
+      {
+        "z-flow/def.md": V_DEF(`[[${TASK_UID}]]`),
+        [`a-ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.domain).toEqual([
+          TASK_IRI,
+        ]);
+      },
+    );
+  });
+
+  it("V4 @req:94b302e0-eecd-4809-a5b1-0d1677c38d9c loadFromVaultFS: negative controls — a multi-word class label is NOT indexed (parity with buildUidClassIndex), an unknown UID stays unresolved, and the label form keeps resolving with no class file at all", async () => {
+    const DEPRECATED_UID = "14cbc15d-bd94-4146-864e-e17273226c34";
+    // A real live shape: `concept__Definition (DEPRECATED)` — the graph-side
+    // index skips whitespace labels too, so this is parity, not a gap.
+    await withVault(
+      {
+        "flow/def.md": V_DEF(`[[${DEPRECATED_UID}]]`),
+        [`c/${DEPRECATED_UID}.md`]: CLASS_FM(
+          DEPRECATED_UID,
+          "concept__Definition (DEPRECATED)",
+          "[[exo__Asset]]",
+        ),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)).toBeUndefined();
+      },
+    );
+    // No file carries that UID at all.
+    await withVault({ "flow/def.md": V_DEF(`[[${TASK_UID}]]`) }, async (dir) => {
+      expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)).toBeUndefined();
+    });
+    // The index is keyed by UID ONLY — mirroring buildUidClassIndex, which keys
+    // by the UUID it extracts from a file IRI. Naming a class through a
+    // non-UID filename stem must NOT resolve, or the fallback would quietly
+    // widen into a filename resolver.
+    await withVault(
+      {
+        "flow/def.md": V_DEF("[[task-notes]]"),
+        "ems/task-notes.md": CLASS_FM(null, "ems__Task", "[[exo__Asset]]"),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)).toBeUndefined();
+      },
+    );
+    // The pre-change label form is untouched — the index is consulted only
+    // after labelToIRI has already failed.
+    await withVault({ "flow/def.md": V_DEF("[[ems__Task]]") }, async (dir) => {
+      expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.domain).toEqual([
+        TASK_IRI,
+      ]);
+    });
+  });
+
+  it("V5 @req:94b302e0-eecd-4809-a5b1-0d1677c38d9c loadFromVaultFS: exo__Property_range takes the SAME fallback as the domain (loadFromRDFGraph canonicalizes both positions), and a CURIE range is unaffected", async () => {
+    await withVault(
+      {
+        "flow/def.md": V_DEF(`[[${TASK_UID}]]`, `exo__Property_range: "[[${TASK_UID}]]"`),
+        [`ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.range).toEqual([
+          TASK_IRI,
+        ]);
+      },
+    );
+    // Control: the CURIE form still wins before the index is ever consulted.
+    await withVault(
+      {
+        "flow/def.md": V_DEF(`[[${TASK_UID}]]`),
+        [`ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.range).toEqual([
+          `${XSD_NS}integer`,
+        ]);
+      },
+    );
+  });
+
+  it("V6 @req:94b302e0-eecd-4809-a5b1-0d1677c38d9c loader parity: the SAME files yield deep-equal shapes via loadFromRDFGraph and loadFromVaultFS when BOTH the domain and the range are bare-UID wikilinks", async () => {
+    const { viaGraph, viaFS } = await parityShapes({
+      "flow/9d2f1a11-0000-4000-8000-000000000001.md": V_DEF(
+        `[[${TASK_UID}]]`,
+        `exo__Property_range: "[[${TASK_UID}]]"`,
+      ),
+      [`ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
+    });
+    expect(viaFS).toBeDefined();
+    expect(viaGraph).toBeDefined();
+    expect(viaGraph).toEqual(viaFS);
+    expect((viaFS as Shape).domain).toEqual([TASK_IRI]);
+    expect((viaFS as Shape).range).toEqual([TASK_IRI]);
+  });
+
+  it("V7 @req:94b302e0-eecd-4809-a5b1-0d1677c38d9c loadFromVaultFS: the index is keyed by BOTH a quoted exo__Asset_uid and a UID-named filename stem, and the first label seen for a uid wins", async () => {
+    // Key 1 — quoted uid on a legacy label-named file (the quotes must not
+    // become part of the key).
+    await withVault(
+      {
+        "flow/def.md": V_DEF(`[[${TASK_UID}]]`),
+        "ems/ems__Task.md": CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]").replace(
+          `exo__Asset_uid: ${TASK_UID}`,
+          `exo__Asset_uid: "${TASK_UID}"`,
+        ),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.domain).toEqual([
+          TASK_IRI,
+        ]);
+      },
+    );
+    // Key 2 — UID-named file with NO exo__Asset_uid field: only the stem can key it.
+    await withVault(
+      {
+        "flow/def.md": V_DEF(`[[${TASK_UID}]]`),
+        [`ems/${TASK_UID}.md`]: CLASS_FM(null, "ems__Task", "[[exo__Asset]]"),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.domain).toEqual([
+          TASK_IRI,
+        ]);
+      },
+    );
+    // First-wins: a second file claiming the same uid under a different label
+    // must not displace the first one in scan order.
+    await withVault(
+      {
+        "flow/def.md": V_DEF(`[[${TASK_UID}]]`),
+        [`a-ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
+        "z-ems/other.md": CLASS_FM(TASK_UID, "ems__Project", "[[exo__Asset]]"),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.domain).toEqual([
+          TASK_IRI,
+        ]);
+      },
+    );
+  });
+
+  it("V8 @req:94b302e0-eecd-4809-a5b1-0d1677c38d9c loadFromVaultFS: an unusable label must not RESERVE a uid key — under first-wins a file carrying one would otherwise poison the entry and make the real class file lose, which is the asymmetry the graph-side buildUidClassIndex avoids by only setting a key once its classIRI resolved", async () => {
+    // Class files precede the def in scan order on purpose: this axis isolates
+    // KEY POISONING, not scan-order completeness (that is V3, and M8 must redden
+    // V3 alone).
+    // Two files share one exo__Asset_uid; the one visited FIRST carries a label
+    // that can never yield an IRI. The admission guards must drop it before the
+    // key is taken, so the real class file still wins the entry.
+    await withVault(
+      {
+        "a-broken/x.md": CLASS_FM(TASK_UID, "not-a-key", "[[exo__Asset]]"),
+        [`b-ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
+        "z-flow/def.md": V_DEF(`[[${TASK_UID}]]`),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.domain).toEqual([
+          TASK_IRI,
+        ]);
+      },
+    );
+    // Same shape, but the poisoning label is multi-word — the other admission
+    // guard. `labelToIRI` would reject it on lookup, yet the damage is done at
+    // WRITE time: the key is already spent.
+    await withVault(
+      {
+        "a-broken/x.md": CLASS_FM(TASK_UID, "ems__Task (DEPRECATED)", "[[exo__Asset]]"),
+        [`b-ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
+        "z-flow/def.md": V_DEF(`[[${TASK_UID}]]`),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.domain).toEqual([
+          TASK_IRI,
+        ]);
+      },
+    );
+  });
 });
