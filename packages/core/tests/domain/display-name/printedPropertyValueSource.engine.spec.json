@@ -1,0 +1,44 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "ROOT=\"${SUT%%/packages/core/*}\"; cd \"$ROOT\" && npx jest --config packages/core/jest.config.js tests/domain/display-name/printedPropertyValueSource.test.ts tests/domain/display-name/nestedDisplayName.test.ts 2>&1; cd \"$ROOT/packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/resolve-display-name.nestedDisplayName.integration.test.ts 2>&1",
+  "red_re": "› @req:\\S+ ([SVW]\\d+) ",
+  "_doc": "req ff1482f2 (#4303 opt-in half) — the engine half: parsing the value-source marker and the ORDER it selects.",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/domain/display-name/DisplayNameTemplateEngine.ts",
+  "mutants": {
+    "S_M1_marker_never_parsed": {
+      "from": "      if (source === DisplayNameTemplateEngine.COMPOSED_SOURCE_MARKER) {",
+      "to": "      if (source === \"__never__\") {",
+      "expect": ["S1", "S2", "S8"]
+    },
+    "S_M2_order_ignored_label_always_first": {
+      "from": "    if (preferComposed) {\n      const preferred = composed();\n      if (preferred !== null) return preferred;\n    }\n",
+      "to": "",
+      "expect": ["S1", "S2"]
+    },
+    "S_M3_preference_becomes_guarantee": {
+      "from": "    if (label !== null) return label;",
+      "to": "    if (label !== null && !preferComposed) return label;",
+      "expect": ["S6"]
+    },
+    "S_M4_composed_asked_for_every_part": {
+      "from": "    if (!preferComposed) {\n      const fallback = composed();\n      if (fallback !== null) return fallback;\n    }",
+      "to": "    {\n      const fallback = composed();\n      if (fallback !== null) return fallback;\n    }",
+      "expect": ["S9"]
+    },
+    "S_M5_alias_loses_to_the_declaration": {
+      "from": "    if (alias) {\n      return alias;\n    }",
+      "to": "    if (alias && !preferComposed) {\n      return alias;\n    }",
+      "expect": ["S7"]
+    },
+    "S_M6_marker_not_threaded_to_formatValue": {
+      "from": "        rendered = this.formatValue(value, metadataResolver, preferComposed);",
+      "to": "        rendered = this.formatValue(value, metadataResolver);",
+      "expect": ["S1"]
+    }
+  }
+}
