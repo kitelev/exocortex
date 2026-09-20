@@ -1567,3 +1567,87 @@ describe('validate — sh:datatype lexical conformance of the xsd:integer conver
     expect(datatypeViolations(report('Principle_number', `${XSD}integer`, '7', `${XSD}decimal`))).toHaveLength(0);
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Suite: a datatype range entry does not constrain IRI nodes (Issue #4268)
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('validate — a datatype range entry does not constrain IRI nodes (Issue #4268)', () => {
+  // Live repro (vault-exodev, CLI 16.240.18): `flow__StatusModel_activeStatus`
+  // is declared `exo__Property_range: xsd:string`, and its value is authored as
+  // the bare token `ems__EffortStatusDoing`. The converter expands such a token
+  // into a SYMBOLIC IRI without consulting the declared range, so the object
+  // reaching the validator is an IRI node. Judging it against `xsd:string` as a
+  // class is false BY CONSTRUCTION — nothing is an instance of a datatype — and
+  // it produced 9 violations in 2 nodes where 16.240.16 had none.
+  const FLOW = 'https://exocortex.my/ontology/flow#';
+  const STATUS = `${FLOW}StatusModel_activeStatus`;
+  const DOING = `${EMS}EffortStatusDoing`;
+
+  it('T71: typed IRI value under a datatype-only range → no violation at all', () => {
+    const shape = makeShape({ propertyIRI: STATUS, range: [`${XSD}string`] });
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      // The value MUST be a resolvable subject here. An untyped value takes the
+      // unresolvable-ref path (sh:Warning, conforms=true), which is green with
+      // and without the fix — that fixture would make this axis vacuous.
+      typeTriple(DOING, `${EMS}EffortStatus`),
+      iriTriple('node:A', STATUS, DOING),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.violations).toHaveLength(0);
+    expect(report.conforms).toBe(true);
+  });
+
+  it('T72: a mixed range still enforces its class half, and names only that half', () => {
+    const shape = makeShape({
+      propertyIRI: STATUS,
+      range: [`${EMS}Effort`, `${XSD}string`],
+    });
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      typeTriple('node:B', `${EMS}Task`),
+      iriTriple('node:A', STATUS, 'node:B'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].constraint).toBe('class');
+    // the datatype entry is DROPPED from the expectation, not merely outvoted
+    expect(report.violations[0].expectedRange).toBe(`${EMS}Effort`);
+    expect(report.violations[0].message).not.toContain('XMLSchema');
+  });
+
+  it('T73: unresolvable IRI under a mixed range → warning names only the class half', () => {
+    const shape = makeShape({
+      propertyIRI: STATUS,
+      range: [`${EMS}Effort`, `${XSD}string`],
+    });
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      iriTriple('node:A', STATUS, 'node:Unknown'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].severity).toBe('sh:Warning');
+    expect(report.violations[0].expectedRange).toBe(`${EMS}Effort`);
+    expect(report.violations[0].message).not.toContain('XMLSchema');
+    expect(report.conforms).toBe(true);
+  });
+
+  it('T74: control — the Literal branch is untouched: a bad lexical still violates', () => {
+    const shape = makeShape({
+      propertyIRI: `${EMS}Effort_count`,
+      range: [`${XSD}integer`],
+    });
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      // tag must DIFFER from the expected range — `literalConformsToDatatype`
+      // short-circuits to true when they are equal, so a self-tagged literal
+      // would never reach the lexical judgement and the control would be vacuous.
+      litTriple('node:A', `${EMS}Effort_count`, 'not-a-number', `${XSD}string`),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].constraint).toBe('datatype');
+  });
+});
