@@ -394,8 +394,16 @@ export function validate(
             // constrains *Literal* nodes only (see XSD_DATATYPE_PREFIXES: "All
             // other range entries are sh:class constraints (apply to IRI nodes
             // only)"). Judging an IRI against such an entry as if it were a
-            // class is false BY CONSTRUCTION — nothing is an instance of
-            // `xsd:string` — so that check can never go green for any data.
+            // class asks whether the value is an instance of `xsd:string`,
+            // which no well-formed vault asset can be — so for well-formed
+            // data the check had no reachable green outcome.
+            //
+            // ⛔ Not "no green outcome for ANY data", which an earlier revision
+            // of this comment claimed: a subject whose own `exo__Instance_class`
+            // points at a datatype IRI makes `vc === expectedClass` true, and
+            // the pre-fix branch did go green there (measured, PR #4304 review).
+            // That input is corrupt, and both revisions treat it identically —
+            // the claim was wrong, the conclusion was not.
             //
             // It would also blame the wrong actor: the node kind here is not
             // authored but INFERRED. The converter expands a bare
@@ -404,6 +412,12 @@ export function validate(
             // IRI under a datatype-only range says nothing about what the
             // author actually wrote. Issue #4268.
             const classRanges = shape.range.filter((r) => !isXSDDatatypeIRI(r));
+            // ⚠ Accepted consequence: an IRI value under a datatype-only range
+            // now yields no signal at all — including a genuinely dangling
+            // reference, which used to surface as the `unresolvable-ref`
+            // warning below. That warning was a side effect of a class check
+            // that does not apply here; the dangling-reference signal for such
+            // predicates belongs with the TBox fix (#4305), not here.
             if (classRanges.length === 0) continue;
             // Class range: value's class(es) must satisfy range via hierarchy.
             // Direct lookup first; if it misses and the value IRI ends with a
