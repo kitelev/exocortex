@@ -126,8 +126,8 @@ function fieldTypeFromRange(
     if (r.iri) {
       // Path-form / bare UID → the class UID (as before). Otherwise the shared
       // inverse (`Namespace.fromTermIRI` — registered, ad-hoc AND W3C
-      // namespaces; NOT `FrontmatterService.IRI_PREFIX_MAP`, a static prefix
-      // map that misses most live namespaces) turns a symbolic range into the
+      // namespaces; it is now the ONLY inverse — the static nine-namespace map
+      // this warned against was retired by ticket 6572f3f3 / req 38e3f174) turns a symbolic range into the
       // class LABEL `<prefix>__<LocalName>`, which the picker's candidate
       // resolver matches by label. On the live vaults nearly every class range
       // is symbolic, so `uidFrom` alone left the required-property picker empty

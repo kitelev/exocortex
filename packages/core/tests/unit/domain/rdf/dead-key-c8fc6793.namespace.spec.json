@@ -1,16 +1,16 @@
 {
-  "_doc": "Revert-verify mutants for ticket c8fc6793, req eac1690d-4d17-4f00-a221-0f8bee3c697c — SUBJECT: packages/core/src/domain/models/rdf/Namespace.ts. The diff adds ONE guard here — `Namespace.isCleanLocalName`, the local-name rule extracted from `fromTermIRI`'s `cleanLocal` closure so that both consumers (the closure itself and the hot path in FrontmatterService.normalizeIRI) derive from ONE definition. Mutating EACH of its three conditions IN ISOLATION (MD4 emptiness, MD5 slash, MD7 interior hash) plus all three at once (MD3) proves the extraction is load-bearing for BOTH consumers rather than a cosmetic refactor. An earlier revision of this line claimed each condition was covered while only TWO had an isolated mutant -- the signature had drifted from the mechanism; MD7 and axes DK20/DK21 close it. All mutants TYPE-PRESERVING (§A97). `expect` filled ONLY from a completed run.",
+  "_doc": "Revert-verify mutants for ticket c8fc6793, req eac1690d-4d17-4f00-a221-0f8bee3c697c — SUBJECT: packages/core/src/domain/models/rdf/Namespace.ts. The diff adds ONE guard here — `Namespace.isCleanLocalName`, the local-name rule extracted from `fromTermIRI`'s `cleanLocal` closure so that both consumers of the time (the closure itself and the hot path in FrontmatterService.normalizeIRI) derived from ONE definition. ⛤ The hot path was retired by ticket 6572f3f3 / req 38e3f174, so the rule has ONE consumer again and these mutants now bear on `fromTermIRI` alone — their expected reds were re-measured after that removal, not carried over. Mutating EACH of its three conditions IN ISOLATION (MD4 emptiness, MD5 slash, MD7 interior hash) plus all three at once (MD3) proves the extraction is load-bearing rather than a cosmetic refactor. An earlier revision of this line claimed each condition was covered while only TWO had an isolated mutant -- the signature had drifted from the mechanism; MD7 and axes DK20/DK21 close it. All mutants TYPE-PRESERVING (§A97). `expect` filled ONLY from a completed run.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/domain/models/rdf/Namespace.ts",
   "symlink_node_modules": [
     "node_modules",
     "packages/cli/node_modules",
     "packages/core/node_modules",
-    "packages/test-utils/node_modules",
     "packages/obsidian-plugin/node_modules",
-    "packages/req-audit/node_modules"
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
   ],
-  "red_re": "› (DK\\d+[a-z]?) ",
+  "red_re": "› ([A-Z]{1,3}\\d+[a-z]?) ",
   "harness": "cd \"$(dirname {subject})/../../../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/utilities/FrontmatterService.normalizeIRI.test.ts tests/unit/domain/rdf/Namespace.test.ts 2>&1 ; cd \"$(dirname {subject})/../../../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/dead-key-c8fc6793.integration.test.ts 2>&1",
   "mutants": {
     "MD3_local_name_rule_accepts_everything": {

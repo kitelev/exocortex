@@ -367,8 +367,9 @@ describe("createTripleStoreRequiredPropertyResolver", () => {
    *
    * Invariant under test: `fieldTypeFromRange` maps a symbolic range to its
    * LABEL form `<ns>__<Local>` via `iriToObsidianName` → `Namespace.fromTermIRI`
-   * (the shared inverse — registered AND ad-hoc namespaces; NOT the static
-   * `FrontmatterService.IRI_PREFIX_MAP`); `findAssetRefCandidates` accepts a
+   * (the shared inverse — registered AND ad-hoc namespaces; the static
+   * nine-namespace map it was chosen over was retired
+   * (retired by ticket 6572f3f3 / req 38e3f174)); `findAssetRefCandidates` accepts a
    * class LABEL as the key and closes subclasses from there (req 15f48fa1).
    * Path-form → bare UID first, as before. Mutant matrix — PR #4254.
    */

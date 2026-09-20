@@ -616,6 +616,12 @@ describe("PropertyEditorModal", () => {
       ]);
     });
 
+    // ⛤ The axis TITLE names `FrontmatterService.IRI_PREFIX_MAP`, which was
+    // retired by ticket 6572f3f3 / req 38e3f174. The title is left verbatim
+    // ON PURPOSE: it is the machine key this req's mutant driver parses out of
+    // the jest output, and renaming it would break that collection. Read the
+    // name as historical — `…/concept#Concept` was outside that map, and the
+    // generic inverse is now the only one.
     it("R4 @req:e084627c-38b7-4498-be0a-a3e07e790943 a symbolic range in a namespace outside FrontmatterService.IRI_PREFIX_MAP (…/concept#Concept) resolves through the generic inverse", async () => {
       const store = new InMemoryTripleStore();
       await seedPredicate(

@@ -13,7 +13,6 @@ import { serializeYamlScalar, STRING_SCALAR_PROPERTIES } from "./yamlScalar";
 import { canonicalYamlKey, LEGACY_YAML_KEYS } from "../services/NoteToRDFConverter";
 import type { IFrontmatter } from "../interfaces/IVaultAdapter";
 import { iriToObsidianName } from "./iriToObsidianName";
-import { Namespace } from "../domain/models/rdf/Namespace";
 
 /**
  * Result of frontmatter parsing operation
@@ -382,19 +381,6 @@ export class FrontmatterService {
     );
   }
 
-  /** Namespace IRI → Obsidian property name prefix map */
-  private static readonly IRI_PREFIX_MAP: Record<string, string> = {
-    "https://exocortex.my/ontology/ems#": "ems__",
-    "https://exocortex.my/ontology/exo#": "exo__",
-    "https://exocortex.my/ontology/exocmd#": "exocmd__",
-    "https://exocortex.my/ontology/ims#": "ims__",
-    "https://exocortex.my/ontology/ztlk#": "ztlk__",
-    "https://exocortex.my/ontology/ptms#": "ptms__",
-    "https://exocortex.my/ontology/lit#": "lit__",
-    "https://exocortex.my/ontology/inbox#": "inbox__",
-    "https://exocortex.my/ontology/pmbok#": "pmbok__",
-  };
-
   /**
    * Reverse-map a full IRI property name to Obsidian-style name.
    * E.g. "https://exocortex.my/ontology/ems#Effort_status" → "ems__Effort_status"
@@ -407,53 +393,41 @@ export class FrontmatterService {
    * which is why the two failure modes below were silent (`changed: true`, no
    * error) rather than loud. Ticket `c8fc6793`.
    *
-   * Two sources of truth, and only ONE of them is the canonical inverse of the
-   * forward emission path:
+   * ONE source of truth: `iriToObsidianName` → `Namespace.fromTermIRI`, the
+   * shared inverse of the forward emission path (`Namespace.fromPropertyKey` /
+   * `Namespace.term`). It resolves EVERY registered W3C vocabulary and EVERY
+   * ad-hoc `https://exocortex.my/ontology/<prefix>#` namespace.
    *
-   *   - {@link IRI_PREFIX_MAP} — a static NINE-namespace table. It is kept here
-   *     purely as a HOT PATH: `normalizeIRI` runs once per key of every
-   *     frontmatter write, and these nine cover the overwhelming majority. It is
-   *     NOT the semantics.
-   *   - `iriToObsidianName` → `Namespace.fromTermIRI` — the shared inverse of
-   *     `Namespace.fromPropertyKey` / `Namespace.term`, resolving EVERY
-   *     registered W3C vocabulary and EVERY ad-hoc
-   *     `https://exocortex.my/ontology/<prefix>#` namespace. This is the
-   *     semantics; the map above must never disagree with it.
+   * ⛤ A static NINE-namespace `IRI_PREFIX_MAP` used to sit here as a HOT PATH,
+   * guarded by the same local-name rule so that it could only answer FASTER,
+   * never DIFFERENTLY (ticket `c8fc6793`, req `eac1690d`). Ticket `6572f3f3` /
+   * req `38e3f174` removed it: a second literal list of bases is precisely what
+   * {@link Namespace.fromTermIRI}'s own docstring warns against, and it is the
+   * reason the three independent IRI↔prefix implementations could drift. The
+   * measured price of the removal is +300 ns per key — +4.5 µs on a 15-key
+   * asset write, +72 ms across a 16 000-file sweep — i.e. below the noise of the
+   * file I/O it accompanies. Both prior failure modes stay closed, now by the
+   * single inverse rather than by keeping two branches in agreement:
    *
-   * ⛤ The fast path is therefore GUARDED by the same local-name rule
-   * `fromTermIRI` applies (`cleanLocal`: non-empty, no `#`, no `/`), which makes
-   * the two branches provably agree on every input — the map can only ever
-   * answer faster, never differently. Before this guard the raw table answered
-   * on shapes the inverse rejects, and both answers were written to disk:
+   *   - `…/ontology/flow#Stage_chatId` (namespace outside the old nine) →
+   *     `flow__Stage_chatId`, not the raw IRI as a physical key.
+   *   - `…/ontology/ems#` (EMPTY local name — the shape of every
+   *     `exo__Ontology_url`) → returned untouched, not the junk prefix `ems__`.
    *
-   *   - `…/ontology/flow#Stage_chatId` (namespace OUTSIDE the nine) fell through
-   *     unchanged, so the RAW IRI became the key. Writing the same property in
-   *     its `flow__Stage_chatId` spelling then produced a SECOND key — one asset
-   *     carrying two spellings of one property with different values.
-   *   - `…/ontology/ems#` (namespace INSIDE the nine, EMPTY local name — the
-   *     shape of every `exo__Ontology_url`) yielded the junk prefix `ems__`, and
-   *     through {@link normalizeIRIValue} the junk wikilink `"[[ems__]]"`.
-   *     Measured on the three canonical vaults before the fix: 8 / 8 / 7 assets
-   *     [exodev/my/tbank] hold exactly that value, so any `set-property` touch
-   *     of one would have corrupted a correct URL. None had been corrupted yet
-   *     (live `[[prefix__]]` carriers: 0 / 0 / 0).
-   *
-   * ⛔ This does NOT close the class. Three independent IRI↔prefix
-   * implementations exist; this function is one. The other two — the map itself
-   * and `PropertySchemaResolver`'s private regex pair — are named in ticket
-   * `6572f3f3`, which is the one that would reduce them to a single derivation
-   * from `Namespace.KNOWN_NAMESPACES`.
+   * ⛤ Of the three implementations named in `6572f3f3` two are now one; the
+   * third, `PropertySchemaResolver`, derives from the same inverse as of req
+   * `38e3f174`.
    */
   static normalizeIRI(property: string): string {
-    const hash = property.lastIndexOf("#");
-    if (hash < 0) return property;
-    const ns = property.substring(0, hash + 1);
-    const local = property.substring(hash + 1);
-    const prefix = FrontmatterService.IRI_PREFIX_MAP[ns];
-    // Hot path — taken only for a local name the canonical inverse would also
-    // accept, so it is an optimisation and never a second opinion.
-    if (prefix !== undefined && Namespace.isCleanLocalName(local))
-      return prefix + local;
+    // ⛔ LOAD-BEARING, not a micro-optimisation. Besides "no hash ⇒ not a term
+    // IRI", this early return is the only thing keeping `iriToObsidianName`'s
+    // SECOND shape (vault URL → basename) out of the write-key path:
+    // `obsidian://vault/a/b.md` would otherwise become the key `b`. That shape
+    // is consumed by {@link normalizeIRIValue} with its own anchored regex, so
+    // this function must leave it alone. Measured on `origin/main` 0857307b:
+    // deleting this line reddened NOTHING across 132 tests in 4 suites — the
+    // property was true but unlocked; req `38e3f174` Scenario H is its spec.
+    if (property.lastIndexOf("#") < 0) return property;
     return iriToObsidianName(property) ?? property;
   }
 
