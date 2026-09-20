@@ -1,0 +1,67 @@
+{
+  "_doc": "Revert-verify mutants for ticket 32d44596 (req 94b302e0-eecd-4809-a5b1-0d1677c38d9c, PR fix/shapeloader-uid-domain). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). Guards enumerated from `git diff -U0` (integration-test-revert-verify §A8), not from the plan. THREE guards in the diff carry NO mutant, with the measured reason: (a) `label.length === 0 || /\\s/.test(label)` and (b) `!Namespace.fromPropertyKey(label)` are DEFENSIVE by the §A35 arithmetic — removing either only lets an entry whose lookup is null into the Map, because `labelToIRI` rejects the same strings (measured 2026-09-20: labelToIRI('concept__Definition (DEPRECATED)') === null, labelToIRI('not-a-key') === null), so no observable changes and a mutant for them would be vacuous; (c) the PLACEMENT of the fallback (last, after labelToIRI / datatypeRangeToIRI / sh:) is inert by construction — the index is UID-keyed and a UUID can never be a `<prefix>__<Local>` or an `xsd:` CURIE, so the branches are disjoint and moving it earlier changes nothing. The UID-shape guard BARE_UID_RE is NOT defensive and does carry M7: without it a non-UID filename stem would resolve, widening the fallback into a filename resolver (V4 locks that). M8 is the order mutant the plan gate required: it freezes the index the moment the first candidate is collected, i.e. registration would no longer wait for a complete map — it must redden V3 and ONLY V3.",
+  "tree": "/Users/kitelev/Developer/exocortex-development/worktrees/shapeloader-uid-domain",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "/Users/kitelev/Developer/exocortex-development/worktrees/shapeloader-uid-domain/packages/core/src/services/ShapeLoader.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/services/ShapeLoader.test.ts 2>&1",
+  "mutants": {
+    "M1_index_never_collected": {
+      "from": "    ShapeLoader.indexUidLabel(filePath, fm, scan.uidToLabel, path);\n",
+      "to": "",
+      "expect": ["V1", "V2", "V3", "V5", "V6", "V7"]
+    },
+    "M2_fallback_branch_removed": {
+      "from": "    if (uidToLabel) {\n      for (const candidate of candidates) {\n        const label = uidToLabel.get(candidate.trim().toLowerCase());\n        if (label === undefined) continue;\n        const iri = ShapeLoader.labelToIRI(label);\n        if (iri) return iri;\n      }\n    }\n",
+      "to": "",
+      "expect": ["V1", "V2", "V3", "V5", "V6", "V7"]
+    },
+    "M3_only_first_half_of_uid_alias": {
+      "from": "      for (const candidate of candidates) {\n        const label = uidToLabel.get(candidate.trim().toLowerCase());",
+      "to": "      for (const candidate of candidates.slice(0, 1)) {\n        const label = uidToLabel.get(candidate.trim().toLowerCase());",
+      "expect": ["V2"]
+    },
+    "M4_uid_key_keeps_its_quotes": {
+      "from": "      typeof uidRaw === \"string\" ? uidRaw.trim().replace(/^[\"']|[\"']$/g, \"\") : \"\",",
+      "to": "      typeof uidRaw === \"string\" ? uidRaw.trim() : \"\",",
+      "expect": ["V7"]
+    },
+    "M5_filename_stem_key_dropped": {
+      "from": "      typeof uidRaw === \"string\" ? uidRaw.trim().replace(/^[\"']|[\"']$/g, \"\") : \"\",\n      path.basename(filePath, \".md\"),\n    ];",
+      "to": "      typeof uidRaw === \"string\" ? uidRaw.trim().replace(/^[\"']|[\"']$/g, \"\") : \"\",\n    ];",
+      "expect": ["V7"]
+    },
+    "M6_last_label_wins_instead_of_first": {
+      "from": "      if (!uidToLabel.has(lower)) uidToLabel.set(lower, label);",
+      "to": "      uidToLabel.set(lower, label);",
+      "expect": ["V7"]
+    },
+    "M7_uid_shape_guard_removed": {
+      "from": "      if (!ShapeLoader.BARE_UID_RE.test(key)) continue;",
+      "to": "      if (key.length === 0) continue;",
+      "expect": ["V4"]
+    },
+    "M8_index_frozen_at_first_candidate": {
+      "from": "    ShapeLoader.indexUidLabel(filePath, fm, scan.uidToLabel, path);",
+      "to": "    if (scan.candidates.length === 0)\n      ShapeLoader.indexUidLabel(filePath, fm, scan.uidToLabel, path);",
+      "expect": ["V3"]
+    },
+    "M9_range_resolved_without_the_index": {
+      "from": "    const range = ShapeLoader.asArray(rangeRaw)\n      .map((v) => ShapeLoader.wikilinkToIRI(v, uidToLabel))",
+      "to": "    const range = ShapeLoader.asArray(rangeRaw)\n      .map((v) => ShapeLoader.wikilinkToIRI(v))",
+      "expect": ["V5", "V6"]
+    },
+    "M10_domain_resolved_without_the_index": {
+      "from": "      .map((v) => ShapeLoader.wikilinkToIRI(v, uidToLabel))\n      .filter((v): v is string => v !== null);\n    if (domain.length === 0) return;",
+      "to": "      .map((v) => ShapeLoader.wikilinkToIRI(v))\n      .filter((v): v is string => v !== null);\n    if (domain.length === 0) return;",
+      "expect": ["V1", "V2", "V3", "V5", "V6", "V7"]
+    }
+  }
+}

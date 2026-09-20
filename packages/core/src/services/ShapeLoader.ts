@@ -42,6 +42,13 @@ interface FsCandidate {
 interface FsScan {
   classEdges: FsClassEdge[];
   candidates: FsCandidate[];
+  /**
+   * `uid → symbolic label` for every file the pass sees whose
+   * `exo__Asset_label` is a single token parsing as `<prefix>__<Local>`
+   * (ticket 32d44596). Collected during THIS pass — `collectFile` already has
+   * the frontmatter in hand — so the tree is still walked exactly once.
+   */
+  uidToLabel: Map<string, string>;
 }
 
 /** Cached shape format written to / read from ~/.cache/exocortex/property-shapes.json */
@@ -63,18 +70,29 @@ export class ShapeLoader {
    * so a def typed `exo__DatatypeProperty` / `exo__StringProperty` / … is
    * accepted through the declared hierarchy, exactly as loadFromRDFGraph
    * does through the graph (ticket 84bb4d08).
+   *
+   * The same pass also collects `uid → symbolic label`, which lets a
+   * domain/range written as a bare-UID wikilink (`[[ae56ca4c-…]]` — the
+   * RFC-004 strip-canon form) resolve to its canonical class IRI, as
+   * loadFromRDFGraph already does through `uidToClassIRI` (ticket 32d44596).
    */
   static async loadFromVaultFS(vaultPath: string): Promise<ShapeRegistry> {
     const { readdir, readFile } = await import("fs/promises");
     const path = await import("path");
     const registry = new ShapeRegistry();
-    const scan: FsScan = { classEdges: [], candidates: [] };
+    const scan: FsScan = { classEdges: [], candidates: [], uidToLabel: new Map() };
     await ShapeLoader.scanDir(vaultPath, scan, { readdir, readFile, path });
     const propertyClassKeys = ShapeLoader.propertyClassKeysFromEdges(scan.classEdges);
     for (const candidate of scan.candidates) {
       // Fail-soft: one malformed property asset should not abort the load.
       try {
-        ShapeLoader.registerCandidate(candidate, registry, propertyClassKeys, path);
+        ShapeLoader.registerCandidate(
+          candidate,
+          registry,
+          propertyClassKeys,
+          path,
+          scan.uidToLabel,
+        );
       } catch {
         // Skip the offending file silently
       }
@@ -272,6 +290,13 @@ export class ShapeLoader {
   /** Matches `obsidian://vault/[<dirs>/]<uuid>.md` and captures the bare UUID. */
   private static readonly FILE_IRI_UID_RE =
     /\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.md$/i;
+
+  /**
+   * A bare UUID — the RFC-004 strip-canon form a class is named by in
+   * `exo__Asset_uid` and in a UID-named filename stem (ticket 32d44596).
+   */
+  private static readonly BARE_UID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   /** Extracts the lowercase UUID from a `…/<uuid>.md` file IRI, or null. */
   private static extractUidFromFileIRI(iri: string): string | null {
@@ -534,10 +559,10 @@ export class ShapeLoader {
     } catch {
       return;
     }
-    // readdir order is filesystem-dependent (sorted on APFS, hashed on ext4);
-    // scan in name order so the collected candidate sequence — and therefore
-    // which of two defs sharing a propertyIRI registers last — is the same on
-    // every platform.
+    // readdir order is not guaranteed sorted on any filesystem; scan in name
+    // order so the collected candidate sequence — and therefore which of two
+    // defs sharing a propertyIRI registers last — is the same on every
+    // platform.
     entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const entry of entries) {
       const full = io.path.join(dir, entry.name);
@@ -577,6 +602,8 @@ export class ShapeLoader {
     const fm = ShapeLoader.parseFrontmatter(content);
     if (!fm) return;
 
+    ShapeLoader.indexUidLabel(filePath, fm, scan.uidToLabel, path);
+
     const superClasses = ShapeLoader.asArray(fm["exo__Class_superClass"]);
     if (superClasses.length > 0) {
       const childKeys = [path.basename(filePath, ".md")];
@@ -599,11 +626,56 @@ export class ShapeLoader {
     }
   }
 
+  /**
+   * Ticket 32d44596 (FS twin of {@link buildUidClassIndex}): records
+   * `uid → label` for a file whose `exo__Asset_label` can name a class in
+   * canonical ontology form, so a domain/range written as a bare-UID wikilink
+   * (`[[ae56ca4c-…]]`, the RFC-004 strip-canon form) resolves to that class.
+   *
+   * Called from {@link collectFile}, i.e. inside the SINGLE pass `scanDir`
+   * already makes — the frontmatter is in hand, so no extra file is read. (The
+   * separate `buildUidLabelMap` traversal was rejected as a double vault scan
+   * in PR #3138, 2026-05-17; only the second walk was refused, not the
+   * resolution.)
+   *
+   * Admission mirrors the graph-side index verbatim: only a single-token label
+   * that parses to a `<prefix>__<Local>` IRI is indexed, so a human-named class
+   * (`concept__Definition (DEPRECATED)`) is left to the open-world handling on
+   * BOTH sides. Keyed by `exo__Asset_uid` and — for a UID-named file — the
+   * filename stem; first-wins, UIDs being unique.
+   */
+  private static indexUidLabel(
+    filePath: string,
+    fm: Record<string, string | string[]>,
+    uidToLabel: Map<string, string>,
+    path: typeof import("path"),
+  ): void {
+    const labelRaw = fm["exo__Asset_label"];
+    if (typeof labelRaw !== "string") return;
+    const label = labelRaw.trim().replace(/^["']|["']$/g, "");
+    // labelToIRI splits on the first `__`; a multi-word label would produce an
+    // invalid IRI — the same restriction buildUidClassIndex applies.
+    if (label.length === 0 || /\s/.test(label)) return;
+    if (!Namespace.fromPropertyKey(label)) return;
+
+    const uidRaw = fm["exo__Asset_uid"];
+    const keys = [
+      typeof uidRaw === "string" ? uidRaw.trim().replace(/^["']|["']$/g, "") : "",
+      path.basename(filePath, ".md"),
+    ];
+    for (const key of keys) {
+      if (!ShapeLoader.BARE_UID_RE.test(key)) continue;
+      const lower = key.toLowerCase();
+      if (!uidToLabel.has(lower)) uidToLabel.set(lower, label);
+    }
+  }
+
   private static registerCandidate(
     candidate: FsCandidate,
     registry: ShapeRegistry,
     propertyClassKeys: ReadonlySet<string>,
     path: typeof import("path"),
+    uidToLabel: ReadonlyMap<string, string>,
   ): void {
     const { filePath, fm } = candidate;
 
@@ -644,13 +716,16 @@ export class ShapeLoader {
     const sevRaw = fm["exo__Property_severity"];
     const minCountRaw = fm["exo__Property_minCount"];
 
+    // Both positions take the UID index: loadFromRDFGraph canonicalizes domain
+    // AND range through resolveClassIRI/uidToClassIRI, so resolving only one of
+    // them here would split the two loaders (parity axes P1 / L4 / V6).
     const domain = ShapeLoader.asArray(domainRaw)
-      .map((v) => ShapeLoader.wikilinkToIRI(v))
+      .map((v) => ShapeLoader.wikilinkToIRI(v, uidToLabel))
       .filter((v): v is string => v !== null);
     if (domain.length === 0) return;
 
     const range = ShapeLoader.asArray(rangeRaw)
-      .map((v) => ShapeLoader.wikilinkToIRI(v))
+      .map((v) => ShapeLoader.wikilinkToIRI(v, uidToLabel))
       .filter((v): v is string => v !== null);
 
     const cardinality = ShapeLoader.cardinalityFromLabel(
@@ -760,8 +835,12 @@ export class ShapeLoader {
   /**
    * Converts a wikilink value to a full IRI string.
    * Handles: "[[ems__Effort]]", "[[uuid|ems__Effort]]", "[[exo__PropertyCardinalitySingle]]"
+   * and — through `uidToLabel` — the bare-UID form "[[ae56ca4c-…]]".
    */
-  private static wikilinkToIRI(value: string): string | null {
+  private static wikilinkToIRI(
+    value: string,
+    uidToLabel?: ReadonlyMap<string, string>,
+  ): string | null {
     const ref = ShapeLoader.extractWikilinkRef(value);
     if (!ref) return null;
 
@@ -779,6 +858,21 @@ export class ShapeLoader {
     if (datatypeIRI) return datatypeIRI;
     // Try SHACL prefix
     if (ref.startsWith("sh:")) return SH_NS + ref.substring(3);
+
+    // LAST resort (ticket 32d44596): after RFC-004 strip-canon a domain/range
+    // names its class by bare UID, which no branch above can parse. Consulted
+    // only once every one of them returned null, so no value that resolves
+    // today changes. BOTH halves of `uid|alias` are tried — the alias may be a
+    // human label while the UID half is the resolvable one. loadFromRDFGraph
+    // reaches the same class through resolveClassIRI's uidToClassIRI fallback.
+    if (uidToLabel) {
+      for (const candidate of candidates) {
+        const label = uidToLabel.get(candidate.trim().toLowerCase());
+        if (label === undefined) continue;
+        const iri = ShapeLoader.labelToIRI(label);
+        if (iri) return iri;
+      }
+    }
 
     return null;
   }
