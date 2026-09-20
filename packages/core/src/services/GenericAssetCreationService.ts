@@ -249,12 +249,25 @@ export class GenericAssetCreationService {
       uid,
     );
     const declaredRanges = config.declaredRanges;
+    // Ticket 8185c9dd (review #4282 LOW-1): `generateFrontmatter` stores each
+    // `propertyValues` entry under its CANONICAL key (`exo__Asset_pinned` →
+    // `pinned`), while `declaredRanges` is keyed by the def's `prefix__Name`
+    // label — the key the caller SUPPLIED and the key `set-property` resolves
+    // by. Map the canonical key back to the supplied one for the lookup so the
+    // two writers type a whitelisted bare field identically. (Second layer of
+    // the key mapping: `MetadataHelpers.buildFileContent` maps the keys a
+    // DIRECT caller supplies; here the frontmatter is already canonical, so the
+    // reverse map lives in this lambda.)
+    const suppliedKeyOf = new Map<string, string>();
+    for (const rawKey of Object.keys(config.propertyValues ?? {})) {
+      suppliedKeyOf.set(canonicalYamlKey(rawKey), rawKey);
+    }
     const content = MetadataHelpers.buildFileContent(
       frontmatter,
       config.body,
       declaredRanges === undefined
         ? undefined
-        : (key) => declaredRanges.get(key),
+        : (key) => declaredRanges.get(suppliedKeyOf.get(key) ?? key),
     );
 
     const folderPath = config.folderPath || this.getDefaultFolderPath(config);

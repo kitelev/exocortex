@@ -21,6 +21,9 @@
  *    they round-trip as strings. NB: datetime timestamps (`YYYY-MM-DDThh:mm:ss`,
  *    the system's `createdAt`/`updatedAt`/effort-timestamp format) are
  *    deliberately NOT quoted — they are semantic dates and stay bare.
+ *    ⛔ Refined 2026-09-20 (ticket 8185c9dd): under label/aliases and under a
+ *    declared `xsd:string` range a datetime IS quoted now (see
+ *    {@link needsYamlQuoting}); it stays bare only on timestamp properties.
  *  - LOW-4: control chars beyond `\n\r\t` (`\x07`, `\b`, `\f`, `\v`, NUL, DEL)
  *    are detected and escaped (`\xNN`) so they never reach a parser bare.
  *
@@ -71,17 +74,29 @@ const YAML_CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/;
 const YAML_NON_PRINTABLE_CHARS =
   /[\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/;
 
-// Scalar tokens a real YAML parser (js-yaml DEFAULT_SCHEMA, used by Obsidian
-// metadataCache) coerces away from string. Replicated from js-yaml's resolvers
-// (lib/type/{bool,null,int,float,timestamp}.js). (#3750 MEDIUM-3.)
+// Scalar tokens the YAML 1.2 CORE schema (js-yaml 4 DEFAULT_SCHEMA — the
+// reader Obsidian's metadataCache uses, #3750 MEDIUM-3) coerces away from
+// string. Replicated from js-yaml 4's resolvers
+// (lib/type/{bool,null,int,float,timestamp}.js). Ticket 8185c9dd: this table
+// is the SECOND half of {@link looksLikeNonStringScalar} — the first half is
+// the product's own reader (js-yaml 5.3.0 `YAML11_SCHEMA`), consulted
+// directly. The two schemas disagree in BOTH directions (`1e5` / `08` / `0o17`
+// are numbers only in 1.2-core; `10:30` / `yes` / `+.5` only in YAML 1.1), so
+// the writer quotes when EITHER reader would hand back a non-string.
 const YAML_BOOL = /^(?:true|True|TRUE|false|False|FALSE)$/;
 const YAML_NULL = /^(?:null|Null|NULL|~)$/;
 const YAML_INT = /^[-+]?(?:0b[01_]+|0o[0-7_]+|0x[0-9a-fA-F_]+|[0-9][0-9_]*)$/;
 const YAML_FLOAT =
   /^(?:[-+]?[0-9][0-9_]*(?:\.[0-9_]*)?(?:[eE][-+]?[0-9]+)?|\.[0-9_]+(?:[eE][-+]?[0-9]+)?|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$/;
-// Date-only timestamp (`2026-01-15`). Datetime values (with a `T`/time part)
-// are intentionally excluded — they are the system's semantic-date format.
+// Date-only timestamp (`2026-01-15`) of the 1.2-core table. A DATETIME
+// (`2026-01-15T10:00:00`) is not listed here — the YAML11 reader half reads
+// it as a `Date` and quotes it under string semantics (ticket 8185c9dd).
+// #3750 kept a datetime bare on the string-semantic path as a known bound
+// (ticket 71f1ca37 п.2); that bound is lifted here. Timestamp properties are
+// neither string-semantic nor `xsd:string`-ranged and never reach this oracle.
 const YAML_DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+/** The two lexical forms `xsd:string` leaves bare (ticket 8185c9dd — the range-rule boolean exclusion, canonical lowercase only). */
+const CANONICAL_YAML_BOOLEAN = /^(?:true|false)$/;
 
 /**
  * Frontmatter properties whose values are semantically STRINGS (labels), so a
@@ -177,13 +192,52 @@ export function isCompleteDoubleQuotedScalar(value: string): boolean {
 }
 
 /**
- * Does a real YAML parser coerce this bare plain scalar to a non-string type?
- * (#3750 MEDIUM-3 — quote these so a semantically-string label/alias survives
- * as a string.) Datetime timestamps are excluded by {@link YAML_DATE} so the
- * system's `createdAt`/effort-timestamp values keep their native date type.
+ * Does the product's own reader hand this bare plain scalar back as something
+ * other than a string? (ticket 8185c9dd) The oracle IS the reader: the value
+ * is loaded in the same `key: value` position `parseYamlFrontmatterTolerant`
+ * reads it from, under the same js-yaml 5.3.0 `YAML11_SCHEMA`. A `Date`, a
+ * number, a boolean, `null` or a nested structure is "not a string"; so is a
+ * value the reader refuses to parse at all (quoted, it will load).
+ *
+ * ⛔ Not a regex table: the previous oracle replicated js-yaml 4's 1.2-core
+ * resolvers and MISSED every YAML 1.1-only form — the sexagesimal integer
+ * (`10:30` → 630, `1:2:3` → 3723, `1:30.5` → 90.5), the 1.1 booleans
+ * (`yes` / `no` / `on` / `off` / `y` / `n` in any case) and `+.5` (review
+ * #4282 MEDIUM-1; probed 2026-09-20, see PR #4289 — the in-repo reproduction
+ * is axis R21). Delegating to `yaml.load` makes "what the writer quotes"
+ * identical to "what the reader coerces" by construction.
+ */
+function yaml11ReaderCoercesToNonString(value: string): boolean {
+  let loaded: unknown;
+  try {
+    loaded = yaml.load(`v: ${value}`, { schema: yaml.YAML11_SCHEMA });
+  } catch {
+    // Defensive (integration-test-revert-verify §A35): every form the reader
+    // rejects in this position (`- x`, `::`, `10:`, a control character) is
+    // already quoted by the guards `needsYamlQuoting` runs BEFORE this oracle
+    // (probed 2026-09-20, see PR #4289: no indicator-dense form passes them and
+    // throws here). Kept so a reader upgrade that starts rejecting a new form
+    // fails towards quoting, never bare.
+    return true;
+  }
+  // Defensive likewise: `v: <plain scalar>` always loads as a mapping.
+  if (typeof loaded !== "object" || loaded === null) return true;
+  return typeof (loaded as { v?: unknown }).v !== "string";
+}
+
+/**
+ * Does ANY reader of this frontmatter coerce the bare plain scalar to a
+ * non-string type? (#3750 MEDIUM-3, ticket 8185c9dd.) Two readers exist:
+ * the product's `parseYamlFrontmatterTolerant` (js-yaml 5.3.0 `YAML11_SCHEMA`
+ * — asked directly, {@link yaml11ReaderCoercesToNonString}) and Obsidian's
+ * metadataCache (YAML 1.2 core — the {@link YAML_INT}… table). The union is
+ * deliberate: quoting a string is lossless, so every form quoted before this
+ * ticket stays quoted (`1e5`, `08`, `0o17` — strings to YAML 1.1, numbers to
+ * 1.2-core) and every YAML 1.1-only form joins them.
  */
 function looksLikeNonStringScalar(value: string): boolean {
   return (
+    yaml11ReaderCoercesToNonString(value) ||
     YAML_BOOL.test(value) ||
     YAML_NULL.test(value) ||
     YAML_INT.test(value) ||
@@ -201,22 +255,28 @@ function looksLikeNonStringScalar(value: string): boolean {
  *
  * @param quoteAmbiguousScalars — when true (string-semantic properties like
  *   `exo__Asset_label` / `aliases`), also quote scalar-looking strings so they
- *   survive as strings (#3750 MEDIUM-3). Default false — number/bool/date-shaped
- *   values of OTHER properties keep their native YAML type. Datetime-shaped
- *   strings (`2026-01-15T10:00:00`) are deliberately NOT quoted even when true
- *   (#3750 MEDIUM-3 — axis `roundTrip(datetime, true)` = Date pins it; known
- *   bound, ticket 71f1ca37).
+ *   survive as strings (#3750 MEDIUM-3). "Scalar-looking" = a form ANY reader
+ *   of the file coerces to a non-string ({@link looksLikeNonStringScalar},
+ *   ticket 8185c9dd) — including a datetime (`2026-01-15T10:00:00`, read as a
+ *   `Date`): #3750 kept a datetime bare on this string-semantic path as a
+ *   known bound (ticket 71f1ca37 п.2); lifted in ticket 8185c9dd (live
+ *   datetime-shaped labels 0/0/0). Timestamp properties never pass this flag.
+ *   Default false — number/bool/date-shaped values of OTHER properties keep
+ *   their native YAML type.
  * @param declaredRange — the property's declared `exo__Property_range` values
  *   when the writer has them (ticket 2227d660; see {@link scalarTypingForRange}).
  *   A numeric range emits a canonical number BARE even with a leading `-`
  *   (and even when `quoteAmbiguousScalars` is true — the declaration wins
  *   over the property-name set); `xsd:boolean` emits `true`/`false` bare;
  *   `xsd:string` quotes a scalar-looking value the way the string-semantic
- *   set does, EXCEPT a YAML boolean: under a string range the converter
- *   already emits `true`/`false` as a plain string literal, so quoting would
- *   change only the YAML-level type that YAML readers see (233 live bare
- *   booleans under `xsd:string` in `exoas-flow`, measured 2026-09-19) for no
- *   graph gain. `undefined` (no range known) = the pre-ticket behaviour.
+ *   set does, EXCEPT the canonical lowercase `true` / `false`: under a string
+ *   range the converter already emits those as a plain string literal, so
+ *   quoting would change only the YAML-level type that YAML readers see (233
+ *   live bare lowercase booleans under `xsd:string` in `exoas-flow`, measured
+ *   2026-09-19) for no graph gain. Every OTHER boolean spelling (`True`,
+ *   `FALSE`, `yes`, `Off`, `n`, …) IS quoted (ticket 8185c9dd): the converter
+ *   would fold it to `true` / `false` and the author's spelling would be lost.
+ *   `undefined` (no range known) = the pre-ticket behaviour.
  */
 export function needsYamlQuoting(
   value: string,
@@ -284,12 +344,14 @@ export function needsYamlQuoting(
   // Ticket 2227d660 — a declared `xsd:string` range extends the string-semantic
   // rule to this property: a number / null / date-shaped value is quoted so
   // the converter tags it `xsd:string` (bare `42` is tagged `xsd:integer` and
-  // violates the range). A YAML boolean is deliberately left bare — see the
-  // `declaredRange` note in the JSDoc above.
+  // violates the range). The canonical lowercase `true` / `false` are
+  // deliberately left bare — see the `declaredRange` note in the JSDoc above;
+  // `True` / `FALSE` / `yes` / `on` are quoted (ticket 8185c9dd — the converter
+  // would fold them to `true` / `false`, losing the author's spelling).
   if (
     typing === "string" &&
     looksLikeNonStringScalar(value) &&
-    !YAML_BOOL.test(value)
+    !CANONICAL_YAML_BOOLEAN.test(value)
   ) {
     return true;
   }

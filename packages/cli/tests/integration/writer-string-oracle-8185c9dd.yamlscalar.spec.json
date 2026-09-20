@@ -1,0 +1,61 @@
+{
+  "_doc": "Revert-verify mutants for ticket 8185c9dd (req 21ceea14, PR fix/writer-string-oracle-yaml11). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's subject and runs the suites named in `harness`; `expect` names the axes that MUST go red). cli suites resolve @kitelev/exocortex-core from core SRC (jest moduleNameMapper), so a core mutant reaches the cli axes without a build. Guards enumerated from `git diff -U0` (integration-test-revert-verify §A8). Recorded runs: see PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([RGDSQW]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/utilities/yamlScalar.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/utilities/yamlScalar.test.ts tests/utilities/MetadataHelpers.yamlQuoting.test.ts tests/unit/services/GenericAssetCreationService.test.ts 2>&1 ; cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/set-property.range-typing.integration.test.ts tests/integration/create.range-typing.integration.test.ts 2>&1",
+  "mutants": {
+    "M1_reader_half_dropped_regex_table_only": {
+      "from": "  return (\n    yaml11ReaderCoercesToNonString(value) ||\n    YAML_BOOL.test(value) ||",
+      "to": "  return (\n    YAML_BOOL.test(value) ||",
+      "expect": [
+        "R15",
+        "R16",
+        "R18a",
+        "R18b",
+        "R19",
+        "R21",
+        "S6",
+        "W5"
+      ]
+    },
+    "M2_regex_half_dropped_reader_only": {
+      "from": "    yaml11ReaderCoercesToNonString(value) ||\n    YAML_BOOL.test(value) ||\n    YAML_NULL.test(value) ||\n    YAML_INT.test(value) ||\n    YAML_FLOAT.test(value) ||\n    YAML_DATE.test(value)\n  );",
+      "to": "    yaml11ReaderCoercesToNonString(value) ||\n    (false && YAML_BOOL.test(value)) ||\n    (false && YAML_NULL.test(value)) ||\n    (false && YAML_INT.test(value)) ||\n    (false && YAML_FLOAT.test(value)) ||\n    (false && YAML_DATE.test(value))\n  );",
+      "expect": [
+        "R20"
+      ]
+    },
+    "M3_boolean_exclusion_back_to_any_case": {
+      "from": "    !CANONICAL_YAML_BOOLEAN.test(value)\n  ) {",
+      "to": "    !YAML_BOOL.test(value)\n  ) {",
+      "expect": [
+        "R17",
+        "S6",
+        "W5"
+      ]
+    },
+    "M4_reader_verdict_inverted_non_string_reads_as_string": {
+      "from": "  return typeof (loaded as { v?: unknown }).v !== \"string\";",
+      "to": "  return typeof (loaded as { v?: unknown }).v === \"string\";",
+      "expect": [
+        "R15",
+        "R16",
+        "R18a",
+        "R18b",
+        "R19",
+        "R21",
+        "S6",
+        "W5"
+      ]
+    }
+  }
+}

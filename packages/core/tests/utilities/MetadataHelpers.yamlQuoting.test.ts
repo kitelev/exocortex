@@ -150,4 +150,38 @@ describe("MetadataHelpers.buildFileContent — declared-range typing (ticket 222
     expect(content).toContain('ems__Reminder_chatId: "-1001234567890"\n');
     expect(content).toContain("ems__Reminder_text: 42\n");
   });
+
+  /**
+   * Ticket 8185c9dd (review #4282 LOW-1) — the lookup is made with the key the
+   * caller SUPPLIED, not the emitted canonical key: `exo__Asset_pinned` is
+   * emitted as the bare `pinned:` (UNPREFIXED_ASSET_FIELDS) but its def is
+   * labelled `exo__Asset_pinned`, the key `set-property` resolves by. Revert-
+   * verify: with `declaredRangeOf?.(key)` (canonical key) G3 goes RED.
+   */
+  it("G3 a whitelisted bare-emitted key (`exo__Asset_pinned` → `pinned:`) resolves its range by the SUPPLIED key — the same key set-property resolves by", () => {
+    const seen: string[] = [];
+    const lookup = (key: string): readonly string[] | undefined => {
+      seen.push(key);
+      return key === "exo__Asset_pinned" ? ["xsd:integer"] : undefined;
+    };
+    const content = MetadataHelpers.buildFileContent(
+      { exo__Asset_label: "Pinned", exo__Asset_pinned: "-1" },
+      undefined,
+      lookup,
+    );
+    // Emitted bare under the canonical key, typed by the def's range.
+    expect(content).toContain("pinned: -1\n");
+    expect(parseFrontmatter(content).pinned).toBe(-1);
+    // The lookup saw the supplied key, never the canonical one.
+    expect(seen).toContain("exo__Asset_pinned");
+    expect(seen).not.toContain("pinned");
+    // Control — the same value supplied under the BARE key resolves nothing
+    // in either writer (no def is labelled `pinned`) → shape rule, quoted.
+    const bare = MetadataHelpers.buildFileContent(
+      { exo__Asset_label: "Pinned", pinned: "-1" },
+      undefined,
+      lookup,
+    );
+    expect(bare).toContain('pinned: "-1"\n');
+  });
 });

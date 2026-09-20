@@ -160,21 +160,24 @@ export class MetadataHelpers {
    *   not know — or no lookup at all — keeps the shape-based behaviour, so the
    *   plugin / apply callers are unaffected.
    *
-   *   ⚠ The lookup is called with the EMITTED (canonical) key, i.e. AFTER
-   *   `canonicalYamlKey`, while `cli create` keys its map by the def's
-   *   `prefix__Name` label. The two agree for every prefixed property; the
-   *   three whitelisted bare keys (`aliases` / `draft` / `pinned` —
-   *   `UNPREFIXED_ASSET_FIELDS`) are emitted unprefixed and therefore never
-   *   resolve a range here — `aliases` keeps its `STRING_SCALAR_PROPERTIES`
-   *   rule, the other two have no TBox range today. `set-property` resolves
-   *   the range by the property NAME before canonicalising, so for those
-   *   three keys the two writers would diverge if a range were ever declared
-   *   (review #4282 LOW-1; follow-up ticket, not changed here).
+   *   The lookup is called with the key AS THE CALLER SUPPLIED IT (before
+   *   `canonicalYamlKey`), the same key `set-property` resolves its range by
+   *   (ticket 8185c9dd, review #4282 LOW-1). Two layers of key mapping exist:
+   *   a DIRECT caller of this method supplies its own (possibly prefixed) keys
+   *   and this method maps them; `GenericAssetCreationService` hands in
+   *   already-canonical keys and maps canonical→supplied inside the lambda it
+   *   passes as `declaredRangeOf`. `cli create` keys its map by
+   *   the def's `prefix__Name` label, so `exo__Asset_pinned` resolves a
+   *   declared range in BOTH writers even though it is EMITTED as the bare
+   *   `pinned:` key (`UNPREFIXED_ASSET_FIELDS`); a caller passing the bare
+   *   `aliases` resolves nothing in both (no def carries that label) — the
+   *   two writers agree by construction. The `STRING_SCALAR_PROPERTIES` rule
+   *   stays keyed by the emitted name, as before.
    */
   static buildFileContent(
     frontmatter: Record<string, unknown>,
     bodyContent?: string,
-    declaredRangeOf?: (canonicalKey: string) => readonly string[] | undefined,
+    declaredRangeOf?: (suppliedKey: string) => readonly string[] | undefined,
   ): string {
     // req 869561bf — the asset-creation twin of
     // `FrontmatterService.createFrontmatter`; canonicalise on the same terms so
@@ -183,8 +186,15 @@ export class MetadataHelpers {
     // keeps a scalar-looking alias a string instead of letting YAML coerce it
     // to a Date — the #3750 MEDIUM-3 guarantee.
     const canonical: Record<string, unknown> = {};
+    // The key each canonical key was SUPPLIED as — the range lookup below is
+    // made with it (ticket 8185c9dd). When two supplied keys collapse onto one
+    // canonical key (`aliases` + `exo__Asset_aliases`) the later entry wins the
+    // value, so it also wins the lookup key.
+    const suppliedKeyOf: Record<string, string> = {};
     for (const [key, value] of Object.entries(frontmatter)) {
-      canonical[canonicalYamlKey(key)] = value;
+      const canonicalKey = canonicalYamlKey(key);
+      canonical[canonicalKey] = value;
+      suppliedKeyOf[canonicalKey] = key;
     }
     const ordered = orderProperties(canonical, loadDefaultSpec());
     const frontmatterLines = Object.entries(ordered)
@@ -197,8 +207,11 @@ export class MetadataHelpers {
         const quoteAmbiguous = STRING_SCALAR_PROPERTIES.has(key);
         // Ticket 2227d660: the declared range (when the caller can read the
         // TBox) types a canonical scalar — `-1001234567890` under
-        // `xsd:integer` stays bare, `42` under `xsd:string` is quoted.
-        const declaredRange = declaredRangeOf?.(key);
+        // `xsd:integer` stays bare, `42` under `xsd:string` is quoted. Looked
+        // up by the SUPPLIED key (ticket 8185c9dd): the map is keyed by the
+        // def's `prefix__Name` label, and a whitelisted bare key (`pinned`) is
+        // emitted unprefixed.
+        const declaredRange = declaredRangeOf?.(suppliedKeyOf[key] ?? key);
         if (Array.isArray(value)) {
           const arrayItems = value
             .map(

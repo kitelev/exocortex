@@ -142,11 +142,21 @@ describe("serializeYamlScalar (#3750)", () => {
       },
     );
 
-    it("does NOT quote datetime timestamps even for a string-semantic property", () => {
+    it('R18a quotes a datetime for a string-semantic property (ticket 8185c9dd — the YAML11 reader hands a bare datetime back as a Date; the #3750 "datetime stays bare" bound is kept ONLY for non-string-semantic timestamp properties)', () => {
       const datetime = "2025-10-24T14:30:45";
-      // Datetime is excluded from MEDIUM-3 (semantic-date format).
-      expect(serializeYamlScalar(datetime, true)).toBe(datetime);
-      expect(roundTrip(datetime, true)).toBeInstanceOf(Date);
+      // ⛔ was (#3750 MEDIUM-3, ticket 71f1ca37 п.2): `serializeYamlScalar(datetime, true)` = bare, roundTrip = Date.
+      expect(serializeYamlScalar(datetime, true)).toBe(`"${datetime}"`);
+      expect(roundTrip(datetime, true)).toBe(datetime);
+      expect(serializeYamlScalar("2026-01-15 10:00:00", true)).toBe(
+        '"2026-01-15 10:00:00"',
+      );
+      // Control — a timestamp property (no string semantics, no string range)
+      // keeps the native Date: `createdAt` / `*Timestamp` are unaffected.
+      expect(serializeYamlScalar(datetime)).toBe(datetime);
+      expect(roundTrip(datetime)).toBeInstanceOf(Date);
+      expect(serializeYamlScalar(datetime, false, ["xsd:dateTime"])).toBe(
+        datetime,
+      );
     });
   });
 
@@ -574,5 +584,187 @@ describe("ticket 2227d660 — declared exo__Property_range types the scalar @req
     expect(serializeYamlScalar(-5, false, STRING)).toBe("-5");
     expect(serializeYamlScalar(true, false, STRING)).toBe("true");
     expect(serializeYamlScalar(-5, false, INTEGER)).toBe("-5");
+  });
+});
+
+/**
+ * Ticket 8185c9dd (review #4282 MEDIUM-1) — the string-range / label oracle
+ * IS the reader. `looksLikeNonStringScalar` replicated js-yaml 4's YAML 1.2
+ * core resolvers, while the product reads frontmatter with js-yaml 5.3.0
+ * `YAML11_SCHEMA` (`parseYamlFrontmatterTolerant`). YAML 1.1-only forms
+ * (sexagesimal `10:30`, the `yes`/`no`/`on`/`off`/`y`/`n` booleans in any
+ * case, `+.5`, a datetime) were therefore written BARE under `xsd:string` and
+ * under label/aliases and read back as number / boolean / Date. The oracle now
+ * asks the reader directly, in UNION with the 1.2-core table (Obsidian's
+ * metadataCache reads 1.2-core: `1e5` / `08` / `0o17` stay quoted).
+ *
+ * Every expectation below was derived BEFORE the change from a probe of the
+ * reader (probe-matrix.out, 70 forms) and a differential fuzz (39 128 unique
+ * forms: old oracle 261 forms bare-yet-non-string, reader-oracle 0).
+ *
+ * Mutant matrix — copied from the driver output (mutant-driver.py over
+ * writer-string-oracle-8185c9dd.yamlscalar.spec.json, 2026-09-20; control 0 red):
+ *   M1 reader half dropped (1.2-core table only) → RED: ['R15', 'R16', 'R18a', 'R18b', 'R19', 'R21', 'S6', 'W5']
+ *   M2 1.2-core half dropped (reader only)       → RED: ['R20']
+ *   M3 boolean exclusion widened back to YAML_BOOL → RED: ['R17', 'R21', 'S6', 'W5']
+ *   M4 reader verdict inverted                    → RED: ['R15', 'R16', 'R18a', 'R18b', 'R19', 'R21', 'S6', 'W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7']
+ *   (M4 reds every W axis structurally: the inverted oracle quotes the probe
+ *   LABEL, and the cli fixture locates the created file by its bare label line.)
+ */
+describe("ticket 8185c9dd — the string oracle is the YAML11 reader (∪ 1.2-core) @req:21ceea14-50dd-4cf8-bd3b-5a50b7c97105", () => {
+  const STRING = ["xsd:string"];
+  const INTEGER = ["xsd:integer"];
+
+  function read(line: string): unknown {
+    return (
+      yaml.load(line, { schema: yaml.YAML11_SCHEMA }) as Record<string, unknown>
+    ).v;
+  }
+  function roundTripRanged(
+    value: string,
+    range: readonly string[] | undefined,
+    quoteAmbiguous = false,
+  ): unknown {
+    return read(`v: ${serializeYamlScalar(value, quoteAmbiguous, range)}`);
+  }
+
+  it("R15 xsd:string — a YAML 1.1 sexagesimal number (`10:30` → 630 bare) and `+.5` are QUOTED and read back as the same string", () => {
+    for (const v of ["10:30", "1:30", "1:2:3", "1:30.5", "12:34:56", "+.5"]) {
+      // Premise: bare, the reader coerces (630, 90, 3723, 90.5, 45296, 0.5).
+      expect(typeof read(`v: ${v}`)).toBe("number");
+      expect(serializeYamlScalar(v, false, STRING)).toBe(`"${v}"`);
+      expect(roundTripRanged(v, STRING)).toBe(v);
+    }
+  });
+
+  it("R16 xsd:string — the YAML 1.1 booleans `yes`/`no`/`on`/`off`/`y`/`n` (any case) are QUOTED and read back as strings", () => {
+    for (const v of [
+      "yes",
+      "no",
+      "on",
+      "off",
+      "y",
+      "n",
+      "Yes",
+      "NO",
+      "Off",
+      "Y",
+    ]) {
+      expect(typeof read(`v: ${v}`)).toBe("boolean");
+      expect(serializeYamlScalar(v, false, STRING)).toBe(`"${v}"`);
+      expect(roundTripRanged(v, STRING)).toBe(v);
+    }
+  });
+
+  it("R17 xsd:string — `True`/`TRUE`/`False`/`FALSE` are QUOTED (spelling survives); the canonical lowercase `true`/`false` stay BARE (R6 unchanged)", () => {
+    for (const v of ["True", "TRUE", "False", "FALSE"]) {
+      expect(serializeYamlScalar(v, false, STRING)).toBe(`"${v}"`);
+      expect(roundTripRanged(v, STRING)).toBe(v);
+    }
+    expect(serializeYamlScalar("true", false, STRING)).toBe("true");
+    expect(serializeYamlScalar("false", false, STRING)).toBe("false");
+    expect(roundTripRanged("true", STRING)).toBe(true);
+  });
+
+  it("R18b xsd:string — a datetime is QUOTED and reads back as a string; a `xsd:dateTime` range or no range keeps it bare (Date)", () => {
+    const dt = "2026-01-15T10:00:00";
+    expect(serializeYamlScalar(dt, false, STRING)).toBe(`"${dt}"`);
+    expect(roundTripRanged(dt, STRING)).toBe(dt);
+    expect(serializeYamlScalar(dt, false, ["xsd:dateTime"])).toBe(dt);
+    expect(roundTripRanged(dt, ["xsd:dateTime"])).toBeInstanceOf(Date);
+    expect(serializeYamlScalar(dt)).toBe(dt);
+  });
+
+  it("R19 label/aliases (quoteAmbiguousScalars) — the same YAML 1.1 forms are QUOTED: one oracle serves both paths", () => {
+    for (const v of ["10:30", "no", "Yes", "+.5", "2026-01-15T10:00:00"]) {
+      expect(serializeYamlScalar(v, true)).toBe(`"${v}"`);
+      expect(roundTrip(v, true)).toBe(v);
+    }
+    // Control — without string semantics and without a range these stay bare
+    // (a timestamp / numeric property keeps its native type, as before).
+    expect(serializeYamlScalar("10:30")).toBe("10:30");
+    expect(serializeYamlScalar("no")).toBe("no");
+  });
+
+  it("R20 monotone — every form the 1.2-core table quoted before this ticket is STILL quoted, including the forms YAML 1.1 reads as strings (`1e5`, `08`, `0o17`, `2e3`: numbers to Obsidian's 1.2-core reader)", () => {
+    const yaml12Only = ["1e5", "08", "0o17", "2e3", "1E2"];
+    for (const v of yaml12Only) {
+      // Premise: the product's YAML11 reader would NOT coerce these …
+      expect(read(`v: ${v}`)).toBe(v);
+      // … the union still quotes them (Obsidian reads 1.2-core).
+      expect(serializeYamlScalar(v, true)).toBe(`"${v}"`);
+      expect(serializeYamlScalar(v, false, STRING)).toBe(`"${v}"`);
+    }
+    for (const v of [
+      "123",
+      "12_000",
+      "0x1A",
+      "null",
+      "Null",
+      "~",
+      "1.5",
+      ".inf",
+      ".nan",
+      "2026-01-15",
+      "010",
+    ]) {
+      expect(serializeYamlScalar(v, true)).toBe(`"${v}"`);
+      expect(serializeYamlScalar(v, false, STRING)).toBe(`"${v}"`);
+    }
+  });
+
+  it("R21 property (not table) — 2000 generated forms: under string semantics the emitted scalar ALWAYS reads back as the identical string; under xsd:string the same unless it is the canonical `true`/`false`", () => {
+    const alphabet = "0123456789:._-+eEoxbYNTFyntf~ ";
+    const words = [
+      "yes",
+      "no",
+      "on",
+      "off",
+      "y",
+      "n",
+      "true",
+      "false",
+      "null",
+      "~",
+      ".inf",
+      ".nan",
+      "Yes",
+      "Off",
+      "True",
+      "FALSE",
+      "NULL",
+      "2026-01-15T10:00:00",
+    ];
+    let seed = 8185;
+    const rnd = (): number => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    };
+    let checked = 0;
+    for (let i = 0; i < 2000; i++) {
+      let v: string;
+      if (rnd() < 0.2) {
+        v = words[Math.floor(rnd() * words.length)];
+      } else {
+        const len = 1 + Math.floor(rnd() * 8);
+        v = "";
+        for (let j = 0; j < len; j++)
+          v += alphabet[Math.floor(rnd() * alphabet.length)];
+      }
+      if (v === "" || v !== v.trim()) continue;
+      checked++;
+      expect(roundTrip(v, true)).toBe(v);
+      const ranged = roundTripRanged(v, STRING);
+      if (v === "true" || v === "false") expect(ranged).toBe(v === "true");
+      else expect(ranged).toBe(v);
+    }
+    expect(checked).toBeGreaterThan(1500);
+  });
+
+  it("R22 xsd:integer — the numeric family is untouched by the oracle change (a canonical negative bare, a sexagesimal under xsd:integer keeps the shape rule = bare, reads as 630 — that is the reader's number, not a string)", () => {
+    expect(serializeYamlScalar("-5", false, INTEGER)).toBe("-5");
+    // Under a NUMERIC range the string oracle is never consulted: `10:30` is
+    // not a canonical integer, so the shape rule applies (bare, as before).
+    expect(serializeYamlScalar("10:30", false, INTEGER)).toBe("10:30");
   });
 });

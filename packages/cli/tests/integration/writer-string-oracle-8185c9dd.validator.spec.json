@@ -1,0 +1,67 @@
+{
+  "_doc": "Revert-verify mutants for ticket 8185c9dd (req 21ceea14, PR fix/writer-string-oracle-yaml11). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's subject and runs the suites named in `harness`; `expect` names the axes that MUST go red). cli suites resolve @kitelev/exocortex-core from core SRC (jest moduleNameMapper), so a core mutant reaches the cli axes without a build. Guards enumerated from `git diff -U0` (integration-test-revert-verify §A8). Recorded runs: see PR body. The stderr WIRING of the warn channel in create.ts / set-property.ts is pinned directly by axes W7 / S7 (the default channel is a no-op), so no mutant targets those two files.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([RGDSQW]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/services/PropertyNameValidator.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/set-property.range-typing.integration.test.ts tests/integration/create.range-typing.integration.test.ts 2>&1",
+  "mutants": {
+    "M7_last_def_wins": {
+      "from": "      if (first === undefined) {\n        ranges.set(cand.name, cand.range);\n      } else if",
+      "to": "      if (first === undefined || true) {\n        ranges.set(cand.name, cand.range);\n      } else if",
+      "expect": [
+        "Q4",
+        "S7",
+        "W7"
+      ]
+    },
+    "M8_warn_dropped": {
+      "from": "        warnedNames.add(cand.name);\n        this.warn(",
+      "to": "        warnedNames.add(cand.name);\n        void String(",
+      "expect": [
+        "Q4",
+        "S7",
+        "W7"
+      ]
+    },
+    "M9_warn_once_guard_dropped": {
+      "from": "      } else if (!sameRange(first, cand.range) && !warnedNames.has(cand.name)) {",
+      "to": "      } else if (!sameRange(first, cand.range)) {",
+      "expect": [
+        "Q4"
+      ]
+    },
+    "M10_sameRange_always_false_identical_twin_reported": {
+      "from": "  return a.length === b.length && a.every((v, i) => v === b[i]);",
+      "to": "  return a.length !== b.length && a.every((v, i) => v === b[i]);",
+      "expect": [
+        "Q5"
+      ]
+    },
+    "M11_sameRange_always_true_conflict_silenced": {
+      "from": "  return a.length === b.length && a.every((v, i) => v === b[i]);",
+      "to": "  return a.length === b.length || a.every((v, i) => v === b[i]);",
+      "expect": [
+        "Q4",
+        "S7",
+        "W7"
+      ]
+    },
+    "M12_sort_reversed": {
+      "from": "      entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));",
+      "to": "      entries.sort((a, b) => (a.name < b.name ? 1 : a.name > b.name ? -1 : 0));",
+      "expect": [
+        "Q4",
+        "S7",
+        "W7"
+      ]
+    }
+  }
+}

@@ -384,7 +384,9 @@ export function createCommand(): Command {
         // validation is fail-open when NO property definitions are mounted
         // (degenerate/partial profile). Validates the raw USER keys only (the
         // CLI injects its own well-known keys downstream).
-        const propertyNameValidator = new PropertyNameValidator(vaultPath);
+        const propertyNameValidator = new PropertyNameValidator(vaultPath, {
+          warn: (msg) => process.stderr.write(`⚠ ${msg}\n`),
+        });
         await propertyNameValidator.validate(Object.keys(properties));
         // Ticket 2227d660: the same scan also yields each def's declared
         // `exo__Property_range`; handed to the core service so every scalar
