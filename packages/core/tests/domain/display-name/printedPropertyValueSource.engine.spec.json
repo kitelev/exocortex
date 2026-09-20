@@ -13,12 +13,12 @@
     "S_M1_marker_never_parsed": {
       "from": "      if (source === DisplayNameTemplateEngine.COMPOSED_SOURCE_MARKER) {",
       "to": "      if (source === \"__never__\") {",
-      "expect": ["S1", "S2", "S8"]
+      "expect": ["S1", "S2", "S6", "S7", "S8", "S9", "S10", "S11", "S12", "S13"]
     },
     "S_M2_order_ignored_label_always_first": {
       "from": "    if (preferComposed) {\n      const preferred = composed();\n      if (preferred !== null) return preferred;\n    }\n",
       "to": "",
-      "expect": ["S1", "S2"]
+      "expect": ["S1", "S2", "S8", "S9", "S10", "S11", "S12", "S13"]
     },
     "S_M3_preference_becomes_guarantee": {
       "from": "    if (label !== null) return label;",
@@ -38,7 +38,22 @@
     "S_M6_marker_not_threaded_to_formatValue": {
       "from": "        rendered = this.formatValue(value, metadataResolver, preferComposed);",
       "to": "        rendered = this.formatValue(value, metadataResolver);",
-      "expect": ["S1"]
+      "expect": ["S1", "S2", "S10", "S11", "S13"]
+    },
+    "S_M14_marker_not_threaded_through_the_format_branch": {
+      "from": "            : this.formatValue(value, metadataResolver, preferComposed);",
+      "to": "            : this.formatValue(value, metadataResolver);",
+      "expect": ["S12"]
+    },
+    "S_M15_marker_not_threaded_into_formatWikilinkValue": {
+      "from": "      return this.formatWikilinkValue(value, metadataResolver, preferComposed);",
+      "to": "      return this.formatWikilinkValue(value, metadataResolver);",
+      "expect": ["S1", "S2", "S10", "S11", "S12", "S13"]
+    },
+    "S_M16_marker_not_threaded_through_the_array_path": {
+      "from": "      return this.formatValue(value[0], metadataResolver, preferComposed);",
+      "to": "      return this.formatValue(value[0], metadataResolver);",
+      "expect": ["S13"]
     }
   }
 }

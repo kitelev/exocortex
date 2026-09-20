@@ -14,9 +14,19 @@ import { DisplayNameTemplateEngine } from "../../../src/domain/display-name/Disp
  * when nothing composes, the label is still printed — so the fallback chain becomes
  * composed → label → linkpath, and every part WITHOUT the declaration keeps the chain it had.
  *
- * ⛔ Four of the seven axes are CONTROLS. The requirement's regression claim is that a live vault
- * renders byte-identically until an author adds the property, and that is true only because
- * absence, the Label individual and an unrecognised value all mean the same thing.
+ * ⛔ Four of the thirteen axes are CONTROLS (S3 S4 S5 S7). The requirement's regression claim is
+ * that a live vault renders byte-identically until an author adds the property, and that is true
+ * only because absence, the Label individual and an unrecognised value all mean the same thing.
+ *
+ * ⛤ Three guards of the diff carry NO mutant, each for a stated reason rather than by omission:
+ *  - `if (value.length === 0) return false` on an empty list — DEFENSIVE by arithmetic: without
+ *    it `value[0]` is `undefined` and the `typeof` guard below returns `false` anyway;
+ *  - that `typeof value !== "string"` guard itself — same arithmetic: a non-string value
+ *    stringifies to something no individual is named;
+ *  - the `preferComposed` threading inside the `joinArrayValues` branch — UNREACHABLE in every
+ *    live construction site: `joinArrayValues` is set only by `ConceptDefinitionResolver`, which
+ *    passes no `nestedDisplayName`, so no composed name can be asked for there at all.
+ * Every OTHER call site that carries the marker has its own mutant (S_M6, S_M14, S_M15, S_M16).
  */
 const REQ = "@req:ff1482f2-8a0d-4386-89d9-45a3198c5904";
 
@@ -57,6 +67,7 @@ function vaultWith(
   valueSource?: unknown,
   quarterLabel: string | null = "Q4-25",
   quarterSpec = true,
+  partFormat?: string,
 ): FM[] {
   const reviewPart: FM = {
     exo__Asset_uid: REVIEW_PART,
@@ -67,6 +78,8 @@ function vaultWith(
   };
   if (valueSource !== undefined)
     reviewPart.exo__PrintedProperty_valueSource = valueSource;
+  if (partFormat !== undefined)
+    reviewPart.exo__PrintedProperty_format = partFormat;
 
   const quarter: FM = {
     exo__Asset_uid: QUARTER,
@@ -190,6 +203,45 @@ describe("exo__PrintedProperty_valueSource — which name of the target a part p
     expect(
       reviewNameOver(vaultWith("exo__PrintedPropertyValueSourceDisplayName")),
     ).toBe("ОС Q4-2025");
+  });
+
+  it(`${REQ} S10 the declaration written as a YAML LIST is recognised`, () => {
+    // Obsidian's metadataCache hands a multi-value frontmatter key back as an array, and a
+    // hand-authored vault writes object-properties as lists routinely — so the array form is a
+    // REACHABLE authoring shape, not a defensive branch, even though the property is 0..1.
+    expect(reviewNameOver(vaultWith([`[[${SOURCE_DISPLAY_NAME}]]`]))).toBe(
+      "ОС Q4-2025",
+    );
+  });
+
+  it(`${REQ} S11 the declaration survives an explicit .md suffix in the link`, () => {
+    // `[[<uid>.md]]` is a legal Obsidian wikilink, and `unwrapLinkTarget` keeps the extension —
+    // so without the strip the value would not match the individual it plainly names.
+    expect(reviewNameOver(vaultWith(`[[${SOURCE_DISPLAY_NAME}.md]]`))).toBe(
+      "ОС Q4-2025",
+    );
+  });
+
+  it(`${REQ} S12 a part carrying BOTH a format and the declaration still composes`, () => {
+    // `_format` is date-only and declines on a wikilink, so the two per-part declarations are
+    // independent — but they ride the SAME placeholder (`{{key::FORMAT!displayName}}`) and reach
+    // a DIFFERENT call site inside the engine than a part carrying the declaration alone.
+    expect(
+      reviewNameOver(
+        vaultWith(`[[${SOURCE_DISPLAY_NAME}]]`, "Q4-25", true, "YYYY-MM-DD"),
+      ),
+    ).toBe("ОС Q4-2025");
+  });
+
+  it(`${REQ} S13 the declaration survives a MULTI-VALUE property (first-only path)`, () => {
+    // A YAML list on the printed property itself — the default array path renders the first
+    // value, and it must carry the declaration down with it.
+    const assets = vaultWith(`[[${SOURCE_DISPLAY_NAME}]]`);
+    const review = {
+      ...(assets.find((a) => a.exo__Asset_uid === REVIEW) as FM),
+      tbank__Review_quarter: [`[[${QUARTER}]]`],
+    };
+    expect(reviewNameOver(assets, review)).toBe("ОС Q4-2025");
   });
 
   it(`${REQ} S3 CONTROL — a part with NO declaration is byte-identical to req 0f992e88`, () => {

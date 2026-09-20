@@ -552,7 +552,9 @@ export class DisplayNameTemplateEngine {
     // Without a declaration (req 0f992e88): label → composed → linkpath. The composed name is
     // asked for ONLY where the value printed so far stops being a name — `target` is a bare UID
     // in a UID-canon vault — so an asset that HAS a label keeps printing it and nothing rendered
-    // today changes (measured: 0 of 50 961 live assets across the three canonical vaults).
+    // today changes (measured 2026-09-20 on this branch: 0 of 51 052 live assets rendered
+    // differently across the three canonical vaults — a SNAPSHOT of those corpora, not an
+    // invariant; the axes below are what actually holds the ordering).
     //
     // With `exo__PrintedProperty_valueSource = …SourceDisplayName` (req ff1482f2): composed →
     // label → linkpath. The declaration is a PREFERENCE, not a guarantee: when nothing composes
