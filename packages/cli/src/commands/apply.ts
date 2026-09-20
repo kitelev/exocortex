@@ -3,6 +3,9 @@ import { existsSync } from "fs";
 import { resolve, relative, isAbsolute, sep as pathSep } from "path";
 import {
   InMemoryTripleStore,
+  // Ticket 534a7a46 — read next to the store it reads from: the declared-range
+  // resolver handed to GroundingExecutor below.
+  createTripleStoreDeclaredRanges,
   CommandResolver,
   PreconditionEvaluator,
   GroundingExecutor,
@@ -510,6 +513,14 @@ async function executeOnTarget(
       // `targetRefProperty` token (UI/CLI parity, Issue #3417). Mirrors the
       // plugin's createObsidianRefToFrontmatterResolver.
       refToFrontmatter: createVaultFrontmatterRefToFrontmatterResolver(nodeFsAdapter),
+      // Ticket 534a7a46 — declared-range typing for the scalars create_instance
+      // and property_set write (UI/CLI parity, Issue #3417). Source is the same
+      // hydrated `tripleStore` this function already hands to WorkflowResolver
+      // and NamedQueryRunner; the plugin wires the identical factory over its own
+      // store, so `apply` and the button reach one implementation, not two.
+      // Without it BOTH paths kept typing by SHAPE while `cli create` /
+      // `cli set-property` typed by the declaration (ticket 2227d660).
+      declaredRanges: createTripleStoreDeclaredRanges(tripleStore),
     },
   );
 

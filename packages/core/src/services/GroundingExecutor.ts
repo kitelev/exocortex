@@ -25,11 +25,14 @@ import {
   decodeYamlQuotedScalar,
   isCompleteDoubleQuotedScalar,
   quoteYamlString,
+  scalarTypingForRange,
   serializeYamlScalar,
   STRING_SCALAR_PROPERTIES,
 } from "../utilities/yamlScalar";
 import { canonicalYamlKey } from "./NoteToRDFConverter";
 import { extractAssetReference } from "../utilities/extractAssetReference";
+import { iriToObsidianName } from "../utilities/iriToObsidianName";
+import type { DeclaredRangesResolver } from "./DeclaredRangesResolver";
 import type { NamedQueryRunnerPort } from "./NamedQueryRunner";
 import { iriToVaultPath, vaultPathToIRI } from "../infrastructure/vault/iri";
 import { DateFormatter } from "../utilities/DateFormatter";
@@ -503,6 +506,12 @@ export class GroundingExecutor {
   private readonly groundingLoader?: GroundingLoaderPort;
   private readonly templateLoader?: TemplateLoaderPort;
   private readonly namedQueryRunner?: NamedQueryRunnerPort;
+  // Ticket 534a7a46 — the property's declared `exo__Property_range`, so the two
+  // write paths of this executor type a YAML scalar by the DECLARATION the way
+  // `cli create` / `cli set-property` have since ticket 2227d660 (CLI↔UI parity
+  // #3417). A port rather than a store: this class owns no triple store, and
+  // every other TBox-derived lookup it performs is already injected the same way.
+  private readonly declaredRanges?: DeclaredRangesResolver;
   private readonly clock: IClock;
   private readonly uidGen: IUidGenerator;
 
@@ -536,6 +545,11 @@ export class GroundingExecutor {
       // asset's frontmatter for the SECOND hop of `targetRefProperty`. When
       // absent, the two-hop resolver yields nothing (no routing, no failure).
       refToFrontmatter?: RefToFrontmatterResolver;
+      // Ticket 534a7a46 — declared-range typing for the scalars this executor
+      // writes. When absent (tests, headless runners, any caller without a TBox
+      // source) both write paths stay BYTE-IDENTICAL to their pre-ticket output:
+      // fail-open by construction, so a vault with no mounted TBox keeps working.
+      declaredRanges?: DeclaredRangesResolver;
     },
   ) {
     this.frontmatterService = new FrontmatterService();
@@ -549,6 +563,7 @@ export class GroundingExecutor {
     this.groundingLoader = options?.groundingLoader;
     this.templateLoader = options?.templateLoader;
     this.namedQueryRunner = options?.namedQueryRunner;
+    this.declaredRanges = options?.declaredRanges;
     this.clock = options?.clock ?? liveClock();
     this.uidGen = options?.uidGenerator ?? liveUidGenerator();
   }
@@ -886,9 +901,54 @@ export class GroundingExecutor {
       grounding.targetProperty,
     );
     const canonicalTargetProperty = canonicalYamlKey(normalizedTargetProperty);
-    const valueToWrite = STRING_SCALAR_PROPERTIES.has(canonicalTargetProperty)
-      ? serializeYamlScalar(substitutedValue, true)
-      : substitutedValue;
+    // Ticket 534a7a46 — declared-range typing, GATED on the declaration actually
+    // typing something. The gate is load-bearing, not defensive: `updateProperty`
+    // writes verbatim because callers pre-format, so routing an UNTYPED value
+    // through `serializeYamlScalar` would let the shape guards inside
+    // `needsYamlQuoting` quote a deliberate flow array (`["[[ems__Task]]"]`, the
+    // multi-class convert value) on its leading `[` and an already-quoted
+    // wikilink on its leading `"`. With no typing range the expression below is
+    // byte-identical to the pre-ticket one.
+    //
+    // ⛤ `iriToObsidianName` here is DEFENSIVE, and saying so is the point: on
+    // every path that goes through `CommandResolver` this field has ALREADY been
+    // put in `<prefix>__<Name>` form by the same namespace-registry inverse
+    // (`getObsidianName` → `iriToObsidianName(obj.value) ?? obj.value`,
+    // CommandResolver.ts:3696), so `iriToObsidianName` returns null and the
+    // fallback below is what runs. It is kept because `execute()` is public and a
+    // hand-built grounding can carry the IRI form (probed 2026-09-20: the range
+    // then resolves and the scalar is typed, while the write key degrades to the
+    // raw IRI — a pre-existing defect of that unreachable shape, raised
+    // separately rather than adopted here).
+    //
+    // ⛔ What is NOT defensive is the inverse inside the RESOLVER
+    // (`DeclaredRangesResolver`): there the key is derived from a definition's
+    // label, which the converter emits as a symbolic IRI in 478 of 485 cases, and
+    // reversing it through the static `FrontmatterService.IRI_PREFIX_MAP` (nine
+    // namespaces) would resolve 23 of the 104 typing definitions measured on
+    // vault-exodev and silently miss the other 81 — flow, pmi, person, team, bot,
+    // exodev. That is where the repository's two warnings against the static map
+    // apply (RequiredPropertyResolver, PropertyEditorModal), and axes K1 / K4
+    // pin it. The `STRING_SCALAR_PROPERTIES` lookup keeps using the canonical
+    // key, unchanged.
+    const rangeLookupKey =
+      iriToObsidianName(grounding.targetProperty) ?? normalizedTargetProperty;
+    const declaredRange = this.declaredRanges
+      ? (await this.declaredRanges([rangeLookupKey])).get(rangeLookupKey)
+      : undefined;
+    const isStringScalarProperty = STRING_SCALAR_PROPERTIES.has(
+      canonicalTargetProperty,
+    );
+    const valueToWrite =
+      scalarTypingForRange(declaredRange) !== undefined
+        ? serializeYamlScalar(
+            substitutedValue,
+            isStringScalarProperty,
+            declaredRange,
+          )
+        : isStringScalarProperty
+          ? serializeYamlScalar(substitutedValue, true)
+          : substitutedValue;
 
     // ⛤ The WRITE KEY is not decided here. `FrontmatterService.updateProperty`
     // canonicalises on entry, so every writer that reaches the primitive — this
@@ -1854,7 +1914,23 @@ export class GroundingExecutor {
     // it via $randomUUIDv4 token; top-up guaranteed it's set otherwise).
     const uid = properties.exo__Asset_uid as string;
 
-    const content = this.frontmatterService.createFrontmatter("", properties);
+    // Ticket 534a7a46 — the declared range types each scalar, so a button press
+    // lands the same YAML form `cli create` writes. The keys are read HERE, on
+    // the statement before the write, and nothing mutates `properties` after
+    // this point: a snapshot taken any earlier would miss the keys the steps
+    // above inject (`$randomUUIDv4` uid top-up, `linkBackProperty`,
+    // `applyPrototypeTimePropagation`) — the class of defect
+    // `self-satisfying-metric-weak-verifier` §A49 records.
+    const declaredRanges = this.declaredRanges
+      ? await this.declaredRanges(Object.keys(properties))
+      : undefined;
+    const content = this.frontmatterService.createFrontmatter(
+      "",
+      properties,
+      declaredRanges === undefined
+        ? undefined
+        : (suppliedKey) => declaredRanges.get(suppliedKey),
+    );
     // Issue #3136 (Q3.b closure): allow `$targetFolder` / `$target` tokens in
     // `grounding.targetFolder` so new instances can inherit the target's
     // parent folder declaratively (replacing legacy `createTaskForDailyNote`).
