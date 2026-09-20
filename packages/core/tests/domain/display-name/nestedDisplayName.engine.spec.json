@@ -11,23 +11,24 @@
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/domain/display-name/DisplayNameTemplateEngine.ts",
   "mutants": {
     "M1_engine_hop_removed": {
-      "from": "    const composed = this.options.nestedDisplayName?.(value, resolvedTarget);\n    if (composed !== null && composed !== undefined && composed.trim() !== \"\") {\n      return composed.trim();\n    }\n\n    // Fallback: return target without brackets",
-      "to": "    // Fallback: return target without brackets",
-      "expect": ["V1", "W1"]
+      "from": "    if (preferComposed) {\n      const preferred = composed();\n      if (preferred !== null) return preferred;\n    }\n\n    if (label !== null) return label;\n\n    if (!preferComposed) {\n      const fallback = composed();\n      if (fallback !== null) return fallback;\n    }\n\n",
+      "to": "    void composed;\n    if (label !== null) return label;\n\n",
+      "expect": ["V1", "W1"],
+      "_note": "TYPE-PRESERVING: `void composed;` keeps the closure referenced (noUnusedLocals) while no call site remains, so the suite still compiles and the failure read is about the AXES, not about the mutant (integration-test-revert-verify §A36)."
     },
     "M2_engine_hop_before_label": {
-      "from": "    let resolvedTarget: Record<string, unknown> | null | undefined;\n    if (metadataResolver) {",
-      "to": "    const composedFirst = this.options.nestedDisplayName?.(value);\n    if (composedFirst !== null && composedFirst !== undefined && composedFirst.trim() !== \"\") {\n      return composedFirst.trim();\n    }\n\n    let resolvedTarget: Record<string, unknown> | null | undefined;\n    if (metadataResolver) {",
+      "from": "    if (label !== null) return label;",
+      "to": "    {\n      const first = composed();\n      if (first !== null) return first;\n    }\n    if (label !== null) return label;",
       "expect": ["V2", "W2"]
     },
     "M3_engine_hop_before_alias": {
-      "from": "    // If alias exists, use it directly\n    if (alias) {",
-      "to": "    const composedFirst = this.options.nestedDisplayName?.(value);\n    if (composedFirst !== null && composedFirst !== undefined && composedFirst.trim() !== \"\") {\n      return composedFirst.trim();\n    }\n\n    // If alias exists, use it directly\n    if (alias) {",
+      "from": "    if (alias) {\n      return alias;\n    }",
+      "to": "    if (alias) {\n      const early = this.options.nestedDisplayName?.(value, undefined);\n      if (early !== null && early !== undefined && early.trim() !== \"\") return early.trim();\n      return alias;\n    }",
       "expect": ["V4"]
     },
     "M4_engine_empty_composed_accepted": {
-      "from": "    if (composed !== null && composed !== undefined && composed.trim() !== \"\") {\n      return composed.trim();\n    }",
-      "to": "    if (composed !== null && composed !== undefined) {\n      return composed.trim();\n    }",
+      "from": "      return rendered !== null && rendered !== undefined && rendered.trim() !== \"\"\n        ? rendered.trim()\n        : null;",
+      "to": "      return rendered !== null && rendered !== undefined ? rendered.trim() : null;",
       "expect": ["V9"]
     }
   }

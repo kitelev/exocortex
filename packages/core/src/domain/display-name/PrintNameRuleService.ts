@@ -6,6 +6,7 @@ import {
   resolveKeyPath,
   type MetadataResolver,
 } from "./keyPathResolver";
+import { COMPOSED_SOURCE_MARKER } from "./DisplayNameTemplateEngine";
 
 /**
  * A per-render VALUE-EQUALITY condition compiled from an exo__DisplayNameSpec's
@@ -110,6 +111,24 @@ export interface ParticipatingRule {
 // asset's exo__Instance_class by BOTH its label and its UID (assets key either form).
 const DISPLAY_NAME_SPEC_CLASS = "exo__DisplayNameSpec";
 const DISPLAY_NAME_SPEC_CLASS_UID = "07eab746-0874-4676-9d98-dbaad1bc6fb8";
+/**
+ * `exo__PrintedPropertyValueSourceDisplayName` — the enum individual asking a part to print the
+ * referenced asset's COMPOSED name rather than its label (req ff1482f2, issue #4303).
+ *
+ * ⛔ BOTH identity forms, because a vault authors an enum reference either way: `[[<uid>]]`,
+ * `[[<uid>|<label>]]` and the bare label all name the same individual, and a reader that
+ * understands only one of them is a SILENT non-match — the dual-IRI floor this codebase carries
+ * (sparql-iri-form-pre-verify). Enum values are INDIVIDUALS here, per the founder decision of
+ * 2026-08-30 (7554a587) and the exocmd__GroundingType precedent.
+ */
+const COMPOSED_VALUE_SOURCE_KEYS: ReadonlySet<string> = new Set<string>([
+  "8bc662e3-2984-4845-9593-d37e0db9b7e3",
+  "exo__PrintedPropertyValueSourceDisplayName",
+]);
+
+// ⛤ The compiled marker itself is IMPORTED from the engine that reads it back, not repeated
+// here: the two halves of the round trip must not be able to drift apart (review of #4311).
+
 const PRINTED_PROPERTY_CLASS = "exo__PrintedProperty";
 const PRINTED_PROPERTY_CLASS_UID = "7d58de40-d941-4a66-88e2-13afc4fdc41d";
 const PRINTED_LITERAL_CLASS = "exo__PrintedLiteral";
@@ -134,6 +153,8 @@ interface RawDisplayNamePart {
   order: number;
   propertyKey?: string; // frontmatter key for exo__PrintedProperty
   format?: string; // exo__PrintedProperty_format — value format applied before substitution
+  /** exo__PrintedProperty_valueSource = …SourceDisplayName — print the target's COMPOSED name. */
+  preferComposed?: boolean;
   literal?: string; // static text for exo__PrintedLiteral
 }
 
@@ -149,7 +170,7 @@ export class PrintNameRuleService {
   private rules: Map<string, PrintNameRule[]> = new Map();
   private classHierarchy: Map<string, string[]> = new Map();
   private initialized = false;
-  private scanDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private scanDebounceTimer: ReturnType<typeof setTimeout> | number | null = null;
 
   /**
    * @param hostFunctions Registry of display-matcher host functions (name → predicate),
@@ -404,6 +425,35 @@ export class PrintNameRuleService {
     return cleaned || null;
   }
 
+  /**
+   * Does this `exo__PrintedProperty_valueSource` value name the DisplayName individual?
+   *
+   * FAIL-OPEN by construction, like the neighbouring `_format`: anything unrecognised — a typo, a
+   * future individual this build does not know, the Label individual itself — yields `false`,
+   * i.e. today's behaviour. A naming engine must not blank a name over a mistyped declaration.
+   *
+   * ⛤ The `typeof value !== "string"` guard below carries no mutant, and the reason is
+   * TYPE NARROWING, not runtime tolerance: `unwrapLinkTarget` calls `.replace()` straight on its
+   * argument, so a genuinely non-string value reaching it would THROW. Remove the guard and the
+   * call no longer compiles — a mutant that breaks compilation is the non-behavioural `BROKEN`
+   * class (integration-test-revert-verify §A36), not evidence that an axis is vacuous.
+   */
+  private static declaresComposedSource(raw: unknown): boolean {
+    let value = raw;
+    if (Array.isArray(value)) {
+      if (value.length === 0) return false;
+      value = value[0];
+    }
+    if (typeof value !== "string") return false;
+    const cleaned = unwrapLinkTarget(value).replace(/\.md$/, "");
+    if (COMPOSED_VALUE_SOURCE_KEYS.has(cleaned)) return true;
+    // ⛤ No alias branch: `unwrapLinkTarget` already yields the UID for `[[<uid>|<label>]]`, and a
+    // bare label matches directly — so both authored forms are covered. Trusting an alias whose
+    // UID is NOT in the set would mean believing the human-readable half of a reference over the
+    // half that actually resolves, which is the drift vault-asset-creation warns about.
+    return false;
+  }
+
   createMetadataResolver(): MetadataResolver {
     return (wikilinkTarget: string): Record<string, unknown> | null => {
       // ⛤ The unwrap — brackets, quotes, and the display ALIAS — is shared with
@@ -432,10 +482,16 @@ export class PrintNameRuleService {
    * immediate refresh() is retained for the rare cold-start "resolved" rebuild.
    */
   scheduleRefresh(): void {
+    // ⛤ `window.*` rather than the bare timers, as `obsidianmd/prefer-window-timers` requires
+    // (disabling that rule is itself forbidden by eslint-comments/no-restricted-disable). Safe
+    // here even though this module is `packages/core`, shared with the CLI's Node process:
+    // scheduleRefresh has exactly ONE caller, ExocortexPlugin's metadataCache "changed" handler —
+    // `grep -rn scheduleRefresh packages/cli/src` = 0 — so `window` always exists where it runs.
+    // The field's type carries `number` for the same reason: window.setTimeout returns one.
     if (this.scanDebounceTimer !== null) {
-      clearTimeout(this.scanDebounceTimer);
+      window.clearTimeout(this.scanDebounceTimer as number);
     }
-    this.scanDebounceTimer = setTimeout(() => {
+    this.scanDebounceTimer = window.setTimeout(() => {
       this.scanDebounceTimer = null;
       this.scanVault();
     }, PRINT_NAME_RESCAN_DEBOUNCE_MS);
@@ -565,8 +621,21 @@ export class PrintNameRuleService {
     const format =
       typeof rawFormat === "string" && rawFormat.trim() !== "" ? rawFormat.trim() : undefined;
 
+    // Per-part value SOURCE (req ff1482f2, issue #4303): which NAME of the referenced asset this
+    // part prints. Absent — or any value that is not the DisplayName individual — means the
+    // label, i.e. exactly today's behaviour, so every live part stays byte-identical.
+    const preferComposed = PrintNameRuleService.declaresComposedSource(
+      fm.exo__PrintedProperty_valueSource,
+    );
+
     if (propertyKey) {
-      rawParts.push({ specUid, order, propertyKey, ...(format ? { format } : {}) });
+      rawParts.push({
+        specUid,
+        order,
+        propertyKey,
+        ...(format ? { format } : {}),
+        ...(preferComposed ? { preferComposed } : {}),
+      });
     } else if (literal !== undefined) {
       rawParts.push({ specUid, order, literal });
     }
@@ -596,8 +665,12 @@ export class PrintNameRuleService {
         .map((p) => {
           if (!p.propertyKey) return p.literal ?? "";
           // A declared format rides INSIDE the placeholder (`{{key::FORMAT}}`) because it is a
-          // per-PART setting while the compiled artifact is one string per spec.
-          return p.format ? `{{${p.propertyKey}::${p.format}}}` : `{{${p.propertyKey}}}`;
+          // per-PART setting while the compiled artifact is one string per spec. The declared
+          // value SOURCE rides the same way, as `!displayName` (req ff1482f2).
+          const source = p.preferComposed ? `!${COMPOSED_SOURCE_MARKER}` : "";
+          return p.format
+            ? `{{${p.propertyKey}::${p.format}${source}}}`
+            : `{{${p.propertyKey}${source}}}`;
         })
         .join(spec.separator ?? "");
       if (!template.trim()) continue;
