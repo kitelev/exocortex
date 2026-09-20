@@ -161,6 +161,88 @@ function resolveClassFlipTarget(
 export type UserInput = Record<string, unknown>;
 
 /**
+ * RFC-028 Findings 3+4 (extended for named `$input.<key>` keys, Issue #3779):
+ * decide whether a value TEMPLATE references an input the caller did not
+ * provide, and name the key they owe us.
+ *
+ * Checked against the TEMPLATE — never the substituted output — so a value that
+ * legitimately RESOLVES to free text containing a `$input` / `$value` substring
+ * (relabel to "Fix $input handling") is not mis-flagged (#3779 review MEDIUM).
+ *
+ * Issue #4298 — exported so a PRE-FLIGHT check (`apply --dry-run`) reaches the
+ * verdict through THIS code rather than a copy of it. A copy would be a second
+ * source of truth for "which key is missing", free to drift from the executing
+ * one; then a dry-run could bless a call the real run refuses, which is exactly
+ * the defect being fixed.
+ *
+ * @returns the `--input '{"<key>":...}'` hint, or `null` when nothing is missing.
+ */
+export function missingInputHint(
+  template: string,
+  userInput?: UserInput,
+): string | null {
+  const inputRecord = (userInput ?? {}) as Record<string, unknown>;
+  const isProvided = (v: unknown): boolean => v !== undefined && v !== null;
+  const referencedKeys = [...template.matchAll(/\$input\.([A-Za-z_]\w*)/g)].map(
+    (m) => m[1],
+  );
+  const usesAnonInput =
+    /\$input\b(?!\.)/.test(template) || /\$value\b/.test(template);
+  const missingKey = referencedKeys.find((k) => !isProvided(inputRecord[k]));
+  if (missingKey !== undefined) return `--input '{"${missingKey}":...}'`;
+  if (usesAnonInput && !isProvided(inputRecord.value))
+    return `--input '{"value":...}'`;
+  return null;
+}
+
+/** The ONE wording for a missing-input refusal (Issue #4298 — shared verbatim
+ * between the executing path and the `--dry-run` pre-flight). */
+export function missingInputError(hint: string): string {
+  return `property_set: value template references an input that was not provided (${hint} required)`;
+}
+
+/**
+ * Issue #4298 — pre-flight a grounding WITHOUT executing it: walk its
+ * `property_set` value templates (and, for a composite, those of every step)
+ * and return the first missing-input hint.
+ *
+ * ⛔ Only STATICALLY KNOWN value sources are inspected. `targetValueQuery`
+ * computes its template by RUNNING a query, so the template does not exist
+ * before execution and this function deliberately says nothing about it — a
+ * pre-flight that guessed there could refuse a call that would have succeeded,
+ * which is worse than the false-green it replaces.
+ *
+ * @returns the hint for the first step that is missing an input, else `null`.
+ */
+export function findMissingInput(
+  grounding: GroundingDefinition,
+  userInput?: UserInput,
+): string | null {
+  const staticTemplate = (g: GroundingDefinition): string | undefined => {
+    if (g.targetValueRef !== undefined) return `"[[${g.targetValueRef}]]"`;
+    if (g.targetValueLiteral !== undefined) return g.targetValueLiteral;
+    if (g.targetValueSubstitution !== undefined)
+      return g.targetValueSubstitution;
+    return undefined; // targetValueQuery, or a non-value grounding
+  };
+
+  const visit = (g: GroundingDefinition): string | null => {
+    const template = staticTemplate(g);
+    if (template !== undefined) {
+      const hint = missingInputHint(template, userInput);
+      if (hint !== null) return hint;
+    }
+    for (const step of g.steps ?? []) {
+      const hint = visit(step);
+      if (hint !== null) return hint;
+    }
+    return null;
+  };
+
+  return visit(grounding);
+}
+
+/**
  * req 8d27f21d — what `executeServiceCall` remembers about its target across
  * `service.execute`: the bytes before the call and, for a target that is not
  * yet UUID-canon-named, the path rename-to-uid would move it to.
@@ -709,22 +791,11 @@ export class GroundingExecutor {
     // substituted output — so a value that legitimately RESOLVES to free text
     // containing a "$input"/"$value" substring (e.g. relabel to
     // "Fix $input handling") is never mis-flagged (#3779 code-review MEDIUM).
-    const inputRecord = (userInput ?? {}) as Record<string, unknown>;
-    const isProvided = (v: unknown): boolean => v !== undefined && v !== null;
-    const referencedKeys = [
-      ...effectiveValue.matchAll(/\$input\.([A-Za-z_]\w*)/g),
-    ].map((m) => m[1]);
-    const usesAnonInput =
-      /\$input\b(?!\.)/.test(effectiveValue) || /\$value\b/.test(effectiveValue);
-    const missingKey = referencedKeys.find((k) => !isProvided(inputRecord[k]));
-    if (missingKey !== undefined || (usesAnonInput && !isProvided(inputRecord.value))) {
-      const hint =
-        missingKey !== undefined
-          ? `--input '{"${missingKey}":...}'`
-          : `--input '{"value":...}'`;
+    const missingHint = missingInputHint(effectiveValue, userInput);
+    if (missingHint !== null) {
       return {
         success: false,
-        error: `property_set: value template references an input that was not provided (${hint} required)`,
+        error: missingInputError(missingHint),
       };
     }
 

@@ -117,6 +117,12 @@ export {
 export {
   GroundingExecutor,
   ServiceRegistry,
+  // Issue #4298 — the executor's missing-input verdict, reachable by a
+  // pre-flight (CLI `apply --dry-run`) so the preview and the real run agree
+  // by construction rather than by a maintained copy.
+  missingInputHint,
+  missingInputError,
+  findMissingInput,
   type ExecutionResult,
   type UserInput,
   type IGroundingService,
