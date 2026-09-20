@@ -617,7 +617,7 @@ describe("PropertyEditorModal", () => {
     });
 
     // ⛤ The axis TITLE names `FrontmatterService.IRI_PREFIX_MAP`, which was
-    // retired (retired by ticket 6572f3f3 / req 38e3f174). The title is left verbatim
+    // retired by ticket 6572f3f3 / req 38e3f174. The title is left verbatim
     // ON PURPOSE: it is the machine key this req's mutant driver parses out of
     // the jest output, and renaming it would break that collection. Read the
     // name as historical — `…/concept#Concept` was outside that map, and the

@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for ticket 6572f3f3, req 38e3f174-4a05-4743-a2f4-c7ec2c711202 — SUBJECT: packages/core/src/services/PropertySchemaResolver.ts. Guards enumerated from `git diff -U0` (§A8): the diff replaces TWO private conversions (fromFullIRI, toFullIRI) and each carries TWO separable guarantees — derive from the canon, and preserve pass-through — hence four mutants. All TYPE-PRESERVING (§A97). `expect` filled ONLY from a completed run. The axes drive the PUBLIC getSchema and read the IRI actually spliced into the SPARQL term, so they pin the WIRING as well as the conversion. ⛤ A FOURTH mutant was written, MEASURED and REMOVED, and that is a record rather than an omission (§A35/§A97): dropping the `http(s)://` early return of toFullIRI reddened NOTHING, and the reason is arithmetic, not a blind axis — without it a full IRI falls to fromPropertyKey, which cannot parse it, so the final pass-through returns the identical string. That guard is therefore DEFENSIVE and is named as such in the code instead of being pinned by a vacuous mutant.",
+  "_doc": "Revert-verify mutants for ticket 6572f3f3, req 38e3f174-4a05-4743-a2f4-c7ec2c711202 — SUBJECT: packages/core/src/services/PropertySchemaResolver.ts. Guards enumerated from `git diff -U0` (§A8): the diff replaces TWO private conversions (fromFullIRI, toFullIRI) and each carries TWO separable guarantees — derive from the canon, and preserve pass-through — hence four mutants: MI1/MI2 for the two derivations, MI3/MI4 for the two pass-throughs. All TYPE-PRESERVING (§A97). `expect` filled ONLY from a completed run. The axes drive the PUBLIC getSchema and read the IRI actually spliced into the SPARQL term, so they pin the WIRING as well as the conversion. ⛔ toFullIRI has THREE return sites and only TWO of them are the same kind of thing — an earlier revision of this file conflated them and shipped a signature that disagreed with the mechanism (review MEDIUM): the `http(s)://` EARLY return is DEFENSIVE by arithmetic (removing it reddened nothing — without it a full IRI falls to fromPropertyKey, which cannot parse it, and the FINAL return hands back the identical string), so it is named defensive in the code rather than pinned by a vacuous mutant; the FINAL `return propertyName` is load-bearing and is pinned by MI4.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/PropertySchemaResolver.ts",
   "symlink_node_modules": [
@@ -45,11 +45,19 @@
         "IV7",
         "IV9"
       ]
+    },
+    "MI4_forward_pass_through_dropped": {
+      "_note": "The FORWARD pass-through — the fourth cell of the «two guarantees × two directions» matrix, and it was missing while the _doc claimed four mutants (review MEDIUM). Distinct from the `http(s)://` early return: THAT one is defensive by arithmetic (see below), THIS one is what a caller-supplied name with no `__` relies on. Returning an empty string keeps the signature and makes the query term `<>`.",
+      "from": "    return parsed.namespace.term(parsed.localName).value;\n    }\n\n    return propertyName;",
+      "to": "    return parsed.namespace.term(parsed.localName).value;\n    }\n\n    return \"\";",
+      "expect": [
+        "IV10"
+      ]
     }
   },
   "_coverage": {
-    "_doc": "IV1..IV12: twelve axes, of which TEN redden under at least one mutant (IV1 IV2 IV3 IV4 IV5 IV6 IV7 IV9 IV11 IV12 — the last two live in the sibling frontmatter spec) and TWO are deliberately green under every mutant here. 10 + 2 = 12, nothing unaccounted for.",
+    "_doc": "IV1..IV12: twelve axes, of which ELEVEN redden under at least one mutant (IV1 IV2 IV3 IV4 IV5 IV6 IV7 IV9 IV10 — here — plus IV11 IV12 in the sibling frontmatter spec) and ONE is deliberately green under every mutant. 11 + 1 = 12, nothing unaccounted for. ⚠ RE-COUNTED after the review MEDIUM added MI4: before it, IV10 was listed as a second control and the split was 10 + 2. The number moved because the coverage did, not because the wording was tidied.",
     "_note_IV8": "PAIRED CONTROL, green on purpose: an in-map namespace must keep behaving exactly as before. It is what makes IV1-IV4 addressable rather than asserted — a change that moved the common case would show up here first. ⛔ Do not 'strengthen' it; its value is that it cannot move.",
-    "_note_IV10": "PASS-THROUGH CONTROL, green on purpose: a non-IRI name never enters the IRI branch at all, so no mutant of either conversion can reach it. It guards a FUTURE change that starts routing bare names through the inverse."
+    "_note_IV10": "⛔ THIS WAS CALLED A PASS-THROUGH CONTROL («no mutant of either conversion can reach it») AND THAT IS NOW FALSE — measured, not assumed. Adding MI4 (the FORWARD pass-through, the cell the review found missing) reddens exactly IV10 and nothing else: a bare name with no `__` is precisely what that return hands back, so the axis pins it. The earlier claim was true only while the fourth cell of the matrix had no mutant."
   }
 }

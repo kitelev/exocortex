@@ -303,11 +303,18 @@ export class PropertySchemaResolver {
    * key and as the `<…>` term of the schema query.
    */
   private toFullIRI(propertyName: string): string {
-    // ⛤ DEFENSIVE by arithmetic, and saying so is the point (no mutant can
-    // distinguish it): without this early return a full IRI falls to
-    // `fromPropertyKey`, which cannot parse it, and the final pass-through
-    // returns the very same string. Measured — removing it reddened nothing.
-    // Kept because it states the intent and costs one comparison.
+    // ⛤ There are TWO pass-throughs in this method and they are NOT the same
+    // guarantee — saying so is the point, because an earlier revision of this
+    // comment let one stand for both.
+    //
+    //   (a) THIS early return — DEFENSIVE by arithmetic: without it a full IRI
+    //       falls to `fromPropertyKey`, which cannot parse it, and (b) below
+    //       returns the very same string. Measured: removing it reddened
+    //       nothing, so no mutant can distinguish it. Kept because it states
+    //       the intent and costs one comparison.
+    //   (b) The FINAL `return propertyName` — LOAD-BEARING, and pinned by
+    //       mutant MI4: it is what a caller-supplied name with no `__` relies
+    //       on (the result is the cache key AND the `<…>` term of the query).
     if (propertyName.startsWith("http://") || propertyName.startsWith("https://")) {
       return propertyName;
     }
