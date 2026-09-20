@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for ticket 3fc34b92 (req 6d945bae, PR fix/validator-warn-scope). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices ONE mutation into the copy's subject and runs the suites named in `harness`; `expect` names the axes that MUST go red). Guards enumerated from `git diff -U0` (integration-test-revert-verify §A8). INERT BY CONSTRUCTION, named rather than mutated (§A35): hoisting create.ts's written-key set into the single local `addressedProperties` changes no behaviour — `Object.keys(properties)` evaluated twice yields the same array — it exists so that 'validate and declaredRanges see the same set' is a property of the construction; the guard that IS behavioural (passing that set at all) is MC1 in warn-scope-3fc34b92.create.spec.json. Recorded runs: see PR body.",
+  "_doc": "Revert-verify mutants for ticket 3fc34b92 (req 6d945bae, PR fix/validator-warn-scope). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices ONE mutation into the copy's subject and runs the suites named in `harness`; `expect` names the axes that MUST go red). Guards enumerated from `git diff -U0` (integration-test-revert-verify §A8). INERT BY CONSTRUCTION, named rather than mutated (§A35): hoisting create.ts's written-key set into the single local `addressedProperties` changes no behaviour — `Object.keys(properties)` evaluated twice yields the same array — it exists so that 'validate and declaredRanges see the same set' is a property of the construction; the guard that IS behavioural (passing that set at all) is MC1 in warn-scope-3fc34b92.create.spec.json. Recorded runs: see PR body. ⚠ M6 and M7 redden N8 / N3 too: N8 asserts the reported line NAMES the property and N3 asserts the line COUNT after addressing the conflicting name, so both follow from the mutant's semantics on those axes' own subject — the first recorded run showed the prediction was under-specified, not the axes over-broad (integration-test-revert-verify §A44).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -41,12 +41,12 @@
     "M6_message_no_longer_names_the_property": {
       "from": "          `[PropertyNameValidator] property ${cand.name} is declared more than once",
       "to": "          `[PropertyNameValidator] a property is declared more than once",
-      "expect": ["Q4", "S7", "W7", "N2", "N5", "N6"]
+      "expect": ["Q4", "S7", "W7", "N2", "N5", "N6", "N8"]
     },
     "M7_warn_channel_never_called": {
       "from": "    this.reported.add(name);\n    this.warn(message);",
       "to": "    this.reported.add(name);\n    void String(message);",
-      "expect": ["Q4", "S7", "W7", "N2", "N5", "N6", "N8"]
+      "expect": ["Q4", "S7", "W7", "N2", "N3", "N5", "N6", "N8"]
     }
   }
 }
