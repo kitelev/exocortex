@@ -31,6 +31,9 @@ import type { DeclaredRangesResolver } from "../../../src/services/DeclaredRange
  * it covered.
  */
 
+// Literal @req token for requirements-trace's STATIC scanner, which cannot see the
+// template-literal form the titles below use (archgate REQ-001/
+// no-template-literal-only-req-binding): @req:675cb0ab-b73d-4736-934d-6094e792af5d
 const REQ = "675cb0ab-b73d-4736-934d-6094e792af5d";
 
 class InMemoryFileSystem implements IFileSystemReader, IFileSystemWriter {

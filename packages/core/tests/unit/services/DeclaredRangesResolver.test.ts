@@ -28,12 +28,18 @@ import { Triple } from "../../../src/domain/models/rdf/Triple";
  * types a scalar [vault-exodev], that map knows 23 (exo 9, pmbok 7, lit 4,
  * ems 3); the other 81 — flow 48, pmi 17, person 5, team 5, bot 3, exodev 3 —
  * it does not. So an axis written on `ems` or `exo` is GREEN UNDER BOTH
- * derivations and proves nothing about that 78 %: K1 uses `flow` (out of the
- * map) and K2 uses `ems` (in it) as its paired control, so the mutant that
- * swaps the derivation back reddens K1 and leaves K2 green — addressability
- * shown, not asserted.
+ * derivations and proves nothing about that 78 %. ⛔ CORRECTED against the
+ * measurement rather than left as first written: the pair that carries this is
+ * K4 (`team`, out of the map) / K16 (`ems`, in it), NOT K1/K2 — the live-form
+ * fixtures K1/K2 key off the `rdfs:label` LITERAL, so the inverse is never
+ * consulted for them and the swap-mutant cannot touch them. Measured: the
+ * mutant that swaps `iriToObsidianName` for the static-map reversal reddens
+ * exactly ['K4'] and leaves K16 green — addressability shown, not asserted.
  */
 
+// Literal @req token for requirements-trace's STATIC scanner, which cannot see the
+// template-literal form the titles below use (archgate REQ-001/
+// no-template-literal-only-req-binding): @req:675cb0ab-b73d-4736-934d-6094e792af5d
 const REQ = "675cb0ab-b73d-4736-934d-6094e792af5d";
 const EXO = Namespace.EXO;
 const RDFS = Namespace.RDFS;
