@@ -1495,6 +1495,26 @@ describe("GenericAssetCreationService", () => {
         );
         expect(built.content).toContain("ems__Reminder_text: 42\n");
       });
+
+      // Ticket 8185c9dd (review #4282 LOW-1): the range of a whitelisted
+      // bare-emitted field is looked up by the key the caller SUPPLIED
+      // (`exo__Asset_pinned` — the def's label, and the key `set-property`
+      // resolves by), not by the canonical `pinned` the frontmatter stores.
+      // Revert-verify: with the canonical key passed to the lookup D3 goes RED.
+      it("D3 a whitelisted bare-emitted key (exo__Asset_pinned → pinned:) is typed by the range declared under the SUPPLIED key", () => {
+        const built = service.buildAsset({
+          className: "ems__Reminder",
+          label: "R",
+          folderPath: "01 Inbox",
+          shapeRegistry: buildRegistry([]),
+          declaredRanges: new Map<string, readonly string[]>([
+            ["exo__Asset_pinned", ["xsd:integer"]],
+          ]),
+          propertyValues: { exo__Asset_pinned: "-1" },
+        });
+        expect(built.content).toContain("pinned: -1\n");
+        expect(built.content).not.toContain("exo__Asset_pinned");
+      });
     });
 
     describe("buildAsset (field 7 — pure, no write)", () => {

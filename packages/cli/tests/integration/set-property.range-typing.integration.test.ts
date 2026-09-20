@@ -387,3 +387,188 @@ describe(`ticket 2227d660: set-property types a scalar by the declared exo__Prop
     ]);
   });
 });
+
+/**
+ * Ticket 8185c9dd (review #4282 MEDIUM-1 / NIT-2) on the set-property path.
+ * S6: the writer's string oracle is the YAML11 reader — a YAML 1.1-only form
+ * (`no`, `10:30`) under a mounted `xsd:string` def is QUOTED end to end.
+ * Q4/Q5: two defs sharing a label resolve DETERMINISTICALLY (first in
+ * byte-ordered path walk) and a twin with a DIFFERENT range is reported once
+ * through the injected warn channel; an identical twin is silent.
+ * Revert-verify: reader-oracle reverted → S6 RED; walk unsorted / last-wins →
+ * Q4 RED (the fixture writes the twins in REVERSE lexical order so a
+ * last-seen rule on a sorted walk and an unsorted APFS order both flip it);
+ * warn dropped → Q4 RED (warn count).
+ */
+describe(`ticket 8185c9dd: set-property — reader oracle and deterministic duplicate defs @req:${REQ}`, () => {
+  let vault: string;
+  let exitSpy: ReturnType<typeof jest.spyOn>;
+  let stdoutSpy: ReturnType<typeof jest.spyOn>;
+  let stderrSpy: ReturnType<typeof jest.spyOn>;
+  let logSpy: ReturnType<typeof jest.spyOn>;
+  let errorSpy: ReturnType<typeof jest.spyOn>;
+
+  beforeEach(() => {
+    vault = fs.mkdtempSync(path.join(os.tmpdir(), "cli-8185c9dd-set-"));
+    exitSpy = jest
+      .spyOn(process, "exit")
+      .mockImplementation((() => undefined as never) as never);
+    stdoutSpy = jest
+      .spyOn(process.stdout, "write")
+      .mockImplementation((() => true) as never);
+    stderrSpy = jest
+      .spyOn(process.stderr, "write")
+      .mockImplementation((() => true) as never);
+    logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+    errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    exitSpy.mockRestore();
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+    logSpy.mockRestore();
+    errorSpy.mockRestore();
+    fs.rmSync(vault, { recursive: true, force: true });
+  });
+
+  async function setProp(extraArgs: string[]): Promise<string> {
+    const cmd = setPropertyCommand();
+    await cmd.parseAsync(
+      [
+        TARGET_REL,
+        "--vault",
+        vault,
+        "--frozen-clock",
+        FROZEN_CLOCK,
+        ...extraArgs,
+      ],
+      { from: "user" },
+    );
+    return fs.readFileSync(path.join(vault, TARGET_REL), "utf-8");
+  }
+
+  it(`S6 a YAML 1.1-only form (\`no\`, \`10:30\`, \`True\`) under the mounted xsd:string def is QUOTED and reads back as that string; the canonical \`true\` stays bare @req:${REQ}`, async () => {
+    buildTbox(vault);
+    writeTarget(vault);
+    for (const v of ["no", "10:30", "True"]) {
+      const content = await setProp([
+        "--property",
+        "ems__Reminder_text",
+        "--value",
+        v,
+      ]);
+      expect(lineFor(content, "ems__Reminder_text")).toBe(
+        `ems__Reminder_text: "${v}"`,
+      );
+      expect(parseFrontmatter(content).ems__Reminder_text).toBe(v);
+    }
+    const content = await setProp([
+      "--property",
+      "ems__Reminder_text",
+      "--value",
+      "true",
+    ]);
+    expect(lineFor(content, "ems__Reminder_text")).toBe(
+      "ems__Reminder_text: true",
+    );
+  });
+
+  it(`Q4 three defs with one label and DIFFERENT ranges: the first in byte-ordered path walk wins (not the last readdir entry) and the twins are reported ONCE per name on the warn channel @req:${REQ}`, async () => {
+    buildTbox(vault);
+    // Written in REVERSE lexical order: `zzzz…` (xsd:string) before `0000…`
+    // (xsd:integer). Sorted walk → `0000…` first → integer wins.
+    writeDef(
+      vault,
+      "zzzz0000-0000-4000-8000-000000000021",
+      "ems__Reminder_twin",
+      "xsd:string",
+    );
+    writeDef(
+      vault,
+      "00000000-0000-4000-8000-000000000020",
+      "ems__Reminder_twin",
+      "xsd:integer",
+    );
+    // A THIRD twin (xsd:decimal): the report is once per NAME, not per twin.
+    writeDef(
+      vault,
+      "yyyy0000-0000-4000-8000-000000000024",
+      "ems__Reminder_twin",
+      "xsd:decimal",
+    );
+    const warnings: string[] = [];
+    const v = new PropertyNameValidator(vault, {
+      warn: (m: string) => warnings.push(m),
+    });
+    expect(await v.declaredRange("ems__Reminder_twin")).toEqual([
+      "xsd:integer",
+    ]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("ems__Reminder_twin");
+    // Names the winner and the first conflicting twin in path order (`yyyy…`
+    // decimal sorts before `zzzz…` string); the third twin adds no line.
+    expect(warnings[0]).toContain("xsd:integer");
+    expect(warnings[0]).toContain("xsd:decimal");
+    // The name itself is still known (both twins are defs).
+    await expect(v.validate(["ems__Reminder_twin"])).resolves.toBeUndefined();
+  });
+
+  it(`Q5 two defs with one label and the SAME range are silent (no warning) and resolve that range; the default channel is a no-op @req:${REQ}`, async () => {
+    buildTbox(vault);
+    writeDef(
+      vault,
+      "zzzz0000-0000-4000-8000-000000000023",
+      "ems__Reminder_same",
+      "xsd:decimal",
+    );
+    writeDef(
+      vault,
+      "00000000-0000-4000-8000-000000000022",
+      "ems__Reminder_same",
+      "xsd:decimal",
+    );
+    const warnings: string[] = [];
+    const v = new PropertyNameValidator(vault, {
+      warn: (m: string) => warnings.push(m),
+    });
+    expect(await v.declaredRange("ems__Reminder_same")).toEqual([
+      "xsd:decimal",
+    ]);
+    expect(warnings).toHaveLength(0);
+    // No channel injected → nothing thrown, nothing printed.
+    const silent = new PropertyNameValidator(vault);
+    expect(await silent.declaredRange("ems__Reminder_same")).toEqual([
+      "xsd:decimal",
+    ]);
+  });
+
+  it(`S7 the set-property command wires the warn channel to stderr: a twin def with a different range is reported as a \`⚠ [PropertyNameValidator] …\` line and the write still succeeds by the first def @req:${REQ}`, async () => {
+    buildTbox(vault);
+    writeTarget(vault);
+    writeDef(
+      vault,
+      "zzzz0000-0000-4000-8000-000000000025",
+      "ems__Reminder_text",
+      "xsd:integer",
+    );
+    const content = await setProp([
+      "--property",
+      "ems__Reminder_text",
+      "--value",
+      "42",
+    ]);
+    // First def in path order is `f11bd200…` (xsd:string) → quoted.
+    expect(lineFor(content, "ems__Reminder_text")).toBe(
+      'ems__Reminder_text: "42"',
+    );
+    const stderrLines: string[] = stderrSpy.mock.calls.map((c: unknown[]) =>
+      String(c[0]),
+    );
+    expect(
+      stderrLines.filter((l: string) =>
+        l.startsWith("⚠ [PropertyNameValidator] property ems__Reminder_text"),
+      ),
+    ).toHaveLength(1);
+  });
+});

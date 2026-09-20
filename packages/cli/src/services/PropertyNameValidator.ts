@@ -42,6 +42,11 @@ interface PropertyDefCandidate {
   range: string[];
 }
 
+/** Same declared range, value for value (order-sensitive: a range is written as a list). */
+function sameRange(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
 /**
  * Validates that `--property KEY=value` KEYS name a property that exists in the
  * MOUNTED TBox (RFC 430e84f1, P1). `create` already rejects a dangling wikilink
@@ -105,7 +110,15 @@ export class PropertyNameValidator {
 
   private cache: PropertyNameSet | null = null;
 
-  constructor(private readonly vaultPath: string) {}
+  /** Injectable warn-level diagnostics channel (defaults to no-op, as `CliProfileResolver`). */
+  private readonly warn: (msg: string) => void;
+
+  constructor(
+    private readonly vaultPath: string,
+    options: { warn?: (msg: string) => void } = {},
+  ) {
+    this.warn = options.warn ?? (() => undefined);
+  }
 
   /**
    * Validate the given `--property` KEYS against the mounted TBox.
@@ -181,6 +194,11 @@ export class PropertyNameValidator {
       } catch {
         return;
       }
+      // readdir order is filesystem-dependent (sorted on APFS, hashed on
+      // ext4); byte-order like `ShapeLoader.scanDir`, so which def a duplicate
+      // label resolves to below is the same on every platform (ticket
+      // 8185c9dd, review #4282 NIT-2).
+      entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
       for (const entry of entries) {
         const full = `${dir}/${entry.name}`;
         if (entry.isDirectory()) {
@@ -205,6 +223,7 @@ export class PropertyNameValidator {
     const names = new Set<string>();
     const prefixes = new Set<string>();
     const ranges = new Map<string, readonly string[]>();
+    const warnedNames = new Set<string>();
     for (const cand of candidates) {
       if (!cand.classRefs.some((r) => metaKeys.has(r))) continue;
       names.add(cand.name);
@@ -213,9 +232,20 @@ export class PropertyNameValidator {
       // Ticket 2227d660: the declared range rides along on the same pass so the
       // writers (`create` / `set-property`) can type a scalar by it at no extra
       // IO. Two defs sharing a name (a deprecated twin, a re-declaration in
-      // another mounted assetspace): the LAST one seen wins, the same
-      // last-registered rule `ShapeLoader.loadFromVaultFS` applies.
-      if (cand.range.length > 0) ranges.set(cand.name, cand.range);
+      // another mounted assetspace): the FIRST one in byte-ordered walk order
+      // wins (ticket 8185c9dd, NIT-2 — deterministic on every platform), and a
+      // twin declaring a DIFFERENT range is reported once per name: the writer
+      // will type by the first def and the author should know which.
+      if (cand.range.length === 0) continue;
+      const first = ranges.get(cand.name);
+      if (first === undefined) {
+        ranges.set(cand.name, cand.range);
+      } else if (!sameRange(first, cand.range) && !warnedNames.has(cand.name)) {
+        warnedNames.add(cand.name);
+        this.warn(
+          `[PropertyNameValidator] property ${cand.name} is declared more than once with different exo__Property_range (${first.join(", ")} vs ${cand.range.join(", ")}) — the first def in path order wins`,
+        );
+      }
     }
 
     this.cache = { names, prefixes, ranges };

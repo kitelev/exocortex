@@ -347,7 +347,9 @@ export function setPropertyCommand(): Command {
         // "everything else" non-guarded class). Reuses the P1 collector: one-pass
         // mounted-TBox scan, fail-open when NO property defs are mounted
         // (degenerate/partial profile). No skip flag — no bot escape-hatch (#6).
-        const propertyNameValidator = new PropertyNameValidator(vaultPath);
+        const propertyNameValidator = new PropertyNameValidator(vaultPath, {
+          warn: (msg) => process.stderr.write(`⚠ ${msg}\n`),
+        });
         await propertyNameValidator.validate([property]);
 
         // Reject a non-scalar / non-scalar-array value (fail-loud, #3795 review M1).

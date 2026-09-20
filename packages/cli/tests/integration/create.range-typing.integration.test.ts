@@ -300,3 +300,125 @@ describe(`ticket 2227d660: create types a scalar by the declared exo__Property_r
     ).toEqual([]);
   });
 });
+
+/**
+ * Ticket 8185c9dd on the create path. W5: the string oracle is the YAML11
+ * reader — `10:30` / `no` / `True` under the mounted `xsd:string` def are
+ * QUOTED; `true` stays bare (review #4282 MEDIUM-1). W6: review #4282 LOW-1 —
+ * a whitelisted bare-emitted key (`exo__Asset_pinned` → `pinned:`) resolves
+ * its declared range by the SUPPLIED key in `create`, exactly as
+ * `set-property` does, so both writers emit the SAME line for the same def.
+ * Revert-verify: reader-oracle reverted → W5 RED; lookup by the canonical
+ * key → W6 RED (`create` would quote `-1` while `set-property` writes it bare).
+ */
+describe(`ticket 8185c9dd: create — reader oracle and key parity with set-property @req:${REQ}`, () => {
+  const PINNED_DEF_UID = "eeee0000-0000-4000-8000-000000000031";
+  let vault: string;
+  let exitSpy: ReturnType<typeof jest.spyOn>;
+  let stdoutSpy: ReturnType<typeof jest.spyOn>;
+  let stderrSpy: ReturnType<typeof jest.spyOn>;
+  let logSpy: ReturnType<typeof jest.spyOn>;
+  let errorSpy: ReturnType<typeof jest.spyOn>;
+
+  beforeEach(() => {
+    vault = fs.mkdtempSync(path.join(os.tmpdir(), "cli-8185c9dd-create-"));
+    exitSpy = jest
+      .spyOn(process, "exit")
+      .mockImplementation((() => undefined as never) as never);
+    stdoutSpy = jest
+      .spyOn(process.stdout, "write")
+      .mockImplementation((() => true) as never);
+    stderrSpy = jest
+      .spyOn(process.stderr, "write")
+      .mockImplementation((() => true) as never);
+    logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+    errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    exitSpy.mockRestore();
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+    logSpy.mockRestore();
+    errorSpy.mockRestore();
+    fs.rmSync(vault, { recursive: true, force: true });
+  });
+
+  async function create(label: string, properties: string[]): Promise<string> {
+    const cmd = createCommand();
+    const args = ["--vault", vault, "--class", CLASS_UID, "--label", label];
+    for (const p of properties) args.push("--property", p);
+    await cmd.parseAsync(args, { from: "user" });
+    return fs.readFileSync(findCreated(vault, label), "utf-8");
+  }
+
+  it(`W5 \`10:30\` / \`no\` / \`True\` under the mounted xsd:string def are QUOTED and read back as those strings; \`true\` stays bare @req:${REQ}`, async () => {
+    buildTbox(vault);
+    for (const v of ["10:30", "no", "True"]) {
+      const content = await create(`W5 ${v}`, [`ems__Reminder_text=${v}`]);
+      expect(lineFor(content, "ems__Reminder_text")).toBe(
+        `ems__Reminder_text: "${v}"`,
+      );
+      expect(parseFrontmatter(content).ems__Reminder_text).toBe(v);
+    }
+    const content = await create("W5 true", ["ems__Reminder_text=true"]);
+    expect(lineFor(content, "ems__Reminder_text")).toBe(
+      "ems__Reminder_text: true",
+    );
+  });
+
+  it(`W6 key parity — a def labelled exo__Asset_pinned (xsd:integer): \`create --property exo__Asset_pinned=-1\` and \`set-property --property exo__Asset_pinned --value -1\` both write the bare \`pinned: -1\` @req:${REQ}`, async () => {
+    buildTbox(vault);
+    writeDef(vault, PINNED_DEF_UID, "exo__Asset_pinned", "xsd:integer");
+
+    const created = await create("W6 pinned", ["exo__Asset_pinned=-1"]);
+    expect(lineFor(created, "pinned")).toBe("pinned: -1");
+    expect(parseFrontmatter(created).pinned).toBe(-1);
+
+    // The same def, the other writer — byte-identical line.
+    const { setPropertyCommand } =
+      await import("../../src/commands/set-property.js");
+    const target = path.relative(vault, findCreated(vault, "W6 pinned"));
+    const cmd = setPropertyCommand();
+    await cmd.parseAsync(
+      [
+        target,
+        "--vault",
+        vault,
+        "--frozen-clock",
+        "2026-09-20T00:00:00Z",
+        "--property",
+        "exo__Asset_pinned",
+        "--value",
+        "-1",
+      ],
+      { from: "user" },
+    );
+    const set = fs.readFileSync(path.join(vault, target), "utf-8");
+    expect(lineFor(set, "pinned")).toBe("pinned: -1");
+    expect(lineFor(set, "pinned")).toBe(lineFor(created, "pinned"));
+  });
+
+  it(`W7 the create command wires the warn channel to stderr: a twin def with a different range is reported once as a \`⚠ [PropertyNameValidator] …\` line @req:${REQ}`, async () => {
+    buildTbox(vault);
+    writeDef(
+      vault,
+      "zzzz0000-0000-4000-8000-000000000032",
+      "ems__Reminder_text",
+      "xsd:integer",
+    );
+    const content = await create("W7 twin", ["ems__Reminder_text=42"]);
+    // First def in path order is `f11bd200…` (xsd:string) → quoted.
+    expect(lineFor(content, "ems__Reminder_text")).toBe(
+      'ems__Reminder_text: "42"',
+    );
+    const stderrLines: string[] = stderrSpy.mock.calls.map((c: unknown[]) =>
+      String(c[0]),
+    );
+    expect(
+      stderrLines.filter((l: string) =>
+        l.startsWith("⚠ [PropertyNameValidator] property ems__Reminder_text"),
+      ),
+    ).toHaveLength(1);
+  });
+});
