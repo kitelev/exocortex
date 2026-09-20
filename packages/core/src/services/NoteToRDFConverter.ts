@@ -2034,7 +2034,18 @@ export class NoteToRDFConverter {
       // match[1] contains the link target (without alias)
       // Issue #4219 — a POSIX bracket expression quoted in the body
       // (`[[:space:]]` inside a grep pattern) is not a link target.
-      if (match[1] && !isPosixBracketExpression(match[1])) {
+      //
+      // The DECISION is taken on the trimmed target because the CLI's
+      // WikilinkValidator trims before asking the same question; testing the
+      // raw capture here would disagree with it on `[[ :space: ]]` — the
+      // validator would skip the link while this side still emitted the junk
+      // edge, which is precisely the drift sharing one predicate is meant to
+      // prevent (PR #4301 review, MEDIUM).
+      //
+      // ⛔ The VALUE added stays the raw capture: trimming it would silently
+      // change how every padded link (`[[ Note A ]]`) is indexed — a wider
+      // behaviour change than this fix is scoped to make.
+      if (match[1] && !isPosixBracketExpression(match[1].trim())) {
         links.add(match[1]);
       }
     }

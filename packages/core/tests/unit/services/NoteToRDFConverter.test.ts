@@ -2229,6 +2229,28 @@ describe("NoteToRDFConverter", () => {
         expect(links.length).toBe(1);
       });
 
+      // PR #4301 review (MEDIUM) — the CLI validator trims the target before
+      // asking whether it is a bracket expression. Testing the RAW capture here
+      // made the two sides disagree on a padded `[[ :space: ]]`: the validator
+      // skipped it while indexing still emitted the junk edge — half the defect
+      // left in place, and the "one predicate, both sides" guarantee broken.
+      it("skips a PADDED bracket expression too, matching the validator (#4219)", () => {
+        const links = converter.extractBodyWikilinks(
+          "padded [[ :space: ]] and [[\t:alpha:\t]] plus [[Note A]]",
+        );
+
+        expect(links).toEqual(["Note A"]);
+      });
+
+      it("⛤ still indexes a padded REAL link, value untrimmed (no wider change)", () => {
+        // Only the DECISION uses the trimmed form; the indexed value is the raw
+        // capture, exactly as before this fix. Locking that keeps the change
+        // from silently altering how every padded link is stored.
+        const links = converter.extractBodyWikilinks("see [[ Note A ]] here");
+
+        expect(links).toEqual([" Note A "]);
+      });
+
       it("should extract wikilinks with aliases", () => {
         const bodyContent = "See [[Note A|my alias]] for more info.";
         const links = converter.extractBodyWikilinks(bodyContent);

@@ -70,6 +70,16 @@ describe("WikilinkValidator — POSIX bracket expressions (#4219)", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("accepts the PADDED form — the indexer skips it too (#4301 review)", async () => {
+    // The validator trims before the check; the indexer now decides on the
+    // trimmed target as well, so both sides agree on `[[ :space: ]]`. Locked on
+    // this side too, so a future "simplify the trim away" shows up here.
+    await expect(
+      validator.validateValue("padded [[ :space: ]] and [[\t:alpha:\t]]"),
+    ).resolves.toBeUndefined();
+    expect(mockFsAdapter.findFileByLinkpath).not.toHaveBeenCalled();
+  });
+
   it("⛔ still refuses a REAL unresolvable link in the SAME body", async () => {
     // The skip must be targeted. A body that quotes a bash pattern AND carries
     // a genuinely broken link is still refused — otherwise the fix would be a
