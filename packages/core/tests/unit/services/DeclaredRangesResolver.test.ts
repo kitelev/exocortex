@@ -245,8 +245,10 @@ describe("DeclaredRangesResolver — declared exo__Property_range by prefix__Nam
     const ranges = await createTripleStoreDeclaredRanges(
       await storeOf(triples),
     )();
-    // `ems` IS in FrontmatterService.IRI_PREFIX_MAP, so this axis is green under
-    // BOTH inverses. It exists to make K4 ADDRESSABLE: the mutant that swaps
+    // `ems` WAS in the static nine-namespace map (retired by ticket 6572f3f3 / req 38e3f174),
+    // so this axis is green under BOTH inverses — the mutant below still inlines
+    // its own copy of that map, so the pairing stands.
+    // It exists to make K4 ADDRESSABLE: the mutant that swaps
     // `iriToObsidianName` for the static-map reversal must redden K4 (team, out
     // of the map) and leave THIS one green. Without the pair, "the inverse is
     // the right one" would be asserted rather than shown.

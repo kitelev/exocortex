@@ -1,5 +1,6 @@
 import { FrontmatterService } from "../../src/utilities/FrontmatterService";
 import { Namespace } from "../../src/domain/models/rdf/Namespace";
+import { iriToObsidianName } from "../../src/utilities/iriToObsidianName";
 
 /**
  * Ticket c8fc6793 — the dead frontmatter key.
@@ -95,6 +96,36 @@ describe("FrontmatterService.normalizeIRI — every namespace, or nothing (ticke
   it("DK21 a local name containing an INTERIOR HASH passes through untouched — as a VALUE @req:eac1690d-4d17-4f00-a221-0f8bee3c697c", () => {
     const doubleHash = "https://exocortex.my/ontology/ems#Effort#status";
     expect(FrontmatterService.normalizeIRIValue(doubleHash)).toBe(doubleHash);
+  });
+
+  // ── Ticket 6572f3f3 / req 38e3f174 — the nine-entry map is GONE ──────────
+  it("IV11 there is no second literal list of namespace bases left in this class @req:38e3f174-4a05-4743-a2f4-c7ec2c711202", () => {
+    // The map was a hot path guarded into agreement with the canon; ticket
+    // 6572f3f3 removed it so the inverse has ONE derivation
+    // (`Namespace.KNOWN_NAMESPACES`). Behaviourally the removal is neutral BY
+    // CONSTRUCTION — the guard already made the two branches agree on all 14
+    // measured forms — so this axis is STRUCTURAL and is named as such rather
+    // than dressed up as behavioural: the honest mutant for it is "re-add the
+    // table", not "change an output".
+    expect(
+      (FrontmatterService as unknown as { IRI_PREFIX_MAP?: unknown })
+        .IRI_PREFIX_MAP,
+    ).toBeUndefined();
+  });
+
+  it("IV12 the hash early-return keeps the vault-URL shape OUT of the write-key path @req:38e3f174-4a05-4743-a2f4-c7ec2c711202", () => {
+    // `iriToObsidianName` has a SECOND shape: `…/<basename>.md` → `<basename>`.
+    // `normalizeIRIValue` consumes that shape with its own anchored regex, so
+    // `normalizeIRI` — which forms the PHYSICAL key — must leave it alone.
+    const vaultUrl = "obsidian://vault/ems/ems__EffortStatusDoing.md";
+    expect(iriToObsidianName(vaultUrl)).toBe("ems__EffortStatusDoing");
+    expect(FrontmatterService.normalizeIRI(vaultUrl)).toBe(vaultUrl);
+    // ⛤ Measured on origin/main 0857307b: deleting the early return reddened
+    // NOTHING across 132 tests in 4 suites (control green, so the run was real)
+    // — the property was true but UNLOCKED. This axis is its first spec.
+    expect(FrontmatterService.normalizeIRI("file:///x/y.md")).toBe(
+      "file:///x/y.md",
+    );
   });
 
   it("DK6 a non-IRI property name is returned verbatim @req:eac1690d-4d17-4f00-a221-0f8bee3c697c", () => {

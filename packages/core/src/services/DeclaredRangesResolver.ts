@@ -58,10 +58,11 @@ export type DeclaredRangesResolver = (
  *    bot 3, exodev 3, i.e. 78 per cent — so on the defensive path it would fail
  *    SILENTLY and selectively. `iriToObsidianName` delegates to
  *    `Namespace.fromTermIRI`, the shared inverse of the forward emission path, covering
- *    registered, ad-hoc and W3C namespaces alike; the repository warns against the
- *    static map twice already (`RequiredPropertyResolver.ts` «NOT
- *    FrontmatterService.IRI_PREFIX_MAP, a static prefix map that misses most live
- *    namespaces»; `PropertyEditorModal.tsx` «which misses 26 live namespaces»).
+ *    registered, ad-hoc and W3C namespaces alike. ⛤ The static nine-namespace map
+ *    this once had to be chosen OVER no longer exists (retired by ticket 6572f3f3 / req 38e3f174):
+ *    `iriToObsidianName` is now the only inverse there is, so the choice recorded
+ *    here is settled rather than contested. The numbers above stay the reason the
+ *    choice mattered.
  *    Axes K4 (out-of-map `team`) and K16 (in-map `ems`) are the pair that makes the
  *    choice between the two inverses addressable rather than asserted.
  *

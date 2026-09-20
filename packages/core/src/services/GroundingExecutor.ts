@@ -924,12 +924,12 @@ export class GroundingExecutor {
     // ⛔ What is NOT defensive is the inverse inside the RESOLVER
     // (`DeclaredRangesResolver`): there the key is derived from a definition's
     // label, which the converter emits as a symbolic IRI in 478 of 485 cases, and
-    // reversing it through the static `FrontmatterService.IRI_PREFIX_MAP` (nine
-    // namespaces) would resolve 23 of the 104 typing definitions measured on
-    // vault-exodev and silently miss the other 81 — flow, pmi, person, team, bot,
-    // exodev. That is where the repository's two warnings against the static map
-    // apply (RequiredPropertyResolver, PropertyEditorModal), and axes K1 / K4
-    // pin it. The `STRING_SCALAR_PROPERTIES` lookup keeps using the canonical
+    // reversing it through a static nine-namespace prefix map would resolve 23 of
+    // the 104 typing definitions measured on vault-exodev and silently miss the
+    // other 81 — flow, pmi, person, team, bot, exodev. ⛤ Such a map no longer
+    // exists in this repository (retired by ticket 6572f3f3 / req 38e3f174); the measurement is
+    // kept because it is WHY the shared inverse is the right read, and axes
+    // K1 / K4 pin it. The `STRING_SCALAR_PROPERTIES` lookup keeps using the canonical
     // key, unchanged.
     const rangeLookupKey =
       iriToObsidianName(grounding.targetProperty) ?? normalizedTargetProperty;

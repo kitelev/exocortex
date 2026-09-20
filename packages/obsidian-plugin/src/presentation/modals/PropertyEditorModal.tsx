@@ -353,9 +353,10 @@ export class PropertyEditorModal extends Modal {
       if (!(t.subject instanceof IRI)) continue;
       if (!(t.object instanceof IRI)) continue;
       // Symbolic (ontology) IRI → label key via the shared inverse (all
-      // registered + ad-hoc namespaces, W3C too — NOT the 9-entry
-      // `FrontmatterService.IRI_PREFIX_MAP`, which misses 26 live namespaces);
-      // anything else (path-form) → UID, exactly as before.
+      // registered + ad-hoc namespaces, W3C too). ⛤ The 9-entry static map that
+      // missed 26 live namespaces, and that this line was written to avoid, was
+      // retired (retired by ticket 6572f3f3 / req 38e3f174) — the shared inverse is now the
+      // only one. Anything else (path-form) → UID, exactly as before.
       const rangeUid =
         symbolicIriToPropertyKey(t.object.value) ?? uidFromIri(t.object.value);
       if (!rangeUid) continue;

@@ -1,0 +1,55 @@
+{
+  "_doc": "Revert-verify mutants for ticket 6572f3f3, req 38e3f174-4a05-4743-a2f4-c7ec2c711202 — SUBJECT: packages/core/src/services/PropertySchemaResolver.ts. Guards enumerated from `git diff -U0` (§A8): the diff replaces TWO private conversions (fromFullIRI, toFullIRI) and each carries TWO separable guarantees — derive from the canon, and preserve pass-through — hence four mutants. All TYPE-PRESERVING (§A97). `expect` filled ONLY from a completed run. The axes drive the PUBLIC getSchema and read the IRI actually spliced into the SPARQL term, so they pin the WIRING as well as the conversion. ⛤ A FOURTH mutant was written, MEASURED and REMOVED, and that is a record rather than an omission (§A35/§A97): dropping the `http(s)://` early return of toFullIRI reddened NOTHING, and the reason is arithmetic, not a blind axis — without it a full IRI falls to fromPropertyKey, which cannot parse it, so the final pass-through returns the identical string. That guard is therefore DEFENSIVE and is named as such in the code instead of being pinned by a vacuous mutant.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/PropertySchemaResolver.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "red_re": "› ([A-Z]{1,3}\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/services/PropertySchemaResolver.test.ts 2>&1",
+  "mutants": {
+    "MI1_inverse_back_to_private_regex": {
+      "_note": "Restore the pre-ticket inverse: unanchored, exocortex.my-only, [a-z]+ prefix, any local name. This is the THIRD independent implementation the ticket removes. ⚠ IV5/IV6 initially stayed GREEN under this mutant — the forward direction expanded the wrongly-accepted `exo__Asset/Sub` straight back into the same IRI, so the queried term was unchanged. The distinguishing observable is the CACHE KEY, and the axes were strengthened to assert it; the expect list below is from the run AFTER that fix.",
+      "from": "    const term = Namespace.fromTermIRI(iri);\n    if (term) {\n      return `${term.namespace.prefix}__${term.localName}`;\n    }\n    return iri;",
+      "to": "    const match = iri.match(/https:\\/\\/exocortex\\.my\\/ontology\\/([a-z]+)#(.+)$/);\n    if (match) {\n      return `${match[1]}__${match[2]}`;\n    }\n    return iri;",
+      "expect": [
+        "IV3",
+        "IV5",
+        "IV6",
+        "IV7"
+      ]
+    },
+    "MI2_forward_back_to_private_switch": {
+      "_note": "Restore the pre-ticket forward map: every prefix minted under https://exocortex.my/ontology/<prefix>#, so a W3C vocabulary lands in a namespace that does not exist, and a prefix with a capital or digit is not expanded at all.",
+      "from": "    const parsed = Namespace.fromPropertyKey(propertyName);\n    if (parsed) {\n      return parsed.namespace.term(parsed.localName).value;\n    }\n\n    return propertyName;",
+      "to": "    const match = propertyName.match(/^([a-z]+)__(.+)$/);\n    if (match) {\n      return `https://exocortex.my/ontology/${match[1]}#${match[2]}`;\n    }\n\n    return propertyName;",
+      "expect": [
+        "IV1",
+        "IV2",
+        "IV3",
+        "IV4"
+      ]
+    },
+    "MI3_inverse_pass_through_dropped": {
+      "_note": "Pass-through is load-bearing, not cosmetic: the result is the cache key AND the `<…>` term of the query. Returning an empty string instead of the input keeps the signature (string) and breaks every unparseable shape.",
+      "from": "    const term = Namespace.fromTermIRI(iri);\n    if (term) {\n      return `${term.namespace.prefix}__${term.localName}`;\n    }\n    return iri;\n  }",
+      "to": "    const term = Namespace.fromTermIRI(iri);\n    if (term) {\n      return `${term.namespace.prefix}__${term.localName}`;\n    }\n    return \"\";\n  }",
+      "expect": [
+        "IV5",
+        "IV6",
+        "IV7",
+        "IV9"
+      ]
+    }
+  },
+  "_coverage": {
+    "_doc": "IV1..IV12: twelve axes, of which TEN redden under at least one mutant (IV1 IV2 IV3 IV4 IV5 IV6 IV7 IV9 IV11 IV12 — the last two live in the sibling frontmatter spec) and TWO are deliberately green under every mutant here. 10 + 2 = 12, nothing unaccounted for.",
+    "_note_IV8": "PAIRED CONTROL, green on purpose: an in-map namespace must keep behaving exactly as before. It is what makes IV1-IV4 addressable rather than asserted — a change that moved the common case would show up here first. ⛔ Do not 'strengthen' it; its value is that it cannot move.",
+    "_note_IV10": "PASS-THROUGH CONTROL, green on purpose: a non-IRI name never enters the IRI branch at all, so no mutant of either conversion can reach it. It guards a FUTURE change that starts routing bare names through the inverse."
+  }
+}

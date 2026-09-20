@@ -225,11 +225,14 @@ export class Namespace {
    *
    * Non-empty, and free of `#` and `/` — the exact rule {@link fromTermIRI}
    * applies to whatever follows the namespace base (see its `/`-rejection note).
-   * Exported because a SECOND consumer needs the same verdict:
-   * `FrontmatterService.normalizeIRI` guards its nine-namespace hot-path table
-   * with it, so that table can only ever answer FASTER than this inverse, never
-   * DIFFERENTLY (ticket `c8fc6793` — the unguarded table turned
-   * `…/ontology/ems#` into the junk write key `ems__`).
+   *
+   * ⛤ It was extracted from `fromTermIRI`'s `cleanLocal` closure for a SECOND
+   * consumer — the nine-namespace hot-path table in
+   * `FrontmatterService.normalizeIRI` (ticket `c8fc6793`). That table is GONE as
+   * of ticket `6572f3f3` / req `38e3f174`, so the rule has one consumer again.
+   * It stays exported and separate on purpose: it is public API, and inlining it
+   * back into the closure would make the next caller that needs this verdict
+   * write a second literal copy — the very drift below.
    *
    * ⛔ Keep this the single definition. A second literal copy of the rule is the
    * same drift this class's {@link fromTermIRI} docstring warns about, one level
