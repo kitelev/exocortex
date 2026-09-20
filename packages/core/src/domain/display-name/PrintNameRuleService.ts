@@ -169,7 +169,7 @@ export class PrintNameRuleService {
   private rules: Map<string, PrintNameRule[]> = new Map();
   private classHierarchy: Map<string, string[]> = new Map();
   private initialized = false;
-  private scanDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private scanDebounceTimer: ReturnType<typeof setTimeout> | number | null = null;
 
   /**
    * @param hostFunctions Registry of display-matcher host functions (name → predicate),
@@ -475,8 +475,14 @@ export class PrintNameRuleService {
    * immediate refresh() is retained for the rare cold-start "resolved" rebuild.
    */
   scheduleRefresh(): void {
+    // ⛤ `window.*` rather than the bare timers, as `obsidianmd/prefer-window-timers` requires
+    // (disabling that rule is itself forbidden by eslint-comments/no-restricted-disable). Safe
+    // here even though this module is `packages/core`, shared with the CLI's Node process:
+    // scheduleRefresh has exactly ONE caller, ExocortexPlugin's metadataCache "changed" handler —
+    // `grep -rn scheduleRefresh packages/cli/src` = 0 — so `window` always exists where it runs.
+    // The field's type carries `number` for the same reason: window.setTimeout returns one.
     if (this.scanDebounceTimer !== null) {
-      window.clearTimeout(this.scanDebounceTimer);
+      window.clearTimeout(this.scanDebounceTimer as number);
     }
     this.scanDebounceTimer = window.setTimeout(() => {
       this.scanDebounceTimer = null;
