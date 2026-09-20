@@ -120,7 +120,12 @@ export {
   // Issue #4298 — the executor's missing-input verdict, reachable by a
   // pre-flight (CLI `apply --dry-run`) so the preview and the real run agree
   // by construction rather than by a maintained copy.
-  missingInputHint,
+  //
+  // `missingInputHint` is deliberately NOT re-exported: only `findMissingInput`
+  // (the walker) and `missingInputError` (the shared wording) are needed across
+  // the package boundary, and the hint helper is reachable from tests by its
+  // source path. Keeping it internal keeps the semver surface at what callers
+  // actually use (PR #4299 review, LOW-1).
   missingInputError,
   findMissingInput,
   type ExecutionResult,
