@@ -1,4 +1,5 @@
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
+import { isPosixBracketExpression } from "@kitelev/exocortex-core";
 
 /**
  * Error thrown when a wikilink references a UUID that does not exist in the vault.
@@ -77,8 +78,13 @@ export class WikilinkValidator {
     let match: RegExpExecArray | null;
 
     while ((match = fullPattern.exec(value)) !== null) {
+      const target = match[1].trim();
+      // Issue #4219 — `[[:space:]]` is a POSIX character class quoted in the
+      // text, not a link. Same predicate the indexer uses, so the two sides
+      // agree by construction: what is not indexed is not validated either.
+      if (isPosixBracketExpression(target)) continue;
       results.push({
-        uuid: match[1].trim(),
+        uuid: target,
         label: match[2]?.trim(),
       });
     }

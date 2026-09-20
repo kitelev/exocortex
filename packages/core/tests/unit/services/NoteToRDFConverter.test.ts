@@ -2206,6 +2206,29 @@ describe("NoteToRDFConverter", () => {
         expect(links.length).toBe(2);
       });
 
+      // Issue #4219 — a POSIX bracket expression quoted in the body is not a
+      // link. Before the fix this emitted `exo__Asset_bodyLink → ":space:"`:
+      // 16 such edges had accumulated in vault-exodev (plus one `:слово:`),
+      // unjudged by any SHACL shape.
+      it("should NOT treat a POSIX bracket expression as a wikilink (#4219)", () => {
+        const bodyContent = [
+          "Shell example:",
+          "",
+          "    grep -qE '(^|[[:space:]])--help'",
+          "",
+          "And [[:alpha:]] too, plus a REAL link to [[Note A]].",
+        ].join("\n");
+
+        const links = converter.extractBodyWikilinks(bodyContent);
+
+        expect(links).not.toContain(":space:");
+        expect(links).not.toContain(":alpha:");
+        // The real link in the same body still indexes — the skip is targeted,
+        // not "stop parsing this body".
+        expect(links).toContain("Note A");
+        expect(links.length).toBe(1);
+      });
+
       it("should extract wikilinks with aliases", () => {
         const bodyContent = "See [[Note A|my alias]] for more info.";
         const links = converter.extractBodyWikilinks(bodyContent);
