@@ -16,6 +16,15 @@ interface PropertyNameSet {
    * the metaclass closure contribute; a def without a range is absent.
    */
   ranges: Map<string, readonly string[]>;
+  /**
+   * Conflicting duplicates found during the walk, keyed by property name:
+   * a name declared by two or more defs with DIFFERENT ranges maps to the
+   * ready-to-emit diagnostic naming the winner and the FIRST conflicting twin
+   * in path order (ticket 3fc34b92). Recorded here rather than reported from
+   * the walk, because the walk is cached and does not know which property the
+   * caller is addressing — the accessors do, and they emit.
+   */
+  conflicts: Map<string, string>;
 }
 
 /**
@@ -109,6 +118,14 @@ export class PropertyNameValidator {
   private static readonly CLASS_METACLASS_LABEL = "exo__Class";
 
   private cache: PropertyNameSet | null = null;
+
+  /**
+   * Property names whose duplicate-range diagnostic has already been delivered
+   * on THIS instance (ticket 3fc34b92). `collect()` is cached, so the walk runs
+   * once and cannot dedupe repeated ADDRESSING of the same name; this latch
+   * does, keeping the guarantee "exactly one line per addressed name".
+   */
+  private readonly reported = new Set<string>();
 
   /** Injectable warn-level diagnostics channel (defaults to no-op, as `CliProfileResolver`). */
   private readonly warn: (msg: string) => void;
@@ -223,7 +240,7 @@ export class PropertyNameValidator {
     const names = new Set<string>();
     const prefixes = new Set<string>();
     const ranges = new Map<string, readonly string[]>();
-    const warnedNames = new Set<string>();
+    const conflicts = new Map<string, string>();
     for (const cand of candidates) {
       if (!cand.classRefs.some((r) => metaKeys.has(r))) continue;
       names.add(cand.name);
@@ -232,39 +249,59 @@ export class PropertyNameValidator {
       // Ticket 2227d660: the declared range rides along on the same pass so the
       // writers (`create` / `set-property`) can type a scalar by it at no extra
       // IO. Two defs sharing a name (a deprecated twin, a re-declaration in
-      // another mounted assetspace): the FIRST one in byte-ordered walk order
-      // wins (ticket 8185c9dd, NIT-2 — deterministic on every platform), and a
-      // twin declaring a DIFFERENT range is reported once per name: the writer
-      // will type by the first def and the author should know which. Scope of
-      // that report, named: it is emitted from this collect() for EVERY
-      // conflicting duplicate in the mounted TBox, whatever property the
-      // command is writing (latent — 0/0/0 live duplicates; a follow-up under
-      // bbac67ce narrows it to the property actually addressed), and a def
-      // with an EMPTY range is skipped BEFORE first-wins, so a rangeless twin
-      // never wins over a ranged one.
+      // another mounted assetspace): a def with an EMPTY range is skipped
+      // FIRST, before any of the rules below, so a rangeless twin neither wins
+      // nor conflicts; among the RANGED defs the first one in byte-ordered walk
+      // order wins (ticket 8185c9dd, NIT-2 — deterministic on every platform),
+      // and a twin declaring a DIFFERENT range is recorded once per name — the
+      // writer will type by the first def and the author should know which.
+      //
+      // Ticket 3fc34b92: the conflict is only RECORDED here, never reported.
+      // This walk runs once per instance (the cache above) and does not know
+      // which property the caller is addressing, so reporting from it named
+      // every conflicting duplicate in the mounted TBox on every write. The
+      // accessors below know the addressed name and emit there.
       if (cand.range.length === 0) continue;
       const first = ranges.get(cand.name);
       if (first === undefined) {
         ranges.set(cand.name, cand.range);
-      } else if (!sameRange(first, cand.range) && !warnedNames.has(cand.name)) {
-        warnedNames.add(cand.name);
-        this.warn(
+      } else if (!sameRange(first, cand.range) && !conflicts.has(cand.name)) {
+        conflicts.set(
+          cand.name,
           `[PropertyNameValidator] property ${cand.name} is declared more than once with different exo__Property_range (${first.join(", ")} vs ${cand.range.join(", ")}) — the first def in path order wins`,
         );
       }
     }
 
-    this.cache = { names, prefixes, ranges };
+    this.cache = { names, prefixes, ranges, conflicts };
     return this.cache;
+  }
+
+  /**
+   * Emit the duplicate-range diagnostic for ONE addressed property name, at
+   * most once per instance (ticket 3fc34b92). A name with no recorded conflict
+   * — the overwhelming majority — costs one Map lookup and stays silent.
+   */
+  private report(conflicts: ReadonlyMap<string, string>, name: string): void {
+    if (this.reported.has(name)) return;
+    const message = conflicts.get(name);
+    if (message === undefined) return;
+    this.reported.add(name);
+    this.warn(message);
   }
 
   /**
    * Declared `exo__Property_range` values of a mounted property def, by its
    * `prefix__Name` label (ticket 2227d660), or `undefined` when no mounted def
    * declares one — the writers then fall back to shape-based typing.
+   *
+   * This is the per-name ACCESS point, so it is where a duplicate-range
+   * conflict on THAT name is reported (ticket 3fc34b92) — a conflict on any
+   * other name stays silent here.
    */
   async declaredRange(name: string): Promise<readonly string[] | undefined> {
-    const { ranges } = await this.collect();
+    const { ranges, conflicts } = await this.collect();
+    this.report(conflicts, name);
     return ranges.get(name);
   }
 
@@ -272,9 +309,20 @@ export class PropertyNameValidator {
    * Every declared range collected on the mounted vault, keyed by property
    * name — handed to `GenericAssetCreationService` by `cli create` so the
    * frontmatter it assembles is typed by the same TBox the key check reads.
+   *
+   * A bulk hand-off addresses no name by itself (the service resolves per
+   * supplied key inside), so it reports nothing unless the caller says which
+   * properties it is writing: pass `addressed` — `cli create` passes the very
+   * same key set it hands to {@link validate} — and each of those names gets
+   * its conflict reported exactly once (ticket 3fc34b92).
    */
-  async declaredRanges(): Promise<ReadonlyMap<string, readonly string[]>> {
-    const { ranges } = await this.collect();
+  async declaredRanges(
+    addressed?: Iterable<string>,
+  ): Promise<ReadonlyMap<string, readonly string[]>> {
+    const { ranges, conflicts } = await this.collect();
+    if (addressed !== undefined) {
+      for (const name of addressed) this.report(conflicts, name);
+    }
     return ranges;
   }
 

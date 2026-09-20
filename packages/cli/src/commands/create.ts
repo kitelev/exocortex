@@ -387,13 +387,22 @@ export function createCommand(): Command {
         const propertyNameValidator = new PropertyNameValidator(vaultPath, {
           warn: (msg) => process.stderr.write(`⚠ ${msg}\n`),
         });
-        await propertyNameValidator.validate(Object.keys(properties));
+        // The property names this command is writing. ONE variable feeds BOTH
+        // the key check and the range hand-off (ticket 3fc34b92), so "the same
+        // set" is a property of the construction rather than a coincidence of
+        // two expressions that a later edit could pull apart.
+        const addressedProperties = Object.keys(properties);
+        await propertyNameValidator.validate(addressedProperties);
         // Ticket 2227d660: the same scan also yields each def's declared
         // `exo__Property_range`; handed to the core service so every scalar
         // is typed by its declaration (a canonical negative under
         // `xsd:integer` stays bare, a number under `xsd:string` is quoted).
         // Empty when no property TBox is mounted → shape-based typing as before.
-        const declaredRanges = await propertyNameValidator.declaredRanges();
+        // Naming the addressed properties also scopes the duplicate-range
+        // diagnostic to them (ticket 3fc34b92) — a conflicting twin of some
+        // OTHER property in the mounted TBox is not this command's business.
+        const declaredRanges =
+          await propertyNameValidator.declaredRanges(addressedProperties);
 
         // Resolve body content. `\n` escapes are expanded ONLY for the inline
         // `--body "a\nb"` form — that is exactly what issue #2288 asked for ("Given
