@@ -75,6 +75,8 @@ import {
   NoteToRDFConverter,
   WorkflowResolver,
   NamedQueryRunner,
+  // Ticket 534a7a46 — declared-range typing for create_instance / property_set.
+  createTripleStoreDeclaredRanges,
 } from "@kitelev/exocortex-core";
 import { ObsidianFileResolver } from "./infrastructure/ObsidianFileResolver";
 import { registerOrderSpecFromObsidianVault } from "./infrastructure/registerOrderSpecFromObsidianVault";
@@ -750,6 +752,16 @@ export default class ExocortexPlugin extends Plugin {
           // (area's isDefinedBy ontology → its exo__Ontology_effortsOntology) for
           // the `targetRefProperty` token.
           refToFrontmatter: createObsidianRefToFrontmatterResolver(this.app),
+          // Ticket 534a7a46 — declared-range typing for the scalars a button
+          // press writes (create_instance / property_set), from the same
+          // hydrated `tripleStore` this block already gives WorkflowResolver and
+          // NamedQueryRunner. `cli apply` wires the identical factory over its
+          // own store, so the two surfaces share ONE implementation — the
+          // CLI↔UI parity #3417 this ticket exists to close. Before it, a
+          // negative chat id written from the button landed as an xsd:string
+          // literal under an xsd:integer range (founder rule 6c), while
+          // `cli create` wrote it bare.
+          declaredRanges: createTripleStoreDeclaredRanges(tripleStore),
         },
       );
 

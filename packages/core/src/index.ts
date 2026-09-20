@@ -149,6 +149,16 @@ export {
   type RequiredPropertyField,
   type RequiredPropertyFieldType,
 } from "./services/RequiredPropertyResolver";
+// Ticket 534a7a46 — declared `exo__Property_range` by the definition's
+// `prefix__Name` label, read from a triple store. The port `GroundingExecutor`
+// takes so its create_instance / property_set writes type a scalar by the
+// declaration, as `cli create` / `cli set-property` do (CLI↔UI parity #3417).
+// Exported next to its sibling above because it is the same kind of thing: a
+// store-backed resolver factory plus its port type.
+export {
+  createTripleStoreDeclaredRanges,
+  type DeclaredRangesResolver,
+} from "./services/DeclaredRangesResolver";
 export { TaskStatusService } from "./services/TaskStatusService";
 export {
   AreaHierarchyBuilder,

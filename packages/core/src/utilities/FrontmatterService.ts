@@ -539,7 +539,11 @@ export class FrontmatterService {
    * // result === '---\nstatus: draft\npriority: high\n---\nBody content'
    * ```
    */
-  createFrontmatter(content: string, properties: Record<string, unknown>): string {
+  createFrontmatter(
+    content: string,
+    properties: Record<string, unknown>,
+    declaredRangeOf?: (suppliedKey: string) => readonly string[] | undefined,
+  ): string {
     // req 869561bf — canonicalise BEFORE ordering, so the order spec and the
     // `STRING_SCALAR_PROPERTIES` lookup inside `serializeValue` both see the key
     // the file will actually carry. Doing it per-entry during the map instead
@@ -547,14 +551,30 @@ export class FrontmatterService {
     // as duplicate YAML keys; collapsing them here makes last-write-wins
     // explicit and keeps the emitted document parseable.
     const canonical: Record<string, unknown> = {};
+    // Ticket 534a7a46 — the key each canonical key was SUPPLIED as, because the
+    // range lookup is made with THAT one, exactly as in this method's twin
+    // `MetadataHelpers.buildFileContent`: the TBox keys a range by the def's
+    // `prefix__Name` label, so `exo__Asset_pinned` resolves a range in both
+    // writers even though it is EMITTED as the bare `pinned:` key, and a caller
+    // passing the bare `aliases` resolves nothing in either. When two supplied
+    // keys collapse onto one canonical key the later entry wins the value, so it
+    // also wins the lookup key.
+    const suppliedKeyOf: Record<string, string> = {};
     for (const [key, value] of Object.entries(properties)) {
-      canonical[canonicalYamlKey(key)] = value;
+      const canonicalKey = canonicalYamlKey(key);
+      canonical[canonicalKey] = value;
+      suppliedKeyOf[canonicalKey] = key;
     }
     const ordered = orderProperties(canonical, loadDefaultSpec());
     // Issue #3748: quote scalars on new-asset writes so a label / alias
     // containing `: ` (or another YAML indicator) stays valid YAML.
-    const frontmatterLines = Object.entries(ordered).map(
-      ([key, value]) => this.serializeValue(key, value, true),
+    const frontmatterLines = Object.entries(ordered).map(([key, value]) =>
+      this.serializeValue(
+        key,
+        value,
+        true,
+        declaredRangeOf?.(suppliedKeyOf[key] ?? key),
+      ),
     );
 
     const frontmatterBlock = `---\n${frontmatterLines.join("\n")}\n---`;
@@ -619,6 +639,7 @@ export class FrontmatterService {
     property: string,
     value: unknown,
     quoteScalars = false,
+    declaredRange?: readonly string[],
   ): string {
     // #3750 MEDIUM-3: also quote scalar-looking strings (123 / true / date)
     // for string-semantic properties (label / aliases) so they round-trip as
@@ -631,13 +652,13 @@ export class FrontmatterService {
       const items = value
         .map(
           (v) =>
-            `  - ${quoteScalars ? serializeYamlScalar(v, quoteAmbiguous) : String(v)}`,
+            `  - ${quoteScalars ? serializeYamlScalar(v, quoteAmbiguous, declaredRange) : String(v)}`,
         )
         .join("\n");
       return `${property}:\n${items}`;
     }
     const scalar = quoteScalars
-      ? serializeYamlScalar(value, quoteAmbiguous)
+      ? serializeYamlScalar(value, quoteAmbiguous, declaredRange)
       : String(value);
     return `${property}: ${scalar}`;
   }
