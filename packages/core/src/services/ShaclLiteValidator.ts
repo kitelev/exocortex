@@ -389,6 +389,22 @@ export function validate(
             // and are never registered in subjectClasses. Skip the sh:class check for
             // them — they are authoritative by definition (fix: 5 external IRI violations).
             if (isExternalOntologyIRI(obj.value)) continue;
+            // Mirror of the Literal branch below. A range entry naming an XSD
+            // datatype expresses `sh:datatype`, which by SHACL semantics
+            // constrains *Literal* nodes only (see XSD_DATATYPE_PREFIXES: "All
+            // other range entries are sh:class constraints (apply to IRI nodes
+            // only)"). Judging an IRI against such an entry as if it were a
+            // class is false BY CONSTRUCTION — nothing is an instance of
+            // `xsd:string` — so that check can never go green for any data.
+            //
+            // It would also blame the wrong actor: the node kind here is not
+            // authored but INFERRED. The converter expands a bare
+            // `prefix__Name` string into a symbolic IRI without consulting the
+            // declared range (`valueToRDFObject` → `isClassReference`), so an
+            // IRI under a datatype-only range says nothing about what the
+            // author actually wrote. Issue #4268.
+            const classRanges = shape.range.filter((r) => !isXSDDatatypeIRI(r));
+            if (classRanges.length === 0) continue;
             // Class range: value's class(es) must satisfy range via hierarchy.
             // Direct lookup first; if it misses and the value IRI ends with a
             // UUID-named markdown file, fall back to the UID-keyed index so
@@ -403,7 +419,7 @@ export function validate(
               }
             }
             // R13: ANY-of semantics — any value class matching any range class satisfies
-            const rangeConforms = shape.range.some((expectedClass) =>
+            const rangeConforms = classRanges.some((expectedClass) =>
               valueClasses.some(
                 (vc) => vc === expectedClass || hierarchy.isSubClassOf(vc, expectedClass),
               ),
@@ -428,11 +444,11 @@ export function validate(
                 severity: unresolvableRef ? 'sh:Warning' : shape.severity,
                 constraint: 'class',
                 message: unresolvableRef
-                  ? `sh:class unresolvable-ref: <${obj.value}> has no resolvable type in this vault (cross-vault, symbolic, or external reference); not validated against ${shape.range.join(' | ')}`
+                  ? `sh:class unresolvable-ref: <${obj.value}> has no resolvable type in this vault (cross-vault, symbolic, or external reference); not validated against ${classRanges.join(' | ')}`
                   : shape.message ??
-                    `sh:class violation: <${obj.value}> does not conform to expected class ${shape.range.join(' | ')}`,
+                    `sh:class violation: <${obj.value}> does not conform to expected class ${classRanges.join(' | ')}`,
                 actualValue: obj.value,
-                expectedRange: shape.range.join(' | '),
+                expectedRange: classRanges.join(' | '),
               });
             }
           } else if (obj.type === 'literal') {
