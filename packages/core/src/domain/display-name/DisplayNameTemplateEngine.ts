@@ -53,7 +53,10 @@ export class DisplayNameTemplateEngine {
     private readonly options: {
       joinArrayValues?: boolean;
       separator?: string;
-      nestedDisplayName?: (wikilink: string) => string | null;
+      nestedDisplayName?: (
+        wikilink: string,
+        targetMetadata?: Record<string, unknown> | null,
+      ) => string | null;
     } = {},
   ) {}
 
@@ -497,10 +500,16 @@ export class DisplayNameTemplateEngine {
     }
 
     // Try to resolve label via metadataResolver
+    //
+    // ⛤ The result is kept and handed to `nestedDisplayName` below. Without that the composed-name
+    // hop would dereference the SAME target a second time, and for the filesystem adapter a
+    // dereference is a `readFileSync` — i.e. every label-less or dangling reference in a vault
+    // sweep would cost two disk reads instead of one (review of #4303).
+    let resolvedTarget: Record<string, unknown> | null | undefined;
     if (metadataResolver) {
-      const resolved = metadataResolver(value);
-      if (resolved) {
-        const label = resolved.exo__Asset_label;
+      resolvedTarget = metadataResolver(value);
+      if (resolvedTarget) {
+        const label = resolvedTarget.exo__Asset_label;
         if (typeof label === "string" && label.trim()) {
           return label.trim();
         }
@@ -512,7 +521,7 @@ export class DisplayNameTemplateEngine {
     // stop being a name: `target` is a bare UID in a UID-canon vault. Ordering is the whole
     // contract — an asset that HAS a label keeps printing it, so nothing rendered today changes
     // (measured: 0 of 50 884 live assets across the three canonical vaults).
-    const composed = this.options.nestedDisplayName?.(value);
+    const composed = this.options.nestedDisplayName?.(value, resolvedTarget);
     if (composed !== null && composed !== undefined && composed.trim() !== "") {
       return composed.trim();
     }

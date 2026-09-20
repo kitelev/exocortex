@@ -400,9 +400,10 @@ describe("printed property → the referenced asset's composed displayName (req 
   });
 
   it(`${REQ} V10 the SAME resolver renders the same name twice — the depth is unwound`, () => {
-    // A resolver is long-lived in the plugin (one instance per load). If the nested-render depth
-    // were not unwound, the FIRST composed name would exhaust the budget and every later render
-    // would silently degrade to the linkpath — a defect no single-render axis can see.
+    // ⛤ Today every call site builds a resolver per render, so a leaked counter would be masked.
+    // That is exactly why this axis exists: it locks the invariant BEFORE a caching refactor (or a
+    // singleton resolver) makes the leak observable in production. Without unwinding, the first
+    // composed name exhausts the budget and every later render silently degrades to the linkpath.
     const assets = [
       ...baseVault(),
       {
@@ -469,6 +470,165 @@ describe("printed property → the referenced asset's composed displayName (req 
         basename: REVIEW,
       }).displayName,
     ).toBe(`ОС ${QUARTER}`);
+  });
+
+  it(`${REQ} V12 a THROW inside the nested render degrades to the linkpath, it does not blank the name`, () => {
+    // Before this requirement, printing a reference read ONE frontmatter key of the target. It now
+    // runs the target's whole render over data the referring asset's author does not control, and
+    // none of the twelve call sites wraps resolve() in try/catch — so an uncaught throw would blank
+    // the name of EVERYTHING referencing a single broken asset, not just that asset's own name.
+    const YEAR = "eeeeeeee-0000-4000-8000-00000000000a";
+    const PROP_YEAR = "eeeeeeee-0000-4000-8000-00000000000b";
+    const assets = [
+      ...baseVault(),
+      {
+        exo__Asset_uid: PROP_YEAR,
+        exo__Asset_label: "period__Quarter_year",
+        exo__Instance_class: "[[exo__ObjectProperty]]",
+      },
+      // The quarter's own spec prints its year, so the year is dereferenced INSIDE the nested render.
+      {
+        exo__Asset_uid: "aaaaaaaa-0000-4000-8000-00000000000e",
+        exo__Instance_class: "[[exo__PrintedProperty]]",
+        exo__DisplayNamePart_of: `[[${QUARTER_SPEC}]]`,
+        exo__DisplayNamePart_order: 4,
+        exo__PrintedProperty_property: `[[${PROP_YEAR}]]`,
+      },
+      {
+        exo__Asset_uid: QUARTER,
+        exo__Instance_class: `[[${QUARTER_CLASS}|period__Quarter]]`,
+        period__Quarter_number: 4,
+        period__Quarter_year: `[[${YEAR}]]`,
+      },
+      review(`[[${QUARTER}]]`),
+    ];
+    const port = portOf(assets);
+    const exploding: VaultMetadataPort = {
+      listFrontmatter: () => port.listFrontmatter(),
+      resolveLinkpathFrontmatter: (linkpath: string) => {
+        if (linkpath.replace(/\.md$/, "") === YEAR)
+          throw new Error("corrupt frontmatter");
+        return port.resolveLinkpathFrontmatter(linkpath);
+      },
+    };
+    const rules = new PrintNameRuleService(exploding);
+    rules.initialize();
+    const resolver = new DisplayNameResolver(
+      DEFAULT_DISPLAY_NAME_SETTINGS,
+      rules,
+      rules.createMetadataResolver(),
+    );
+
+    expect(() =>
+      resolver.resolveWithProvenance({
+        metadata: review(`[[${QUARTER}]]`),
+        basename: REVIEW,
+      }),
+    ).not.toThrow();
+    expect(
+      resolver.resolveWithProvenance({
+        metadata: review(`[[${QUARTER}]]`),
+        basename: REVIEW,
+      }).displayName,
+    ).toBe(`ОС ${QUARTER}`);
+  });
+
+  it(`${REQ} V13 one reference costs ONE dereference of its target, not two`, () => {
+    // On the filesystem adapter a dereference is a readFileSync, so a second lookup per label-less
+    // reference doubles the disk cost of a whole-vault sweep.
+    const assets = [
+      ...baseVault(),
+      {
+        exo__Asset_uid: QUARTER,
+        exo__Instance_class: `[[${QUARTER_CLASS}|period__Quarter]]`,
+        period__Quarter_number: 4,
+      },
+      review(`[[${QUARTER}]]`),
+    ];
+    const port = portOf(assets);
+    const hits: string[] = [];
+    const counting: VaultMetadataPort = {
+      listFrontmatter: () => port.listFrontmatter(),
+      resolveLinkpathFrontmatter: (linkpath: string) => {
+        hits.push(linkpath.replace(/\.md$/, ""));
+        return port.resolveLinkpathFrontmatter(linkpath);
+      },
+    };
+    const rules = new PrintNameRuleService(counting);
+    rules.initialize();
+    const resolver = new DisplayNameResolver(
+      DEFAULT_DISPLAY_NAME_SETTINGS,
+      rules,
+      rules.createMetadataResolver(),
+    );
+
+    hits.length = 0;
+    const rendered = resolver.resolveWithProvenance({
+      metadata: review(`[[${QUARTER}]]`),
+      basename: REVIEW,
+    });
+    expect(rendered.displayName).toBe("ОС Q4-2025");
+    expect(hits.filter((h) => h === QUARTER)).toHaveLength(1);
+  });
+
+  it(`${REQ} V14 the re-entry key is the ASSET, not the spelling — [[uid]] and [[uid.md]] collide`, () => {
+    // A guard keyed on the SPELLING of a reference lets the same asset be re-entered under a
+    // second name. The depth cap still bounds the walk, so the damage today is one wasted render
+    // — but the guard silently stops guarding, which is what makes it worth locking now.
+    const A = "ffffffff-0000-4000-8000-00000000000a";
+    const B = "ffffffff-0000-4000-8000-00000000000b";
+    const KNOT_CLASS = "ffffffff-0000-4000-8000-0000000000c1";
+    const KNOT_PROP = "ffffffff-0000-4000-8000-0000000000c2";
+    const KNOT_SPEC = "ffffffff-0000-4000-8000-0000000000c3";
+    const assets: FM[] = [
+      {
+        exo__Asset_uid: KNOT_CLASS,
+        exo__Asset_label: "t__Knot2",
+        exo__Instance_class: "[[exo__Class]]",
+      },
+      {
+        exo__Asset_uid: KNOT_PROP,
+        exo__Asset_label: "t__Knot2_peer",
+        exo__Instance_class: "[[exo__ObjectProperty]]",
+      },
+      {
+        exo__Asset_uid: KNOT_SPEC,
+        exo__Asset_label: "spec: t__Knot2",
+        exo__Instance_class: "[[exo__DisplayNameSpec]]",
+        exo__DisplayNameSpec_appliesToClass: `[[${KNOT_CLASS}|t__Knot2]]`,
+        exo__DisplayNameSpec_priority: 100,
+      },
+      {
+        exo__Asset_uid: "ffffffff-0000-4000-8000-0000000000c4",
+        exo__Instance_class: "[[exo__PrintedLiteral]]",
+        exo__DisplayNamePart_of: `[[${KNOT_SPEC}]]`,
+        exo__DisplayNamePart_order: 1,
+        exo__PrintedLiteral_literal: "~",
+      },
+      {
+        exo__Asset_uid: "ffffffff-0000-4000-8000-0000000000c5",
+        exo__Instance_class: "[[exo__PrintedProperty]]",
+        exo__DisplayNamePart_of: `[[${KNOT_SPEC}]]`,
+        exo__DisplayNamePart_order: 2,
+        exo__PrintedProperty_property: `[[${KNOT_PROP}]]`,
+      },
+      {
+        exo__Asset_uid: A,
+        exo__Instance_class: `[[${KNOT_CLASS}|t__Knot2]]`,
+        t__Knot2_peer: `[[${B}]]`,
+      },
+      // B refers to ITSELF under the other spelling of the same asset.
+      {
+        exo__Asset_uid: B,
+        exo__Instance_class: `[[${KNOT_CLASS}|t__Knot2]]`,
+        t__Knot2_peer: `[[${B}.md]]`,
+      },
+    ];
+
+    // Normalised: B is already on the stack when it re-enters itself, so it prints the linkpath —
+    // two literals. Keyed on the spelling, "<B>.md" would not collide with "<B>" and a THIRD
+    // literal would be composed before the cap stopped the walk.
+    expect(nameOf(assets, A)).toBe(`~~${B}.md`);
   });
 
   it(`${REQ} V9 a BLANK composed name is refused — the linkpath is printed instead`, () => {

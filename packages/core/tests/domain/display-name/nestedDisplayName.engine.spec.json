@@ -11,20 +11,24 @@
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/domain/display-name/DisplayNameTemplateEngine.ts",
   "mutants": {
     "M1_engine_hop_removed": {
-      "from": "    const composed = this.options.nestedDisplayName?.(value);\n    if (composed !== null && composed !== undefined && composed.trim() !== \"\") {\n      return composed.trim();\n    }\n\n    // Fallback: return target without brackets",
-      "to": "    // Fallback: return target without brackets"
+      "from": "    const composed = this.options.nestedDisplayName?.(value, resolvedTarget);\n    if (composed !== null && composed !== undefined && composed.trim() !== \"\") {\n      return composed.trim();\n    }\n\n    // Fallback: return target without brackets",
+      "to": "    // Fallback: return target without brackets",
+      "expect": ["V1", "W1"]
     },
     "M2_engine_hop_before_label": {
-      "from": "    // Try to resolve label via metadataResolver\n    if (metadataResolver) {",
-      "to": "    const composedFirst = this.options.nestedDisplayName?.(value);\n    if (composedFirst !== null && composedFirst !== undefined && composedFirst.trim() !== \"\") {\n      return composedFirst.trim();\n    }\n\n    // Try to resolve label via metadataResolver\n    if (metadataResolver) {"
+      "from": "    let resolvedTarget: Record<string, unknown> | null | undefined;\n    if (metadataResolver) {",
+      "to": "    const composedFirst = this.options.nestedDisplayName?.(value);\n    if (composedFirst !== null && composedFirst !== undefined && composedFirst.trim() !== \"\") {\n      return composedFirst.trim();\n    }\n\n    let resolvedTarget: Record<string, unknown> | null | undefined;\n    if (metadataResolver) {",
+      "expect": ["V2", "W2"]
     },
     "M3_engine_hop_before_alias": {
       "from": "    // If alias exists, use it directly\n    if (alias) {",
-      "to": "    const composedFirst = this.options.nestedDisplayName?.(value);\n    if (composedFirst !== null && composedFirst !== undefined && composedFirst.trim() !== \"\") {\n      return composedFirst.trim();\n    }\n\n    // If alias exists, use it directly\n    if (alias) {"
+      "to": "    const composedFirst = this.options.nestedDisplayName?.(value);\n    if (composedFirst !== null && composedFirst !== undefined && composedFirst.trim() !== \"\") {\n      return composedFirst.trim();\n    }\n\n    // If alias exists, use it directly\n    if (alias) {",
+      "expect": ["V4"]
     },
     "M4_engine_empty_composed_accepted": {
       "from": "    if (composed !== null && composed !== undefined && composed.trim() !== \"\") {\n      return composed.trim();\n    }",
-      "to": "    if (composed !== null && composed !== undefined) {\n      return composed.trim();\n    }"
+      "to": "    if (composed !== null && composed !== undefined) {\n      return composed.trim();\n    }",
+      "expect": ["V9"]
     }
   }
 }
