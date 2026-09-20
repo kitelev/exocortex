@@ -63,4 +63,26 @@ describe("CLI v16 — apply command (RFC 8e83442b T1.2)", () => {
     const cmd = applyCommand();
     expect(cmd.description()).toContain("exocmd__Command");
   });
+
+  // Issue #4230 — the --input example for set-label named the `value` key, but the
+  // "Set label composite (#3779)" grounding declares inputSchema required ["label"],
+  // so a call copied from --help is refused (rc=5). Commander word-wraps the option
+  // description, so the help text is whitespace-normalised before matching.
+  it("--help names the set-label input key as `label`, not `value` (#4230)", () => {
+    const help = applyCommand().helpInformation().replace(/\s+/g, " ");
+    expect(help).toContain(`set-label: --input '{"label":"New label"}'`);
+    expect(help).not.toContain(`set-label: --input '{"value"`);
+  });
+
+  // The neighbouring examples were verified against their own groundings in the same
+  // sweep (all four declare the key the help already prints), so they are locked too —
+  // a future edit that "unifies" them onto one key must fail here.
+  it("--help keeps the value-key examples that match their groundings (#4230)", () => {
+    const help = applyCommand().helpInformation().replace(/\s+/g, " ");
+    expect(help).toContain(
+      `set-planned-start / set-scheduled-date: --input '{"value":"<ISO>"}'`,
+    );
+    expect(help).toContain(`set-parent: --input '{"parent":"<uid>"}'`);
+    expect(help).toContain(`set-blocker: --input '{"blocker":"<uid>"}'`);
+  });
 });
