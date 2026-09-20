@@ -1,0 +1,50 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "ROOT=\"${SUT%%/packages/core/*}\"; cd \"$ROOT\" && npx jest --config packages/core/jest.config.js tests/domain/display-name/nestedDisplayName.test.ts 2>&1; cd \"$ROOT/packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/resolve-display-name.nestedDisplayName.integration.test.ts 2>&1",
+  "red_re": "› @req:\\S+ ([VW]\\d+) ",
+  "_doc": "req 0f992e88 (#4303) — the resolver half: the wiring of the hop plus each of its bounds.",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/domain/display-name/DisplayNameResolver.ts",
+  "mutants": {
+    "M5_resolver_wiring_removed": {
+      "from": "      nestedDisplayName: (wikilink: string) => this.resolveNestedDisplayName(wikilink),\n",
+      "to": "",
+      "expect": ["V1", "W1"]
+    },
+    "M6_resolver_provenance_gate_removed": {
+      "from": "      if (rendered.provenance !== \"spec\" && rendered.provenance !== \"tboxProjection\") return null;\n",
+      "to": "",
+      "expect": ["V11"]
+    },
+    "M7_resolver_cycle_guard_removed": {
+      "from": "    if (this.nestedTargets.has(target)) return null;\n",
+      "to": "",
+      "expect": ["V5"]
+    },
+    "M8_resolver_depth_cap_raised": {
+      "from": "    if (this.nestedDepth >= MAX_NESTED_DISPLAY_NAME_DEPTH) return null;",
+      "to": "    if (this.nestedDepth >= 99) return null;",
+      "expect": ["V6"]
+    },
+    "M9_resolver_metadataResolver_guard_removed": {
+      "from": "    if (!this.metadataResolver) return null;\n\n    const target = unwrapLinkTarget(wikilink);\n    if (this.nestedDepth >= MAX_NESTED_DISPLAY_NAME_DEPTH) return null;\n    if (this.nestedTargets.has(target)) return null;\n\n    // Defensive, stated as such: an unresolvable reference would render as `default` below and be\n    // refused by the provenance gate anyway — this only skips the work.\n    const targetMetadata = this.metadataResolver(wikilink);",
+      "to": "    const unguarded = this.metadataResolver as NonNullable<typeof this.metadataResolver>;\n\n    const target = unwrapLinkTarget(wikilink);\n    if (this.nestedDepth >= MAX_NESTED_DISPLAY_NAME_DEPTH) return null;\n    if (this.nestedTargets.has(target)) return null;\n\n    // Defensive, stated as such: an unresolvable reference would render as `default` below and be\n    // refused by the provenance gate anyway — this only skips the work.\n    const targetMetadata = unguarded(wikilink);",
+      "expect": ["V7"],
+      "_note": "TYPE-PRESERVING: dropping the guard alone leaves `this.metadataResolver` nullable at the call site, the suite fails to COMPILE and `0 tests` reads as «the axis does not differentiate» (integration-test-revert-verify §A36). The mutant keeps the call typed and only removes the protection."
+    },
+    "M10_resolver_unresolvable_target_guard_removed": {
+      "from": "    const targetMetadata = this.metadataResolver(wikilink);\n    if (!targetMetadata) return null;",
+      "to": "    const targetMetadata = this.metadataResolver(wikilink) ?? {};",
+      "_note": "DEFENSIVE, measured not asserted: an unresolvable reference renders as `default` in the nested call and is refused by the provenance gate anyway, so removing this early return changes no output — 0 axes redden. Kept because it skips the work and states the intent at the call site."
+    },
+    "M11_resolver_depth_not_unwound": {
+      "from": "      this.nestedTargets.delete(target);\n      this.nestedDepth -= 1;",
+      "to": "      this.nestedTargets.delete(target);",
+      "expect": ["V10"]
+    }
+  }
+}

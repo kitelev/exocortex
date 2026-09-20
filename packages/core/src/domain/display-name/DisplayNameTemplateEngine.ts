@@ -40,10 +40,21 @@ export class DisplayNameTemplateEngine {
    *   and cleaned INDEPENDENTLY, a field that renders empty is DROPPED together with its
    *   adjacent separator, and the survivors are re-joined by the separator. Absent → the
    *   original single-pass path, byte-identical (onto-RFC 0ba349ed, issue #4012).
+   * @param options.nestedDisplayName OPT-IN (default absent). Asked for the COMPOSED displayName
+   *   of a referenced asset, and asked ONLY where this engine would otherwise print the bare
+   *   linkpath — i.e. when the reference carries no display alias AND the target has no
+   *   `exo__Asset_label`. In a UID-canon vault that fallback is a bare UID, which is not a name
+   *   but the absence of one leaking into a sibling's title (req 0f992e88, issue #4303). The hop
+   *   is supplied by `DisplayNameResolver`, which owns the recursion and its bounds; an engine
+   *   constructed WITHOUT it is byte-identical to before the requirement.
    */
   constructor(
     private readonly template: string,
-    private readonly options: { joinArrayValues?: boolean; separator?: string } = {},
+    private readonly options: {
+      joinArrayValues?: boolean;
+      separator?: string;
+      nestedDisplayName?: (wikilink: string) => string | null;
+    } = {},
   ) {}
 
   /**
@@ -494,6 +505,16 @@ export class DisplayNameTemplateEngine {
           return label.trim();
         }
       }
+    }
+
+    // The target's COMPOSED displayName (req 0f992e88, issue #4303) — asked ONLY here, after the
+    // alias and the label have both declined, because only here does the value printed so far
+    // stop being a name: `target` is a bare UID in a UID-canon vault. Ordering is the whole
+    // contract — an asset that HAS a label keeps printing it, so nothing rendered today changes
+    // (measured: 0 of 50 884 live assets across the three canonical vaults).
+    const composed = this.options.nestedDisplayName?.(value);
+    if (composed !== null && composed !== undefined && composed.trim() !== "") {
+      return composed.trim();
     }
 
     // Fallback: return target without brackets
