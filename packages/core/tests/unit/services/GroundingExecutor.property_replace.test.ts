@@ -1,6 +1,14 @@
 /**
  * `property_replace` — swap EXACTLY ONE value of an array-typed frontmatter
- * property, leaving co-values and their order untouched.
+ * property.
+ *
+ * ⛔ Two measured qualifications the enum docstring now carries in full, named
+ * here so this file is not read as proving more than it does:
+ *   - co-values survive for the TWO-SPACE list-item shape only — a block-scalar
+ *     item makes `FrontmatterService.parseObject` drop every item after it, and
+ *     this type writes back what it read (shared with `property_append`);
+ *   - R4 shows the list SHRINKING by one when `to` is already present — set
+ *     semantics, so count is not preserved even though order is.
  *
  * Requirement `02de55a4-0a07-4347-b434-bb4a48eb0163` (issue #4308).
  *

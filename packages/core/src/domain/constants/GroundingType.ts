@@ -28,8 +28,28 @@ export enum GroundingType {
    */
   PROPERTY_APPEND = "property_append",
   /**
-   * Replace EXACTLY ONE value of an array-typed frontmatter property, leaving
-   * its co-values and their order untouched. Reads `targetProperty`,
+   * Replace EXACTLY ONE value of an array-typed frontmatter property.
+   *
+   * ⛔ The guarantee is NOT unconditional, and an earlier revision of this
+   * comment stated it as if it were ("leaving its co-values and their order
+   * untouched", full stop). Two measured qualifications:
+   *
+   * 1. Co-values survive **for the two-space list-item shape this codebase's
+   *    writers produce**. `FrontmatterService.parseObject` matches array items
+   *    with `/^ {2}- (.*)$/`, so a BLOCK-SCALAR item breaks the loop and every
+   *    item after it in the same array is dropped from the READ — and this
+   *    type writes back what it read. Measured 2026-09-20 on
+   *    `[ems__Task, |<block body>, ems__Effort]`: `parseObject` returns
+   *    `["ems__Task", "|"]` and `ems__Effort` is gone. The limitation is
+   *    shared with `property_append` (identical read+write pattern), lives in
+   *    FrontmatterService, and is tracked separately — it is named here
+   *    because this type is the one that makes the promise out loud.
+   * 2. The list can SHRINK BY ONE: when `replaceToExpression` already appears
+   *    elsewhere in the list, the `from` item is dropped rather than
+   *    duplicated (set semantics, matching `property_append`'s dedup). Order
+   *    of the surviving items is preserved, their count is not.
+   *
+   * Reads `targetProperty`,
    * `replaceFromExpression` (the value to find) and `replaceToExpression` (the
    * value to put in its place); both are resolved via `substituteVariables`.
    *

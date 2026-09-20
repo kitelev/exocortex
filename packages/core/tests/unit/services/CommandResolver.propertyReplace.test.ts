@@ -12,14 +12,23 @@
  *
  *   - `CommandResolver.loadGroundingDefinition` — the PRODUCTION path (plugin
  *     button + CLI `apply`), reading from the triple store;
- *   - `parseGroundingDefinitionFromFrontmatter` — the BDD path, reading raw
- *     frontmatter.
+ *   - `parseGroundingDefinitionFromFrontmatter` — the raw-frontmatter path,
+ *     reading the record directly.
  *
- * `GroundingFrontmatterParser` has ZERO production consumers, so a predicate
- * wired only there resolves to `undefined` at runtime
- * (`multi-parser-predicate-migration`). P1–P3 below drive the production loader
- * through a seeded triple store; P4 asserts both loaders agree on the same
- * source data.
+ * ⛔ An earlier revision of this comment called the second one "the BDD path".
+ * That is stale: cucumber was removed in #3433 (0 `.feature` files remain), and
+ * a sweep for importers of `parseGroundingDefinitionFromFrontmatter` across this
+ * tree finds only its own unit test, this file, and the package's public
+ * re-export — no functional consumer in-repo at all. ✅ What it actually is:
+ * PUBLIC API SURFACE exported from `@kitelev/exocortex-core`, potentially
+ * consumed by a repo not visible from here.
+ *
+ * The substance is unchanged by that correction: `CommandResolver` is the
+ * PRODUCTION loader, and a predicate wired only into the other one resolves to
+ * `undefined` at runtime (`multi-parser-predicate-migration`) — keeping an
+ * exported function honest is right regardless of who consumes it. P1–P3 below
+ * drive the production loader through a seeded triple store; P4 asserts both
+ * loaders agree on the same source data.
  */
 
 import { CommandResolver } from "../../../src/services/CommandResolver";
@@ -189,7 +198,7 @@ describe("CommandResolver — property_replace loader parity (@req:02de55a4-0a07
     await seedPropertyReplaceCommand(store);
     const production = (await resolver.loadCommand(COMMAND_UID))!.grounding;
 
-    // Same record as raw frontmatter → the BDD loader.
+    // Same record as raw frontmatter → the frontmatter loader.
     const bdd: GroundingDefinition = parseGroundingDefinitionFromFrontmatter(
       GROUNDING_UID,
       {

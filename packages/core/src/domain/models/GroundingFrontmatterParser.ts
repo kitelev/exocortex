@@ -164,7 +164,9 @@ export function parseGroundingDefinitionFromFrontmatter(
       | string
       | undefined,
     // Req 02de55a4 — MUST stay in parity with CommandResolver.loadGroundingDefinition:
-    // that loader feeds the production path (plugin + CLI), this one feeds BDD.
+    // that loader feeds the production path (plugin + CLI); this one is public
+    // API surface with no in-repo functional consumer (the "BDD" framing in the
+    // module docstring above predates #3433, which removed cucumber entirely).
     // Reading the predicate in only one of them leaves the feature dead in prod
     // under a fully green suite (multi-parser-predicate-migration).
     replaceFromExpression: fm["exocmd__Grounding_replaceFromExpression"] as
