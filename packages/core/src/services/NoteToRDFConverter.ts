@@ -129,6 +129,35 @@ export function canonicalYamlKey(property: string): string {
 }
 
 /**
+ * Issue #4219 — a POSIX bracket expression is NOT a wikilink.
+ *
+ * `[[:space:]]` in a body is `[` + the character class `[:space:]`, but the
+ * wikilink tokenizer (`[[<target>]]`) reads it as a link to `:space:`. Two
+ * opposite failures followed, both silent in their own way:
+ *   - indexing emitted `exo__Asset_bodyLink → ":space:"` — a junk edge no SHACL
+ *     shape judges (16 of them in vault-exodev, plus one `:слово:`);
+ *   - `set-body` REFUSED the same body ("file not found in vault"), so any edit
+ *     of a note that merely quotes a bash pattern needed
+ *     `--skip-wikilink-validation`, which drops validation for the WHOLE body.
+ *
+ * The discriminator is the shape of the target, not a list of class names: a
+ * target wrapped in colons cannot exist in either naming scheme. Measured on
+ * vault-exodev before the fix — assets whose label has this shape: **0**; files
+ * with a colon in the name: **0**. So skipping these cannot lose a working
+ * edge, only a junk one.
+ *
+ * ⛔ Deliberately NOT an allow-list of the twelve POSIX class names: the corpus
+ * already contains `[[:слово:]]` (a documentation example, non-Latin), which
+ * such a list would miss while being exactly as wrong a link.
+ *
+ * Exported so the indexer and the CLI's wikilink validator reach the same
+ * verdict through this function rather than through two copies free to drift.
+ */
+export function isPosixBracketExpression(target: string): boolean {
+  return /^:[^\s[\]|]+:$/.test(target);
+}
+
+/**
  * Normalise a user-supplied list of folder-exclusion prefixes:
  *   - Treat `undefined` / non-array as empty.
  *   - Coerce each entry through `String(...)` defensively in case JSON
@@ -2003,7 +2032,20 @@ export class NoteToRDFConverter {
 
     while ((match = pattern.exec(bodyContent)) !== null) {
       // match[1] contains the link target (without alias)
-      if (match[1]) {
+      // Issue #4219 — a POSIX bracket expression quoted in the body
+      // (`[[:space:]]` inside a grep pattern) is not a link target.
+      //
+      // The DECISION is taken on the trimmed target because the CLI's
+      // WikilinkValidator trims before asking the same question; testing the
+      // raw capture here would disagree with it on `[[ :space: ]]` — the
+      // validator would skip the link while this side still emitted the junk
+      // edge, which is precisely the drift sharing one predicate is meant to
+      // prevent (PR #4301 review, MEDIUM).
+      //
+      // ⛔ The VALUE added stays the raw capture: trimming it would silently
+      // change how every padded link (`[[ Note A ]]`) is indexed — a wider
+      // behaviour change than this fix is scoped to make.
+      if (match[1] && !isPosixBracketExpression(match[1].trim())) {
         links.add(match[1]);
       }
     }

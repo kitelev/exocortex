@@ -347,6 +347,9 @@ export {
   LEGACY_UNPREFIXED_ASSET_FIELDS,
   LEGACY_YAML_KEYS,
   canonicalYamlKey,
+  // Issue #4219 — the indexer and the CLI's wikilink validator must agree on
+  // what is NOT a link; sharing the predicate keeps them from drifting apart.
+  isPosixBracketExpression,
   type ExocortexInvariantCode,
   type ExocortexInvariantViolation,
 } from "./services/NoteToRDFConverter";

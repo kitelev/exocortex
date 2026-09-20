@@ -5,9 +5,10 @@ import { Command } from "commander";
 // package specifier `@kitelev/exocortex-core` is mocked below, so this import
 // reaches the actual module and the mock stays honest (see the comment at the
 // `canonicalYamlKey` entry).
-const { canonicalYamlKey: realCanonicalYamlKey } = await import(
-  "../../../../core/src/services/NoteToRDFConverter.js"
-);
+const {
+  canonicalYamlKey: realCanonicalYamlKey,
+  isPosixBracketExpression: realIsPosixBracketExpression,
+} = await import("../../../../core/src/services/NoteToRDFConverter.js");
 
 // Mock uuid (transitively a GenericAssetCreationService dependency)
 jest.unstable_mockModule("uuid", () => ({
@@ -34,6 +35,17 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
    * to the actual module.
    */
   canonicalYamlKey: realCanonicalYamlKey,
+  /**
+   * Issue #4219 — transitively required: create.ts → WikilinkValidator, which
+   * asks core whether a `[[…]]` target is a POSIX bracket expression rather
+   * than a link.
+   *
+   * ⛤ Same reasoning as `canonicalYamlKey` above: the REAL predicate is wired
+   * in, not a stub. A stub here would let the suite pass against a rule the
+   * indexer no longer shares — and "indexer and validator agree" is precisely
+   * the property the fix exists to guarantee.
+   */
+  isPosixBracketExpression: realIsPosixBracketExpression,
   // Transitively required: create.ts → folderRepairHelpers.ts imports this.
   extractAssetReference: jest.fn((v: unknown) =>
     typeof v === "string"
