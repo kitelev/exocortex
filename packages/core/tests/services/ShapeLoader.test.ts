@@ -1657,4 +1657,40 @@ describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Prope
       },
     );
   });
+
+  it("V8 @req:94b302e0-eecd-4809-a5b1-0d1677c38d9c loadFromVaultFS: an unusable label must not RESERVE a uid key — under first-wins a file carrying one would otherwise poison the entry and make the real class file lose, which is the asymmetry the graph-side buildUidClassIndex avoids by only setting a key once its classIRI resolved", async () => {
+    // Class files precede the def in scan order on purpose: this axis isolates
+    // KEY POISONING, not scan-order completeness (that is V3, and M8 must redden
+    // V3 alone).
+    // Two files share one exo__Asset_uid; the one visited FIRST carries a label
+    // that can never yield an IRI. The admission guards must drop it before the
+    // key is taken, so the real class file still wins the entry.
+    await withVault(
+      {
+        "a-broken/x.md": CLASS_FM(TASK_UID, "not-a-key", "[[exo__Asset]]"),
+        [`b-ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
+        "z-flow/def.md": V_DEF(`[[${TASK_UID}]]`),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.domain).toEqual([
+          TASK_IRI,
+        ]);
+      },
+    );
+    // Same shape, but the poisoning label is multi-word — the other admission
+    // guard. `labelToIRI` would reject it on lookup, yet the damage is done at
+    // WRITE time: the key is already spent.
+    await withVault(
+      {
+        "a-broken/x.md": CLASS_FM(TASK_UID, "ems__Task (DEPRECATED)", "[[exo__Asset]]"),
+        [`b-ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
+        "z-flow/def.md": V_DEF(`[[${TASK_UID}]]`),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.domain).toEqual([
+          TASK_IRI,
+        ]);
+      },
+    );
+  });
 });
