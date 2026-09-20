@@ -1,0 +1,68 @@
+{
+  "_doc": "Revert-verify mutants for ticket 534a7a46, req 675cb0ab-b73d-4736-934d-6094e792af5d — SUBJECT: packages/core/src/services/GroundingExecutor.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout. Guards enumerated from `git diff -U0` (integration-test-revert-verify §A8). ⛤ ME3 is the gate's own mutant, required by the ORCH plan-gate: the ticket's property_set change is reached ONLY when scalarTypingForRange(range) !== undefined, and without that gate the shape guards inside needsYamlQuoting would quote a deliberate flow array on its leading `[` and break multi-class convert — so ME3 must redden K13/K14 (the verbatim axes) and leave the typing axes green. ⛔ NAMED, not mutated (§A35): the iriToObsidianName call in executePropertySet is DEFENSIVE — CommandResolver.getObsidianName (CommandResolver.ts:3696) already puts targetProperty in prefix__Name form with the same inverse, so on every resolver-driven path iriToObsidianName returns null and the fallback runs; no axis can distinguish the two, and an axis on the IRI form would specify an input production cannot produce (§A37). Probed 2026-09-20: a hand-built grounding with the IRI form does resolve the range, but its write key degrades to the raw IRI — a pre-existing defect of that unreachable shape, raised separately rather than adopted as this requirement's contract.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/GroundingExecutor.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/services/DeclaredRangesResolver.test.ts tests/integration/asset-creation/range-typing-534a7a46.integration.test.ts 2>&1",
+  "env_var": "SUT",
+  "red_re": "› (K\\d+[a-z]?) ",
+  "mutants": {
+    "ME1_port_not_stored": {
+      "from": "    this.declaredRanges = options?.declaredRanges;",
+      "to": "    this.declaredRanges = undefined;",
+      "expect": [
+        "K8",
+        "K9",
+        "K12"
+      ],
+      "_note": "Drops the wiring entirely: every typing axis falls back to the shape rule. K10/K11 (controls) and K13/K14 (verbatim) must stay green — they assert the pre-ticket shape, which is what this mutant restores. ⛤ K12 was ABSENT from the measured red set on the first run, and that was a real finding about the AXIS, not about this mutant: K12 then asserted a canonical integer under xsd:integer, and property_set writes an untyped value VERBATIM, so both outcomes were the bare `-1003912427125`. The axis was green for an independent reason. K12 now uses xsd:string / `42`, where bare and quoted differ."
+    },
+    "ME2_create_instance_does_not_read_the_port": {
+      "from": "    const declaredRanges = this.declaredRanges\n      ? await this.declaredRanges(Object.keys(properties))\n      : undefined;",
+      "to": "    const declaredRanges = this.declaredRanges\n      ? new Map<string, readonly string[]>()\n      : undefined;",
+      "expect": [
+        "K8",
+        "K9"
+      ],
+      "_note": "Type-PRESERVING (§A36): the port is still consulted for PRESENCE, so `declaredRanges` keeps its `ReadonlyMap | undefined` type and the lookup below still type-checks — it just never asks the port for anything. The first form assigned a bare `undefined`, which narrowed the variable to `undefined` and broke `.get` at the call site (TS2339 → BROKEN, no verdict)."
+    },
+    "ME2b_create_instance_lookup_ignores_the_key": {
+      "from": "        : (suppliedKey) => declaredRanges.get(suppliedKey),",
+      "to": "        : (_suppliedKey) => undefined,",
+      "expect": [
+        "K8",
+        "K9"
+      ],
+      "_note": "The threading is present but yields nothing: separates 'the port is read' (ME2) from 'its answer reaches the serializer'."
+    },
+    "ME3_typing_gate_removed_untyped_values_routed_through_the_serializer": {
+      "from": "      scalarTypingForRange(declaredRange) !== undefined\n        ? serializeYamlScalar(\n            substitutedValue,\n            isStringScalarProperty,\n            declaredRange,\n          )\n        : isStringScalarProperty\n          ? serializeYamlScalar(substitutedValue, true)\n          : substitutedValue;",
+      "to": "      true\n        ? serializeYamlScalar(\n            substitutedValue,\n            isStringScalarProperty,\n            declaredRange,\n          )\n        : isStringScalarProperty\n          ? serializeYamlScalar(substitutedValue, true)\n          : substitutedValue;",
+      "expect": [
+        "K13"
+      ],
+      "_note": "⛤ The gate's own mutant. With the gate gone, a deliberate flow array [\"[[ems__Task]]\"] is quoted on its leading `[` (needsYamlQuoting's YAML_LEADING_INDICATORS) and multi-class convert breaks — K13 is the axis that says so. K14's pre-quoted wikilink survives because serializeYamlScalar passes a complete double-quoted scalar through verbatim, so it stays green; that asymmetry is measured, not predicted."
+    },
+    "ME4_property_set_does_not_read_the_port": {
+      "from": "    const declaredRange = this.declaredRanges\n      ? (await this.declaredRanges([rangeLookupKey])).get(rangeLookupKey)\n      : undefined;",
+      "to": "    const declaredRange: readonly string[] | undefined = undefined;",
+      "expect": [
+        "K12"
+      ],
+      "_note": "property_set side only; the create_instance axes keep their own read. ⛤ Also read zero on the first run for the same reason as ME1 — see its note; the rewritten K12 is what makes this read load-bearing."
+    },
+    "ME5_string_scalar_flag_forced_on_under_a_declared_range": {
+      "from": "        ? serializeYamlScalar(\n            substitutedValue,\n            isStringScalarProperty,\n            declaredRange,\n          )",
+      "to": "        ? serializeYamlScalar(substitutedValue, true, declaredRange)",
+      "expect": [],
+      "_note": "⛔ NO DISTINGUISHING INPUT on this axis set, and that is stated rather than papered over (§A35): under a numeric declared range the declaration wins over the string-semantic flag inside needsYamlQuoting (the integer branch returns before the quoteAmbiguousScalars check), so passing `true` changes nothing for K12. It would matter only for a property that is BOTH in STRING_SCALAR_PROPERTIES and carries a numeric range — exo__Asset_label / aliases with an xsd:integer range, of which the three vaults hold none (that combination is nonsense by construction). The argument is threaded faithfully anyway so the two sites of this executor agree."
+    }
+  }
+}

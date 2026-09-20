@@ -1,0 +1,63 @@
+{
+  "_doc": "Revert-verify mutants for ticket 534a7a46, req 675cb0ab-b73d-4736-934d-6094e792af5d — SUBJECT: packages/core/src/utilities/FrontmatterService.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout. Guards enumerated from `git diff -U0` (integration-test-revert-verify §A8). The change here is the twin of MetadataHelpers.buildFileContent down to the suppliedKeyOf map, so each mutant below has a counterpart in writer-string-oracle-8185c9dd.metadatahelpers.spec.json — deliberately, so a future reader diffing the two writers sees one shape and not two.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/utilities/FrontmatterService.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/services/DeclaredRangesResolver.test.ts tests/integration/asset-creation/range-typing-534a7a46.integration.test.ts tests/utilities/FrontmatterService.test.ts tests/utilities/FrontmatterService.yamlQuoting.test.ts 2>&1",
+  "env_var": "SUT",
+  "red_re": "› (K\\d+[a-z]?) ",
+  "mutants": {
+    "MF1_scalar_site_drops_the_declared_range": {
+      "from": "      ? serializeYamlScalar(value, quoteAmbiguous, declaredRange)",
+      "to": "      ? serializeYamlScalar(value, quoteAmbiguous)",
+      "expect": [
+        "K8",
+        "K9"
+      ],
+      "_note": "The scalar emission point (:640 on origin/main). K10/K11 assert the pre-ticket shape and must stay green — this mutant restores exactly that shape for a RANGED property, which is what K8/K9 exist to forbid."
+    },
+    "MF2_array_item_site_drops_the_declared_range": {
+      "from": "            `  - ${quoteScalars ? serializeYamlScalar(v, quoteAmbiguous, declaredRange) : String(v)}`,",
+      "to": "            `  - ${quoteScalars ? serializeYamlScalar(v, quoteAmbiguous) : String(v)}`,",
+      "expect": [],
+      "_note": "⛔ NO AXIS, named rather than left as a silent hole (§A35): create_instance writes a LIST only for exo__Instance_class and aliases, neither of which carries a datatype range (a class ref and a string-semantic key), so this axis set has no fixture whose ARRAY items are range-typed. The site is threaded because the two emission points of one method must not disagree — a property whose range is declared and whose value is multi-valued would otherwise be typed on one path and not the other. Raised as the one hole this spec leaves open, with its own candidate."
+    },
+    "MF3_lookup_uses_the_canonical_key_instead_of_the_supplied_one": {
+      "from": "        declaredRangeOf?.(suppliedKeyOf[key] ?? key),",
+      "to": "        declaredRangeOf?.(key),",
+      "expect": [],
+      "_note": "⛔ NO DISTINGUISHING INPUT here, stated rather than hidden: the two keys differ only for the canonicalised spellings (exo__Asset_aliases → aliases, exo__Asset_pinned → pinned), and none of those carries a datatype range in any vault. The mapping is kept because its counterpart in MetadataHelpers IS pinned by an axis (writer-string-oracle-8185c9dd, MEDIUM LOW-1) and the two writers must agree by construction, not by coincidence — this is the twin's half of that guarantee."
+    },
+    "MF4_supplied_key_map_not_built": {
+      "from": "      suppliedKeyOf[canonicalKey] = key;",
+      "to": "      void canonicalKey;",
+      "expect": [],
+      "_note": "⛔ Same absence as MF3 and for the same reason; kept separate because MF3 removes the READ and this removes the WRITE, and a future axis on a canonicalised ranged key would redden them for different reasons. Both are inert on today's data by the measurement above, not by argument."
+    },
+    "MF5_third_parameter_ignored": {
+      "from": "    declaredRange?: readonly string[],\n  ): string {",
+      "to": "    declaredRangeIgnored?: readonly string[],\n  ): string {\n    const declaredRange: readonly string[] | undefined = undefined;\n    void declaredRangeIgnored;",
+      "expect": [
+        "K8",
+        "K9"
+      ],
+      "_note": "The whole parameter made inert at the serializer's own boundary: separates 'createFrontmatter forwards a range' (MF6) from 'serializeValue uses it'."
+    },
+    "MF6_createFrontmatter_does_not_forward_the_lookup": {
+      "from": "        declaredRangeOf?.(suppliedKeyOf[key] ?? key),",
+      "to": "        undefined,",
+      "expect": [
+        "K8",
+        "K9"
+      ],
+      "_note": "⚠ Overlaps MF3's anchor line by design — the driver splices each mutant into an UNTOUCHED copy, so a shared anchor is legitimate (the uniqueness the driver requires is within the SUBJECT, not across mutants). MF3 changes the KEY, this one removes the CALL."
+    }
+  }
+}
