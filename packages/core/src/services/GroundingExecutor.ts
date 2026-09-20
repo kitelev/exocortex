@@ -599,6 +599,14 @@ export class GroundingExecutor {
             targetFilePath,
           );
 
+        case GroundingType.PROPERTY_REPLACE:
+          return await this.executePropertyReplace(
+            grounding,
+            targetIRI,
+            targetFilePath,
+            userInput,
+          );
+
         case GroundingType.COMPOSITE:
           return await this.executeComposite(
             grounding,
@@ -3273,6 +3281,122 @@ export class GroundingExecutor {
       // every PR). Always-quoted keeps the on-disk alias shape (`- "Foo"`).
       merged = [...existing, quoteYamlString(plain)];
     }
+
+    const updated = this.stampUpdatedAt(
+      content,
+      this.frontmatterService.updateProperty(
+        content,
+        grounding.targetProperty,
+        merged,
+      ),
+      grounding.targetProperty,
+    );
+    await this.fileWriter.updateFile(filePath, updated);
+
+    return { success: true };
+  }
+
+  /**
+   * `property_replace` — swap EXACTLY ONE value of an array-typed frontmatter
+   * property, leaving its co-values and their order untouched.
+   * Requirement `02de55a4-0a07-4347-b434-bb4a48eb0163` (issue #4308).
+   *
+   * Reads:
+   * - `grounding.targetProperty` — the array property to edit.
+   * - `grounding.replaceFromExpression` — the value to find (substituted).
+   * - `grounding.replaceToExpression` — the value to put in its place.
+   *
+   * Refuses (leaving the file byte-identical) when:
+   * - any of the three is missing;
+   * - the on-disk value is not a LIST — for a scalar, "replace one element" is
+   *   identical to `property_set`, and silently turning `prop: X` into
+   *   `prop:\n  - Y` would change the YAML shape as a side effect;
+   * - `from` is not among the current values. ⛔ This refusal is load-bearing:
+   *   without it the type degenerates into `property_append` on every miss and
+   *   silently produces the contradictory two-value state it exists to prevent.
+   *
+   * Comparison is on DECODED forms (as in `executePropertyAppend`): `existing`
+   * holds the raw on-disk items, so a stored `"Say \"hi\""` matches a plain
+   * `Say "hi"`.
+   */
+  private async executePropertyReplace(
+    grounding: GroundingDefinition,
+    targetIRI: string,
+    filePath: string,
+    userInput?: UserInput,
+  ): Promise<ExecutionResult> {
+    if (!grounding.targetProperty) {
+      return {
+        success: false,
+        error: "property_replace requires targetProperty",
+      };
+    }
+    if (grounding.replaceFromExpression === undefined) {
+      return {
+        success: false,
+        error: "property_replace requires replaceFromExpression",
+      };
+    }
+    if (grounding.replaceToExpression === undefined) {
+      return {
+        success: false,
+        error: "property_replace requires replaceToExpression",
+      };
+    }
+
+    const content = await this.fileReader.readFile(filePath);
+    const targetFrontmatter =
+      this.frontmatterService.parseObject(content) ?? {};
+
+    const existingRaw = targetFrontmatter[grounding.targetProperty];
+    if (!Array.isArray(existingRaw)) {
+      return {
+        success: false,
+        error:
+          `property_replace: <${grounding.targetProperty}> is not a list on this asset ` +
+          `(replacing one element of a scalar is identical to property_set — use that instead)`,
+      };
+    }
+    const existing: string[] = existingRaw;
+
+    const plainOf = (expression: string): string => {
+      const resolved = this.substituteVariables(
+        expression,
+        targetIRI,
+        userInput,
+        targetFrontmatter,
+      );
+      return isCompleteDoubleQuotedScalar(resolved)
+        ? decodeYamlQuotedScalar(resolved)
+        : resolved;
+    };
+
+    const fromPlain = plainOf(grounding.replaceFromExpression);
+    const toPlain = plainOf(grounding.replaceToExpression);
+
+    const fromIndex = existing.findIndex(
+      (item) => decodeYamlQuotedScalar(item) === fromPlain,
+    );
+    if (fromIndex === -1) {
+      return {
+        success: false,
+        error:
+          `property_replace: "${fromPlain}" is not a value of ` +
+          `<${grounding.targetProperty}> on this asset — refusing rather than appending`,
+      };
+    }
+
+    // Idempotence: when `to` is ALREADY present elsewhere in the list, drop the
+    // `from` item instead of writing a duplicate.
+    const toIndexElsewhere = existing.findIndex(
+      (item, i) => i !== fromIndex && decodeYamlQuotedScalar(item) === toPlain,
+    );
+    const merged =
+      toIndexElsewhere === -1
+        ? existing.map((item, i) =>
+            i === fromIndex ? quoteYamlString(toPlain) : item,
+          )
+        : existing.filter((_, i) => i !== fromIndex);
 
     const updated = this.stampUpdatedAt(
       content,

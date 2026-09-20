@@ -44,9 +44,9 @@ describe("RFC 9d20c91f Phase 2 — TS enum ↔ vault asset parity", () => {
       }
     });
 
-    it("11 unique UIDs (no collisions)", () => {
+    it("12 unique UIDs (no collisions)", () => {
       const uids = Object.values(GROUNDING_TYPE_UIDS);
-      expect(new Set(uids).size).toBe(11);
+      expect(new Set(uids).size).toBe(12);
     });
   });
 
@@ -60,13 +60,13 @@ describe("RFC 9d20c91f Phase 2 — TS enum ↔ vault asset parity", () => {
       }
     });
 
-    it("has the same 11 entries as GROUNDING_TYPE_UIDS", () => {
-      expect(Object.keys(GROUNDING_TYPE_UID_TO_ENUM)).toHaveLength(11);
+    it("has the same 12 entries as GROUNDING_TYPE_UIDS", () => {
+      expect(Object.keys(GROUNDING_TYPE_UID_TO_ENUM)).toHaveLength(12);
     });
   });
 
   describe("GROUNDING_TYPE_IRI_TO_ENUM (symbolic class IRI map)", () => {
-    it("covers all 11 enum values", () => {
+    it("covers all 12 enum values", () => {
       const enumValuesFromIRI = new Set(Object.values(GROUNDING_TYPE_IRI_TO_ENUM));
       const allEnumValues = new Set(Object.values(GroundingType));
       expect(enumValuesFromIRI).toEqual(allEnumValues);

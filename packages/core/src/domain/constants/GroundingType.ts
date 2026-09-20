@@ -28,6 +28,26 @@ export enum GroundingType {
    */
   PROPERTY_APPEND = "property_append",
   /**
+   * Replace EXACTLY ONE value of an array-typed frontmatter property, leaving
+   * its co-values and their order untouched. Reads `targetProperty`,
+   * `replaceFromExpression` (the value to find) and `replaceToExpression` (the
+   * value to put in its place); both are resolved via `substituteVariables`.
+   *
+   * Requirement `02de55a4-0a07-4347-b434-bb4a48eb0163` (issue #4308). The three
+   * existing list primitives all operate on the property as a WHOLE —
+   * `property_set` replaces the value, `property_delete` removes the property,
+   * `property_append` only adds — so swapping one element of a multi-value list
+   * had no sanctioned path. Measured 2026-09-20: 103 of 644 property
+   * definitions across the three canonical vaults (15 %) carry two or more
+   * classes in `exo__Instance_class`, so a whole-value replace would silently
+   * drop their co-classes.
+   *
+   * ⛔ A `replaceFromExpression` that is absent from the list is a REFUSAL, not
+   * an append — otherwise this type degenerates into `property_append` on every
+   * miss and silently produces the very state it exists to prevent.
+   */
+  PROPERTY_REPLACE = "property_replace",
+  /**
    * Increment an integer frontmatter property by `incrementBy` (default 1).
    * Reads `targetProperty` (integer property) and `incrementBy` (xsd:integer,
    * supports negative values). Missing property is treated as 0.
