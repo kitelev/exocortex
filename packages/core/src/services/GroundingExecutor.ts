@@ -219,11 +219,20 @@ export function findMissingInput(
   userInput?: UserInput,
 ): string | null {
   const staticTemplate = (g: GroundingDefinition): string | undefined => {
+    // ⛔ Type-gated on purpose. `missingInputHint` is consulted by exactly ONE
+    // place in the executing path — `executePropertySet` — so a `property_append`
+    // / `body_template` / `service_call` grounding is NEVER refused for a missing
+    // input, however its own fields read. Those types can still CARRY a stray
+    // `targetValue*` (the parser keeps unknown-for-the-type fields, and the
+    // executor simply ignores them); without this gate the pre-flight would
+    // refuse a call the executor would have run happily — a false refusal, which
+    // is worse than the false-green this whole change removes.
+    if (g.type !== GroundingType.PROPERTY_SET) return undefined;
     if (g.targetValueRef !== undefined) return `"[[${g.targetValueRef}]]"`;
     if (g.targetValueLiteral !== undefined) return g.targetValueLiteral;
     if (g.targetValueSubstitution !== undefined)
       return g.targetValueSubstitution;
-    return undefined; // targetValueQuery, or a non-value grounding
+    return undefined; // targetValueQuery — template only exists after the query runs
   };
 
   const visit = (g: GroundingDefinition): string | null => {

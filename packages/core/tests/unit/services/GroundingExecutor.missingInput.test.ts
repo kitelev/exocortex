@@ -220,6 +220,48 @@ describe("findMissingInput — PRE-FLIGHT path (Issue #4298)", () => {
     ).toBeNull();
   });
 
+  it("⛔ does NOT refuse a NON-property_set grounding that carries a stray targetValue*", () => {
+    // The executing path consults the missing-input check in exactly one place —
+    // executePropertySet. A property_append / body_template / service_call
+    // grounding is never refused for a missing input, however its own fields
+    // read, but the parser still keeps a `targetValue*` that is meaningless for
+    // its type. Ungated, the pre-flight would refuse a call the executor runs
+    // happily: a FALSE refusal, strictly worse than the false-green being fixed.
+    for (const type of [
+      GroundingType.PROPERTY_APPEND,
+      GroundingType.BODY_TEMPLATE,
+      GroundingType.SERVICE_CALL,
+      GroundingType.PROPERTY_INCREMENT,
+      GroundingType.CREATE_INSTANCE,
+    ]) {
+      expect(
+        findMissingInput(
+          makeGrounding({
+            type,
+            targetProperty: "p",
+            targetValueSubstitution: "$input.label",
+          }),
+          {},
+        ),
+      ).toBeNull();
+    }
+  });
+
+  it("a composite does not refuse because of a NON-property_set step", () => {
+    const composite = makeGrounding({
+      type: GroundingType.COMPOSITE,
+      steps: [
+        makeGrounding({
+          type: GroundingType.PROPERTY_APPEND,
+          targetProperty: "aliases",
+          targetValueSubstitution: "$input.label", // stray, ignored by the executor
+          appendExpression: "$target.exo__Asset_label",
+        }),
+      ],
+    });
+    expect(findMissingInput(composite, {})).toBeNull();
+  });
+
   it("says nothing about a grounding that consumes no input at all", () => {
     expect(
       findMissingInput(
