@@ -1,0 +1,42 @@
+{
+  "_doc": "Revert-verify mutants for ticket efe993e1 (req 78c46697-6d6f-4ad3-8c98-f8f3b3507231, PR fix/shapeloader-quoted-label). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). The diff is ONE line — registerCandidate now strips the surrounding quotes from exo__Asset_label with the predicate copied verbatim from indexUidLabel — so the guards are enumerated INSIDE that line per integration-test-revert-verify §A8: the two literal character classes (the leading and the trailing anchored ['\"] ), and the `g` flag. Each carries a mutant; M1 removes the predicate outright. M1/M3/M4/M5 share a RED set (they all leave a quote attached, so labelToIRI fails and the def is dropped) — the overlap is legitimate: they are DIFFERENT guards of the same expression and each must redden, not each must redden something unique. M2 is the adressed one: dropping the apostrophe from the class leaves the double-quoted axis green and reddens only the single-quoted one. ⛔ ONE conceivable mutation carries no mutant deliberately: replacing the anchored predicate with an unanchored `.replace(/[\"']/g, \"\")` (strip EVERY quote, not just the surrounding pair) is behaviourally equivalent on any admissible input — a label with an INTERIOR quote fails Namespace.fromPropertyKey under every state of this code, so no observable differs and an axis for it would be vacuous. Expectations were derived axis-by-axis (what does each one assert), not from the mutant's theme — §A44. Note B3 and B6 redden together with B1/B2 under M1/M3/M4/M5: B3 asserts the quoted def IS defined next to the bare one, and B6 asserts FS/graph parity, which a dropped FS shape breaks. B4 (basename fallback) and B5 (a human label stays unadmitted) stay GREEN under every mutant — they are the controls.",
+  "tree": "/Users/kitelev/Developer/exocortex-development/worktrees/shapeloader-quoted-label",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "/Users/kitelev/Developer/exocortex-development/worktrees/shapeloader-quoted-label/packages/core/src/services/ShapeLoader.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/services/ShapeLoader.test.ts 2>&1",
+  "mutants": {
+    "M1_no_strip_at_all": {
+      "from": "      label = labelRaw.trim().replace(/^[\"']|[\"']$/g, \"\");\n",
+      "to": "      label = labelRaw.trim();\n",
+      "expect": ["B1", "B2", "B3", "B6"]
+    },
+    "M2_class_drops_the_apostrophe": {
+      "from": "      label = labelRaw.trim().replace(/^[\"']|[\"']$/g, \"\");\n",
+      "to": "      label = labelRaw.trim().replace(/^[\"]|[\"]$/g, \"\");\n",
+      "expect": ["B2"]
+    },
+    "M3_leading_half_removed": {
+      "from": "      label = labelRaw.trim().replace(/^[\"']|[\"']$/g, \"\");\n",
+      "to": "      label = labelRaw.trim().replace(/[\"']$/g, \"\");\n",
+      "expect": ["B1", "B2", "B3", "B6"]
+    },
+    "M4_trailing_half_removed": {
+      "from": "      label = labelRaw.trim().replace(/^[\"']|[\"']$/g, \"\");\n",
+      "to": "      label = labelRaw.trim().replace(/^[\"']/g, \"\");\n",
+      "expect": ["B1", "B2", "B3", "B6"]
+    },
+    "M5_global_flag_dropped": {
+      "from": "      label = labelRaw.trim().replace(/^[\"']|[\"']$/g, \"\");\n",
+      "to": "      label = labelRaw.trim().replace(/^[\"']|[\"']$/, \"\");\n",
+      "expect": ["B1", "B2", "B3", "B6"]
+    }
+  }
+}

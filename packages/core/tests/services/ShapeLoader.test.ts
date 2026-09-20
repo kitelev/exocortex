@@ -1693,4 +1693,123 @@ describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Prope
       },
     );
   });
+
+  // ── ticket efe993e1: a QUOTED exo__Asset_label ───────────────────────────
+  //
+  // parseFrontmatter keeps a value verbatim, quotes included, so a definition
+  // written `exo__Asset_label: "flow__Stage_order"` used to reach labelToIRI
+  // with the quotes still attached, fail `<prefix>__<Local>` parsing and get
+  // dropped BEFORE the domain was parsed. registerCandidate now applies the
+  // same strip the rest of the file already applies.
+
+  const REQ_Q = "@req:78c46697-6d6f-4ad3-8c98-f8f3b3507231";
+
+  /** A def typed `exo__Property` whose label line is given verbatim. */
+  const B_DEF = (labelLine: string, uid = "9d2f1a11-0000-4000-8000-000000000001") =>
+    [
+      "---",
+      `exo__Asset_uid: ${uid}`,
+      "exo__Instance_class:",
+      '  - "[[exo__Property]]"',
+      ...(labelLine ? [labelLine] : []),
+      "exo__Property_domain:",
+      `  - "[[${TASK_UID}]]"`,
+      'exo__Property_range: "xsd:integer"',
+      'exo__Property_cardinality: "[[59a37aa7-ffbe-4e0d-ba60-06ae370d880f]]"',
+      "---",
+      "",
+    ].join("\n");
+
+  it(`B1 ${REQ_Q} loadFromVaultFS: a DOUBLE-quoted exo__Asset_label registers the shape — the quotes are stripped before labelToIRI, so the definition is no longer dropped ahead of the domain`, async () => {
+    await withVault(
+      {
+        "flow/def.md": B_DEF('exo__Asset_label: "flow__Stage_order"'),
+        [`ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
+      },
+      async (dir) => {
+        const shape = (await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI);
+        expect(shape).toBeDefined();
+        expect(shape!.propertyIRI).toBe(PROPERTY_IRI);
+        expect(shape!.domain).toEqual([TASK_IRI]);
+        expect(shape!.range).toEqual([`${XSD_NS}integer`]);
+        expect(shape!.cardinality).toBe("Multiple");
+      },
+    );
+  });
+
+  it(`B2 ${REQ_Q} loadFromVaultFS: a SINGLE-quoted label registers identically — the stripped character class covers the apostrophe as well as the double quote`, async () => {
+    await withVault(
+      {
+        "flow/def.md": B_DEF("exo__Asset_label: 'flow__Stage_order'"),
+        [`ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
+      },
+      async (dir) => {
+        const shape = (await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI);
+        expect(shape).toBeDefined();
+        expect(shape!.domain).toEqual([TASK_IRI]);
+        expect(shape!.range).toEqual([`${XSD_NS}integer`]);
+      },
+    );
+  });
+
+  it(`B3 ${REQ_Q} loadFromVaultFS: the UNQUOTED path is unchanged — a bare label and a quoted one in the SAME vault yield shapes identical in every field but the propertyIRI`, async () => {
+    const OTHER_IRI = "https://exocortex.my/ontology/flow#Stage_other";
+    await withVault(
+      {
+        "flow/quoted.md": B_DEF('exo__Asset_label: "flow__Stage_order"'),
+        "flow/bare.md": B_DEF(
+          "exo__Asset_label: flow__Stage_other",
+          "9d2f1a11-0000-4000-8000-000000000002",
+        ),
+        [`ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
+      },
+      async (dir) => {
+        const reg = await ShapeLoader.loadFromVaultFS(dir);
+        const quoted = reg.get(PROPERTY_IRI);
+        const bare = reg.get(OTHER_IRI);
+        expect(bare).toBeDefined();
+        expect(quoted).toBeDefined();
+        // Strip the only field that is meant to differ and compare the rest.
+        expect({ ...quoted!, propertyIRI: "" }).toEqual({ ...bare!, propertyIRI: "" });
+      },
+    );
+  });
+
+  it(`B4 ${REQ_Q} loadFromVaultFS: the basename fallback is untouched — a definition with NO exo__Asset_label still registers through its filename stem, which cannot carry surrounding quotes`, async () => {
+    await withVault(
+      {
+        "flow/flow__Stage_order.md": B_DEF(""),
+        [`ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.domain).toEqual([
+          TASK_IRI,
+        ]);
+      },
+    );
+  });
+
+  it(`B5 ${REQ_Q} loadFromVaultFS: stripping quotes does NOT widen admission — a quoted HUMAN label still registers nothing, because what is left after the quotes is multi-word, exactly as the graph side rejects it`, async () => {
+    await withVault(
+      {
+        "flow/def.md": B_DEF('exo__Asset_label: "Some Human Label"'),
+        [`ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
+      },
+      async (dir) => {
+        const reg = await ShapeLoader.loadFromVaultFS(dir);
+        expect(reg.get(PROPERTY_IRI)).toBeUndefined();
+        expect(reg.size).toBe(0);
+      },
+    );
+  });
+
+  it(`B6 ${REQ_Q} loader parity: the SAME files yield deep-equal shapes via loadFromRDFGraph and loadFromVaultFS when the label is a quoted scalar — the graph side always saw the bare label (YAML strips the quotes before NoteToRDFConverter), so this restores parity rather than introducing a divergence`, async () => {
+    const { viaGraph, viaFS } = await parityShapes({
+      "flow/def.md": B_DEF('exo__Asset_label: "flow__Stage_order"'),
+      [`ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
+    });
+    expect(viaFS).toBeDefined();
+    expect(viaGraph).toBeDefined();
+    expect(viaGraph).toEqual(viaFS);
+  });
 });
