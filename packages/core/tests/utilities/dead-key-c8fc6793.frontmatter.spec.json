@@ -44,7 +44,7 @@
     }
   },
   "_coverage": {
-    "_doc": "Coverage arithmetic, stated so a reader does not have to recount: of DK1..DK19, FIFTEEN go red under at least one mutant across the three specs (DK1 DK4 DK5 DK7 DK8 DK9 DK10 DK11 DK12 DK13 DK14 DK15 DK17 DK18 DK19) and FOUR are DELIBERATELY green under every mutant (below). 15 + 4 = 19 — no axis is unaccounted for.",
+    "_doc": "Coverage arithmetic, stated so a reader does not have to recount: of DK1..DK21, 17 go red under at least one mutant (DK1 DK4 DK5 DK7 DK8 DK9 DK10 DK11 DK12 DK13 DK14 DK15 DK17 DK18 DK19 DK20 DK21) and 4 are DELIBERATELY green under every mutant (DK2 DK3 DK6 DK16, see the notes below). 17 + 4 = 21 -- no axis is unaccounted for. Recomputed after review round 1 added MD7 and axes DK20/DK21.",
     "_note_DK2": "PAIRED CONTROL, green on purpose: an in-map namespace (ems/exo) must behave EXACTLY as before the ticket. Reddening it would mean the fix changed the hot path, which is the one thing it must not do. ⛔ Do not 'strengthen' this axis — its value is that it cannot move.",
     "_note_DK3": "PASS-THROUGH CONTROL, green on purpose: a foreign, underivable base returns unchanged both before and after the fix (the inverse yields null, `?? property` returns the input). No mutant in this diff can move it; it guards against a FUTURE change that starts resolving foreign bases.",
     "_note_DK6": "PASS-THROUGH CONTROL, green on purpose: a non-IRI name (prefixed key, bare `aliases`, the CURIE `xsd:string` that exo__Property_range actually uses 134 times) never enters the IRI branch at all.",

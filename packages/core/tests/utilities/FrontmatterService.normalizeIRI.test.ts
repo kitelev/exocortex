@@ -72,13 +72,38 @@ describe("FrontmatterService.normalizeIRI — every namespace, or nothing (ticke
     expect(FrontmatterService.normalizeIRI(slashLocal)).toBe(slashLocal);
   });
 
+  it("DK20 a local name containing an INTERIOR HASH passes through untouched — as a KEY @req:eac1690d-4d17-4f00-a221-0f8bee3c697c", () => {
+    // ⛔ The third conjunct of the local-name rule, and it is LOAD-BEARING rather
+    // than defensive. `normalizeIRI` splits on the LAST `#`, so the namespace it
+    // derives here (`…/ontology/ems#Effort#`) is not in the map and the input
+    // reaches the canonical inverse. `fromTermIRI` splits on the FIRST `#`, so
+    // without `!localName.includes("#")` it would hand back
+    // `{ems, "Effort#status"}` and the physical key would become
+    // `ems__Effort#status` — exactly the junk key this whole ticket exists to
+    // stop, reintroduced through the fix's own fallback.
+    const doubleHash = "https://exocortex.my/ontology/ems#Effort#status";
+    expect(FrontmatterService.normalizeIRI(doubleHash)).toBe(doubleHash);
+    const service = new FrontmatterService();
+    const written = service.updateProperty(
+      "---\nexo__Asset_uid: aaaa\n---\nbody\n",
+      doubleHash,
+      "42",
+    );
+    expect(written).not.toContain("ems__Effort#status");
+  });
+
+  it("DK21 a local name containing an INTERIOR HASH passes through untouched — as a VALUE @req:eac1690d-4d17-4f00-a221-0f8bee3c697c", () => {
+    const doubleHash = "https://exocortex.my/ontology/ems#Effort#status";
+    expect(FrontmatterService.normalizeIRIValue(doubleHash)).toBe(doubleHash);
+  });
+
   it("DK6 a non-IRI property name is returned verbatim @req:eac1690d-4d17-4f00-a221-0f8bee3c697c", () => {
     expect(FrontmatterService.normalizeIRI("ems__Effort_status")).toBe(
       "ems__Effort_status",
     );
     expect(FrontmatterService.normalizeIRI("aliases")).toBe("aliases");
     // A bare CURIE is NOT a full IRI — it is how exo__Property_range is stored
-    // 138 times in vault-exodev, and it must stay untouched.
+    // 134 times in vault-exodev, and it must stay untouched.
     expect(FrontmatterService.normalizeIRI("xsd:string")).toBe("xsd:string");
   });
 
@@ -93,6 +118,7 @@ describe("FrontmatterService.normalizeIRI — every namespace, or nothing (ticke
       "http://www.w3.org/2000/01/rdf-schema#label",
       "https://exocortex.my/ontology/ems#",
       "https://exocortex.my/ontology/exo#Asset/Sub",
+      "https://exocortex.my/ontology/ems#Effort#status",
       "https://example.com/foo#bar",
     ];
     for (const probe of probes) {

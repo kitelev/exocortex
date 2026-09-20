@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for ticket c8fc6793, req eac1690d-4d17-4f00-a221-0f8bee3c697c — SUBJECT: packages/core/src/domain/models/rdf/Namespace.ts. The diff adds ONE guard here — `Namespace.isCleanLocalName`, the local-name rule extracted from `fromTermIRI`'s `cleanLocal` closure so that both consumers (the closure itself and the hot path in FrontmatterService.normalizeIRI) derive from ONE definition. Mutating each of its three conditions proves the extraction is load-bearing for BOTH consumers rather than a cosmetic refactor. All mutants TYPE-PRESERVING (§A97). `expect` filled ONLY from a completed run.",
+  "_doc": "Revert-verify mutants for ticket c8fc6793, req eac1690d-4d17-4f00-a221-0f8bee3c697c — SUBJECT: packages/core/src/domain/models/rdf/Namespace.ts. The diff adds ONE guard here — `Namespace.isCleanLocalName`, the local-name rule extracted from `fromTermIRI`'s `cleanLocal` closure so that both consumers (the closure itself and the hot path in FrontmatterService.normalizeIRI) derive from ONE definition. Mutating EACH of its three conditions IN ISOLATION (MD4 emptiness, MD5 slash, MD7 interior hash) plus all three at once (MD3) proves the extraction is load-bearing for BOTH consumers rather than a cosmetic refactor. An earlier revision of this line claimed each condition was covered while only TWO had an isolated mutant -- the signature had drifted from the mechanism; MD7 and axes DK20/DK21 close it. All mutants TYPE-PRESERVING (§A97). `expect` filled ONLY from a completed run.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/domain/models/rdf/Namespace.ts",
   "symlink_node_modules": [
@@ -21,7 +21,9 @@
         "DK4",
         "DK5",
         "DK12",
-        "DK14"
+        "DK14",
+        "DK20",
+        "DK21"
       ]
     },
     "MD4_empty_local_name_accepted": {
@@ -40,6 +42,15 @@
       "to": "      localName.length >= 0",
       "expect": [
         "DK5"
+      ]
+    },
+    "MD7_interior_hash_local_name_accepted": {
+      "_note": "The third conjunct, isolated. LOAD-BEARING, not defensive: normalizeIRI splits on the LAST hash while fromTermIRI splits on the FIRST, so for .../ontology/ems#Effort#status the map misses and the input reaches the inverse -- without this condition the inverse returns {ems, 'Effort#status'} and the physical key becomes ems__Effort#status, reintroducing the very junk key this ticket removes, through the fix's own fallback.",
+      "from": "      !localName.includes(\"#\") &&",
+      "to": "      localName.length >= 0 &&",
+      "expect": [
+        "DK20",
+        "DK21"
       ]
     }
   }
