@@ -1,0 +1,25 @@
+{
+  "_doc": "Revert-verify mutant for ticket c8fc6793, req eac1690d-4d17-4f00-a221-0f8bee3c697c — SUBJECT: packages/cli/src/commands/propertyMutationShared.ts. This spec exists for ONE axis, DK19, and for one reason: the obvious axis — 'the guard fires on an out-of-map IRI' — would be identically green today, because every guarded key is `ems__`/`exo__`, both inside the nine-entry map, so the defect has no input at all (integration-test-revert-verify §A37). The axis that DOES discriminate is the LIST INVARIANT, and its mutant INTRODUCES a new member rather than breaking an existing one (self-satisfying-metric-weak-verifier §A17): a guarded key spelled as a full IRI does not canonicalise to itself, so the denylist lookup — which runs on the NORMALISED name — would silently stop matching it. Type-preserving (§A97): the added entry has the same `GuardedRoute` shape as its neighbours.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/propertyMutationShared.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› (DK\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/dead-key-c8fc6793.integration.test.ts tests/unit/guardedRoutes.test.ts 2>&1",
+  "mutants": {
+    "MD6_guarded_key_introduced_in_non_canonical_spelling": {
+      "_note": "Introduces a NEW member of the guarded list whose spelling is a full IRI. DK19 must go red: normalizeIRI maps it to `flow__Stage_chatId`, which is not the key the denylist holds, so the guard would stop matching it.",
+      "from": "export const GUARDED_ROUTES: Record<string, GuardedRoute> = {\n  // Status state machine (transitions carry preconditions).",
+      "to": "export const GUARDED_ROUTES: Record<string, GuardedRoute> = {\n  \"https://exocortex.my/ontology/flow#Stage_chatId\": {\n    commands: [\"set-stage-chat\"],\n  },\n  // Status state machine (transitions carry preconditions).",
+      "expect": [
+        "DK19"
+      ]
+    }
+  }
+}

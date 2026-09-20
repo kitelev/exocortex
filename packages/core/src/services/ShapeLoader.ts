@@ -744,8 +744,22 @@ export class ShapeLoader {
       typeof sevRaw === "string" ? sevRaw : undefined,
     );
 
+    // parseFrontmatter keeps a value VERBATIM — quotes included (see the label
+    // branch above and `result[key] = kvMatch[2].trim()` in that parser) — so a
+    // definition written `exo__Property_minCount: "1"` used to reach parseInt
+    // with the quotes still attached, yield NaN and register a shape WITHOUT
+    // the obligation, while loadFromRDFGraph (handed an already-parsed literal)
+    // built minCount 1 from the SAME bytes. The strip below is the predicate the
+    // label branch already applies, verbatim (ticket 15003314).
+    //
+    // DELIBERATE FAIL-OPEN, not an oversight: a value that does not parse as a
+    // number leaves minCount undefined and never throws. The value comes from
+    // USER DATA (the outside world), where failing open is the correct policy;
+    // fail-closed belongs where OUR policy breaks, not someone else's input.
     const minCountParsed =
-      typeof minCountRaw === "string" ? parseInt(minCountRaw, 10) : undefined;
+      typeof minCountRaw === "string"
+        ? parseInt(minCountRaw.trim().replace(/^["']|["']$/g, ""), 10)
+        : undefined;
     const minCount =
       minCountParsed !== undefined && !isNaN(minCountParsed) ? minCountParsed : undefined;
 
