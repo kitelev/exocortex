@@ -1,0 +1,53 @@
+{
+  "_doc": "Revert-verify mutants for ticket c8fc6793, req eac1690d-4d17-4f00-a221-0f8bee3c697c — SUBJECT: packages/core/src/utilities/FrontmatterService.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). Guards enumerated from `git diff -U0` (integration-test-revert-verify §A8): the diff adds exactly TWO guards in this file — the local-name conjunct on the hot path, and the canonical-inverse fallback — so there are two mutants here. The third guard (the local-name rule itself) lives in Namespace.ts and has its own spec; the list invariant lives in packages/cli and has its own spec. All mutants are TYPE-PRESERVING (§A97): `BROKEN` is the ABSENCE of a measurement, not a measurement, so none of them removes narrowing or changes a signature. `expect` filled ONLY from a run that completed.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/utilities/FrontmatterService.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› (DK\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/utilities/FrontmatterService.normalizeIRI.test.ts tests/utilities/FrontmatterService.test.ts tests/utilities/FrontmatterService.applyPatch.test.ts tests/unit/domain/rdf/Namespace.test.ts 2>&1 ; cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/dead-key-c8fc6793.integration.test.ts tests/integration/set-property.integration.test.ts tests/integration/remove-property.integration.test.ts 2>&1",
+  "mutants": {
+    "MD1_canonical_inverse_fallback_removed": {
+      "_note": "The whole point of the ticket: without the shared inverse an out-of-map namespace falls through as a raw IRI and becomes the physical write key. Type-preserving — the function still returns `string` on every path.",
+      "from": "    return iriToObsidianName(property) ?? property;",
+      "to": "    return property;",
+      "expect": [
+        "DK1",
+        "DK7",
+        "DK8",
+        "DK9",
+        "DK10",
+        "DK11",
+        "DK13",
+        "DK14",
+        "DK15",
+        "DK17",
+        "DK18"
+      ]
+    },
+    "MD2_hot_path_local_name_guard_removed": {
+      "_note": "Restores the pre-ticket behaviour of the nine-entry map: it answers even when the local name is empty or slash-bearing, so `…/ontology/ems#` becomes the junk key `ems__` (the shape 8/8/7 live assets hold). Type-preserving — only the conjunct is dropped.",
+      "from": "    if (prefix !== undefined && Namespace.isCleanLocalName(local))\n      return prefix + local;",
+      "to": "    if (prefix !== undefined) return prefix + local;",
+      "expect": [
+        "DK4",
+        "DK5",
+        "DK7",
+        "DK12"
+      ]
+    }
+  },
+  "_coverage": {
+    "_doc": "Coverage arithmetic, stated so a reader does not have to recount: of DK1..DK19, FIFTEEN go red under at least one mutant across the three specs (DK1 DK4 DK5 DK7 DK8 DK9 DK10 DK11 DK12 DK13 DK14 DK15 DK17 DK18 DK19) and FOUR are DELIBERATELY green under every mutant (below). 15 + 4 = 19 — no axis is unaccounted for.",
+    "_note_DK2": "PAIRED CONTROL, green on purpose: an in-map namespace (ems/exo) must behave EXACTLY as before the ticket. Reddening it would mean the fix changed the hot path, which is the one thing it must not do. ⛔ Do not 'strengthen' this axis — its value is that it cannot move.",
+    "_note_DK3": "PASS-THROUGH CONTROL, green on purpose: a foreign, underivable base returns unchanged both before and after the fix (the inverse yields null, `?? property` returns the input). No mutant in this diff can move it; it guards against a FUTURE change that starts resolving foreign bases.",
+    "_note_DK6": "PASS-THROUGH CONTROL, green on purpose: a non-IRI name (prefixed key, bare `aliases`, the CURIE `xsd:string` that exo__Property_range actually uses 134 times) never enters the IRI branch at all.",
+    "_note_DK16": "PAIRED CONTROL, green on purpose — and it had to be REPAIRED to become one. It first used `concept`, which is NOT among the nine map entries, so the 'control' was a second out-of-map case and reddened under MD1 alongside the real ones. Now `lit`, which IS among the nine. Caught by the mutant matrix, not by reading."
+  }
+}

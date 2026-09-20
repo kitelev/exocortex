@@ -12,6 +12,8 @@ import { loadDefaultSpec, orderProperties } from "../services/OrderSpecResolver"
 import { serializeYamlScalar, STRING_SCALAR_PROPERTIES } from "./yamlScalar";
 import { canonicalYamlKey, LEGACY_YAML_KEYS } from "../services/NoteToRDFConverter";
 import type { IFrontmatter } from "../interfaces/IVaultAdapter";
+import { iriToObsidianName } from "./iriToObsidianName";
+import { Namespace } from "../domain/models/rdf/Namespace";
 
 /**
  * Result of frontmatter parsing operation
@@ -397,6 +399,50 @@ export class FrontmatterService {
    * Reverse-map a full IRI property name to Obsidian-style name.
    * E.g. "https://exocortex.my/ontology/ems#Effort_status" → "ems__Effort_status"
    * Non-IRI values pass through unchanged.
+   *
+   * ⛔ The result is the PHYSICAL WRITE KEY, not a display hint:
+   * {@link updateProperty} and {@link applyPatch} both splice
+   * `canonicalYamlKey(normalizeIRI(key))` into the YAML block. So whatever this
+   * returns for an unrecognised shape becomes a real frontmatter key on disk —
+   * which is why the two failure modes below were silent (`changed: true`, no
+   * error) rather than loud. Ticket `c8fc6793`.
+   *
+   * Two sources of truth, and only ONE of them is the canonical inverse of the
+   * forward emission path:
+   *
+   *   - {@link IRI_PREFIX_MAP} — a static NINE-namespace table. It is kept here
+   *     purely as a HOT PATH: `normalizeIRI` runs once per key of every
+   *     frontmatter write, and these nine cover the overwhelming majority. It is
+   *     NOT the semantics.
+   *   - `iriToObsidianName` → `Namespace.fromTermIRI` — the shared inverse of
+   *     `Namespace.fromPropertyKey` / `Namespace.term`, resolving EVERY
+   *     registered W3C vocabulary and EVERY ad-hoc
+   *     `https://exocortex.my/ontology/<prefix>#` namespace. This is the
+   *     semantics; the map above must never disagree with it.
+   *
+   * ⛤ The fast path is therefore GUARDED by the same local-name rule
+   * `fromTermIRI` applies (`cleanLocal`: non-empty, no `#`, no `/`), which makes
+   * the two branches provably agree on every input — the map can only ever
+   * answer faster, never differently. Before this guard the raw table answered
+   * on shapes the inverse rejects, and both answers were written to disk:
+   *
+   *   - `…/ontology/flow#Stage_chatId` (namespace OUTSIDE the nine) fell through
+   *     unchanged, so the RAW IRI became the key. Writing the same property in
+   *     its `flow__Stage_chatId` spelling then produced a SECOND key — one asset
+   *     carrying two spellings of one property with different values.
+   *   - `…/ontology/ems#` (namespace INSIDE the nine, EMPTY local name — the
+   *     shape of every `exo__Ontology_url`) yielded the junk prefix `ems__`, and
+   *     through {@link normalizeIRIValue} the junk wikilink `"[[ems__]]"`.
+   *     Measured on the three canonical vaults before the fix: 8 / 8 / 7 assets
+   *     [exodev/my/tbank] hold exactly that value, so any `set-property` touch
+   *     of one would have corrupted a correct URL. None had been corrupted yet
+   *     (live `[[prefix__]]` carriers: 0 / 0 / 0).
+   *
+   * ⛔ This does NOT close the class. Three independent IRI↔prefix
+   * implementations exist; this function is one. The other two — the map itself
+   * and `PropertySchemaResolver`'s private regex pair — are named in ticket
+   * `6572f3f3`, which is the one that would reduce them to a single derivation
+   * from `Namespace.KNOWN_NAMESPACES`.
    */
   static normalizeIRI(property: string): string {
     const hash = property.lastIndexOf("#");
@@ -404,7 +450,11 @@ export class FrontmatterService {
     const ns = property.substring(0, hash + 1);
     const local = property.substring(hash + 1);
     const prefix = FrontmatterService.IRI_PREFIX_MAP[ns];
-    return prefix ? prefix + local : property;
+    // Hot path — taken only for a local name the canonical inverse would also
+    // accept, so it is an optimisation and never a second opinion.
+    if (prefix !== undefined && Namespace.isCleanLocalName(local))
+      return prefix + local;
+    return iriToObsidianName(property) ?? property;
   }
 
   /**
