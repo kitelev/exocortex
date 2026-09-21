@@ -31,6 +31,7 @@
  */
 import * as fs from "fs";
 import * as path from "path";
+import * as yaml from "js-yaml";
 
 const SUBMODULE_EXOCMD = path.resolve(
   __dirname,
@@ -60,37 +61,66 @@ function readAsset(uid: string): string {
   return fs.readFileSync(file, "utf-8");
 }
 
-/** Raw frontmatter block, so assertions read the shipped bytes, not a parse of them. */
-function frontmatter(content: string): string {
+/**
+ * Raw frontmatter block. D1/D2 read it as BYTES on purpose — they pin the exact
+ * shipped form of a handful of named predicates, and a parse would let a rewrite
+ * of the file's shape pass unnoticed. D3 is the opposite question and parses (below).
+ *
+ * `label` names the offending file: this runs over every `.md` in the directory, so
+ * a stray non-asset file landing there would otherwise raise an exception that reads
+ * as a defect in the binding scan rather than as "a non-asset file is here".
+ */
+function frontmatter(content: string, label = "asset"): string {
   const m = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!m) throw new Error("asset has no frontmatter block");
+  if (!m) throw new Error(`${label} has no frontmatter block`);
   return m[1];
 }
 
 /**
- * Every `<uid, CommandBinding_command value>` pair in the assetspace.
+ * Every `<asset uid, CommandBinding_command targets>` pair in the assetspace.
  *
- * ⛔ Anchored on the EDGE predicate, not on the CommandBinding class UID: 10 of the
- * 83 assets mentioning that class UID are property definitions whose
- * `exo__Property_domain` is CommandBinding, and counting them would make the
- * predicate mean something other than "a binding points here".
+ * ⛔ The value is read by PARSING the frontmatter, not by matching a line. An earlier
+ * revision of this function used `^exocmd__CommandBinding_command: *(.+)$` with the
+ * `m` flag, which sees only a value sitting on the key's own line — and that made D3,
+ * the one axis this whole file exists for, FALSIFIABLE BY ORDINARY YAML. Measured
+ * 2026-09-21, repointing a real binding at the reclass command: written as a block
+ * scalar (`>` + an indented line) js-yaml folds it to the identical wikilink string,
+ * and written as a single-item block list it yields a one-element array. Production
+ * parses frontmatter with js-yaml (`utilities/parseYamlFrontmatter.ts`) and reads this
+ * predicate off the resolved graph (`CommandResolver.ts`), so BOTH forms render a live
+ * inline button — while the regex reported zero edges and all four axes stayed green.
+ * ✅ js-yaml covers every spelling by construction: quoting, flow or block, list or
+ * scalar, continuation lines. Mutants M10/M11 pin both forms.
+ *
+ * ⛔ Anchored on the EDGE predicate, not on the CommandBinding class UID. Measured
+ * partition of the 83 assets mentioning that class UID: 73 edges + 1 self-referential
+ * class definition + 9 property definitions whose `exo__Property_domain` is
+ * CommandBinding, remainder 0. (An earlier revision of this comment said "10 property
+ * definitions" — that figure came from the subtraction 83 − 73 and named the remainder
+ * without ever measuring its composition; the class definition itself is the tenth.)
  */
-function bindingEdges(): { uid: string; target: string }[] {
-  const edges: { uid: string; target: string }[] = [];
+function bindingEdges(): { uid: string; targets: string[] }[] {
+  const edges: { uid: string; targets: string[] }[] = [];
   for (const file of fs.readdirSync(SUBMODULE_EXOCMD)) {
     if (!file.endsWith(".md")) continue;
     const fm = frontmatter(
       fs.readFileSync(path.join(SUBMODULE_EXOCMD, file), "utf-8"),
+      file,
     );
-    const m = new RegExp(`^${BINDING_COMMAND_KEY}: *(.+)$`, "m").exec(fm);
-    if (m) edges.push({ uid: file.replace(/\.md$/, ""), target: m[1] });
+    const parsed = yaml.load(fm) as Record<string, unknown> | null;
+    const raw = parsed?.[BINDING_COMMAND_KEY];
+    if (raw === undefined || raw === null) continue;
+    edges.push({
+      uid: file.replace(/\.md$/, ""),
+      targets: (Array.isArray(raw) ? raw : [raw]).map((v) => String(v)),
+    });
   }
   return edges;
 }
 
 describe("replace-instance-class ships as a CLI-only reclass command (@req:0e237a8c-2daa-4c4f-add5-bd8f94080bf8)", () => {
-  it("D1 the command declares cliName replace-instance-class and points at the reclass grounding", () => {
-    const fm = frontmatter(readAsset(CMD_REPLACE));
+  it("D1 the command declares cliName replace-instance-class, is destructive, and points at the reclass grounding", () => {
+    const fm = frontmatter(readAsset(CMD_REPLACE), `${CMD_REPLACE}.md`);
 
     expect(fm).toMatch(/^exocmd__Command_cliName: *"?replace-instance-class"?$/m);
     expect(fm).toMatch(
@@ -101,7 +131,7 @@ describe("replace-instance-class ships as a CLI-only reclass command (@req:0e237
   });
 
   it("D2 the grounding is property_replace on exo__Instance_class, reading both $input fields", () => {
-    const fm = frontmatter(readAsset(GROUNDING_REPLACE));
+    const fm = frontmatter(readAsset(GROUNDING_REPLACE), `${GROUNDING_REPLACE}.md`);
 
     expect(fm).toMatch(
       new RegExp(`^exocmd__Grounding_type: *"\\[\\[${TYPE_PROPERTY_REPLACE}\\]\\]"$`, "m"),
@@ -117,11 +147,14 @@ describe("replace-instance-class ships as a CLI-only reclass command (@req:0e237
   it("D3 the command stays CLI-only — NO CommandBinding edge points at it", () => {
     const edges = bindingEdges();
 
-    // Both reference forms the assetspace uses — bare `[[uid]]` (68 of 73) and
-    // `[[uid|alias]]` (5) — are covered by the UID substring; the label form is
-    // matched too, so a binding authored by name would not slip past.
-    const pointingAtReplace = edges.filter(
-      (e) => e.target.includes(CMD_REPLACE) || e.target.includes(CMD_REPLACE_LABEL),
+    // Every reference form is covered: the assetspace ships 68 bare `[[uid]]` and 5
+    // `[[uid|alias]]` values, both caught by the UID substring, and a binding authored
+    // by NAME is caught by the label. Spelling is no longer a variable — the value
+    // arrives already parsed.
+    const pointingAtReplace = edges.filter((e) =>
+      e.targets.some(
+        (t) => t.includes(CMD_REPLACE) || t.includes(CMD_REPLACE_LABEL),
+      ),
     );
 
     expect(pointingAtReplace.map((e) => e.uid)).toEqual([]);
@@ -132,18 +165,21 @@ describe("replace-instance-class ships as a CLI-only reclass command (@req:0e237
     //
     // ⛔ This is the one assertion in the file with NO mutant in the spec set, and that
     // is structural, not an omission: its failure mode is the whole scan going blind
-    // (directory moved, predicate renamed across the assetspace), which no single-file
-    // from→to mutation can express. Its flip was shown ONCE instead, 2026-09-21: the
+    // (directory moved, predicate renamed across all 73 carriers), and since those 73
+    // edges live in 73 DISTINCT files, a single-file from→to mutation can drop the count
+    // by at most one, never to zero. Its flip was shown ONCE instead, 2026-09-21: the
     // same predicate over an EMPTY directory left the assertion above GREEN — vacuously,
     // zero edges means zero offending edges — and reddened this line. That is exactly
-    // the reading this canary exists to exclude.
+    // the reading this canary exists to exclude. (It does not claim M8/M10/M11 are the
+    // only ways D3 can red: a malformed asset in the directory reds it too, loudly,
+    // through `frontmatter`. Loud is not the failure mode the canary guards.)
     expect(edges.length).toBeGreaterThan(0);
   });
 
   it("D4 control — the additive sibling append-instance-class is untouched", () => {
     // Stays GREEN under every mutant of the reclass pair: it proves the new command
     // sits BESIDE the existing one rather than replacing or rewiring it.
-    const fm = frontmatter(readAsset(CMD_APPEND));
+    const fm = frontmatter(readAsset(CMD_APPEND), `${CMD_APPEND}.md`);
 
     expect(fm).toMatch(/^exocmd__Command_cliName: *"?append-instance-class"?$/m);
 
@@ -151,7 +187,7 @@ describe("replace-instance-class ships as a CLI-only reclass command (@req:0e237
       fm,
     )?.[1];
     if (!groundingUid) throw new Error("append command declares no grounding pointer");
-    expect(frontmatter(readAsset(groundingUid))).toMatch(
+    expect(frontmatter(readAsset(groundingUid), `${groundingUid}.md`)).toMatch(
       new RegExp(`^exocmd__Grounding_type: *"\\[\\[${TYPE_PROPERTY_APPEND}\\]\\]"$`, "m"),
     );
   });
