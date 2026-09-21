@@ -103,13 +103,35 @@ export class DisplayNameTemplateEngine {
       );
     }
 
+    // ⛤ Count, while substituting, how many placeholders rendered to something. A template
+    // whose placeholders ALL came back empty produced only its own literals — `Q2-`, `2025-`,
+    // `-W`, `-` — and that is not a name: it outranks the asset's correct exo__Asset_label
+    // purely because its provenance is `spec` (req c67e4c69).
+    let placeholders = 0;
+    let nonEmpty = 0;
     const result = this.renderSegment(
       this.template,
       metadata,
       basename,
       createdDate,
       metadataResolver,
+      () => {
+        placeholders += 1;
+      },
+      () => {
+        nonEmpty += 1;
+      },
     );
+
+    // Separator mode already declines in this situation ("the affixes alone are not a name");
+    // this is the same judgement on the plain path, minus ONE case. ⛔ The exception is not
+    // defensive: declining hands the caller null, and a caller with no exo__Asset_label falls
+    // through to the BASENAME — which for a UID-canon asset is a bare UID inside a title, the
+    // exact defect req 0f992e88 exists to prevent. There the literals, poor as they are, are
+    // the lesser evil (measured: 3 live assets, all affix-only specs).
+    if (placeholders > 0 && nonEmpty === 0 && DisplayNameTemplateEngine.hasReadableFallback(metadata, basename)) {
+      return null;
+    }
 
     // Clean up the result to handle edge cases from missing values
     const cleanedResult = this.cleanupResult(result);
@@ -122,19 +144,52 @@ export class DisplayNameTemplateEngine {
     return cleanedResult;
   }
 
-  /** Substitute every {{placeholder}} in a template segment. */
+  /**
+   * Would declining (returning null) leave the caller with something READABLE?
+   *
+   * A caller that gets null falls back to `exo__Asset_label`, and failing that to the file's
+   * basename. So declining is an improvement exactly when one of those two is a name — and a
+   * UUID basename is not (req 0f992e88: a bare UID inside a title is the defect, not the cure).
+   */
+  private static hasReadableFallback(
+    metadata: Record<string, unknown>,
+    basename: string,
+  ): boolean {
+    const label = metadata.exo__Asset_label;
+    if (typeof label === "string" && label.trim() !== "") return true;
+    return !DisplayNameTemplateEngine.UUID_PATTERN.test(basename.trim());
+  }
+
+  /**
+   * Substitute every {{placeholder}} in a template segment.
+   *
+   * `onPlaceholder` / `onNonEmpty` let the caller count what the substitution produced without
+   * re-running it — the emptiness verdict must be taken from the SAME pass that builds the
+   * string, or the two could disagree.
+   */
   private renderSegment(
     segment: string,
     metadata: Record<string, unknown>,
     basename: string,
     createdDate?: Date,
     metadataResolver?: MetadataResolver,
+    onPlaceholder?: () => void,
+    onNonEmpty?: () => void,
   ): string {
     return segment.replace(
       DisplayNameTemplateEngine.PLACEHOLDER_PATTERN,
       (_, key: string) => {
         const trimmedKey = key.trim();
-        return this.resolveValue(trimmedKey, metadata, basename, createdDate, metadataResolver);
+        onPlaceholder?.();
+        const value = this.resolveValue(
+          trimmedKey,
+          metadata,
+          basename,
+          createdDate,
+          metadataResolver,
+        );
+        if (value.trim() !== "") onNonEmpty?.();
+        return value;
       },
     );
   }

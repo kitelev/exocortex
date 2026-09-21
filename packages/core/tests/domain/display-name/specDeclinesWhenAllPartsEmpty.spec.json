@@ -1,0 +1,72 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "ROOT=\"${SUT%%/packages/core/*}\"; cd \"$ROOT\" && npx jest --config packages/core/jest.config.js tests/domain/display-name 2>&1",
+  "red_re": "› @req:\\S+ ([A-Z]\\d+[a-z]?) ",
+  "_doc": "req c67e4c69 — the plain path declines when every placeholder rendered empty, except where declining would print a bare UID. One mutant per guard of the diff, plus the separator-mode guard this requirement finally locks. ⛤ D_M3 makes EVERY spec decline, so it reddens the neighbouring #4303 axes too (S*/V*) — recorded rather than narrowed: the breadth follows from the mutant's semantics on their subjects, not from axis entanglement (§A44).",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/domain/display-name/DisplayNameTemplateEngine.ts",
+  "mutants": {
+    "D_M1_guard_removed_entirely": {
+      "from": "    if (placeholders > 0 && nonEmpty === 0 && DisplayNameTemplateEngine.hasReadableFallback(metadata, basename)) {\n      return null;\n    }",
+      "to": "    if (placeholders > 0 && nonEmpty === 0 && DisplayNameTemplateEngine.hasReadableFallback(metadata, basename) && false) {\n      return null;\n    }",
+      "expect": ["D1", "D2", "D7"]
+    },
+    "D_M2_placeholder_count_ignored": {
+      "from": "    if (placeholders > 0 && nonEmpty === 0 &&",
+      "to": "    if (placeholders >= 0 && nonEmpty === 0 &&",
+      "expect": ["D5"]
+    },
+    "D_M3_decline_regardless_of_emptiness": {
+      "from": "    if (placeholders > 0 && nonEmpty === 0 &&",
+      "to": "    if (placeholders > 0 && nonEmpty >= 0 &&",
+      "expect": [
+        "D4",
+        "S1",
+        "S2",
+        "S9",
+        "S10",
+        "S11",
+        "S12",
+        "S13",
+        "S14",
+        "V2",
+        "V8",
+        "V9"
+      ]
+    },
+    "D_M4_bare_uid_control_removed": {
+      "from": " && DisplayNameTemplateEngine.hasReadableFallback(metadata, basename)) {",
+      "to": " && (DisplayNameTemplateEngine.hasReadableFallback(metadata, basename) || true)) {",
+      "expect": ["D3"]
+    },
+    "D_M5_label_is_not_a_readable_fallback": {
+      "from": "    if (typeof label === \"string\" && label.trim() !== \"\") return true;",
+      "to": "    if (typeof label === \"string\" && label.trim() === \"__never__\") return true;",
+      "expect": ["D1", "D7"]
+    },
+    "D_M6_uuid_basename_counts_as_readable": {
+      "from": "    return !DisplayNameTemplateEngine.UUID_PATTERN.test(basename.trim());",
+      "to": "    return true;",
+      "expect": ["D3"]
+    },
+    "D_M7_nonempty_probe_always_fires": {
+      "from": "        if (value.trim() !== \"\") onNonEmpty?.();",
+      "to": "        onNonEmpty?.();",
+      "expect": ["D1", "D2", "D7"]
+    },
+    "D_M8_placeholder_probe_never_fires": {
+      "from": "        onPlaceholder?.();",
+      "to": "        void onPlaceholder;",
+      "expect": ["D1", "D2", "D7"]
+    },
+    "D_M9_separator_mode_guard_removed": {
+      "from": "    // Every field empty → the affixes alone are not a name; fall back (null) to label/basename.\n    if (rendered.length === 0) {\n      return null;\n    }",
+      "to": "    // Every field empty → the affixes alone are not a name; fall back (null) to label/basename.\n    if (rendered.length === 0 && false) {\n      return null;\n    }",
+      "expect": ["D6"]
+    }
+  }
+}
