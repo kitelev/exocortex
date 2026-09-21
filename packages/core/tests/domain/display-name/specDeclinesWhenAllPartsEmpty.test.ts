@@ -90,6 +90,30 @@ describe("a DisplayNameSpec whose property parts all render empty (req c67e4c69)
     ).toBeNull();
   });
 
+  it(`${REQ} D8 CONTROL — no label AND a BLANK basename: the spec does NOT decline`, () => {
+    // Same judgement as D3, one step further: a UUID basename is a poor name, a blank one is
+    // no name at all, so declining would leave the caller with NOTHING. Reachable through the
+    // public entry — `ConceptDefinitionResolver` calls `render(metadata, "")` with that literal
+    // — which is why the blank is judged before the UUID test and not through it (the UUID
+    // pattern is anchored and fixed-length, so it answers "not a UUID" for "" and the naive
+    // form would call the caller's empty hand "readable").
+    expect(
+      render("{{period__Week_year}}-W{{period__Week_weekNumber}}", {}, ""),
+    ).toBe("-W");
+  });
+
+  it(`${REQ} D9 a NON-STRING exo__Asset_label is not a label — the type guard, now locked`, () => {
+    // The fixture needs a UUID basename to be able to differentiate at all: with a readable
+    // basename both the correct form and a `String(label)`-style mutant decline, and the axis
+    // would be vacuous. Here they diverge — treating ["nonsense"] as a label would decline and
+    // print a bare UID, which is the D3 defect arriving through the other branch.
+    expect(
+      render("{{period__Week_year}}-W{{period__Week_weekNumber}}", {
+        exo__Asset_label: ["nonsense"],
+      }, UUID_BASENAME),
+    ).toBe("-W");
+  });
+
   it(`${REQ} D7 production-shape: through the real spec pipeline the label survives`, () => {
     const SPEC = "cccccccc-aaaa-4000-8000-00000000000a";
     const CLASS = "dddddddd-aaaa-4000-8000-00000000000a";

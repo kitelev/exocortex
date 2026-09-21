@@ -150,6 +150,12 @@ export class DisplayNameTemplateEngine {
    * A caller that gets null falls back to `exo__Asset_label`, and failing that to the file's
    * basename. So declining is an improvement exactly when one of those two is a name — and a
    * UUID basename is not (req 0f992e88: a bare UID inside a title is the defect, not the cure).
+   *
+   * ⛔ A BLANK basename is not a name either, and it fails the UUID test, so testing only for
+   * "is it a UUID" would answer "readable" for a caller that has NOTHING to fall back to. The
+   * public entry `render()` is reachable with `basename: ""` — `ConceptDefinitionResolver`
+   * passes that literal — so the case is not hypothetical, and blank is judged BEFORE the
+   * UUID test rather than through it.
    */
   private static hasReadableFallback(
     metadata: Record<string, unknown>,
@@ -157,7 +163,9 @@ export class DisplayNameTemplateEngine {
   ): boolean {
     const label = metadata.exo__Asset_label;
     if (typeof label === "string" && label.trim() !== "") return true;
-    return !DisplayNameTemplateEngine.UUID_PATTERN.test(basename.trim());
+    const trimmed = basename.trim();
+    if (trimmed === "") return false;
+    return !DisplayNameTemplateEngine.UUID_PATTERN.test(trimmed);
   }
 
   /**
