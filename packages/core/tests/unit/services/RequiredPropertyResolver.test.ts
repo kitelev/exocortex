@@ -38,11 +38,28 @@ interface PropDef {
   minCount?: number;
   rangeIRI?: string; // IRI object (class file IRI or xsd IRI)
   rangeLiteral?: string; // literal object (xsd datatype as literal)
+  /**
+   * Overrides the domain object with a VERBATIM IRI. The live vaults emit the
+   * domain SYMBOLICALLY (95 of 95 required definitions, measured 2026-09-22);
+   * `domainUid` alone can only model the path form.
+   */
+  domainIRI?: string;
+}
+
+/** A class asset carrying both label twins, as the converter emits them. */
+interface ClassAsset {
+  uid: string;
+  /** `prefix__Name` — emitted as an IRI on exo__Asset_label (§A29). */
+  label: string;
+  /** When false, only the Literal rdfs:label twin is emitted. */
+  labelAsIRI?: boolean;
 }
 
 async function seed(
   props: PropDef[],
   superEdges: Array<[string, string]> = [],
+  classAssets: ClassAsset[] = [],
+  symbolicSuperEdges: Array<[string, string]> = [],
 ): Promise<InMemoryTripleStore> {
   const store = new InMemoryTripleStore();
   const triples: Triple[] = [];
@@ -53,7 +70,7 @@ async function seed(
       new Triple(
         subj,
         EXO.term("Property_domain"),
-        new IRI(fileIRI(p.domainUid)),
+        new IRI(p.domainIRI ?? fileIRI(p.domainUid)),
       ),
     );
     if (p.minCount !== undefined) {
@@ -88,6 +105,35 @@ async function seed(
         new IRI(fileIRI(parent)),
       ),
     );
+  }
+  for (const [childUid, parentIRI] of symbolicSuperEdges) {
+    triples.push(
+      new Triple(
+        new IRI(fileIRI(childUid)),
+        EXO.term("Class_superClass"),
+        new IRI(parentIRI),
+      ),
+    );
+  }
+  for (const c of classAssets) {
+    const subj = new IRI(fileIRI(c.uid));
+    triples.push(new Triple(subj, EXO.term("Asset_uid"), new Literal(c.uid)));
+    if (c.labelAsIRI !== false) {
+      // A `prefix__Name` label parses as a class reference, so the converter
+      // emits exo__Asset_label as an IRI, not a Literal (§A29).
+      const [prefix, local] = c.label.split("__");
+      triples.push(
+        new Triple(
+          subj,
+          EXO.term("Asset_label"),
+          new IRI(`https://exocortex.my/ontology/${prefix}#${local}`),
+        ),
+      );
+    } else {
+      triples.push(
+        new Triple(subj, Namespace.RDFS.term("label"), new Literal(c.label)),
+      );
+    }
   }
   await store.addAll(triples);
   return store;
@@ -539,4 +585,129 @@ describe("createTripleStoreRequiredPropertyResolver", () => {
       expect(quoted).toEqual(bare);
     });
   });
+
+  /**
+   * Ticket b4b76541 — the resolver keyed EVERY class reference on `uidFrom`
+   * (path form / bare UID), while the live vaults emit `exo__Property_domain`
+   * and the PARENT of `exo__Class_superClass` SYMBOLICALLY: 95 of 95 required
+   * definitions across the three vaults, and 400 of 408 superClass parents on
+   * vault-exodev (measured 2026-09-22). The end effect was that NO class with a
+   * declared required property produced a single form field — 0 of 23 / 17 / 20
+   * classes on vault-exodev / my / tbank, measured through the production
+   * loader. The same class had already been half-closed for the RANGE position
+   * (ticket dc04eded, PR #4254), whose fix sits BELOW the domain `continue` and
+   * was therefore unreachable on live data.
+   *
+   * Mutants (spec `required-property-class-keys-b4b76541`): symbolic branch of
+   * classKeyOf removed → Y1/Y2/Y5 RED; twin lookup dropped from the walk →
+   * Y1/Y2/Y5 RED; labelKeyOf Literal-only (§A29) → Y1/Y2 RED, Y5 green;
+   * host twin branch removed → Y1/Y2 RED; path-form branch of classKeyOf
+   * removed → Y3 RED.
+   */
+  describe("symbolic class references — domain and superClass parent (ticket b4b76541)", () => {
+    it("Y1 @req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 resolves a required property whose exo__Property_domain is the SYMBOLIC class IRI — the form 95 of 95 live required definitions carry", async () => {
+      const store = await seed(
+        [
+          {
+            key: "exo__Setting_value",
+            domainUid: SETTING,
+            domainIRI: "https://exocortex.my/ontology/exo#Setting",
+            minCount: 1,
+          },
+        ],
+        [],
+        [{ uid: SETTING, label: "exo__Setting" }],
+      );
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      expect(fields.map((f) => f.propertyKey)).toEqual(["exo__Setting_value"]);
+    });
+
+    it("Y2 @req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 inherits a required property declared on an ANCESTOR reached through a SYMBOLIC superClass parent (400 of 408 live parents) — the Gherkin's transitive closure clause", async () => {
+      const store = await seed(
+        [
+          {
+            key: "exo__Setting_value",
+            domainUid: SETTING,
+            domainIRI: "https://exocortex.my/ontology/exo#Setting",
+            minCount: 1,
+          },
+        ],
+        [],
+        [
+          { uid: SETTING, label: "exo__Setting" },
+          { uid: SETTING_SUBCLASS, label: "exo__ScopedSetting" },
+        ],
+        [[SETTING_SUBCLASS, "https://exocortex.my/ontology/exo#Setting"]],
+      );
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(
+          SETTING_SUBCLASS,
+        );
+      expect(fields.map((f) => f.propertyKey)).toEqual(["exo__Setting_value"]);
+    });
+
+    it("Y3 @req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 keeps resolving a PATH-FORM domain unchanged — the public contract of the exported resolver does not shift for inputs that already worked", async () => {
+      const store = await seed([
+        { key: "exo__Setting_value", domainUid: SETTING, minCount: 1 },
+      ]);
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      expect(fields.map((f) => f.propertyKey)).toEqual(["exo__Setting_value"]);
+    });
+
+    it("Y4 @req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 still returns [] for a class that declares NO required property, symbolic domains present or not", async () => {
+      const store = await seed(
+        [
+          {
+            key: "exo__Setting_note",
+            domainUid: SETTING,
+            domainIRI: "https://exocortex.my/ontology/exo#Setting",
+            // minCount 0 — DECLARED but not required. A property with NO
+            // minCount triple never enters the loop at all, which would make
+            // the filter mutant equivalent on this axis (§A97).
+            minCount: 0,
+          },
+        ],
+        [],
+        [{ uid: SETTING, label: "exo__Setting" }],
+      );
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      expect(fields).toEqual([]);
+    });
+
+    it("Y5 @req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 unifies the two spellings through the LITERAL rdfs:label twin as well, not only the IRI-valued exo__Asset_label (§A29)", async () => {
+      const store = await seed(
+        [
+          {
+            key: "exo__Setting_value",
+            domainUid: SETTING,
+            domainIRI: "https://exocortex.my/ontology/exo#Setting",
+            minCount: 1,
+          },
+        ],
+        [],
+        [{ uid: SETTING, label: "exo__Setting", labelAsIRI: false }],
+      );
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      expect(fields.map((f) => f.propertyKey)).toEqual(["exo__Setting_value"]);
+    });
+
+    it("Y6 @req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 does NOT match a symbolic domain whose class asset is absent from the store — the label twin is evidence, never an assumption", async () => {
+      const store = await seed([
+        {
+          key: "exo__Setting_value",
+          domainUid: SETTING,
+          domainIRI: "https://exocortex.my/ontology/exo#Setting",
+          minCount: 1,
+        },
+      ]);
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      expect(fields).toEqual([]);
+    });
+  });
+
 });

@@ -1,0 +1,62 @@
+{
+  "_doc": "Revert-verify mutants for ticket b4b76541 (req ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0, branch batch6u-mincount-unify). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). The production change makes the resolver treat the TWO live IRI spellings of one class as ONE node, so every guard it introduces lives either in classKeyOf (which spelling becomes a key) or in the twin lookup (how the two keys are unified). M1 removes the symbolic half of the key, M2 removes the twin step from the ancestor walk, M3 makes labelKeyOf Literal-only (the §A29 half — a TBox class label is emitted as an IRI, so a Literal-only reader is vacuous on exactly these assets), M4 removes the host branch (the host arrives as a bare uid with no IRI of its own). M6 is NOT about this change: it breaks the pre-existing minCount>0 filter to prove Y4 is a real axis rather than an assertion that happens to hold. ⛔ THREE axes are GREEN under every mutant, each for a named reason rather than an omission. (a) Y3 (path-form domain) is the public-contract control: `createTripleStoreRequiredPropertyResolver` is exported from core/index.ts, so an input that already worked must keep working; no mutant of this diff can redden it, because removing the path-form branch of classKeyOf is an EQUIVALENT mutant by arithmetic — iriToObsidianName maps a path IRI to its basename, which IS the uid, so both branches return the same key for that form. It is named equivalent here, not written, per §A97: a mutant that reddens nothing is a measurement only once you know why. (b) Y6 (symbolic domain whose class asset is ABSENT) asserts the absence of a guess: the label twin is looked up in the store, never inferred. Reddening it would require a mutant that INVENTS a mechanism the code does not contain (guessing the host label from its uid), which is not a mutation of this diff. (c) Y4 is green under M1-M4 and reddens only under M6 — it guards the neighbouring filter, which this change deliberately leaves untouched. Expectations below were derived axis-by-axis (what each one asserts), then CORRECTED against the driver's printed lists — §A44/§A54: a prediction from the mutant's theme is not a measurement.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/RequiredPropertyResolver.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/services/RequiredPropertyResolver.test.ts 2>&1",
+  "mutants": {
+    "M1_symbolic_key_branch_removed": {
+      "from": "  const name = iriToObsidianName(value);\n  return name ? name.trim().toLowerCase() : null;",
+      "to": "  return null;",
+      "expect": [
+        "Y1",
+        "Y2",
+        "Y5"
+      ]
+    },
+    "M2_twin_step_dropped_from_walk": {
+      "from": "      const next = [...(childToParents.get(cur) ?? []), ...(await twinsOf(cur))];",
+      "to": "      const next = [...(childToParents.get(cur) ?? [])];",
+      "expect": [
+        "Y1",
+        "Y5"
+      ]
+    },
+    "M3_label_key_literal_only": {
+      "from": "      : object instanceof IRI\n        ? (iriToObsidianName(object.value) ?? \"\")\n        : \"\";",
+      "to": "      : \"\";",
+      "expect": [
+        "Y1"
+      ]
+    },
+    "M4_host_twin_branch_removed": {
+      "from": "      if (key === host) {",
+      "to": "      if (key === \"\\u0000never\") {",
+      "expect": [
+        "Y1",
+        "Y5"
+      ]
+    },
+    "M6_mincount_filter_neutralised": {
+      "from": "      if (!(mc > 0)) continue;",
+      "to": "      if (false) continue;",
+      "expect": [
+        "Y4"
+      ]
+    }
+  },
+  "_coverage": {
+    "_note_Y3": "GREEN by design — the path-form control. Removing the path branch of classKeyOf is an equivalent mutant (iriToObsidianName of a path IRI is its basename = the uid), so no mutation of this diff can redden it; that IS the claim: the previously-working input is untouched by the two-key normalisation, which matters because the resolver is a public export (core/index.ts).",
+    "_note_Y6": "GREEN by design — asserts that a symbolic domain does NOT match when the class asset is absent from the store. Reddening it would need a mutant that adds a guessing mechanism the code does not have.",
+    "_arithmetic": "Axes Y1..Y6 = 6. Reddening under a mutant of THIS diff: Y1 (M1 M2 M3 M4), Y2 (M1), Y5 (M1 M2 M4) = 3. Y4 reddens under M6 (the neighbouring minCount filter, deliberately untouched by this change). Intentionally green under every mutant: Y3 + Y6 = 2. 3 + 1 + 2 = 6, none uncovered.",
+    "_note_Y2": "Y2 reddens under M1 (the symbolic key itself) but NOT under M2/M3/M4 (the twin lookup), and that is a MEASURED fact with a mechanism, not a weakened expectation: in Y2 the child side of the superClass edge is already keyed by its uid — the very key the host arrives as — while the parent and the domain are BOTH symbolic, so the ancestor walk joins them without ever needing the host's label twin. The twin step is what Y1/Y5 need (there the host must reach a symbolic domain directly). Predicting Y2 for the twin mutants was reasoning from the mutant's theme; the driver's printed list corrected it (§A44/§A54)."
+  }
+}
