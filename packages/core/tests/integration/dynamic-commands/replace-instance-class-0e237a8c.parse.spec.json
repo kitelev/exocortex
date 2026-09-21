@@ -1,0 +1,23 @@
+{
+  "_doc": "Round-2 MEDIUM: D3 parses EVERY one of the 458 assets, so a parse defect in an asset carrying no binding at all still decides whether the scan can run. Subject is deliberately such an asset (a property definition, zero CommandBinding_command lines). M13 pins that a genuinely unparseable file is reported BY NAME rather than as a bare js-yaml line number across 458 candidates. ⛔ The OTHER half of that fix — tolerance of a duplicate mapping key, which production's parser has and a bare `yaml.load` did not — deliberately has NO mutant here, and that is a contract limit, not an omission: its correct outcome is that NOTHING reddens, which this driver reports as `красные = НИ ОДНОЙ` and rc=2. A spec that reports rc=2 on every future run cries wolf permanently, which is worse than not locking the half. It was measured once instead, 2026-09-21: injecting a duplicate `exo__Property_description` into this same asset left all four axes GREEN with the mutation applied (so tolerance, not a no-op), where a bare `yaml.load` threw and took D3 down. The same note sits at the code. Predictions were written before the run; `expect` is the MEASURED red set.",
+  "tree": "/Users/kitelev/Developer/exocortex-development/worktrees/feat-property-replace",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "red_re": "› (D\\d+) ",
+  "subject": "/Users/kitelev/Developer/exocortex-development/worktrees/feat-property-replace/packages/exoas-exocmd/exocmd/29b79400-4c1a-4afb-9f4f-989af4dd5b6f.md",
+  "harness": "cd \"$(dirname {subject})/../../core\" && node ../../node_modules/jest/bin/jest.js tests/integration/dynamic-commands/replace-instance-class-shape.test.ts --verbose 2>&1",
+  "mutants": {
+    "M13_unparseable_asset_is_named": {
+      "_note": "Genuinely malformed YAML (unclosed flow mapping) — not a duplicate key, so the tolerant retry fails too. D3 must red LOUDLY and the message must carry this file's name. PREDICTED [D3]. MEASURED: red exactly [D3], and the thrown message read on a disposable copy is `assetspace holds frontmatter this scan cannot judge: 29b79400-4c1a-4afb-9f4f-989af4dd5b6f.md` — the file is named, which a bare js-yaml exception (line numbers only) did not do.",
+      "from": "\nexo__Property_description: Display order within the button group (lower = earlier)\n",
+      "to": "\nexo__Property_description: { unclosed flow mapping\n",
+      "expect": ["D3"]
+    }
+  }
+}

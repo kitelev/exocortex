@@ -1,0 +1,35 @@
+{
+  "_doc": "The FORGET-LEAK mutant for req 0e237a8c — the one this data-guard exists for. There is no way to `add` a file with a from→to mutation, so an existing CommandBinding is REPOINTED at the reclass command: observationally identical to a future session helpfully wiring an inline button, which would hand a guarded-property rewrite to a human in one click across every vault mounting exoas-exocmd. ⛔ D3's canary (`edges.length > 0`) deliberately has NO mutant here: it guards against the scan going blind wholesale (directory moved, predicate renamed across all 73 carriers), which a single-file from→to mutation cannot express. Its flip was measured once, 2026-09-21 — the same predicate over an EMPTY directory leaves the offending-edge assertion vacuously GREEN and reds the canary; the reason also sits in a comment at the assertion itself (integration-test-revert-verify §A43). ⛔ M10/M11 were added DURING review and are the reason D3 now parses instead of line-matching: against the pre-fix regex BOTH reddened NOTHING — a measured false negative that defeated the file's central promise, since production resolves both forms and renders the button.",
+  "tree": "/Users/kitelev/Developer/exocortex-development/worktrees/feat-property-replace",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "red_re": "› (D\\d+) ",
+  "subject": "/Users/kitelev/Developer/exocortex-development/worktrees/feat-property-replace/packages/exoas-exocmd/exocmd/049728cb-4865-42ea-80e3-a27e77a412ac.md",
+  "harness": "cd \"$(dirname {subject})/../../core\" && node ../../node_modules/jest/bin/jest.js tests/integration/dynamic-commands/replace-instance-class-shape.test.ts --verbose 2>&1",
+  "mutants": {
+    "M8_binding_points_at_reclass": {
+      "_note": "An inline button now renders for replace-instance-class. Predicted D3.",
+      "from": "\nexocmd__CommandBinding_command: ",
+      "to": "\nexocmd__CommandBinding_command: \"[[7f1b47a3-9997-4d1f-9c6f-9ca52b06f778]]\"  # ",
+      "expect": ["D3"]
+    },
+    "M10_binding_points_at_reclass_block_scalar": {
+      "_note": "Same forget-leak as M8 but written as a YAML BLOCK SCALAR — valid YAML that js-yaml folds into the same wikilink string, so production resolves it and renders the button. Predicted D3.",
+      "from": "\nexocmd__CommandBinding_command: \"[[115271f5-87ac-4866-9695-1295d2403bdf]]\"\n",
+      "to": "\nexocmd__CommandBinding_command: >\n  [[7f1b47a3-9997-4d1f-9c6f-9ca52b06f778]]\n",
+      "expect": ["D3"]
+    },
+    "M11_binding_points_at_reclass_block_list": {
+      "_note": "Same forget-leak written as a single-item YAML BLOCK LIST — the shape the sibling data-guard's own parser explicitly handles. Predicted D3.",
+      "from": "\nexocmd__CommandBinding_command: \"[[115271f5-87ac-4866-9695-1295d2403bdf]]\"\n",
+      "to": "\nexocmd__CommandBinding_command:\n  - \"[[7f1b47a3-9997-4d1f-9c6f-9ca52b06f778]]\"\n",
+      "expect": ["D3"]
+    }
+  }
+}
