@@ -197,7 +197,11 @@ export function createTripleStoreRequiredPropertyResolver(
   const RDFS = Namespace.RDFS;
 
   return async (hostClassUid: string): Promise<RequiredPropertyField[]> => {
-    const host = uidFrom(hostClassUid) ?? hostClassUid.trim().toLowerCase();
+    // Через тот же classKeyOf, что и любая другая ссылка на класс: сегодня
+    // единственный caller передаёт bare UID (`basenameUid(ctx.filePath)`), но
+    // резолвер — публичный экспорт, и вход может прийти в любой из двух форм.
+    const host =
+      classKeyOf(hostClassUid) ?? hostClassUid.trim().toLowerCase();
     if (!host) return [];
 
     // 0. A class reference arrives in TWO IRI forms and both name ONE node —
