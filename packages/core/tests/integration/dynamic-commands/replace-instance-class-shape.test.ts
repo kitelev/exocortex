@@ -31,7 +31,7 @@
  */
 import * as fs from "fs";
 import * as path from "path";
-import * as yaml from "js-yaml";
+import { parseYamlFrontmatterTolerant } from "../../../src/utilities/parseYamlFrontmatter";
 
 const SUBMODULE_EXOCMD = path.resolve(
   __dirname,
@@ -70,7 +70,7 @@ function readAsset(uid: string): string {
  * a stray non-asset file landing there would otherwise raise an exception that reads
  * as a defect in the binding scan rather than as "a non-asset file is here".
  */
-function frontmatter(content: string, label = "asset"): string {
+function frontmatter(content: string, label: string): string {
   const m = content.match(/^---\n([\s\S]*?)\n---/);
   if (!m) throw new Error(`${label} has no frontmatter block`);
   return m[1];
@@ -89,8 +89,30 @@ function frontmatter(content: string, label = "asset"): string {
  * parses frontmatter with js-yaml (`utilities/parseYamlFrontmatter.ts`) and reads this
  * predicate off the resolved graph (`CommandResolver.ts`), so BOTH forms render a live
  * inline button — while the regex reported zero edges and all four axes stayed green.
- * ✅ js-yaml covers every spelling by construction: quoting, flow or block, list or
- * scalar, continuation lines. Mutants M10/M11 pin both forms.
+ * ✅ Parsing covers every spelling by construction: quoting, flow or block, list or
+ * scalar, continuation lines. Mutants M10/M11 pin the two that defeated the regex.
+ *
+ * ⛤ The parser is production's own `parseYamlFrontmatterTolerant`, not a bare
+ * `yaml.load`. Three things come with that and none is cosmetic: the YAML 1.1 schema
+ * production uses, last-wins tolerance for a duplicate mapping key (a `yaml.load`
+ * here threw on it — reintroducing the very fragility class #3800/#3701 that parser
+ * exists to absorb, and for ANY of the 458 files, not only binding-bearing ones), and
+ * a context label in its warning. A file it genuinely cannot parse is reported BY NAME
+ * below rather than skipped: production reads such a file as `{}` and renders no
+ * button, so skipping would match production — but silently, and this scan's whole
+ * job is to not be silent. Mutant M13 pins the naming; the tolerance half has no
+ * mutant because its correct outcome is that nothing reddens, which the driver cannot
+ * distinguish from a dead axis — measured once instead, 2026-09-21: a duplicate
+ * mapping key injected into an unrelated asset left all four axes green with the
+ * mutation applied, where a bare `yaml.load` threw and took D3 down with it.
+ *
+ * ⚠ This predicate is a strict SUPERSET of what production resolves, never a subset —
+ * measured 2026-09-21 by driving real on-disk fixtures through `resolveButtons()`.
+ * Two forms it flags that production would NOT render as a button: a multi-item list
+ * whose reclass entry is not FIRST (`CommandResolver.getLinkedUID` reads `triples[0]`
+ * and nothing else), and `[[uid#anchor]]` (the UUID match is `^…$`-anchored, so the
+ * anchor suffix fails it). Flagging them is the right direction — both are bindings
+ * whose author meant to bind — but the guarantee is "errs toward flagging", not parity.
  *
  * ⛔ Anchored on the EDGE predicate, not on the CommandBinding class UID. Measured
  * partition of the 83 assets mentioning that class UID: 73 edges + 1 self-referential
@@ -101,19 +123,34 @@ function frontmatter(content: string, label = "asset"): string {
  */
 function bindingEdges(): { uid: string; targets: string[] }[] {
   const edges: { uid: string; targets: string[] }[] = [];
+  const unparseable: string[] = [];
   for (const file of fs.readdirSync(SUBMODULE_EXOCMD)) {
     if (!file.endsWith(".md")) continue;
     const fm = frontmatter(
       fs.readFileSync(path.join(SUBMODULE_EXOCMD, file), "utf-8"),
       file,
     );
-    const parsed = yaml.load(fm) as Record<string, unknown> | null;
-    const raw = parsed?.[BINDING_COMMAND_KEY];
+    const parsed = parseYamlFrontmatterTolerant(fm, file);
+    if (parsed === null) {
+      unparseable.push(file);
+      continue;
+    }
+    const raw = parsed[BINDING_COMMAND_KEY];
     if (raw === undefined || raw === null) continue;
     edges.push({
       uid: file.replace(/\.md$/, ""),
       targets: (Array.isArray(raw) ? raw : [raw]).map((v) => String(v)),
     });
+  }
+  if (unparseable.length > 0) {
+    // Loud AND named. A bare `yaml.load` here threw a js-yaml exception whose
+    // message carries line numbers but no filename — across 458 candidates that
+    // leaves the next engineer bisecting. Naming the file is the same lesson
+    // `frontmatter`'s `label` parameter above exists for.
+    throw new Error(
+      "assetspace holds frontmatter this scan cannot judge: " +
+        unparseable.join(", "),
+    );
   }
   return edges;
 }
@@ -150,7 +187,8 @@ describe("replace-instance-class ships as a CLI-only reclass command (@req:0e237
     // Every reference form is covered: the assetspace ships 68 bare `[[uid]]` and 5
     // `[[uid|alias]]` values, both caught by the UID substring, and a binding authored
     // by NAME is caught by the label. Spelling is no longer a variable — the value
-    // arrives already parsed.
+    // arrives already parsed, by production's own parser (see `bindingEdges`, which
+    // also records where this errs on the strict side).
     const pointingAtReplace = edges.filter((e) =>
       e.targets.some(
         (t) => t.includes(CMD_REPLACE) || t.includes(CMD_REPLACE_LABEL),
