@@ -4,6 +4,8 @@ import * as path from "path";
 import { InMemoryTripleStore } from "@kitelev/exocortex-core";
 import {
   createTripleStoreRequiredPropertyResolver,
+  IRI,
+  Literal,
   type Triple,
 } from "@kitelev/exocortex-core";
 import { loadVaultTriples } from "../../src/cache/loadVaultTriples.js";
@@ -108,10 +110,15 @@ describe("required-property resolution through the production loader (ticket b4b
     await withVault(async (dir) => {
       const loaded = await loadVaultTriples(dir, { useCache: false });
       const triples = loaded.triples as Triple[];
-      const objectOf = (pred: string): string[] =>
+      // `Subject` / `RDFObject` are unions — a BlankNode carries no `.value`,
+      // so every read narrows first (the type gate `check-test-types` is a
+      // stricter superset of what ts-jest asks, and it is right here).
+      const iriValue = (node: unknown): string | null =>
+        node instanceof IRI || node instanceof Literal ? node.value : null;
+      const objectOf = (pred: string): Array<string | null> =>
         triples
           .filter((t) => t.predicate.value.endsWith(pred))
-          .map((t) => t.object.value);
+          .map((t) => iriValue(t.object));
       expect(objectOf("Property_domain")).toEqual([
         "https://exocortex.my/ontology/exo#Setting",
       ]);
@@ -120,9 +127,9 @@ describe("required-property resolution through the production loader (ticket b4b
       ]);
       const superSubjects = triples
         .filter((t) => t.predicate.value.endsWith("Class_superClass"))
-        .map((t) => t.subject.value);
+        .map((t) => iriValue(t.subject));
       expect(superSubjects).toHaveLength(1);
-      expect(superSubjects[0]).toMatch(/\/99999999-8888-7777-6666-555555555555\.md$/);
+      expect(superSubjects[0] ?? "").toMatch(/\/99999999-8888-7777-6666-555555555555\.md$/);
       // And the label TWINS coexist: a `prefix__Name` label is emitted as an IRI
       // under exo__Asset_label AND as a Literal under rdfs:label. This is what
       // makes the Literal branch of `labelKeyOf` sufficient on today's emission
@@ -132,7 +139,7 @@ describe("required-property resolution through the production loader (ticket b4b
       const labelsOfSetting = triples
         .filter(
           (t) =>
-            t.subject.value.endsWith(`${SETTING}.md`) &&
+            (iriValue(t.subject) ?? "").endsWith(`${SETTING}.md`) &&
             /label$/i.test(t.predicate.value),
         )
         .map((t) => `${t.predicate.value.split(/[#/]/).pop()}:${t.object.constructor.name}`)
