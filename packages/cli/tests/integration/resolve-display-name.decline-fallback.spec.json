@@ -1,0 +1,26 @@
+{
+  "_doc": "Revert-verify mutants for the CLI decline-fallback (req c67e4c69, scenario D1 — 'the label is what a consumer prints'). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/resolve-display-name.decline-fallback.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute). One mutant per guard of the diff: M1 the printed-name tier, M2 the reported-source tier — split because two different expressions produce them and a spec could print the label while still announcing 'basename'. L2 is the CONTROL (no label ⇒ filename) and must stay GREEN under both: the bare-UID alarm of req f17f7c57 scenario 3 is not touched by this change.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/resolve-display-name.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/resolve-display-name.integration.test.ts 2>&1",
+  "red_re": "@req:c67e4c69\\S* (L\\d+) ",
+  "mutants": {
+    "M1_label_tier_removed_from_printed_name": {
+      "from": "  const displayName = resolved.displayName ?? labelText ?? basename;",
+      "to": "  const displayName = resolved.displayName ?? basename;",
+      "_note": "The literal pre-fix expression. Reddens L1 only: `source` is computed from hasLabel independently, so L3 stays green — which is the point of splitting them.",
+      "expect": ["L1"]
+    },
+    "M2_source_null_branch_hardwired_to_basename": {
+      "from": "    resolved.displayName === null || resolved.provenance === \"default\"\n      ? hasLabel\n        ? \"label\"\n        : \"basename\"\n      : resolved.provenance;",
+      "to": "    resolved.displayName === null\n      ? \"basename\"\n      : resolved.provenance === \"default\"\n        ? hasLabel\n          ? \"label\"\n          : \"basename\"\n        : resolved.provenance;",
+      "_note": "The literal pre-fix shape. Reddens L3 only: the printed name still falls to the label, so L1 stays green and the two tiers are proven independent.",
+      "expect": ["L3"]
+    }
+  }
+}

@@ -133,30 +133,37 @@ export async function resolveDisplayName(
     metadata: metadata as Record<string, unknown>,
     basename,
   });
-  const displayName = resolved.displayName ?? basename;
-
   const rawLabel = (metadata as Record<string, unknown>).exo__Asset_label;
   const hasLabel = typeof rawLabel === "string" && rawLabel.trim().length > 0;
+  const labelText = hasLabel ? (rawLabel as string).trim() : null;
 
-  // ⛔ The null check comes FIRST, and it is not defensive tidiness. `render()` can return null
-  // even when a spec participated — the engine documents one such path ("every field empty → the
-  // affixes alone are not a name") and it is reachable in exactly the omitLabel shape this command
-  // was built for: a spec whose printed property is absent on the instance. Then the stem is what
-  // gets shown, so the stem is what `source` must report. Trusting provenance alone here would
-  // announce "a spec named this" over a bare UID — i.e. it would MISS the alarm, which is the same
-  // inversion the string-comparison version had, pointing the other way.
+  // ⛔ The label tier is not optional politeness — it is what req c67e4c69 scenario D1 requires:
+  // when a spec DECLINES (render → null) "the label is what a consumer prints", and this command
+  // is a consumer. `?? basename` skipped straight past an existing label, so a labelled asset
+  // under a declining spec showed a bare UID here while Obsidian showed its label (TabTitlePatch
+  // and GraphViewPatch run exactly this null → label → basename chain). The divergence predates
+  // c67e4c69 — a separator-mode decline did the same — but only separator specs declined then,
+  // so it was unreachable in practice until c67e4c69 widened the declining set.
+  const displayName = resolved.displayName ?? labelText ?? basename;
+
+  // ⛔ A null render shares its branch with provenance "default", and that is not tidiness.
+  // `render()` returns null even when a spec PARTICIPATED — the engine documents the path ("every
+  // field empty → the affixes alone are not a name") and req c67e4c69 made it reachable for every
+  // plain spec, not just separator ones. Reporting the engine's provenance there would announce
+  // "a spec named this" over a name the spec refused to compose — the alarm this command exists
+  // to raise, silenced. So both branches report WHICH FALLBACK TIER actually produced the printed
+  // string, which is a property of the ASSET (does it carry a label?), not a naming decision
+  // re-made on this side: label if one exists, else the stem.
   //
-  // Otherwise the engine says WHY, and the only thing decided here is the split of its "default"
-  // verdict into label-vs-basename — a property of the ASSET (does it carry a label?), not of the
-  // naming logic, so no naming decision is re-made on this side.
+  // ⛤ Previously the null branch was hard-wired to "basename" — true while nothing consulted the
+  // label, false once `displayName` above began falling to it. The two are now derived from the
+  // same `hasLabel`, so `source` cannot drift from what was printed.
   const source: DisplayNameSource =
-    resolved.displayName === null
-      ? "basename"
-      : resolved.provenance === "default"
-        ? hasLabel
-          ? "label"
-          : "basename"
-        : resolved.provenance;
+    resolved.displayName === null || resolved.provenance === "default"
+      ? hasLabel
+        ? "label"
+        : "basename"
+      : resolved.provenance;
 
   const uid = (metadata as Record<string, unknown>).exo__Asset_uid;
 
