@@ -64,14 +64,17 @@ function dailyLayout(blocks: string[]): Layout {
   };
 }
 
-function dailyBlock(uid: string): LayoutBlock {
+function dailyBlock(
+  uid: string,
+  partition: "actions" | "tasks" | "projects" | "closed" = "tasks",
+): LayoutBlock {
   return {
     kind: "daily-efforts-by-class",
     uid,
-    title: "Tasks",
+    title: partition,
     collapsed: false,
     sourcePath: `${uid}.md`,
-    partition: "tasks",
+    partition,
   } as LayoutBlock;
 }
 
@@ -192,9 +195,63 @@ describe("UniversalLayoutRenderer — daily-efforts suppression (req a38ac95b h)
     expect(tasksSpy).toHaveBeenCalledTimes(1); // not suppressed
   });
 
-  test("layoutHasDailyEffortsBlock decision (unit)", () => {
+  test("layoutHasDailyTasksBlock decision (unit)", () => {
     const { renderer } = buildRenderer(dailyLayout(["t"]), [dailyBlock("t")]);
-    expect((renderer as any).layoutHasDailyEffortsBlock(dailyLayout(["t"]))).toBe(true);
-    expect((renderer as any).layoutHasDailyEffortsBlock(dailyLayout(["b"]))).toBe(false);
+    expect((renderer as any).layoutHasDailyTasksBlock(dailyLayout(["t"]))).toBe(true);
+    expect((renderer as any).layoutHasDailyTasksBlock(dailyLayout(["b"]))).toBe(false);
+  });
+
+  // ── req f56eef78 (#3910): the gate keys on the PARTITION, not on presence ──
+  // Paired by construction: the first axis discriminates this design from the
+  // pre-#3910 one (it was RED before the narrowing), the second discriminates it
+  // from "drop suppression entirely" (it would be RED under that design). A
+  // single axis is green under two of the three designs and therefore vacuous.
+
+  test("@req:f56eef78-61d8-4d12-ac28-886aecefd633 layout with ONLY an actions daily-efforts block → legacy DailyTasksRenderer still runs", async () => {
+    const { renderer, navSpy, tasksSpy } = buildRenderer(
+      dailyLayout(["a"]),
+      [dailyBlock("a", "actions")],
+    );
+    const el = enhance(document.createElement("div"));
+    await renderer.render("", el, {} as never);
+
+    expect(navSpy).toHaveBeenCalledTimes(1);
+    expect(tasksSpy).toHaveBeenCalledTimes(1); // time-table NOT taken away
+    expect((renderer as any).exoLayoutRenderer.render).toHaveBeenCalledTimes(1);
+  });
+
+  test("@req:f56eef78-61d8-4d12-ac28-886aecefd633 layout with a tasks daily-efforts block → legacy DailyTasksRenderer suppressed", async () => {
+    const { renderer, navSpy, tasksSpy } = buildRenderer(
+      dailyLayout(["t"]),
+      [dailyBlock("t", "tasks")],
+    );
+    const el = enhance(document.createElement("div"));
+    await renderer.render("", el, {} as never);
+
+    expect(navSpy).toHaveBeenCalledTimes(1);
+    expect(tasksSpy).not.toHaveBeenCalled();
+  });
+
+  test("@req:f56eef78-61d8-4d12-ac28-886aecefd633 layout mixing actions + tasks → suppressed (the tasks block claims the territory)", async () => {
+    const { renderer, tasksSpy } = buildRenderer(
+      dailyLayout(["a", "t"]),
+      [dailyBlock("a", "actions"), dailyBlock("t", "tasks")],
+    );
+    const el = enhance(document.createElement("div"));
+    await renderer.render("", el, {} as never);
+
+    expect(tasksSpy).not.toHaveBeenCalled();
+  });
+
+  test("@req:f56eef78-61d8-4d12-ac28-886aecefd633 layoutHasDailyTasksBlock is true for tasks only, across every partition", () => {
+    const partitions = ["actions", "tasks", "projects", "closed"] as const;
+    for (const partition of partitions) {
+      const { renderer } = buildRenderer(dailyLayout(["p"]), [
+        dailyBlock("p", partition),
+      ]);
+      expect((renderer as any).layoutHasDailyTasksBlock(dailyLayout(["p"]))).toBe(
+        partition === "tasks",
+      );
+    }
   });
 });

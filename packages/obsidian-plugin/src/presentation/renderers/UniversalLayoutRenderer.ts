@@ -269,7 +269,7 @@ export class UniversalLayoutRenderer {
 
   cleanup(): void {
     if (this.debounceTimeout) {
-      clearTimeout(this.debounceTimeout);
+      window.clearTimeout(this.debounceTimeout);
       this.debounceTimeout = null;
     }
     this.eventListenerManager.cleanup();
@@ -299,9 +299,9 @@ export class UniversalLayoutRenderer {
   }
 
   public async handleMetadataChange(filePath: string): Promise<void> {
-    if (this.debounceTimeout) clearTimeout(this.debounceTimeout);
+    if (this.debounceTimeout) window.clearTimeout(this.debounceTimeout);
 
-    this.debounceTimeout = setTimeout(async () => {
+    this.debounceTimeout = window.setTimeout(async () => {
       if (!this.rootContainer || filePath !== this.currentFilePath) return;
 
       // Use app.vault to get proper TFile instance (not IFile from adapter)
@@ -369,19 +369,22 @@ export class UniversalLayoutRenderer {
 
       // RFC exo__Layout Phase 2 — resolve the Layout once (reused below for
       // both the daily-tasks suppression decision and block rendering).
-      // RFC pn__DailyNote toggles (req a38ac95b) — when the active layout
-      // carries daily-efforts-by-class blocks, the day's efforts are rendered
-      // through the block pipeline (Actions / Tasks / Projects), so the legacy
-      // catch-all DailyTasksRenderer is suppressed to avoid a duplicate
+      // RFC pn__DailyNote toggles (req a38ac95b; narrowed by req f56eef78,
+      // #3910) — when the active layout carries a daily-efforts-by-class block
+      // with partition `tasks`, that block renders the day's Tasks, so the
+      // legacy catch-all DailyTasksRenderer is suppressed to avoid a duplicate
       // "Tasks" section. Daily navigation (rendered above) is preserved.
-      // Back-compat: when no daily-efforts layout is active (the common case —
-      // no exo__Layout asset targets pn__DailyNote), the legacy renderer runs
-      // exactly as before → zero regression.
+      // A layout carrying ONLY other partitions (Actions / Projects / Closed)
+      // does NOT suppress: those feeds are orthogonal to the time-table, and
+      // suppressing on them removed its columns, sorting and empty slots from a
+      // layout that never claimed them. Back-compat: no layout, or a layout
+      // without daily-efforts blocks (the common case — no exo__Layout asset
+      // targets pn__DailyNote), runs the legacy renderer exactly as before.
       const layout = this.resolveLayoutForFile(currentFile);
       const layoutActive =
         layout !== null && this.settings.enableExoLayoutRenderer;
-      const dailyEffortsLayoutActive =
-        layoutActive && layout !== null && this.layoutHasDailyEffortsBlock(layout);
+      const dailyTasksBlockActive =
+        layoutActive && layout !== null && this.layoutHasDailyTasksBlock(layout);
 
       // RFC c7da0bca Phase 3b-main — ensure the active file + its class
       // chain + prototype chain are in the triple store before button
@@ -419,7 +422,7 @@ export class UniversalLayoutRenderer {
         this.renderCommandsSkeleton(el);
       }
 
-      if (!dailyEffortsLayoutActive) {
+      if (!dailyTasksBlockActive) {
         await this.dailyTasksRenderer.render(el, currentFile, renderHeader, this.sectionStateManager.isCollapsed("daily-tasks"));
       }
 
@@ -477,13 +480,17 @@ export class UniversalLayoutRenderer {
   }
 
   /**
-   * RFC pn__DailyNote toggles (req a38ac95b) — whether the resolved layout
-   * carries at least one `daily-efforts-by-class` block. Drives suppression of
-   * the legacy DailyTasksRenderer (its catch-all "Tasks" would otherwise
-   * duplicate the daily-efforts blocks). Resolves block refs against the
-   * ExoLayout snapshot; returns false when the repository is absent (back-compat).
+   * RFC pn__DailyNote toggles (req a38ac95b; narrowed by req f56eef78, #3910) —
+   * whether the resolved layout claims the legacy time-table's territory, i.e.
+   * carries a `daily-efforts-by-class` block with partition `tasks`. ONLY that
+   * partition suppresses the legacy DailyTasksRenderer: its catch-all "Tasks"
+   * would duplicate a Tasks block, but it does NOT duplicate an Actions /
+   * Projects / Closed block — those are orthogonal feeds, and suppressing on
+   * them took the table's columns, sorting and empty slots from a layout that
+   * never asked for it. Resolves block refs against the ExoLayout snapshot;
+   * returns false when the repository is absent (back-compat).
    */
-  private layoutHasDailyEffortsBlock(
+  private layoutHasDailyTasksBlock(
     layout: import("@kitelev/exocortex-core").Layout,
   ): boolean {
     const snapshot = this.exoLayoutRepository?.getSnapshot();
@@ -494,7 +501,11 @@ export class UniversalLayoutRenderer {
       const block =
         snapshot.blocksByUid.get(normalized) ??
         snapshot.blocksByLabel.get(normalized);
-      if (block !== undefined && block.kind === "daily-efforts-by-class") {
+      if (
+        block !== undefined &&
+        block.kind === "daily-efforts-by-class" &&
+        block.partition === "tasks"
+      ) {
         return true;
       }
     }
@@ -516,6 +527,6 @@ export class UniversalLayoutRenderer {
     this.rootContainer.empty();
     await this.render(source, this.rootContainer, {} as MarkdownPostProcessorContext);
 
-    setTimeout(() => { if (scrollParent) scrollParent.scrollTop = scrollTop; }, 50);
+    window.setTimeout(() => { if (scrollParent) scrollParent.scrollTop = scrollTop; }, 50);
   }
 }
