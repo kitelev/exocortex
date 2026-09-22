@@ -217,8 +217,13 @@ async function resolveClassKeyClosure(
 
   // 0. A class reference arrives in TWO IRI forms and both name ONE node —
   //    see `classKeyOf`. Twins are resolved LAZILY and POINT-WISE (the store
-  //    indexes every position, so each lookup is O(1)); scanning all label
-  //    triples up front measured ~128 ms per call on a 609k-triple vault.
+  //    indexes every position, so each lookup is O(1)): scanning all label
+  //    triples up front measured ~128 ms per call on a 609k-triple vault
+  //    against a 0.3 ms baseline, and this walk sits on the button/layout
+  //    RENDER path (ButtonGroupsBuilder, LayoutCodeBlockProcessor). Point-wise
+  //    it is 0.9 ms median. ⛔ Keep this rationale with the code: it is the
+  //    reason the lazy form is not "premature optimisation" to be simplified
+  //    away, and the convergence must not lose it along with the copy.
   const keyToIRIs = new Map<string, Set<string>>();
   const rememberIRI = (key: string, iri: string): void => {
     let set = keyToIRIs.get(key);

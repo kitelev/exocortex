@@ -27,9 +27,15 @@ import { Triple } from "../../../src/domain/models/rdf/Triple";
  * axes: both are the same converged reader/walk pair and the same Step-0
  * conformance verdict (no new requirement is minted for a convergence).
  *
- * ⛔ Each axis carries its OWN timeout so that removing the guard reads as RED
- * rather than as a run that never came back (integration-test-revert-verify
- * §A70). The budget is deliberately small — the walk is two nodes.
+ * ⛔ The per-test timeouts below do NOT make a missing guard read as RED, and
+ * saying otherwise would be a comment that measurement disproves: without the
+ * visited set the walk spins in MICROTASKS, so jest's timer never gets a turn and
+ * the run simply never comes back (probed 2026-09-22 — it had to be killed from
+ * outside). What turns the hang into a verdict is the mutant harness, which runs
+ * every jest invocation under `timeout` and prints these two axis names on
+ * rc=124 (integration-test-revert-verify §A70). In CI a `visited` regression
+ * would therefore surface as a HUNG job, not as a red axis — worth knowing before
+ * anyone reads a stuck shard as an infrastructure flake.
  */
 
 const EXO = Namespace.EXO;

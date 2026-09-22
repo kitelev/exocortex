@@ -10,6 +10,8 @@ import {
 } from "../../../src/services/RequiredPropertyResolver";
 import { NoteToRDFConverter } from "../../../src/services/NoteToRDFConverter";
 import { InMemoryTripleStore } from "../../../src/infrastructure/rdf/InMemoryTripleStore";
+import { Literal } from "../../../src/domain/models/rdf/Literal";
+import { parseMinCount } from "../../../src/utilities/minCount";
 
 /**
  * Ticket abd22b00 — ONE reader for `exo__Property_minCount`, exercised through
@@ -213,6 +215,20 @@ describe("minCount reader convergence (ticket abd22b00)", () => {
     expect(viaFS!.minCount).toBeUndefined();
     expect(requiredKeys).toEqual([]);
     expect(declaredRequiredFlag).toBe(false);
+  });
+
+  it("C10 @req:bcdd64d8-abc1-48f4-af50-42c8aa3f1978 each branch of the shared reader is byte-faithful to the reader it replaced: an RDF Literal is parsed AS WRITTEN (no strip — the old graph reader had none) while a frontmatter string is stripped first (the old FS reader's own predicate), so the convergence unified the decision list without moving either side's lexical pre-processing", () => {
+    // ⚠ A quoted Literal is SYNTHETIC — NoteToRDFConverter removes a scalar's
+    // quotes itself (probed 2026-09-22: metadataCache hands it `"1"` for the
+    // nested form `'"1"'` and it emits the Literal `1`), so no vault input
+    // reaches this branch with quotes attached. The axis pins the REFACTOR'S own
+    // contract — one branch per predecessor, each byte-identical to it — not a
+    // data shape. That contract is what keeps a later reader from "simplifying"
+    // the two branches back into one shared strip.
+    expect(parseMinCount(new Literal('"1"'))).toBeUndefined();
+    expect(parseMinCount(new Literal("1"))).toBe(1);
+    expect(parseMinCount('"1"')).toBe(1);
+    expect(parseMinCount("1")).toBe(1);
   });
 
   it("C7 @req:bcdd64d8-abc1-48f4-af50-42c8aa3f1978 the single-valued form is the CONTROL — literal expectations, no reference to its multi-valued siblings, so it stays green under every mutation of the aggregation and proves the ordinary path was never touched", async () => {

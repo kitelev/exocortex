@@ -18,7 +18,17 @@
       "to": "      const mc = parseMinCount(undefined);",
       "expect": [
         "C4",
-        "C7"
+        "C7",
+        "C8",
+        "D8",
+        "Q9",
+        "S5",
+        "Y1",
+        "Y2",
+        "Y3",
+        "Y5",
+        "Z1",
+        "Z2"
       ],
       "_note": "The required-property resolver's call-site READS the triple through the shared reader. Form preserved, effect removed (§A97 — `if (false && …)` would break TS narrowing and yield BROKEN, i.e. the absence of a measurement)."
     },
@@ -42,6 +52,6 @@
   },
   "_coverage": {
     "_note_equivalent_mutant": "Deliberately NOT written: restoring `t.object instanceof Literal ? parseInt(…) : NaN` at the required-property call-site. It is an equivalent mutant by the arithmetic in the _doc, and §A97 asks for such a mutant to be NAMED rather than written — a mutation that reddens nothing is a measurement only once you know why.",
-    "_note_C1_C2_C3_C6": "GREEN under every mutant of THIS subject: they measure the two ShapeLoader readers and the shared helper, whose mutants live in the sibling specs (shapeloader-mincount-15003314 and mincount-shared-reader-abd22b00)."
+    "_note_C1_C2_C3_C6": "C1, C2, C3, C6 and C10 are GREEN under every mutant of THIS subject, and that is a division of labour rather than a gap: they measure the two ShapeLoader readers and the shared helper's own contract, whose mutants live in the sibling specs (shapeloader-mincount-15003314 and mincount-shared-reader-abd22b00). ⛔ C8 is NOT in that list — it reddens under M1_required_site_unwired, because it drives the required-property resolver and that is the site this mutant unwires (review round 1, F3: the earlier note put C8 among the unconditionally-green and the driver's printed list says otherwise)."
   }
 }

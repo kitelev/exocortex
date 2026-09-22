@@ -24,9 +24,10 @@
       "_note": "The multi-value policy. The fixture declares [0, 1] — the SMALLER value FIRST — so `first` answers 0 (no obligation) where `max` answers 1. C4 stays GREEN under it by ARITHMETIC, not by luck: the required-property resolver hands the helper ONE term per triple, so the aggregation never runs on its path — `any > 0` and `max > 0` are the same question there."
     },
     "M2_strip_removed": {
-      "from": "  const parsed = parseInt(lexical.trim().replace(/^[\"']|[\"']$/g, \"\"), 10);",
-      "to": "  const parsed = parseInt(lexical.trim(), 10);",
+      "from": "    const parsed = parseInt(raw.trim().replace(/^[\"']|[\"']$/g, \"\"), 10);",
+      "to": "    const parsed = parseInt(raw.trim(), 10);",
       "expect": [
+        "C10",
         "Q1",
         "Q2",
         "Q4",
@@ -36,8 +37,8 @@
       "_note": "Moved verbatim from shapeloader-mincount-15003314 :: M1_strip_removed. The strip compensates for parseFrontmatter keeping a value VERBATIM; it lives in the shared reader rather than at the FS call-site because on the graph path it is a no-op BY CONSTRUCTION (YAML removes the surrounding quotes before NoteToRDFConverter builds the literal) — and that is exactly what makes req bcdd64d8's loader-parity invariant hold by construction."
     },
     "M3_apostrophe_dropped": {
-      "from": "  const parsed = parseInt(lexical.trim().replace(/^[\"']|[\"']$/g, \"\"), 10);",
-      "to": "  const parsed = parseInt(lexical.trim().replace(/^[\"]|[\"]$/g, \"\"), 10);",
+      "from": "    const parsed = parseInt(raw.trim().replace(/^[\"']|[\"']$/g, \"\"), 10);",
+      "to": "    const parsed = parseInt(raw.trim().replace(/^[\"]|[\"]$/g, \"\"), 10);",
       "expect": [
         "Q2",
         "Q8"
@@ -45,30 +46,62 @@
       "_note": "Moved verbatim from shapeloader-mincount-15003314 :: M2_apostrophe_dropped."
     },
     "M4_failopen_removed": {
-      "from": "  return Number.isNaN(parsed) ? undefined : parsed;",
-      "to": "  return Number.isNaN(parsed) ? 1 : parsed;",
+      "from": "    const parsed = parseInt(raw.trim().replace(/^[\"']|[\"']$/g, \"\"), 10);\n    return Number.isNaN(parsed) ? undefined : parsed;",
+      "to": "    const parsed = parseInt(raw.trim().replace(/^[\"']|[\"']$/g, \"\"), 10);\n    return Number.isNaN(parsed) ? 1 : parsed;",
       "expect": [
+        "C6",
         "Q5",
-        "Q6",
-        "C6"
+        "Q6"
       ],
-      "_note": "Moved from shapeloader-mincount-15003314 :: M5_failopen_removed, and EXTENDED: the fail-open is now one decision for all four readers, so C6 (an unparseable declaration through every one of them) joins the two ShapeLoader axes."
+      "_note": "Moved from shapeloader-mincount-15003314 :: M5_failopen_removed, and EXTENDED: the fail-open is now one decision for all four readers, so C6 (an unparseable declaration through every one of them) joins the two ShapeLoader axes.  ⛤ Re-anchored (same ticket, after the F1 fix split the reader into two branches): the fail-open now exists once per branch, so this mutant breaks the STRING one — the branch the original 15003314 mutant lived on — and M7 breaks the Literal one."
     },
     "M5_literal_branch_dropped": {
-      "from": "    raw instanceof Literal ? raw.value : typeof raw === \"string\" ? raw : null;",
-      "to": "    typeof raw === \"string\" ? raw : null;",
+      "from": "  if (raw instanceof Literal) {\n    const parsed = parseInt(raw.value, 10);\n    return Number.isNaN(parsed) ? undefined : parsed;\n  }",
+      "to": "  if (raw instanceof Literal) {\n    return undefined;\n  }",
       "expect": [
         "C1",
+        "C10",
         "C3",
         "C4",
         "C5",
-        "C7"
+        "C7",
+        "C8",
+        "D8",
+        "P1",
+        "P2",
+        "Q7",
+        "Q8",
+        "Q9",
+        "S5",
+        "Y1",
+        "Y2",
+        "Y3",
+        "Y5",
+        "Z1",
+        "Z2"
       ],
       "_note": "The WIRING axis of the reader itself (integration-test-revert-verify §ПЯТАЯ механика): an RDF Literal is how THREE of the four consumers deliver the value, so dropping that branch blinds all of them at once. A broad red list is the point here — it is the measurement behind 'all four go through this one reader', which no single-consumer axis can make."
+    },
+    "M6_strip_leaks_into_literal_branch": {
+      "from": "  if (raw instanceof Literal) {\n    const parsed = parseInt(raw.value, 10);",
+      "to": "  if (raw instanceof Literal) {\n    const parsed = parseInt(raw.value.trim().replace(/^[\"']|[\"']$/g, \"\"), 10);",
+      "expect": [
+        "C10"
+      ],
+      "_note": "The two branches are byte-faithful to the two readers they replaced, and THIS is what pins that: moving the FS side's strip into the Literal branch reddens C10 and nothing else. ⚠ The input is synthetic — NoteToRDFConverter unquotes a scalar itself (measured 2026-09-22: `'\"1\"'` reaches it as `\"1\"` and it emits the Literal `1`), so no vault input arrives at this branch quoted. The axis therefore pins the REFACTOR'S contract (one branch per predecessor) rather than a data shape, which is what stops a later reader from folding the branches back into one shared strip."
+    },
+    "M7_literal_failopen_removed": {
+      "from": "  if (raw instanceof Literal) {\n    const parsed = parseInt(raw.value, 10);\n    return Number.isNaN(parsed) ? undefined : parsed;\n  }",
+      "to": "  if (raw instanceof Literal) {\n    const parsed = parseInt(raw.value, 10);\n    return Number.isNaN(parsed) ? 1 : parsed;\n  }",
+      "expect": [
+        "C10",
+        "C6"
+      ],
+      "_note": "The Literal branch's half of the deliberate fail-open. It became addressable only when the F1 fix split the reader per branch; before that one mutant covered both, which read as one guard where there are two."
     }
   },
   "_coverage": {
     "_note_C7": "The single-valued CONTROL is expected GREEN under M1 (the aggregation) — literal expectations on the ordinary path, no reference to its multi-valued siblings. It reddens under M5 (the reader blinded entirely), which is what makes it a control rather than a decoration.",
-    "_note_C8_C9": "The cycle axes are GREEN under every mutant of THIS subject: the visited set they lock lives in RequiredPropertyResolver.ts, and its mutant is in mincount-call-sites-abd22b00 :: M3_visited_guard_removed. Named here so a reader does not take their silence for a vacuous pair."
+    "_note_C8_C9": "⛔ CORRECTED after review round 1 (F3): the earlier note claimed these two are green under EVERY mutant of this subject, and the driver's own printed list disproves it — C8 reddens under M5_literal_branch_dropped, because it drives the required-property resolver with a Literal `1` and expects a non-empty list, which a blinded Literal branch cannot produce. What IS true: the visited set they lock lives in RequiredPropertyResolver.ts, so only mincount-call-sites-abd22b00 :: M3_visited_guard_removed reddens them AS CYCLE axes; here C8 reddens as an ordinary consumer of the reader, and C9 (the declared-property resolver on the same cycle) stays green because its own read survives."
   }
 }
