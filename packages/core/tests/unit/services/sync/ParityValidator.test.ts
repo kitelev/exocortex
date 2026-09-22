@@ -811,4 +811,39 @@ describe("ParityValidator — empty remote tree (@req:029c90ee-e10b-4398-909e-c2
     expect(round.repos[0].discrepancies).toEqual([]);
     expect(round.ok).toBe(true);
   });
+  /**
+   * B3 — the PRODUCTION trigger, which B1/B2 do not reach.
+   *
+   * The commit that shipped the short-circuit argued «an empty tree only ever
+   * occurs at the first commit, so both sides of the diff are empty». That is
+   * FALSE: issue #4184's own incident was a delete-to-empty on a NON-first
+   * commit (`exoas-bot-messages-tbank`, `54b40857` "delete README"). B1/B2 both
+   * start from a repo that was born empty, so neither exercises the asymmetric
+   * case — a repo with a real prior sync (watermark base == local) whose remote
+   * then loses everything.
+   *
+   * ⛔ This case cannot be reached "naturally" through the fake: its
+   * `storeTree()` hashes trees synthetically (`sha1("tree:" + serialized)`),
+   * never git's real tree-object hash, so emptying a repo through it yields a
+   * SHA that is not the canonical `4b825dc6…`. Forcing the commit lookup — what
+   * `withEmptyRemoteTree` does — is therefore the only way in, and that is a
+   * property of the fixture, not a shortcut.
+   */
+  it("B3: a repo emptied AFTER a successful sync reports the survivor as a pending remote delete", async () => {
+    const h = makeHarness({ [FILE_A]: mdAsset("u1") });
+    await bootstrap(h); // real SyncEngine round — watermark base == local sha
+
+    const round = await validatorOver(h).runRound([h.spec], {
+      trigger: "standalone",
+    });
+
+    expect(round.repos[0].status).toBe("checked");
+    // NOT 0: filesChecked is the real local∪remote union, so the survivor is
+    // counted and stays visible instead of vanishing behind a silent zero.
+    expect(round.repos[0].filesChecked).toBe(1);
+    expect(round.repos[0].discrepancies).toMatchObject([
+      { path: FILE_A, cls: "pending-remote-delete" },
+    ]);
+  });
+
 });
