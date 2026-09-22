@@ -159,6 +159,11 @@ export {
   type RequiredPropertyResolver,
   type RequiredPropertyField,
   type RequiredPropertyFieldType,
+  // req 07509cf9 — the sibling anchored on `exo__Property_domain`: the
+  // properties a class DECLARES, not just the ones it REQUIRES.
+  createTripleStoreClassPropertyResolver,
+  type ClassPropertyResolver,
+  type ClassPropertyField,
 } from "./services/RequiredPropertyResolver";
 // Ticket 534a7a46 — declared `exo__Property_range` by the definition's
 // `prefix__Name` label, read from a triple store. The port `GroundingExecutor`

@@ -376,3 +376,273 @@ export function createTripleStoreRequiredPropertyResolver(
     return fields;
   };
 }
+
+/* ------------------------------------------------------------------------- *
+ * Sibling resolver — the properties a class DECLARES (req 07509cf9)
+ *
+ * The resolver above answers "which properties of this class are REQUIRED",
+ * anchored on `exo__Property_minCount`. That is a strictly narrower question
+ * than "which properties does this class DECLARE": measured on vault-exodev
+ * (2026-09-22, --no-cache) 735 properties carry `exo__Property_domain` and 44
+ * carry `exo__Property_minCount` — 6 %. For `ems__Task` (72 properties across
+ * Task + Effort + Asset) the minCount count is 0, so the minCount anchor sees
+ * nothing at all there. The two anchors therefore cannot be unified by relaxing
+ * a filter; a second factory is the only honest answer.
+ *
+ * Everything below reuses the machinery above unchanged — `classKeyOf` (both
+ * IRI spellings), `labelKeyOf` (the `rdfs:label` twin, because a `prefix__Name`
+ * label is emitted as an IRI, not a Literal), `fieldTypeFromRange`, and the
+ * ancestor walk. `minCount > 0` survives as the `required` FLAG rather than as
+ * a filter, so a consumer can tell a mandatory field from an optional one
+ * without a second pass.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * A property DECLARED on a class (or on one of its ancestors), with everything
+ * {@link RequiredPropertyField} carries plus whether it is mandatory.
+ */
+export interface ClassPropertyField extends RequiredPropertyField {
+  /**
+   * `true` iff the property declares `exo__Property_minCount > 0` — i.e. iff it
+   * is one of the fields {@link createTripleStoreRequiredPropertyResolver}
+   * would have returned. A property with no `minCount` at all is `false`.
+   */
+  readonly required: boolean;
+}
+
+/**
+ * Resolve every property DECLARED for `hostClassUid`. Returns `[]` when no
+ * `exo__Property_domain` points at the class or any of its ancestors.
+ */
+export type ClassPropertyResolver = (
+  hostClassUid: string,
+) => Promise<ClassPropertyField[]>;
+
+/**
+ * The class-key closure of `hostClassUid`: the host itself, its transitive
+ * `exo__Class_superClass` ancestors, and — for every key on that path — the
+ * OTHER spelling of the same class (bare uid ⇄ lower-cased label), resolved
+ * lazily and point-wise through the store.
+ *
+ * ⛤ This is steps 0+1 of {@link createTripleStoreRequiredPropertyResolver}
+ * reproduced VERBATIM, and the duplication is deliberate, not an oversight:
+ * this change is additive by construction — the existing resolver and its three
+ * production call-sites stay byte-identical — so the shared walk is copied
+ * rather than extracted. Converging the two copies is a follow-up; whoever does
+ * it must re-run BOTH resolvers' axes, since the copy above is the one under
+ * `@req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0`.
+ */
+async function resolveClassKeyClosure(
+  store: ITripleStore,
+  hostClassUid: string,
+): Promise<Set<string>> {
+  const EXO = Namespace.EXO;
+  const RDFS = Namespace.RDFS;
+
+  const host = classKeyOf(hostClassUid) ?? hostClassUid.trim().toLowerCase();
+  if (!host) return new Set<string>();
+
+  // 0. A class reference arrives in TWO IRI forms and both name ONE node —
+  //    see `classKeyOf`. Twins are resolved LAZILY and POINT-WISE (the store
+  //    indexes every position, so each lookup is O(1)); scanning all label
+  //    triples up front measured ~128 ms per call on a 609k-triple vault.
+  const keyToIRIs = new Map<string, Set<string>>();
+  const rememberIRI = (key: string, iri: string): void => {
+    let set = keyToIRIs.get(key);
+    if (!set) {
+      set = new Set<string>();
+      keyToIRIs.set(key, set);
+    }
+    set.add(iri);
+  };
+  const twinCache = new Map<string, string[]>();
+  /** The OTHER spelling(s) of `key`: uid ⇄ label, resolved through the store. */
+  const twinsOf = async (key: string): Promise<string[]> => {
+    const cached = twinCache.get(key);
+    if (cached) return cached;
+    const twins = new Set<string>();
+    for (const iri of keyToIRIs.get(key) ?? []) {
+      if (uidFrom(iri)) {
+        // path form → the label twin lives on the SAME subject
+        for (const pred of [EXO.term("Asset_label"), RDFS.term("label")]) {
+          for (const t of await store.match(new IRI(iri), pred, undefined)) {
+            const label = labelKeyOf(t.object);
+            if (label && label !== key) twins.add(label);
+          }
+        }
+      } else {
+        // symbolic form → the asset whose exo__Asset_label IS this very IRI
+        for (const t of await store.match(
+          undefined,
+          EXO.term("Asset_label"),
+          new IRI(iri),
+        )) {
+          const uid =
+            t.subject instanceof IRI ? uidFrom(t.subject.value) : null;
+          if (uid && uid !== key) twins.add(uid);
+        }
+      }
+    }
+    if (key === host) {
+      // the host arrives as a bare uid, with no IRI of its own to key on
+      for (const t of await store.match(
+        undefined,
+        EXO.term("Asset_uid"),
+        new Literal(host),
+      )) {
+        if (!(t.subject instanceof IRI)) continue;
+        for (const pred of [EXO.term("Asset_label"), RDFS.term("label")]) {
+          for (const lt of await store.match(t.subject, pred, undefined)) {
+            const label = labelKeyOf(lt.object);
+            if (label && label !== key) twins.add(label);
+          }
+        }
+      }
+    }
+    const out = [...twins];
+    twinCache.set(key, out);
+    return out;
+  };
+
+  // 1. host + transitive ancestors via exo:Class_superClass (cycle-safe).
+  const superEdges = await store.match(
+    undefined,
+    EXO.term("Class_superClass"),
+    undefined,
+  );
+  const childToParents = new Map<string, Set<string>>();
+  for (const t of superEdges) {
+    const child = t.subject instanceof IRI ? classKeyOf(t.subject.value) : null;
+    const parent = t.object instanceof IRI ? classKeyOf(t.object.value) : null;
+    if (!child || !parent) continue;
+    if (t.subject instanceof IRI) rememberIRI(child, t.subject.value);
+    if (t.object instanceof IRI) rememberIRI(parent, t.object.value);
+    let set = childToParents.get(child);
+    if (!set) {
+      set = new Set<string>();
+      childToParents.set(child, set);
+    }
+    set.add(parent);
+  }
+  const classUids = new Set<string>([host]);
+  const queue: string[] = [host];
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    if (cur === undefined) break;
+    // parents of the current key first, then that key's OTHER spelling
+    const next = [...(childToParents.get(cur) ?? []), ...(await twinsOf(cur))];
+    for (const key of next) {
+      if (!classUids.has(key)) {
+        classUids.add(key);
+        queue.push(key);
+      }
+    }
+  }
+  return classUids;
+}
+
+/**
+ * Build a {@link ClassPropertyResolver} backed by an {@link ITripleStore} — the
+ * sibling of {@link createTripleStoreRequiredPropertyResolver}, anchored on
+ * `exo__Property_domain` instead of `exo__Property_minCount`.
+ *
+ * Runs entirely over the store (desktop, mobile and CLI share it), so this is a
+ * single implementation rather than one per surface.
+ */
+export function createTripleStoreClassPropertyResolver(
+  store: ITripleStore,
+): ClassPropertyResolver {
+  const EXO = Namespace.EXO;
+  const RDFS = Namespace.RDFS;
+
+  return async (hostClassUid: string): Promise<ClassPropertyField[]> => {
+    const classUids = await resolveClassKeyClosure(store, hostClassUid);
+    if (classUids.size === 0) return [];
+
+    // 2. every property whose DOMAIN ∈ {host + ancestors} — no minCount filter.
+    const domainTriples = await store.match(
+      undefined,
+      EXO.term("Property_domain"),
+      undefined,
+    );
+    const fields: ClassPropertyField[] = [];
+    const seen = new Set<string>();
+
+    for (const t of domainTriples) {
+      const domainKey =
+        t.object instanceof IRI ? classKeyOf(t.object.value) : null;
+      if (!domainKey || !classUids.has(domainKey)) continue;
+      const prop = t.subject;
+      if (!(prop instanceof IRI)) continue;
+
+      // The property's label IS its frontmatter key (e.g. "exo__Setting_value");
+      // the `rdfs:label` twin is what makes it readable at all, because a
+      // `prefix__Name` label is emitted as an IRI, not a Literal (§A29).
+      let propertyKey: string | null = null;
+      for (const pred of [EXO.term("Asset_label"), RDFS.term("label")]) {
+        const labelTriples = await store.match(prop, pred, undefined);
+        for (const lt of labelTriples) {
+          if (
+            lt.object instanceof Literal &&
+            lt.object.value.trim().length > 0
+          ) {
+            propertyKey = lt.object.value.trim();
+            break;
+          }
+        }
+        if (propertyKey) break;
+      }
+      if (!propertyKey) continue;
+      // One property may declare SEVERAL domains, and more than one of them can
+      // sit on the host's ancestor chain — then the same frontmatter key would
+      // come back twice. Keyed on the frontmatter key, because that is what a
+      // consumer renders.
+      if (seen.has(propertyKey)) continue;
+      seen.add(propertyKey);
+
+      // `minCount > 0` is the REQUIRED FLAG here, not a filter.
+      let required = false;
+      for (const mt of await store.match(
+        prop,
+        EXO.term("Property_minCount"),
+        undefined,
+      )) {
+        const mc =
+          mt.object instanceof Literal ? parseInt(mt.object.value, 10) : NaN;
+        if (mc > 0) {
+          required = true;
+          break;
+        }
+      }
+
+      const rangeTriples = await store.match(
+        prop,
+        EXO.term("Property_range"),
+        undefined,
+      );
+      const rangeValues = rangeTriples
+        .map((rt) =>
+          rt.object instanceof IRI
+            ? { iri: true, value: rt.object.value }
+            : rt.object instanceof Literal
+              ? { iri: false, value: rt.object.value }
+              : null,
+        )
+        .filter((v): v is { iri: boolean; value: string } => v !== null);
+
+      const { fieldType, targetClassUid } = fieldTypeFromRange(rangeValues);
+      fields.push({
+        propertyKey,
+        label: propertyKey,
+        fieldType,
+        targetClassUid,
+        required,
+      });
+    }
+
+    // Deterministic order: the store yields domain triples in file order, which
+    // is an accident of the vault rather than anything a consumer should render.
+    fields.sort((a, b) => a.propertyKey.localeCompare(b.propertyKey));
+    return fields;
+  };
+}
