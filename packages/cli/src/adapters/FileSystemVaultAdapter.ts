@@ -501,6 +501,27 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
       throw error; // Re-throw other errors
     }
 
+    // req 265844b7 (ticket 193147b4) — `readdirSync` order is a property of the
+    // FILESYSTEM, not a guarantee: APFS hands back directory entries already
+    // sorted by name, ext4 hands back hash order. This walk hydrates the CLI
+    // triple store (`loadVaultTriples` → `getAllFiles()` → `convertVault`), and
+    // `InMemoryTripleStore.matchP` iterates `pso` — a Map, i.e. INSERTION order —
+    // so "which definition wins" for a duplicated property label is decided by
+    // the order right here. Its structural twin `PropertyNameValidator.walk`
+    // already sorts explicitly (ticket 8185c9dd, review #4282 NIT-2, pinned by
+    // mutant M12_sort_reversed under req 21ceea14); without this line the two
+    // agreed only where the filesystem happened to sort for us.
+    //
+    // ⛤ The comparator is the JS default string one (UTF-16 code units), copied
+    // from that twin — the guarantee is PARITY WITH THE VALIDATOR, not UTF-8 byte
+    // order (the two differ on surrogate pairs). ⛔ NOT unified with
+    // `NodeFsAdapter.getMarkdownFiles()`, which sorts FULL relative paths (#4272)
+    // and is therefore a different order whenever a directory name is a prefix of
+    // a file name (measured: per-directory gives `a/b.md a-c.md a-d/e.md a.md`,
+    // full-path gives `a-c.md a-d/e.md a.md a/b.md`). Reconciling those two is a
+    // separate decision; this walk adopts the order of the walk it must match.
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
 
