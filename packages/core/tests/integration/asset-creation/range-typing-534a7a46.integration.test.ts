@@ -110,6 +110,28 @@ function createGrounding(
   } as GroundingDefinition;
 }
 
+/**
+ * create_instance writing ONE property whose value is copied from a
+ * MULTI-VALUED property of `$target` — the production shape that makes
+ * `properties[key]` an ARRAY (`applyPropertyDefaultStep`: `Array.isArray(resolved)`
+ * stores the list verbatim), and therefore the only one that reaches the array
+ * emission point of `FrontmatterService.serializeValue`.
+ *
+ * The marker form is the parameterised one the resolver registry answers
+ * (`__SUBSTITUTE_P__<id>__<uuid>__<base64url-param>__`); `targetProperty`
+ * returns `v.map(String)` when the target's value is an array.
+ */
+function createFromTargetListGrounding(
+  propertyName: string,
+  sourceKey: string,
+): GroundingDefinition {
+  const param = Buffer.from(sourceKey, "utf-8").toString("base64url");
+  return createGrounding(
+    propertyName,
+    `__SUBSTITUTE_P__targetProperty__33333333-4444-5555-6666-777777777777__${param}__`,
+  );
+}
+
 function propertySetGrounding(
   targetProperty: string,
   literal: string,
@@ -124,10 +146,24 @@ function propertySetGrounding(
 }
 
 const TARGET_PATH = "01 Inbox/target.md";
+// Ticket afb25c43 — the target carries a MULTI-VALUED property so a
+// create_instance can copy it through `targetProperty`, which returns
+// `v.map(String)` for an array value (SubstitutionResolverRegistry). That is
+// the production input for the ARRAY emission point (K18/K19); no other axis
+// in this file reads this key.
+const TARGET_MULTI_KEY = "flow__Stage_chatIds";
+const TARGET_MULTI_VALUES = ["-1003912427125", "-1002000000001"];
 const TARGET_CONTENT = [
   "---",
   "exo__Asset_uid: 11111111-2222-3333-4444-555555555555",
   'exo__Asset_label: "Target"',
+  `${TARGET_MULTI_KEY}:`,
+  // ⛔ BARE items, not quoted: `FrontmatterService.parseObject` keeps a quoted
+  // item's quotes IN the string (probed on this tree), and `serializeYamlScalar`
+  // passes a complete double-quoted scalar through verbatim — so a quoted
+  // fixture would emit `"-100…"` with AND without the range, and K18 could not
+  // discriminate (integration-test-revert-verify §A105).
+  ...TARGET_MULTI_VALUES.map((v) => `  - ${v}`),
   "---",
   "Body",
 ].join("\n");
@@ -151,6 +187,20 @@ function lineOf(content: string, key: string): string | undefined {
   return content
     .split("\n")
     .find((l) => l.startsWith(`${key}:`) || l.startsWith(`${key}:\n`));
+}
+
+/**
+ * The lines a top-level key OWNS: its own line plus every following INDENTED
+ * one — the YAML block-sequence shape `serializeValue` emits for an array.
+ * `lineOf` sees only the first of them, so a list-valued property needs this.
+ */
+function blockOf(content: string, key: string): string[] {
+  const lines = content.split("\n");
+  const start = lines.findIndex((l) => l.startsWith(`${key}:`));
+  if (start < 0) return [];
+  let end = start + 1;
+  while (end < lines.length && /^\s/.test(lines[end])) end += 1;
+  return lines.slice(start, end);
 }
 
 describe("create_instance / property_set type a scalar by the declared range (ticket 534a7a46)", () => {
@@ -231,6 +281,51 @@ describe("create_instance / property_set type a scalar by the declared range (ti
     expect(lineOf(content, "flow__Stage_chatId")).toBe(
       'flow__Stage_chatId: "-1003912427125"',
     );
+  });
+
+  // ── ticket afb25c43: the ARRAY emission point, the twin of K8's scalar one ──
+  //
+  // Both emission points of `serializeValue` forward the declared range
+  // (`covers[0]`: «at both emission points (:634 array items, :640 scalar)»),
+  // but until this pair only the SCALAR one was exercised: the spec's
+  // `MF2_array_item_site_drops_the_declared_range` carried `expect: []`, i.e. a
+  // named hole. The fixture that closes it must make `properties[key]` an
+  // ARRAY, and `create_instance` does that for an arbitrary property exactly
+  // one way — a PropertyDefault whose resolver returns a list. `targetProperty`
+  // is that resolver on live data (`v.map(String)` for a multi-valued target),
+  // so K18/K19 drive it rather than hand-building the array.
+
+  it(`K18 create_instance types the ITEMS of a multi-valued property by the declared range — the array emission point @req:${REQ}`, async () => {
+    const exec = executorWith(
+      fs,
+      rangesOf({ [TARGET_MULTI_KEY]: ["xsd:integer"] }),
+    );
+    const content = await createdContent(
+      fs,
+      exec,
+      createFromTargetListGrounding(TARGET_MULTI_KEY, TARGET_MULTI_KEY),
+    );
+    // Each item is a canonical negative integer: the shape rule would quote it
+    // on its leading `-` (exactly as K11 shows for the scalar), the declared
+    // xsd:integer range keeps it BARE.
+    expect(blockOf(content, TARGET_MULTI_KEY)).toEqual([
+      `${TARGET_MULTI_KEY}:`,
+      "  - -1003912427125",
+      "  - -1002000000001",
+    ]);
+  });
+
+  it(`K19 with the port ABSENT the SAME multi-valued property keeps its pre-ticket quoted items — the discriminating control for K18 @req:${REQ}`, async () => {
+    const content = await createdContent(
+      fs,
+      executorWith(fs),
+      createFromTargetListGrounding(TARGET_MULTI_KEY, TARGET_MULTI_KEY),
+    );
+    expect(blockOf(content, TARGET_MULTI_KEY)).toEqual([
+      `${TARGET_MULTI_KEY}:`,
+      '  - "-1003912427125"',
+      '  - "-1002000000001"',
+    ]);
   });
 
   it(`K12 property_set QUOTES a numeric value under an xsd:string range (SYNTHETIC: 0 of 48 live groundings target a ranged property) @req:${REQ}`, async () => {

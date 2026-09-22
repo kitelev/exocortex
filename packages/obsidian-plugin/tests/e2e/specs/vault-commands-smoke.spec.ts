@@ -10,7 +10,7 @@ import * as path from "path";
  * 2. Current status button is hidden (precondition filtering)
  * 3. Click status button changes status
  * 4. ExoQL code block renders table output
- * 5. Property editor loads schemas from resolver
+ * 5. Active file's frontmatter parses and is reachable through the loaded plugin
  *
  * Test vault fixtures (status transition commands):
  * - 03 Knowledge/commands/pre-status-is-backlog.md (Precondition: status == Backlog)
@@ -259,7 +259,29 @@ test.describe("Vault Commands Smoke Tests", () => {
     }, { timeout: 15000 }).toContain("Doing");
   });
 
-  test("should load property editor schemas from resolver", async () => {
+  // ⛔ RENAMED by ticket afb25c43, and the old name is recorded rather than
+  // quietly dropped: it read `should load property editor schemas from resolver`
+  // while the body never called the schema provider — it reads the active file's
+  // frontmatter and asserts success/hasPlugin/instanceClass/hasMetadata, so it
+  // was green with the provider working, broken, or absent. The name was what a
+  // reader grepped to answer "is the property editor smoke-covered?", so it
+  // asserted a guarantee the body does not carry
+  // (decision-surface-must-derive-from-mechanism).
+  //
+  // ⛤ Why renamed instead of made to call the provider (the ORCH decision rule
+  // of this batch): BOTH halves of the "variant 1" cost are real on this tree,
+  // measured 2026-09-22 — (1) `getPropertySchemaForClass` is a MODULE function
+  // of PropertySchemas.ts and is not exposed on the plugin object (the e2e
+  // bridge reaches only `plugin.<service>` members; `git grep 'window as any'`
+  // over plugin src = 0), and the declared-property resolver is installed by
+  // PropertyEditorModal.initSchemaResolver, i.e. it exists only while that modal
+  // is open; (2) the e2e test-vault carries ZERO `exo__Property_domain`
+  // definitions (0 files, against a live canary of 95 files mentioning
+  // ems__Task), so the provider would honestly return the 4-entry FALLBACK and
+  // an "asserts the composition" axis would be vacuous until the vault is
+  // seeded with a TBox. Both are separate units of work; follow-up ticket
+  // raised under bbac67ce.
+  test("should parse the active file's frontmatter and expose it through the loaded plugin", async () => {
     await launcher.openFile("Tasks/dynamic-cmd-test-without-ts.md");
     const window = await launcher.getWindow();
 
