@@ -3,6 +3,7 @@ import { IRI } from "../domain/models/rdf/IRI";
 import { Literal } from "../domain/models/rdf/Literal";
 import { Namespace } from "../domain/models/rdf/Namespace";
 import { iriToObsidianName } from "../utilities/iriToObsidianName";
+import { parseMinCount } from "../utilities/minCount";
 import { xsdDatatypeLocalName } from "../utilities/xsdDatatype";
 
 /**
@@ -185,6 +186,140 @@ function labelKeyOf(object: unknown): string | null {
 }
 
 /**
+ * The class-key closure of `hostClassUid`: the host itself, its transitive
+ * `exo__Class_superClass` ancestors, and — for every key on that path — the
+ * OTHER spelling of the same class (bare uid ⇄ lower-cased label), resolved
+ * lazily and point-wise through the store.
+ *
+ * ⛤ ONE walk for BOTH resolvers (ticket abd22b00). It was introduced by req
+ * 07509cf9 as a VERBATIM copy of steps 0+1 of
+ * {@link createTripleStoreRequiredPropertyResolver} — deliberately, because that
+ * change had to keep the existing resolver and its three production call-sites
+ * byte-identical — and the copy carried an explicit note that converging it was
+ * a follow-up. This IS that follow-up: the inline copy is gone and the required
+ * resolver (`@req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0`) now calls this one.
+ *
+ * Both resolvers' axes are therefore load-bearing for it, which is why the
+ * convergence ran them together — and why the cycle guard below (`classUids` as
+ * the visited set) finally has a mutant of its own: while the walk existed
+ * twice, "cycle-safe" was held by reading the code in two places, not by a
+ * measurement in either (review of PR #4325, LOW).
+ */
+async function resolveClassKeyClosure(
+  store: ITripleStore,
+  hostClassUid: string,
+): Promise<Set<string>> {
+  const EXO = Namespace.EXO;
+  const RDFS = Namespace.RDFS;
+
+  const host = classKeyOf(hostClassUid) ?? hostClassUid.trim().toLowerCase();
+  if (!host) return new Set<string>();
+
+  // 0. A class reference arrives in TWO IRI forms and both name ONE node —
+  //    see `classKeyOf`. Twins are resolved LAZILY and POINT-WISE (the store
+  //    indexes every position, so each lookup is O(1)): scanning all label
+  //    triples up front measured ~128 ms per call on a 609k-triple vault
+  //    against a 0.3 ms baseline, and this walk sits on the button/layout
+  //    RENDER path (ButtonGroupsBuilder, LayoutCodeBlockProcessor). Point-wise
+  //    it is 0.9 ms median. ⛔ Keep this rationale with the code: it is the
+  //    reason the lazy form is not "premature optimisation" to be simplified
+  //    away, and the convergence must not lose it along with the copy.
+  const keyToIRIs = new Map<string, Set<string>>();
+  const rememberIRI = (key: string, iri: string): void => {
+    let set = keyToIRIs.get(key);
+    if (!set) {
+      set = new Set<string>();
+      keyToIRIs.set(key, set);
+    }
+    set.add(iri);
+  };
+  const twinCache = new Map<string, string[]>();
+  /** The OTHER spelling(s) of `key`: uid ⇄ label, resolved through the store. */
+  const twinsOf = async (key: string): Promise<string[]> => {
+    const cached = twinCache.get(key);
+    if (cached) return cached;
+    const twins = new Set<string>();
+    for (const iri of keyToIRIs.get(key) ?? []) {
+      if (uidFrom(iri)) {
+        // path form → the label twin lives on the SAME subject
+        for (const pred of [EXO.term("Asset_label"), RDFS.term("label")]) {
+          for (const t of await store.match(new IRI(iri), pred, undefined)) {
+            const label = labelKeyOf(t.object);
+            if (label && label !== key) twins.add(label);
+          }
+        }
+      } else {
+        // symbolic form → the asset whose exo__Asset_label IS this very IRI
+        for (const t of await store.match(
+          undefined,
+          EXO.term("Asset_label"),
+          new IRI(iri),
+        )) {
+          const uid =
+            t.subject instanceof IRI ? uidFrom(t.subject.value) : null;
+          if (uid && uid !== key) twins.add(uid);
+        }
+      }
+    }
+    if (key === host) {
+      // the host arrives as a bare uid, with no IRI of its own to key on
+      for (const t of await store.match(
+        undefined,
+        EXO.term("Asset_uid"),
+        new Literal(host),
+      )) {
+        if (!(t.subject instanceof IRI)) continue;
+        for (const pred of [EXO.term("Asset_label"), RDFS.term("label")]) {
+          for (const lt of await store.match(t.subject, pred, undefined)) {
+            const label = labelKeyOf(lt.object);
+            if (label && label !== key) twins.add(label);
+          }
+        }
+      }
+    }
+    const out = [...twins];
+    twinCache.set(key, out);
+    return out;
+  };
+
+  // 1. host + transitive ancestors via exo:Class_superClass (cycle-safe).
+  const superEdges = await store.match(
+    undefined,
+    EXO.term("Class_superClass"),
+    undefined,
+  );
+  const childToParents = new Map<string, Set<string>>();
+  for (const t of superEdges) {
+    const child = t.subject instanceof IRI ? classKeyOf(t.subject.value) : null;
+    const parent = t.object instanceof IRI ? classKeyOf(t.object.value) : null;
+    if (!child || !parent) continue;
+    if (t.subject instanceof IRI) rememberIRI(child, t.subject.value);
+    if (t.object instanceof IRI) rememberIRI(parent, t.object.value);
+    let set = childToParents.get(child);
+    if (!set) {
+      set = new Set<string>();
+      childToParents.set(child, set);
+    }
+    set.add(parent);
+  }
+  const classUids = new Set<string>([host]);
+  const queue: string[] = [host];
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    if (cur === undefined) break;
+    // parents of the current key first, then that key's OTHER spelling
+    const next = [...(childToParents.get(cur) ?? []), ...(await twinsOf(cur))];
+    for (const key of next) {
+      if (!classUids.has(key)) {
+        classUids.add(key);
+        queue.push(key);
+      }
+    }
+  }
+  return classUids;
+}
+
+/**
  * Build a {@link RequiredPropertyResolver} backed by an {@link ITripleStore}.
  * Used by the plugin's create-instance form (desktop + mobile) — both share the
  * same in-memory store, so this is a single implementation, not per-surface
@@ -197,112 +332,12 @@ export function createTripleStoreRequiredPropertyResolver(
   const RDFS = Namespace.RDFS;
 
   return async (hostClassUid: string): Promise<RequiredPropertyField[]> => {
-    // Через тот же classKeyOf, что и любая другая ссылка на класс: сегодня
-    // единственный caller передаёт bare UID (`basenameUid(ctx.filePath)`), но
-    // резолвер — публичный экспорт, и вход может прийти в любой из двух форм.
-    const host =
-      classKeyOf(hostClassUid) ?? hostClassUid.trim().toLowerCase();
-    if (!host) return [];
-
-    // 0. A class reference arrives in TWO IRI forms and both name ONE node —
-    //    see `classKeyOf`. The twin of a key is resolved LAZILY and POINT-WISE
-    //    (the store indexes every position, so each lookup is O(1)): scanning
-    //    all label triples up front measured ~128 ms per call on a 609k-triple
-    //    vault against a 0.3 ms baseline, and this resolver sits on the
-    //    button/layout render path (ButtonGroupsBuilder, LayoutCodeBlockProcessor).
-    //    Point-wise it is 0.9 ms median.
-    const keyToIRIs = new Map<string, Set<string>>();
-    const rememberIRI = (key: string, iri: string): void => {
-      let set = keyToIRIs.get(key);
-      if (!set) {
-        set = new Set<string>();
-        keyToIRIs.set(key, set);
-      }
-      set.add(iri);
-    };
-    const twinCache = new Map<string, string[]>();
-    /** The OTHER spelling(s) of `key`: uid ⇄ label, resolved through the store. */
-    const twinsOf = async (key: string): Promise<string[]> => {
-      const cached = twinCache.get(key);
-      if (cached) return cached;
-      const twins = new Set<string>();
-      for (const iri of keyToIRIs.get(key) ?? []) {
-        if (uidFrom(iri)) {
-          // path form → the label twin lives on the SAME subject
-          for (const pred of [EXO.term("Asset_label"), RDFS.term("label")]) {
-            for (const t of await store.match(new IRI(iri), pred, undefined)) {
-              const label = labelKeyOf(t.object);
-              if (label && label !== key) twins.add(label);
-            }
-          }
-        } else {
-          // symbolic form → the asset whose exo__Asset_label IS this very IRI
-          for (const t of await store.match(
-            undefined,
-            EXO.term("Asset_label"),
-            new IRI(iri),
-          )) {
-            const uid =
-              t.subject instanceof IRI ? uidFrom(t.subject.value) : null;
-            if (uid && uid !== key) twins.add(uid);
-          }
-        }
-      }
-      if (key === host) {
-        // the host arrives as a bare uid, with no IRI of its own to key on
-        for (const t of await store.match(
-          undefined,
-          EXO.term("Asset_uid"),
-          new Literal(host),
-        )) {
-          if (!(t.subject instanceof IRI)) continue;
-          for (const pred of [EXO.term("Asset_label"), RDFS.term("label")]) {
-            for (const lt of await store.match(t.subject, pred, undefined)) {
-              const label = labelKeyOf(lt.object);
-              if (label && label !== key) twins.add(label);
-            }
-          }
-        }
-      }
-      const out = [...twins];
-      twinCache.set(key, out);
-      return out;
-    };
-
-    // 1. host + transitive ancestors via exo:Class_superClass (cycle-safe).
-    const superEdges = await store.match(
-      undefined,
-      EXO.term("Class_superClass"),
-      undefined,
-    );
-    const childToParents = new Map<string, Set<string>>();
-    for (const t of superEdges) {
-      const child =
-        t.subject instanceof IRI ? classKeyOf(t.subject.value) : null;
-      const parent = t.object instanceof IRI ? classKeyOf(t.object.value) : null;
-      if (!child || !parent) continue;
-      if (t.subject instanceof IRI) rememberIRI(child, t.subject.value);
-      if (t.object instanceof IRI) rememberIRI(parent, t.object.value);
-      let set = childToParents.get(child);
-      if (!set) {
-        set = new Set<string>();
-        childToParents.set(child, set);
-      }
-      set.add(parent);
-    }
-    const classUids = new Set<string>([host]);
-    const queue: string[] = [host];
-    while (queue.length > 0) {
-      const cur = queue.shift();
-      if (cur === undefined) break;
-      const next = [...(childToParents.get(cur) ?? []), ...(await twinsOf(cur))];
-      for (const key of next) {
-        if (!classUids.has(key)) {
-          classUids.add(key);
-          queue.push(key);
-        }
-      }
-    }
+    // 0+1. host + transitive ancestors, with the two IRI spellings of one class
+    //      unified — {@link resolveClassKeyClosure}, the SAME walk the declared-
+    //      property sibling uses. It used to be inlined here and copied verbatim
+    //      there; ticket abd22b00 converged the two copies into this one call.
+    const classUids = await resolveClassKeyClosure(store, hostClassUid);
+    if (classUids.size === 0) return [];
 
     // 2. required (minCount > 0) properties whose domain ∈ {host + ancestors}.
     const minCountTriples = await store.match(
@@ -314,9 +349,11 @@ export function createTripleStoreRequiredPropertyResolver(
     const seen = new Set<string>();
 
     for (const t of minCountTriples) {
-      const mc =
-        t.object instanceof Literal ? parseInt(t.object.value, 10) : NaN;
-      if (!(mc > 0)) continue;
+      // ONE reader for the predicate (ticket abd22b00) — `undefined` here is
+      // what `NaN` was before: a value that does not parse declares no
+      // obligation, so the property is not required.
+      const mc = parseMinCount(t.object);
+      if (mc === undefined || mc <= 0) continue;
       const prop = t.subject;
       if (!(prop instanceof IRI)) continue;
 
@@ -418,128 +455,6 @@ export type ClassPropertyResolver = (
   hostClassUid: string,
 ) => Promise<ClassPropertyField[]>;
 
-/**
- * The class-key closure of `hostClassUid`: the host itself, its transitive
- * `exo__Class_superClass` ancestors, and — for every key on that path — the
- * OTHER spelling of the same class (bare uid ⇄ lower-cased label), resolved
- * lazily and point-wise through the store.
- *
- * ⛤ This is steps 0+1 of {@link createTripleStoreRequiredPropertyResolver}
- * reproduced VERBATIM, and the duplication is deliberate, not an oversight:
- * this change is additive by construction — the existing resolver and its three
- * production call-sites stay byte-identical — so the shared walk is copied
- * rather than extracted. Converging the two copies is a follow-up; whoever does
- * it must re-run BOTH resolvers' axes, since the copy above is the one under
- * `@req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0`.
- */
-async function resolveClassKeyClosure(
-  store: ITripleStore,
-  hostClassUid: string,
-): Promise<Set<string>> {
-  const EXO = Namespace.EXO;
-  const RDFS = Namespace.RDFS;
-
-  const host = classKeyOf(hostClassUid) ?? hostClassUid.trim().toLowerCase();
-  if (!host) return new Set<string>();
-
-  // 0. A class reference arrives in TWO IRI forms and both name ONE node —
-  //    see `classKeyOf`. Twins are resolved LAZILY and POINT-WISE (the store
-  //    indexes every position, so each lookup is O(1)); scanning all label
-  //    triples up front measured ~128 ms per call on a 609k-triple vault.
-  const keyToIRIs = new Map<string, Set<string>>();
-  const rememberIRI = (key: string, iri: string): void => {
-    let set = keyToIRIs.get(key);
-    if (!set) {
-      set = new Set<string>();
-      keyToIRIs.set(key, set);
-    }
-    set.add(iri);
-  };
-  const twinCache = new Map<string, string[]>();
-  /** The OTHER spelling(s) of `key`: uid ⇄ label, resolved through the store. */
-  const twinsOf = async (key: string): Promise<string[]> => {
-    const cached = twinCache.get(key);
-    if (cached) return cached;
-    const twins = new Set<string>();
-    for (const iri of keyToIRIs.get(key) ?? []) {
-      if (uidFrom(iri)) {
-        // path form → the label twin lives on the SAME subject
-        for (const pred of [EXO.term("Asset_label"), RDFS.term("label")]) {
-          for (const t of await store.match(new IRI(iri), pred, undefined)) {
-            const label = labelKeyOf(t.object);
-            if (label && label !== key) twins.add(label);
-          }
-        }
-      } else {
-        // symbolic form → the asset whose exo__Asset_label IS this very IRI
-        for (const t of await store.match(
-          undefined,
-          EXO.term("Asset_label"),
-          new IRI(iri),
-        )) {
-          const uid =
-            t.subject instanceof IRI ? uidFrom(t.subject.value) : null;
-          if (uid && uid !== key) twins.add(uid);
-        }
-      }
-    }
-    if (key === host) {
-      // the host arrives as a bare uid, with no IRI of its own to key on
-      for (const t of await store.match(
-        undefined,
-        EXO.term("Asset_uid"),
-        new Literal(host),
-      )) {
-        if (!(t.subject instanceof IRI)) continue;
-        for (const pred of [EXO.term("Asset_label"), RDFS.term("label")]) {
-          for (const lt of await store.match(t.subject, pred, undefined)) {
-            const label = labelKeyOf(lt.object);
-            if (label && label !== key) twins.add(label);
-          }
-        }
-      }
-    }
-    const out = [...twins];
-    twinCache.set(key, out);
-    return out;
-  };
-
-  // 1. host + transitive ancestors via exo:Class_superClass (cycle-safe).
-  const superEdges = await store.match(
-    undefined,
-    EXO.term("Class_superClass"),
-    undefined,
-  );
-  const childToParents = new Map<string, Set<string>>();
-  for (const t of superEdges) {
-    const child = t.subject instanceof IRI ? classKeyOf(t.subject.value) : null;
-    const parent = t.object instanceof IRI ? classKeyOf(t.object.value) : null;
-    if (!child || !parent) continue;
-    if (t.subject instanceof IRI) rememberIRI(child, t.subject.value);
-    if (t.object instanceof IRI) rememberIRI(parent, t.object.value);
-    let set = childToParents.get(child);
-    if (!set) {
-      set = new Set<string>();
-      childToParents.set(child, set);
-    }
-    set.add(parent);
-  }
-  const classUids = new Set<string>([host]);
-  const queue: string[] = [host];
-  while (queue.length > 0) {
-    const cur = queue.shift();
-    if (cur === undefined) break;
-    // parents of the current key first, then that key's OTHER spelling
-    const next = [...(childToParents.get(cur) ?? []), ...(await twinsOf(cur))];
-    for (const key of next) {
-      if (!classUids.has(key)) {
-        classUids.add(key);
-        queue.push(key);
-      }
-    }
-  }
-  return classUids;
-}
 
 /**
  * Build a {@link ClassPropertyResolver} backed by an {@link ITripleStore} — the
@@ -600,20 +515,16 @@ export function createTripleStoreClassPropertyResolver(
       if (seen.has(propertyKey)) continue;
       seen.add(propertyKey);
 
-      // `minCount > 0` is the REQUIRED FLAG here, not a filter.
-      let required = false;
-      for (const mt of await store.match(
-        prop,
-        EXO.term("Property_minCount"),
-        undefined,
-      )) {
-        const mc =
-          mt.object instanceof Literal ? parseInt(mt.object.value, 10) : NaN;
-        if (mc > 0) {
-          required = true;
-          break;
-        }
-      }
+      // `minCount > 0` is the REQUIRED FLAG here, not a filter — but the READING
+      // of the predicate is the shared one (ticket abd22b00). The helper answers
+      // with the MAXIMUM of the declared values, and `max > 0` holds exactly when
+      // "any declared value > 0" held before, so this flag is unchanged.
+      const minCount = parseMinCount(
+        (await store.match(prop, EXO.term("Property_minCount"), undefined)).map(
+          (mt) => mt.object,
+        ),
+      );
+      const required = minCount !== undefined && minCount > 0;
 
       const rangeTriples = await store.match(
         prop,

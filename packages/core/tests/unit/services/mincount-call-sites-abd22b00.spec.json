@@ -1,0 +1,57 @@
+{
+  "_doc": "Revert-verify mutants for ticket abd22b00 — the RESOLVER half: the two call-sites that now read exo__Property_minCount through the shared reader, and the ancestor walk that now exists ONCE. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). ⛔ ONE call-site carries NO behavioural mutant and the reason is arithmetic, not an omission (§A97): restoring the local `parseInt` in createTripleStoreRequiredPropertyResolver is an EQUIVALENT mutant — that loop visits EVERY minCount triple and decides per triple, so 'any declared value > 0' and 'max of the declared values > 0' are the same predicate on every possible input, quotes included (the graph path never carries them). What CAN be measured there is whether the site is wired to the shared reader at all, which is M1. ⚠ The cycle axes C8/C9 are reddened by M3 through the harness WATCHDOG, not by jest: removing the visited guard makes the walk spin in microtasks, so jest's per-test timeout never fires (probed 2026-09-22). Expectations come from the driver's printed lists (§A44/§A54).  ⛔ EVERY jest invocation runs under `timeout`, and ANY rc=124 prints the two cycle axes as red. Measured, not assumed: removing the visited guard makes the class-key walk spin in MICROTASKS, so jest's own per-test timeout never fires — the first version of this harness watchdogged the cycle suite alone and the driver hung with no verdict, which is the absence of a measurement rather than a green axis (§A70). The walk spins on any store where a key has a twin, so the convergence suite and the cli vault hang too; marking C8/C9 red on any watchdog fire is the faithful encoding — non-termination is precisely what they assert against.  ⛤ `class-property-live-loader.integration.test.ts` is deliberately NOT in this harness: it names its axes D1..D7 and so does `tests/services/ShapeLoader.test.ts`, which this harness must run (the Q axes live there) — a driver spanning both would print a red `D4` belonging to neither file unambiguously (§A91/§A74). That suite is run, without ShapeLoader and therefore without the collision, by `class-property-07509cf9.spec.json`; the claim it would carry here — the declared-property resolver goes through the shared reader — is carried by C5, this PR's own axis on that resolver.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/RequiredPropertyResolver.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && timeout 150 node ../../node_modules/jest/bin/jest.js tests/services/ShapeLoader.test.ts tests/unit/services/RequiredPropertyResolver.test.ts tests/unit/services/minCountReaderConvergence.test.ts 2>&1; rc1=$?; timeout 60 node ../../node_modules/jest/bin/jest.js tests/unit/services/classKeyClosureCycle.test.ts 2>&1; rc2=$?; cd ../cli && NODE_OPTIONS=--experimental-vm-modules timeout 150 node ../../node_modules/jest/bin/jest.js tests/integration/required-property-live-loader.integration.test.ts tests/integration/class-property-existing-unchanged.integration.test.ts tests/integration/e2e-vault-tbox-seed-9e19f141.integration.test.ts 2>&1; rc3=$?; { [ $rc1 -eq 124 ] || [ $rc2 -eq 124 ] || [ $rc3 -eq 124 ]; } && printf '%s\\n' '● cycle-watchdog › C8 the class-key walk did not return inside the harness budget' '● cycle-watchdog › C9 the class-key walk did not return inside the harness budget'; [ $rc1 -eq 0 ] && [ $rc2 -eq 0 ] && [ $rc3 -eq 0 ]",
+  "mutants": {
+    "M1_required_site_unwired": {
+      "from": "      const mc = parseMinCount(t.object);",
+      "to": "      const mc = parseMinCount(undefined);",
+      "expect": [
+        "C4",
+        "C7",
+        "C8",
+        "D8",
+        "Q9",
+        "S5",
+        "Y1",
+        "Y2",
+        "Y3",
+        "Y5",
+        "Z1",
+        "Z2"
+      ],
+      "_note": "The required-property resolver's call-site READS the triple through the shared reader. Form preserved, effect removed (§A97 — `if (false && …)` would break TS narrowing and yield BROKEN, i.e. the absence of a measurement)."
+    },
+    "M2_declared_site_first_not_max": {
+      "from": "      const minCount = parseMinCount(\n        (await store.match(prop, EXO.term(\"Property_minCount\"), undefined)).map(\n          (mt) => mt.object,\n        ),\n      );",
+      "to": "      const minCount = parseMinCount(\n        (await store.match(prop, EXO.term(\"Property_minCount\"), undefined))\n          .slice(0, 1)\n          .map((mt) => mt.object),\n      );",
+      "expect": [
+        "C5"
+      ],
+      "_note": "The declared-property resolver is the one site that hands the reader the WHOLE set, so `first` vs `max` is observable here and nowhere else among the resolvers. On the [0, 1] fixture first = 0 ⇒ required false."
+    },
+    "M3_visited_guard_removed": {
+      "from": "    for (const key of next) {\n      if (!classUids.has(key)) {\n        classUids.add(key);\n        queue.push(key);\n      }\n    }",
+      "to": "    for (const key of next) {\n      classUids.add(key);\n      queue.push(key);\n    }",
+      "expect": [
+        "C8",
+        "C9"
+      ],
+      "_note": "The cycle guard of the CONVERGED walk — one mutant for both resolvers, where before the convergence there were two copies and a mutant on neither (review of PR #4325, LOW). Reddens through the harness watchdog (rc=124), see the _doc."
+    }
+  },
+  "_coverage": {
+    "_note_equivalent_mutant": "Deliberately NOT written: restoring `t.object instanceof Literal ? parseInt(…) : NaN` at the required-property call-site. It is an equivalent mutant by the arithmetic in the _doc, and §A97 asks for such a mutant to be NAMED rather than written — a mutation that reddens nothing is a measurement only once you know why.",
+    "_note_C1_C2_C3_C6": "C1, C2, C3, C6 and C10 are GREEN under every mutant of THIS subject, and that is a division of labour rather than a gap: they measure the two ShapeLoader readers and the shared helper's own contract, whose mutants live in the sibling specs (shapeloader-mincount-15003314 and mincount-shared-reader-abd22b00). ⛔ C8 is NOT in that list — it reddens under M1_required_site_unwired, because it drives the required-property resolver and that is the site this mutant unwires (review round 1, F3: the earlier note put C8 among the unconditionally-green and the driver's printed list says otherwise)."
+  }
+}
