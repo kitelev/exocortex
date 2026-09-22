@@ -20,6 +20,7 @@ import {
   DailyTasksRendererTestContext,
   TFile,
 } from "./DailyTasksRenderer.fixtures";
+import type { IFile } from "@kitelev/exocortex-core";
 
 /** TBox UID of `ems__Action` — the UID-canon form of the class ref. */
 const EMS_ACTION_UID = "6a99d2ca-d402-4734-a10b-33f5f1a1aa42";
@@ -65,7 +66,7 @@ const renderedPaths = async (
   ]);
 
   ctx.mockMetadataExtractor.extractMetadata.mockImplementation(
-    (f: { path: string }) => byPath.get(f.path) ?? {},
+    (f: IFile | null) => (f ? (byPath.get(f.path) ?? {}) : {}),
   );
   ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
     "[[pn__DailyNote]]",
@@ -81,8 +82,10 @@ const renderedPaths = async (
   );
 
   expect(ctx.mockReactRenderer.render).toHaveBeenCalled();
-  const props = ctx.mockReactRenderer.render.mock.calls[0][1].props;
-  return (props.tasks as Array<{ path: string }>).map((t) => t.path);
+  const element = ctx.mockReactRenderer.render.mock.calls[0][1] as {
+    props: { tasks: ReadonlyArray<{ path: string }> };
+  };
+  return element.props.tasks.map((t) => t.path);
 };
 
 describe("DailyTasksRenderer — excludeActions (@req:f56eef78-61d8-4d12-ac28-886aecefd633)", () => {
