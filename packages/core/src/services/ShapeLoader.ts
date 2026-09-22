@@ -4,6 +4,7 @@ import { IRI } from "../domain/models/rdf/IRI";
 import { Literal } from "../domain/models/rdf/Literal";
 import { Namespace } from "../domain/models/rdf/Namespace";
 import { xsdDatatypeIRI } from "../utilities/xsdDatatype";
+import { parseMinCount } from "../utilities/minCount";
 
 // W3C SHACL namespace base
 const SH_NS = "http://www.w3.org/ns/shacl#";
@@ -252,10 +253,11 @@ export class ShapeLoader {
             : undefined,
       );
 
-      const minCountLiteral = minCountTs[0]?.object;
-      const minCountParsed =
-        minCountLiteral instanceof Literal ? parseInt(minCountLiteral.value, 10) : NaN;
-      const minCount = !isNaN(minCountParsed) ? minCountParsed : undefined;
+      // ONE reader for the predicate, shared with loadFromVaultFS and with both
+      // triple-store resolvers (ticket abd22b00). It also removes this side's
+      // dependence on triple ORDER: `minCountTs[0]` answered from whichever
+      // triple the store happened to yield first.
+      const minCount = parseMinCount(minCountTs.map((t) => t.object));
 
       registry.register({
         propertyIRI,
@@ -744,24 +746,14 @@ export class ShapeLoader {
       typeof sevRaw === "string" ? sevRaw : undefined,
     );
 
-    // parseFrontmatter keeps a value VERBATIM — quotes included (see the label
-    // branch above and `result[key] = kvMatch[2].trim()` in that parser) — so a
-    // definition written `exo__Property_minCount: "1"` used to reach parseInt
-    // with the quotes still attached, yield NaN and register a shape WITHOUT
-    // the obligation, while loadFromRDFGraph (handed an already-parsed literal)
-    // built minCount 1 from the SAME bytes. The strip below is the predicate the
-    // label branch already applies, verbatim (ticket 15003314).
-    //
-    // DELIBERATE FAIL-OPEN, not an oversight: a value that does not parse as a
-    // number leaves minCount undefined and never throws. The value comes from
-    // USER DATA (the outside world), where failing open is the correct policy;
-    // fail-closed belongs where OUR policy breaks, not someone else's input.
-    const minCountParsed =
-      typeof minCountRaw === "string"
-        ? parseInt(minCountRaw.trim().replace(/^["']|["']$/g, ""), 10)
-        : undefined;
-    const minCount =
-      minCountParsed !== undefined && !isNaN(minCountParsed) ? minCountParsed : undefined;
+    // The SAME reader loadFromRDFGraph uses (ticket abd22b00) — it carries the
+    // quote strip this side needs (parseFrontmatter keeps a value VERBATIM, so
+    // `exo__Property_minCount: "1"` arrives with the quotes attached and
+    // `parseInt('"1"', 10)` is NaN — ticket 15003314) and the DELIBERATE
+    // fail-open on an unparseable value. Sharing the reader is what makes the
+    // loader-parity invariant of req bcdd64d8 true by construction rather than
+    // by two implementations agreeing.
+    const minCount = parseMinCount(minCountRaw);
 
     registry.register({
       propertyIRI,
