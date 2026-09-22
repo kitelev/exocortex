@@ -88,11 +88,27 @@ export async function getCommitInfo(
 }
 
 /**
+ * The canonical git empty tree.
+ *
+ * A branch head may legitimately reference it — the repo exists and the branch
+ * resolves, there is simply nothing committed yet. GitHub nevertheless answers
+ * **404** for `GET git/trees/<this sha>` even when the repo is reachable and
+ * the PAT allowlists it: the 404 is a property of the REQUEST, not of
+ * reachability. Callers that classify 404 as "repo unreachable" would report a
+ * healthy empty repo as an error (req 029c90ee).
+ */
+export const EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+/**
  * GET git/trees/{treeSha}?recursive=1 → blob entries (path + sha).
  *
  * Fails LOUD on `truncated: true` (GitHub truncates past ~100k entries /
  * 7 MB) — a truncated tree would produce wrong diffs and phantom deletes, so
  * the caller must skip the repo with a warning instead.
+ *
+ * Short-circuits {@link EMPTY_TREE_SHA}: an empty tree contains zero blobs by
+ * definition, so the answer is known without a round trip — and without
+ * inheriting GitHub's 404 for that SHA.
  */
 export async function getTree(
   transport: RestCommitTransport,
@@ -101,6 +117,7 @@ export async function getTree(
   treeSha: string,
   baseURL?: string,
 ): Promise<RemoteTreeEntry[]> {
+  if (treeSha === EMPTY_TREE_SHA) return [];
   const resp = await transport({
     method: "GET",
     url: `${api(baseURL)}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${encodeURIComponent(treeSha)}?recursive=1`,
