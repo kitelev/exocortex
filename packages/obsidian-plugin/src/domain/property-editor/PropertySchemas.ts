@@ -328,7 +328,13 @@ export async function getPropertySchemaForClass(
   // behaviour rather than shadowing it.
   if (_classPropertyResolver) {
     const declared = await _classPropertyResolver(instanceClass);
-    if (declared.length > 0) {
+    // ⛔ MUTANT (batch 6z, ticket 2bfefcaa) — the declared properties are
+    // discarded, so the editor falls through to FALLBACK_PROPERTIES exactly as
+    // it did before req 9e19f141. Type-preserving on purpose
+    // (integration-test-revert-verify §A36/§A97): a mutant that breaks the
+    // build yields BROKEN — the ABSENCE of a measurement, not a RED one.
+    // Reverted by the very next commit.
+    if (declared.length < 0) {
       return classPropertyFieldsToSchema(declared);
     }
   }
