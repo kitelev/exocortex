@@ -1,0 +1,103 @@
+{
+ "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+ "harness": "cd \"${SUT%%/packages/obsidian-plugin/src/*}\" && node ./node_modules/jest/bin/jest.js --config packages/obsidian-plugin/jest.config.js packages/obsidian-plugin/tests/unit/property-editor/property-editor-class-property.test.ts --runInBand --verbose 2>&1",
+ "env_var": "SUT",
+ "red_re": "› (P\\d+[a-z]?) ",
+ "symlink_node_modules": [
+  "node_modules",
+  "packages/cli/node_modules",
+  "packages/core/node_modules",
+  "packages/obsidian-plugin/node_modules",
+  "packages/req-audit/node_modules",
+  "packages/test-utils/node_modules"
+ ],
+ "_doc": "Revert-verify mutants for req 9e19f141 (ticket 2c592498) — subject: the property-editor SCHEMA PROVIDER. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). Axes live in packages/obsidian-plugin/tests/unit/property-editor/property-editor-class-property.test.ts and are named P<N> as MACHINE KEYS (integration-test-revert-verify §A47/§A104) — the caption follows the key.",
+ "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/domain/property-editor/PropertySchemas.ts",
+ "mutants": {
+  "M1_assetRef_not_a_reference_field": {
+   "from": "  assetRef: \"wikilink\",",
+   "to": "  assetRef: \"text\",",
+   "expect": [
+    "P14",
+    "P3",
+    "P5",
+    "P6a",
+    "P6b"
+   ]
+  },
+  "M2_date_not_a_timestamp_field": {
+   "from": "  date: \"timestamp\",",
+   "to": "  date: \"text\",",
+   "expect": [
+    "P11"
+   ]
+  },
+  "M3_number_not_a_number_field": {
+   "from": "  number: \"number\",",
+   "to": "  number: \"text\",",
+   "expect": [
+    "P12"
+   ]
+  },
+  "M4_boolean_not_a_boolean_field": {
+   "from": "  boolean: \"boolean\",",
+   "to": "  boolean: \"text\",",
+   "expect": [
+    "P13"
+   ]
+  },
+  "M5_readonly_inheritance_dropped": {
+   "from": "const FALLBACK_READ_ONLY_KEYS: ReadonlySet<string> = new Set(\n  FALLBACK_PROPERTIES.filter((p) => p.readOnly).map((p) => p.name),\n);",
+   "to": "const FALLBACK_READ_ONLY_KEYS: ReadonlySet<string> = new Set<string>();",
+   "expect": [
+    "P8"
+   ]
+  },
+  "M6_required_flag_dropped": {
+   "from": "    required: f.required,",
+   "to": "    required: false,",
+   "expect": [
+    "P7"
+   ]
+  },
+  "M7_caption_fallback_dropped": {
+   "from": "    label: f.label || f.propertyKey,",
+   "to": "    label: f.label,",
+   "expect": [
+    "P10b"
+   ]
+  },
+  "M8_key_taken_from_caption": {
+   "from": "    name: f.propertyKey,",
+   "to": "    name: f.label,",
+   "expect": [
+    "P10a",
+    "P10b"
+   ]
+  },
+  "M9_declared_branch_removed": {
+   "from": "  if (_classPropertyResolver) {\n    const declared = await _classPropertyResolver(instanceClass);\n    if (declared.length > 0) {\n      return classPropertyFieldsToSchema(declared);\n    }\n  }\n",
+   "to": "",
+   "expect": [
+    "P1",
+    "P11",
+    "P12",
+    "P13",
+    "P14",
+    "P15",
+    "P3",
+    "P5",
+    "P6a",
+    "P6b",
+    "P7"
+   ]
+  },
+  "M10_empty_declared_shadows_fallback": {
+   "from": "    if (declared.length > 0) {",
+   "to": "    if (declared.length >= 0) {",
+   "expect": [
+    "P2"
+   ]
+  }
+ }
+}

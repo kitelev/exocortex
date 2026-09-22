@@ -1,0 +1,25 @@
+{
+ "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+ "harness": "cd \"${SUT%%/packages/obsidian-plugin/src/*}\" && node ./node_modules/jest/bin/jest.js --config packages/obsidian-plugin/jest.config.js packages/obsidian-plugin/tests/unit/property-editor/property-editor-class-property.test.ts --runInBand --verbose 2>&1",
+ "env_var": "SUT",
+ "red_re": "› (P\\d+[a-z]?) ",
+ "symlink_node_modules": [
+  "node_modules",
+  "packages/cli/node_modules",
+  "packages/core/node_modules",
+  "packages/obsidian-plugin/node_modules",
+  "packages/req-audit/node_modules",
+  "packages/test-utils/node_modules"
+ ],
+ "_doc": "Revert-verify mutant for req 9e19f141 (ticket 2c592498) — subject: the inline-relation WRITE form. req 9e19f141 requires the bare-UID axis to carry a 'path form => RED' mutant; the write helper is a third file, so it gets its own spec (one subject per spec). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout.",
+ "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/presentation/components/property-editor/relationsEditorModel.ts",
+ "mutants": {
+  "M16_written_in_path_form": {
+   "from": "  const wikilink = `[[${targetUid}]]`;",
+   "to": "  const wikilink = `[[assetspaces/kitelev/exoas-tst/tst/${targetUid}.md]]`;",
+   "expect": [
+    "P4"
+   ]
+  }
+ }
+}

@@ -6,6 +6,7 @@ import {
   ITripleStore,
   IRI,
   Namespace,
+  createTripleStoreClassPropertyResolver,
 } from "@kitelev/exocortex-core";
 import { ExocortexPluginInterface } from '@plugin/types';
 import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
@@ -17,7 +18,10 @@ import {
 import { ErrorBoundary } from '@plugin/presentation/components/ErrorBoundary';
 import { formatPropertyValue } from '@plugin/domain/property-editor/formatPropertyValue';
 import { extractInstanceClass } from '@plugin/domain/property-editor/extractInstanceClass';
-import { getPropertySchemaForClass } from '@plugin/domain/property-editor/PropertySchemas';
+import {
+  getPropertySchemaForClass,
+  initClassPropertyResolver,
+} from '@plugin/domain/property-editor/PropertySchemas';
 import { findAssetRefCandidates } from '@plugin/presentation/utils/assetRefCandidates';
 import type { AssetRefCandidate } from '@plugin/presentation/builders/button-groups/DynamicCommandButtonGroupBuilder';
 import {
@@ -126,6 +130,12 @@ export class PropertyEditorModal extends Modal {
 
     this.container = contentEl.createDiv({ cls: "property-editor-container" });
 
+    // req 9e19f141 — feed the schema provider from the live store BEFORE the
+    // first render: `PropertyEditorForm` fetches the schema itself, so wiring it
+    // later would leave the form on the four fallback fields for this open.
+    // `getStore()` is synchronous, so this costs nothing on the render path.
+    this.initSchemaResolver();
+
     // Render the form immediately (relations undefined → opens instantly), then
     // build the Relations-section deps async (triple-store query + schema) and
     // re-render with them when ready (RFC 93a0b2ee Task 3.1). Best-effort —
@@ -165,6 +175,20 @@ export class PropertyEditorModal extends Modal {
           },
         },
       ),
+    );
+  }
+
+  /**
+   * req 9e19f141 — point the schema provider at the DECLARED properties of the
+   * class (`createTripleStoreClassPropertyResolver`, req 07509cf9). Cleared to
+   * `null` when no store is reachable, so a previous modal's resolver — built
+   * over a store that may no longer be the live one — never survives into this
+   * open and answers from stale triples.
+   */
+  private initSchemaResolver(): void {
+    const ctx = this.getStore();
+    initClassPropertyResolver(
+      ctx ? createTripleStoreClassPropertyResolver(ctx.store) : null,
     );
   }
 
@@ -250,10 +274,24 @@ export class PropertyEditorModal extends Modal {
         rangeClassUid: rangeMap.get(p.name),
       }));
 
+    // req 9e19f141 — memoised for the lifetime of ONE open: this Map is a local
+    // of this call, and `buildRelationsDeps` runs once per `onOpen`. Reference
+    // fields share their range class (measured on the live `ems__Task` chain:
+    // 37 reference fields over 21 distinct classes ⇒ 16 scans saved per open),
+    // and every scan is a full `getMarkdownFiles()` pass. Deliberately NOT
+    // module-level: a cache outliving the open would serve candidates from a
+    // vault state the user has already changed.
+    const candidatesByClass = new Map<string, AssetRefCandidate[]>();
     const resolveCandidates = (
       rangeClassUid: string | undefined,
-    ): AssetRefCandidate[] =>
-      rangeClassUid ? findAssetRefCandidates(this.app, rangeClassUid) : [];
+    ): AssetRefCandidate[] => {
+      if (!rangeClassUid) return [];
+      const cached = candidatesByClass.get(rangeClassUid);
+      if (cached) return cached;
+      const found = findAssetRefCandidates(this.app, rangeClassUid);
+      candidatesByClass.set(rangeClassUid, found);
+      return found;
+    };
 
     return {
       initialRows,
