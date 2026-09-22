@@ -123,6 +123,26 @@ describe("GraphQueryService", () => {
       expect(result.nodes).toHaveLength(3);
       expect(result.nodes.find(n => n.title === "Task 001")?.isArchived).toBe(true);
     });
+
+    // req 960d7a3f Scenario G: the archive flag is EMITTED as `exo:Asset_archived`
+    // (both the canonical `exo__Asset_archived:` key and the legacy bare
+    // `archived:` index under it). Before the fix the service read ONLY the
+    // never-emitted `exo:Asset_isArchived`, so the default filter was inert on
+    // every real carrier. Revert-verify: drop the `ASSET_ARCHIVED` predicate
+    // branch → this axis RED (task stays in the default result).
+    it("@req:960d7a3f-c04c-461e-a7fa-1ba2d2572bee excludes a node whose flag is emitted as exo:Asset_archived (the real predicate)", async () => {
+      const assetArchived = Namespace.EXO.term("Asset_archived");
+      await tripleStore.add(new Triple(taskUri, assetArchived, new Literal("true")));
+      service.clearCache();
+
+      const filtered = await service.loadGraphData();
+      expect(filtered.nodes.map(n => n.title)).not.toContain("Task 001");
+
+      const all = await service.loadGraphData({ includeArchived: true });
+      expect(all.nodes.find(n => n.title === "Task 001")?.isArchived).toBe(true);
+      // The compat alias `false` (seeded above) does not override the real flag.
+      expect(all.nodes).toHaveLength(3);
+    });
   });
 
   describe("loadNodesIncremental", () => {

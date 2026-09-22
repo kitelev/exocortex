@@ -18,6 +18,7 @@ import { WikilinkValidator } from "../services/WikilinkValidator.js";
 import { PropertyNameValidator } from "../services/PropertyNameValidator.js";
 import { EffortStatusResolver } from "../services/EffortStatusResolver.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
+import { ExitCodes } from "../utils/ExitCodes.js";
 import {
   ShaclConformanceError,
   VaultNotFoundError,
@@ -25,8 +26,10 @@ import {
 import { registerOrderSpecFromVault } from "../services/registerOrderSpec.js";
 import {
   resolveCoLocationFolder,
-  resolveNeighbourFolderByClass,
+  scanClassNeighbours,
+  pickCanonicalHome,
 } from "../executors/folderRepairHelpers.js";
+import type { CacheManager } from "../cache/CacheManager.js";
 
 /**
  * Fallback folder for new assets whose `exo__Asset_isDefinedBy` cannot be
@@ -87,6 +90,26 @@ interface CreateCommandOptions {
    * without it `create` is byte-identical (no vault load, no extra output).
    */
   validate?: boolean;
+  /**
+   * #4264 — persistent triple cache. `create`'s default path parses no RDF at
+   * all (its cost is frontmatter / shape scans), so the flag governs exactly
+   * two things: the vault triples `--validate` loads (through
+   * `loadVaultTriples`, hit / delta / rebuild instead of a full parse) and,
+   * together with `--write-through`, the write-through of the new asset into
+   * an EXISTING cache after a real write so the next `--use-cache` process is
+   * a plain hit. Default OFF — byte-identical without it.
+   * `ShapeLoader.loadFromVaultFS` (SHACL shapes for cardinality-aware
+   * serialization) is a separate load path and is NOT covered by the flag.
+   */
+  useCache?: boolean;
+  /**
+   * #4264 — with `--use-cache`: fold the created asset into the persisted
+   * cache in THIS process (the delta is paid here; the next `--use-cache`
+   * process is a plain hit). Default OFF: the next reader pays the delta
+   * itself (delta-only — decision ae0b4fce, measured on the bot chain).
+   * Refused without `--use-cache`.
+   */
+  writeThrough?: boolean;
 }
 
 /**
@@ -312,7 +335,24 @@ export function createCommand(): Command {
       "--validate",
       "Run SHACL-lite conformance validation on the new asset BEFORE writing it; a non-conformant asset is refused and no file is created (same shapes as `validate schema --shapes-mode`). Opt-in: omit the flag and create behaves exactly as before.",
     )
+    .option(
+      "--use-cache",
+      "Use the persistent triple cache for the vault load of --validate (shape loading is unaffected); the created asset is picked up by the NEXT --use-cache process as a delta unless --write-through is also given",
+    )
+    .option(
+      "--write-through",
+      "With --use-cache: fold the created asset into an existing persistent cache in this process, so the next --use-cache process is a plain hit. Refused without --use-cache",
+    )
     .action(async (options: CreateCommandOptions) => {
+      // #4264 — refused before anything is read or written: without
+      // --use-cache there is no cache to write through to.
+      if (options.writeThrough && !options.useCache) {
+        process.stderr.write(
+          "❌ --write-through requires --use-cache (there is no cache to write through to without it); nothing was created\n",
+        );
+        process.exit(ExitCodes.INVALID_ARGUMENTS);
+        return;
+      }
       try {
         const vaultPath = resolve(options.vault);
 
@@ -344,8 +384,15 @@ export function createCommand(): Command {
         // validation is fail-open when NO property definitions are mounted
         // (degenerate/partial profile). Validates the raw USER keys only (the
         // CLI injects its own well-known keys downstream).
-        const propertyNameValidator = new PropertyNameValidator(vaultPath);
-        await propertyNameValidator.validate(Object.keys(properties));
+        const propertyNameValidator = new PropertyNameValidator(vaultPath, {
+          warn: (msg) => process.stderr.write(`⚠ ${msg}\n`),
+        });
+        // The RAW USER keys — deliberately NOT the full set this command ends up
+        // writing. The key check judges only what the caller typed; the CLI's own
+        // well-known keys are injected downstream and validating them here would
+        // be wrong.
+        const userPropertyKeys = Object.keys(properties);
+        await propertyNameValidator.validate(userPropertyKeys);
 
         // Resolve body content. `\n` escapes are expanded ONLY for the inline
         // `--body "a\nb"` form — that is exactly what issue #2288 asked for ("Given
@@ -436,6 +483,26 @@ export function createCommand(): Command {
         const propertyValues =
           Object.keys(properties).length > 0 ? properties : undefined;
 
+        // Ticket 2227d660: the one-pass TBox scan also yields each def's declared
+        // `exo__Property_range`; handed to the core service so every scalar is
+        // typed by its declaration (a canonical negative under `xsd:integer`
+        // stays bare, a number under `xsd:string` is quoted). Empty when no
+        // property TBox is mounted → shape-based typing as before.
+        //
+        // Ticket 3fc34b92: naming the addressed properties also scopes the
+        // duplicate-range diagnostic to them — a conflicting twin of some OTHER
+        // property in the mounted TBox is not this command's business. The set is
+        // taken HERE, from the FINAL state of `properties`, because "addressed"
+        // means "actually written" and the CLI injects its own keys above
+        // (`ems__Effort_status`, explicit or the default Backlog). Reading the
+        // final state rather than listing the known injections is what keeps the
+        // next injection covered by construction. ⛔ NOT `userPropertyKeys`:
+        // that set is the key check's, and the two concepts differ exactly by
+        // what the CLI adds for the caller.
+        const writtenProperties = Object.keys(properties);
+        const declaredRanges =
+          await propertyNameValidator.declaredRanges(writtenProperties);
+
         // Validate property wikilinks (unless skipped).
         if (propertyValues && !options.skipWikilinkValidation) {
           await wikilinkValidator.validatePropertyValues(propertyValues);
@@ -485,14 +552,63 @@ export function createCommand(): Command {
         // (alongside the resolved classUid) against each instance's
         // `exo__Instance_class` wikilink target in any of its forms.
         if (folderPath === DEFAULT_INBOX_FOLDER) {
-          const neighbourFolder = await resolveNeighbourFolderByClass(
+          const scan = await scanClassNeighbours(
             fsAdapter,
             classUid,
             options.class,
             isDefinedBy,
           );
+          const neighbourFolder = pickCanonicalHome(scan.sameAnchor);
           if (neighbourFolder) {
             folderPath = neighbourFolder;
+          } else {
+            // Fail-open diagnostic (issue 3f8b640f, @req:ec3e7b15-766f-4323-8c58-da7d34fb5fd9):
+            // BOTH priorities declined, so the asset lands in `01 Inbox/` — a
+            // folder that need not even exist and that `audit co-location`
+            // skips by design (an empty isDefinedBy is a documented skip
+            // reason). rc stays 0 and the JSON stays a single stdout document;
+            // the only thing that changes is that the divergence stops being
+            // silent.
+            //
+            // The warning is emitted ONLY when the class demonstrably HAS a
+            // home elsewhere (`anyAnchor` holds a folder other than the inbox
+            // default / vault root). A class with no instances yet, or one
+            // whose instances legitimately live in the inbox, stays silent —
+            // the condition is derived from the same scan that made the
+            // placement decision, not authored beside it.
+            const homes = Array.from(scan.anyAnchor.entries())
+              .filter(
+                ([folder]) => folder !== "" && folder !== DEFAULT_INBOX_FOLDER,
+              )
+              .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+            if (homes.length > 0) {
+              const shown = homes
+                .slice(0, 3)
+                .map(([folder, count]) => `${folder} (${count})`)
+                .join(", ");
+              const more =
+                homes.length > 3 ? `, +${homes.length - 3} more` : "";
+              // `absent` and `empty` are distinguished on purpose: an
+              // `--property exo__Asset_isDefinedBy=` writes the key with an
+              // empty value, so "is absent" would be a false statement about
+              // the asset that is being created.
+              const anchorState =
+                isDefinedBy === undefined || isDefinedBy === null
+                  ? "exo__Asset_isDefinedBy is absent"
+                  : String(isDefinedBy).length === 0
+                    ? "exo__Asset_isDefinedBy is empty"
+                    : `exo__Asset_isDefinedBy=${String(isDefinedBy)} resolved no folder and no sibling shares that anchor`;
+              // "would land" rather than "lands": the write happens ~150 lines
+              // below and `--validate` can still refuse it, while `--dry-run`
+              // never writes at all — the placement is decided here, the file
+              // is not.
+              process.stderr.write(
+                `⚠ co-location fail-open: this asset would land in \`${DEFAULT_INBOX_FOLDER}/\` — ${anchorState}.\n` +
+                  `  Existing homes of class ${options.class}: ${shown}${more}.\n` +
+                  `  Set exo__Asset_isDefinedBy to the anchor used by the intended home ` +
+                  `(a \`!\`-prefixed anchor needs --skip-wikilink-validation).\n`,
+              );
+            }
           }
         }
 
@@ -522,6 +638,32 @@ export function createCommand(): Command {
         const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
         const creationService = new GenericAssetCreationService(vaultAdapter);
 
+        // #4264 — one CacheManager for the whole invocation when --use-cache:
+        // `--validate` loads through it (so the loaded state stays in memory)
+        // and the write-through after the write reuses that state. Without
+        // the flag no CacheManager exists — no cache read, no cache write.
+        // Lazily imported INSIDE the flag branch (same pattern as `--validate`
+        // below): the cache module pulls the serialization + inference graph,
+        // and the default `create` path must neither pay that load nor widen
+        // its module graph. Constructed only when something will use it —
+        // the --validate load or the --write-through — so a bare
+        // `create --use-cache` (delta-only default, decision ae0b4fce) neither
+        // loads the module nor holds an instance. A constructed-but-unused
+        // CacheManager reads and writes nothing, so this guard is not
+        // observable under jest (the suites import the module themselves);
+        // it is kept for the module graph, not locked by an axis.
+        const useCache = options.useCache ?? false;
+        let cacheManager: CacheManager | undefined;
+        if (useCache && (options.validate || options.writeThrough)) {
+          const { CacheManager: CacheManagerCtor } = await import(
+            "../cache/CacheManager.js"
+          );
+          cacheManager = new CacheManagerCtor(vaultPath);
+        }
+        const cacheLog = (line: string): void => {
+          process.stderr.write(`${line}\n`);
+        };
+
         const config: GenericAssetCreationConfig = {
           className: options.class,
           classRefForm: "uuid",
@@ -534,6 +676,7 @@ export function createCommand(): Command {
           body,
           propertyValues,
           shapeRegistry,
+          declaredRanges,
         };
 
         // Opt-in SHACL-lite conformance gate (project 38800c80 W3) — the last
@@ -567,7 +710,11 @@ export function createCommand(): Command {
           const { CandidateShaclValidator } = await import(
             "../services/CandidateShaclValidator.js"
           );
-          const shaclValidator = new CandidateShaclValidator(vaultPath);
+          const shaclValidator = new CandidateShaclValidator(vaultPath, {
+            useCache,
+            cacheManager,
+            log: cacheLog,
+          });
           const { violations, warnings } =
             await shaclValidator.validateCandidate(
               candidate.path,
@@ -604,6 +751,21 @@ export function createCommand(): Command {
           const file = await creationService.createAsset(config);
           uuid = file.basename;
           path = file.path;
+
+          // #4264 — write-through (opt-in, --write-through): fold the
+          // just-written asset into the persisted cache (delta against the
+          // state `--validate` loaded, or against the cache on disk; an absent
+          // cache is left absent — create never builds one). Best-effort by
+          // construction: `writeThroughCache` never throws, so the JSON below
+          // and the exit code do not depend on it — the file is already on
+          // disk. Without --write-through the cache is not touched: the next
+          // --use-cache reader folds the new asset in as its own delta.
+          if (cacheManager && options.writeThrough) {
+            const { writeThroughCache, writeThroughNotice } = await import(
+              "../cache/loadVaultTriples.js"
+            );
+            cacheLog(writeThroughNotice(await writeThroughCache(cacheManager)));
+          }
         }
 
         // Always output JSON to stdout on success

@@ -1,0 +1,46 @@
+{
+  "_doc": "Revert-verify mutants for ticket c8fc6793, req eac1690d-4d17-4f00-a221-0f8bee3c697c — SUBJECT: packages/core/src/utilities/FrontmatterService.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). All mutants are TYPE-PRESERVING (§A97): `BROKEN` is the ABSENCE of a measurement, not a measurement. `expect` filled ONLY from a run that completed. ⛔ MD2_hot_path_local_name_guard_removed WAS RETIRED by ticket 6572f3f3 / req 38e3f174-4a05-4743-a2f4-c7ec2c711202, and the reason is mechanical rather than convenience: its subject was not the clean-local RULE but the GUARD ON THE MAP BRANCH («the nine-entry table answers only for a clean local name»). That ticket removed the table, so the construct MD2 mutated no longer exists. The rule itself (`Namespace.isCleanLocalName`) lives on and is already mutated in three isolations plus all-at-once by the sibling namespace spec (MD3/MD4/MD5/MD7), so re-anchoring MD2 onto it would DUPLICATE MD4/MD5/MD7 rather than cover anything new. Coverage arithmetic after the retirement, from the printed lists: MD2's four (DK4 DK5 DK7 DK12) — DK4/DK5/DK12 stay under MD3/MD4/MD5, DK7 under MD1; nothing is left uncovered. ⚠ MD1's own expect list was RE-MEASURED after the table came out, not carried over: with the map gone every input reaches the canonical inverse, so MD1 now reddens the former in-map controls too.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/utilities/FrontmatterService.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "red_re": "› ([A-Z]{1,3}\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/utilities/FrontmatterService.normalizeIRI.test.ts tests/utilities/FrontmatterService.test.ts tests/utilities/FrontmatterService.applyPatch.test.ts tests/unit/domain/rdf/Namespace.test.ts 2>&1 ; cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/dead-key-c8fc6793.integration.test.ts tests/integration/set-property.integration.test.ts tests/integration/remove-property.integration.test.ts 2>&1",
+  "mutants": {
+    "MD1_canonical_inverse_fallback_removed": {
+      "_note": "The whole point of the ticket: without the shared inverse an out-of-map namespace falls through as a raw IRI and becomes the physical write key. Type-preserving — the function still returns `string` on every path. ⚠ RE-MEASURED after ticket 6572f3f3 removed the hot-path table, NOT carried over: with the map gone every input reaches the canonical inverse, so MD1 now also reddens DK2 and DK16 — the two axes this spec used to call in-map PAIRED CONTROLS, green under every mutant — plus F1 and H5 in the applyPatch suite. Old list (11 axes) → new list (15).",
+      "from": "    return iriToObsidianName(property) ?? property;",
+      "to": "    return property;",
+      "expect": [
+        "DK1",
+        "DK2",
+        "DK7",
+        "DK8",
+        "DK9",
+        "DK10",
+        "DK11",
+        "DK13",
+        "DK14",
+        "DK15",
+        "DK16",
+        "DK17",
+        "DK18",
+        "F1",
+        "H5"
+      ]
+    }
+  },
+  "_coverage": {
+    "_doc": "Coverage arithmetic, RE-MEASURED after ticket 6572f3f3 / req 38e3f174 retired MD2 and the hot-path table. Of DK1..DK21, EIGHTEEN go red under at least one mutant of this spec or of the sibling namespace spec — DK1 DK2 DK4 DK5 DK7 DK8 DK9 DK10 DK11 DK12 DK13 DK14 DK15 DK16 DK17 DK18 DK20 DK21 (count the names: 18) — and the remaining three (DK3 DK6 DK19) are deliberate controls. 18 + 3 = 21, nothing unaccounted for. ⚠ An earlier revision of this line said «17» while listing 16 names; the number is now stated so it can be checked against the list rather than taken on trust. ⛔ Do not read the pre-6572f3f3 numbers here: they counted a world with two branches.",
+    "_note_DK2_DK16": "⛔ THESE WERE 'PAIRED CONTROLS, GREEN ON PURPOSE' AND ARE NO LONGER. The claim rested on the nine-entry map answering in-map inputs without touching the canonical inverse; with the map retired (ticket 6572f3f3) every input goes through that inverse, so MD1 reddens them too. Measured, not assumed. They remain valuable — they now assert that the common case still resolves through the single inverse — but they are no longer evidence that 'the fix did not touch the hot path', because there is no hot path.",
+    "_note_DK3": "PASS-THROUGH CONTROL, green on purpose: a foreign, underivable base returns unchanged (the inverse yields null, `?? property` returns the input).",
+    "_note_DK6": "PASS-THROUGH CONTROL, green on purpose: a non-IRI name (prefixed key, bare `aliases`, the CURIE `xsd:string`) never enters the IRI branch at all.",
+    "_note_DK4_DK5_DK12": "Formerly reddened by MD2 as well. After its retirement they are covered by the sibling namespace spec — DK4/DK12 under MD4, DK5 under MD5, all three under MD3 — confirmed by running that spec, not by reading."
+  }
+}

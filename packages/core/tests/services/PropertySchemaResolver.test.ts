@@ -542,4 +542,149 @@ describe("PropertySchemaResolver", () => {
       );
     });
   });
+
+  /**
+   * Ticket 6572f3f3 — ONE inverse, derived from `Namespace.KNOWN_NAMESPACES`.
+   *
+   * These axes drive the PUBLIC `getSchema` and read the IRI the resolver puts
+   * into its SPARQL term, so they pin the WIRING as well as the conversion: a
+   * fix applied only to the private pair, or a private pair no longer reached,
+   * would leave them red (feature-sdd Step 4 — the two axes a new call needs).
+   *
+   * Measured on `origin/main` 0857307b BEFORE the change, over 14 inverse and 9
+   * forward input forms: the three independent implementations disagreed on
+   * 7 and 4 of them respectively. Each axis below is one of those forms.
+   *
+   * @req:38e3f174-4a05-4743-a2f4-c7ec2c711202
+   */
+  describe("inverse derived from Namespace.KNOWN_NAMESPACES (ticket 6572f3f3)", () => {
+    /** The IRI the resolver spliced into `<…>` of its schema query. */
+    const queriedIRI = (): string => {
+      const sparql = mockSparqlService.query.mock.calls[0][0] as string;
+      const m = sparql.match(/<([^>]+)> rdfs:range/);
+      if (!m) throw new Error(`no subject IRI in query: ${sparql.slice(0, 200)}`);
+      return m[1];
+    };
+    const ONE_ROW = [
+      new Map<string, unknown>([
+        ["rangeType", "http://www.w3.org/2001/XMLSchema#string"],
+        ["label", "L"],
+      ]),
+    ];
+
+    it("IV1 a W3C vocabulary key expands to its CANONICAL base, not an exocortex.my one @req:38e3f174-4a05-4743-a2f4-c7ec2c711202", async () => {
+      mockSparqlService.query.mockResolvedValue(ONE_ROW);
+      await resolver.getSchema("rdfs__subClassOf");
+      // ⛔ Before the change the `switch` default sent EVERY prefix to
+      // `https://exocortex.my/ontology/<prefix>#`, i.e. a namespace that does
+      // not exist — the forward-only drift `Namespace.fromTermIRI` warns about.
+      expect(queriedIRI()).toBe(
+        "http://www.w3.org/2000/01/rdf-schema#subClassOf",
+      );
+    });
+
+    it("IV2 the same holds for a SECOND W3C vocabulary, so the axis is not pinned to one @req:38e3f174-4a05-4743-a2f4-c7ec2c711202", async () => {
+      mockSparqlService.query.mockResolvedValue(ONE_ROW);
+      await resolver.getSchema("xsd__string");
+      expect(queriedIRI()).toBe("http://www.w3.org/2001/XMLSchema#string");
+    });
+
+    it("IV3 a namespace carrying a CAPITAL resolves in both directions @req:38e3f174-4a05-4743-a2f4-c7ec2c711202", async () => {
+      mockSparqlService.query.mockResolvedValue(ONE_ROW);
+      await resolver.getSchema("aiKnow__Memory_aboutConcept");
+      // ⛔ `^([a-z]+)__` matched nothing here, so the bare frontmatter key was
+      // handed to SPARQL as if it were an IRI.
+      expect(queriedIRI()).toBe(
+        "https://exocortex.my/ontology/aiKnow#Memory_aboutConcept",
+      );
+      // …and the full IRI folds back to the same key (the cache-key direction).
+      mockSparqlService.query.mockClear();
+      mockSparqlService.query.mockResolvedValue(ONE_ROW);
+      await resolver.getSchema(
+        "https://exocortex.my/ontology/aiKnow#Memory_aboutConcept",
+      );
+      expect(mockSparqlService.query).toHaveBeenCalledTimes(0);
+    });
+
+    it("IV4 a namespace carrying a DIGIT resolves too @req:38e3f174-4a05-4743-a2f4-c7ec2c711202", async () => {
+      mockSparqlService.query.mockResolvedValue(ONE_ROW);
+      await resolver.getSchema("ns2__Term");
+      expect(queriedIRI()).toBe("https://exocortex.my/ontology/ns2#Term");
+    });
+
+    it("IV5 a local name containing a SLASH is not a property key — IRI passes through @req:38e3f174-4a05-4743-a2f4-c7ec2c711202", async () => {
+      mockSparqlService.query.mockResolvedValue(ONE_ROW);
+      const iri = "https://exocortex.my/ontology/exo#Asset/Sub";
+      await resolver.getSchema(iri);
+      // ⛔ The old regex produced `exo__Asset/Sub`, a key no reader resolves.
+      // Both other implementations reject it; now so does this one.
+      expect(queriedIRI()).toBe(iri);
+      // ⛤ The queried IRI ALONE does not lock this: the forward direction
+      // expands `exo__Asset/Sub` right back to the same IRI, so a resolver that
+      // wrongly accepted the slash would still query the same term. The
+      // observable that DOES differ is the CACHE KEY — accepting the slash
+      // collapses the full IRI and the `exo__Asset/Sub` spelling onto one entry.
+      // Measured: without this assertion the axis stayed green under the mutant
+      // that restores the old regex.
+      await resolver.getSchema("exo__Asset/Sub");
+      expect(mockSparqlService.query).toHaveBeenCalledTimes(2);
+    });
+
+    it("IV6 a local name containing an INTERIOR HASH passes through @req:38e3f174-4a05-4743-a2f4-c7ec2c711202", async () => {
+      mockSparqlService.query.mockResolvedValue(ONE_ROW);
+      const iri = "https://exocortex.my/ontology/exo#Asset#Sub";
+      await resolver.getSchema(iri);
+      expect(queriedIRI()).toBe(iri);
+      // Same reasoning as IV5: the distinguishing observable is the cache key.
+      await resolver.getSchema("exo__Asset#Sub");
+      expect(mockSparqlService.query).toHaveBeenCalledTimes(2);
+    });
+
+    it("IV7 the namespace must start the string — a nested IRI is NOT harvested @req:38e3f174-4a05-4743-a2f4-c7ec2c711202", async () => {
+      mockSparqlService.query.mockResolvedValue(ONE_ROW);
+      const iri =
+        "https://evil.example/x/https://exocortex.my/ontology/ems#Pwned";
+      await resolver.getSchema(iri);
+      // ⛔ The old regex had no `^` anchor and yielded `ems__Pwned`. Drift
+      // hygiene rather than a vulnerability — the enumerated inputs are graph
+      // IRIs from our own emitter plus a caller whose only in-repo call site is
+      // unreachable — but the two other implementations reject it, so this one
+      // must too.
+      expect(queriedIRI()).toBe(iri);
+    });
+
+    it("IV8 PAIRED CONTROL — an in-map namespace behaves byte-identically @req:38e3f174-4a05-4743-a2f4-c7ec2c711202", async () => {
+      mockSparqlService.query.mockResolvedValue(ONE_ROW);
+      await resolver.getSchema("ems__Effort_status");
+      expect(queriedIRI()).toBe(
+        "https://exocortex.my/ontology/ems#Effort_status",
+      );
+      // The full-IRI spelling folds onto the SAME cache key, as it always did.
+      await resolver.getSchema(
+        "https://exocortex.my/ontology/ems#Effort_status",
+      );
+      expect(mockSparqlService.query).toHaveBeenCalledTimes(1);
+    });
+
+    it("IV9 pass-through is preserved for every shape the canon does not parse @req:38e3f174-4a05-4743-a2f4-c7ec2c711202", async () => {
+      // Load-bearing: the result is used as a cache key AND as the query term,
+      // so an unparseable name must come back AS ITSELF, never as null.
+      for (const shape of [
+        "https://exocortex.my/ontology/my-ns#Term", // dash — not a legal prefix
+        "https://exocortex.my/ontology/ems#", // empty local name
+        "https://example.com/foo#bar", // foreign base
+      ]) {
+        mockSparqlService.query.mockClear();
+        mockSparqlService.query.mockResolvedValue(ONE_ROW);
+        await resolver.getSchema(shape);
+        expect(queriedIRI()).toBe(shape);
+      }
+    });
+
+    it("IV10 a non-IRI name never enters the IRI branch @req:38e3f174-4a05-4743-a2f4-c7ec2c711202", async () => {
+      mockSparqlService.query.mockResolvedValue(ONE_ROW);
+      await resolver.getSchema("plainName");
+      expect(queriedIRI()).toBe("plainName");
+    });
+  });
 });

@@ -1,0 +1,19 @@
+{
+  "_doc": "Revert-verify for the #4263 review r2 N4 fix in sparql-index.ts: the inferred layer is persisted even when empty (that is what sets metadata.inferenceEnabled). Set `tree`/`subject` to YOUR checkout. red_re keys on the `S<N>` machine key of the test title.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/sparql-index.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/sparql-index.test.ts 2>&1",
+  "red_re": "› (S\\d+) ",
+  "mutants": {
+    "SI1_empty_layer_not_persisted": {
+      "from": "          await cacheManager.saveInferredTriples(materialized.inferred);\n          result.tripleCount += inferredCount;\n",
+      "to": "          if (inferredCount > 0) {\n            await cacheManager.saveInferredTriples(materialized.inferred);\n          }\n          result.tripleCount += inferredCount;\n",
+      "expect": ["S1"]
+    }
+  }
+}

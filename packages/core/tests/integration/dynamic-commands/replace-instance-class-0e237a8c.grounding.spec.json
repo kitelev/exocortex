@@ -1,0 +1,41 @@
+{
+  "_doc": "Mutants for req 0e237a8c on the GROUNDING asset — the wiring between the command and the `property_replace` primitive. See the command spec for the shared rationale.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "red_re": "› (D\\d+) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/exoas-exocmd/exocmd/60db3634-4752-4811-802d-5a28c510a4bc.md",
+  "harness": "cd \"$(dirname {subject})/../../core\" && node ../../node_modules/jest/bin/jest.js tests/integration/dynamic-commands/replace-instance-class-shape.test.ts --verbose 2>&1",
+  "mutants": {
+    "M4_type_downgraded_to_append": {
+      "_note": "Grounding type flipped to property_append: co-classes survive, but the old class is never removed — the reclass becomes an append. Predicted D2.",
+      "from": "\nexocmd__Grounding_type: \"[[c8582746-6476-47f7-b0cc-e582c2754d84]]\"\n",
+      "to": "\nexocmd__Grounding_type: \"[[572f7e69-a8a1-42f6-8113-5aa65cc4b552]]\"\n",
+      "expect": ["D2"]
+    },
+    "M5_target_property_moved": {
+      "_note": "Grounding aimed at a scalar property: the executor refuses naming property_set (R5), so the command becomes a permanent refusal. Predicted D2.",
+      "from": "\nexocmd__Grounding_targetProperty: exo__Instance_class\n",
+      "to": "\nexocmd__Grounding_targetProperty: exo__Asset_label\n",
+      "expect": ["D2"]
+    },
+    "M6_from_predicate_renamed": {
+      "_note": "`replaceFromExpression` key renamed — the production loader returns undefined and the executor refuses (R6). The engine axes stay green: they hand the definition to the executor directly. Predicted D2.",
+      "from": "\nexocmd__Grounding_replaceFromExpression: $input.from\n",
+      "to": "\nexocmd__Grounding_replaceFrom: $input.from\n",
+      "expect": ["D2"]
+    },
+    "M7_to_expression_retargeted": {
+      "_note": "`$input.to` renamed to a key the command body never supplies — same permanent refusal, from the other side (R7). Predicted D2.",
+      "from": "\nexocmd__Grounding_replaceToExpression: $input.to\n",
+      "to": "\nexocmd__Grounding_replaceToExpression: $input.target\n",
+      "expect": ["D2"]
+    }
+  }
+}

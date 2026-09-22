@@ -1,0 +1,129 @@
+{
+  "_doc": "Revert-verify mutants for #4277 (req 1117f9fe). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/cache-tbox-delta-4277.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's CacheManager.ts and runs the #4277 integration suite; `expect` names the axes that MUST go red). The four foreign specs on the same subject (cache-manifest-delta-4263, use-cache-4264.cachemanager, use-cache-4264.proc-chain.cachemanager, apply-create-instance-index-4272.cachemanager) are re-run separately before the PR.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/cache/CacheManager.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/cache-tbox-delta-4277.integration.test.ts 2>&1",
+  "red_re": "› (T\\d+) ",
+  "mutants": {
+    "M1_every_tbox_change_is_a_delta": {
+      "from": "        const reason = tboxProjectionChanged(changedPath, previous.triples, fresh, tbox);\n        if (reason) {",
+      "to": "        const reason = tboxProjectionChanged(changedPath, previous.triples, fresh, tbox);\n        if (reason && false) {",
+      "expect": ["T3", "T4", "T5", "T6", "T11", "T13", "T14"]
+    },
+    "M2_label_compared_by_presence_not_value": {
+      "from": "      if (t.object.type === \"IRI\") label.push(t.object.value);",
+      "to": "      if (t.object.type === \"IRI\") label.push(\"<some symbolic label>\");",
+      "expect": ["T3", "T14"],
+      "_note": "T4 (lost / gained) stays red-free here on purpose: presence still differs. Only the VALUE axes must catch this."
+    },
+    "M3_tbox_alias_set_ignored": {
+      "from": "  if (!sameList(was.tboxAliases, now.tboxAliases)) {",
+      "to": "  if (!sameList(was.tboxAliases, now.tboxAliases) && false) {",
+      "expect": ["T5", "T13"]
+    },
+    "M4_instance_class_ignored": {
+      "from": "  if (!sameList(was.instanceClass, now.instanceClass)) {",
+      "to": "  if (!sameList(was.instanceClass, now.instanceClass) && false) {",
+      "expect": ["T6"]
+    },
+    "M5_rebuild_always_materialises": {
+      "from": "      materializeInference: cached?.metadata.inferenceEnabled === true,",
+      "to": "      materializeInference: true,",
+      "expect": ["T10"]
+    },
+    "M6_rebuild_never_materialises": {
+      "from": "      materializeInference: cached?.metadata.inferenceEnabled === true,",
+      "to": "      materializeInference: false,",
+      "expect": ["T9"]
+    },
+    "M7_flag_inherited_but_layer_empty": {
+      "from": "      inferred = (await materializeInferredTriples(triples)).inferred;",
+      "to": "      inferred = [];",
+      "expect": ["T9"]
+    },
+    "M8_layer_materialised_but_flag_not_persisted": {
+      "from": "      inferenceEnabled: options.materializeInference === true,",
+      "to": "      inferenceEnabled: false,",
+      "expect": ["T9"]
+    },
+    "M9_skipped_entry_treated_as_comparable": {
+      "from": "        if (!previous || previous.triples.length === 0 || !file) {",
+      "to": "        if (!previous || !file) {",
+      "expect": ["T8"]
+    },
+    "M10_plan_rebuild_forgets_the_displaced_cache": {
+      "from": "      return this.rebuild(startTime, plan.rebuildReason, cached);",
+      "to": "      return this.rebuild(startTime, plan.rebuildReason, null);",
+      "expect": ["T9"]
+    },
+    "M11_rebuild_returns_explicit_only": {
+      "from": "      triples: built.triples.concat(built.inferred),",
+      "to": "      triples: built.triples,",
+      "expect": ["T9"]
+    },
+    "M12_projection_probe_sees_only_the_label_predicate": {
+      "from": "    } else if (predicate.endsWith(ASSET_ALIASES_IRI_SUFFIX)) {\n      if (t.object.type === \"IRI\") tboxAliases.push(t.object.value);",
+      "to": "    } else if (predicate.endsWith(ASSET_ALIASES_IRI_SUFFIX) && false) {\n      if (t.object.type === \"IRI\") tboxAliases.push(t.object.value);",
+      "expect": ["T5", "T13"]
+    },
+    "M13_rebuild_inherits_whenever_a_cache_exists_(flag_ignored)": {
+      "from": "      materializeInference: cached?.metadata.inferenceEnabled === true,",
+      "to": "      materializeInference: cached !== null,",
+      "expect": ["T10"],
+      "_note": "review r1 G8c — a readable cache with inferenceEnabled: false must NOT gain a layer on a reader's rebuild (T10's second half)."
+    },
+    "M14_instance_class_compared_as_a_set_(order_ignored)": {
+      "from": "  if (!sameList(was.instanceClass, now.instanceClass)) {",
+      "to": "  if (!sameList([...was.instanceClass].sort(), [...now.instanceClass].sort())) {",
+      "expect": ["T15"],
+      "_note": "review r1 G6 — referrers co-emit the FIRST exo__Instance_class value; a re-ordered list is a projection change."
+    },
+    "M15_probe_throw_propagates_(try_removed)": {
+      "from": "        } catch {\n          return { reparse: [], rebuildReason: tboxRebuildReason(tbox, changedPath) };\n        }",
+      "to": "        } catch (probeError) {\n          throw probeError;\n        }",
+      "expect": ["T16"],
+      "_note": "review r1 F1 — a modified TBox-form file the converter throws on (an empty exo__* literal the walk skips) must rebuild, never crash the reader."
+    },
+    "M16_probe_disjunction_disabled_(no_TBox_file_is_a_candidate)": {
+      "from": "      if (tbox.newLabel || tbox.hadLabel || tbox.newAlias || tbox.hadAlias) {",
+      "to": "      if ((tbox.newLabel || tbox.hadLabel || tbox.newAlias || tbox.hadAlias) && false) {",
+      "expect": ["T3", "T7", "T8"],
+      "_note": "review r2 L-B (G1) — with the four probes disabled every TBox-form change is a plain delta."
+    },
+    "M17_rebuild_reason_order_swapped": {
+      "from": "  if (tbox.newLabel) return `TBox-form asset changed: ${relPath}`;\n  if (tbox.hadLabel) return `asset lost its TBox-form label: ${relPath}`;",
+      "to": "  if (tbox.hadLabel) return `asset lost its TBox-form label: ${relPath}`;\n  if (tbox.newLabel) return `TBox-form asset changed: ${relPath}`;",
+      "expect": ["T3", "T14"],
+      "_note": "review r2 L-B (G7) — the pre-#4277 order: a NEW TBox label wins over a previous one, so a TBox→TBox rename says 'changed', not 'lost'. The order is observable ONLY when BOTH probes fire (T3 / T14 / T11 / T16); T4's two cases (lost: hadLabel only; gained: newLabel only) each fire one probe and read the same string in either order — the reviewer's G7 → T4 assignment was the wrong axis, T4 cannot see the swap by construction (driver run 2026-09-19: red = T3 T11 T14 T16)."
+    },
+    "M18_buildInternal_always_materialises_(index_path_gains_a_layer)": {
+      "from": "    if (options.materializeInference) {\n      inferred = (await materializeInferredTriples(triples)).inferred;",
+      "to": "    if (options.materializeInference || true) {\n      inferred = (await materializeInferredTriples(triples)).inferred;",
+      "expect": ["T12"],
+      "_note": "review r2 L-B (G9a) — `index` (buildCacheWithValidation) must stay layer-less: it materialises its own layer afterwards via saveInferredTriples."
+    },
+    "M19_explicitCount_taken_after_the_concat": {
+      "from": "      explicitCount: built.triples.length,\n      zeroTriplePaths: CacheManager.zeroTriplePathsOf(built.data),",
+      "to": "      explicitCount: built.triples.length + built.inferred.length,\n      zeroTriplePaths: CacheManager.zeroTriplePathsOf(built.data),",
+      "expect": ["T9"],
+      "_note": "review r2 L-B (G9c) — the #4272 boundary: explicitCount is the EXPLICIT count even when the rebuild returns explicit + inferred."
+    },
+    "M20_projection_takes_the_LITERAL_label_too": {
+      "from": "      if (t.object.type === \"IRI\") label.push(t.object.value);\n",
+      "to": "      label.push(t.object.value);\n",
+      "expect": ["T18"],
+      "_note": "review r3 LOW (G5b) — the projection's label component is IRI-only: a HUMAN label is not what a referrer emits (it emits the file-IRI), so editing it must stay a delta. With the literal in the projection T18's rename becomes a rebuild."
+    },
+    "M21_projection_takes_LITERAL_aliases_too": {
+      "from": "      if (t.object.type === \"IRI\") tboxAliases.push(t.object.value);\n",
+      "to": "      tboxAliases.push(t.object.value);\n",
+      "expect": ["T19", "T5"],
+      "_note": "review r3 LOW (G5c) — the projection's alias component is the TBox-form (IRI) alias SET only; literal aliases belong to the ordinary alias diff (needle re-parse). With literals in the projection T19's added literal alias becomes a rebuild instead of a 2-file delta — and T5's second step (the same TBox set reordered + a human alias appended, expected delta) rebuilds for the same reason; the two axes share the guard, not a fixture (driver: RED = [T19, T5])."
+    }
+  }
+}

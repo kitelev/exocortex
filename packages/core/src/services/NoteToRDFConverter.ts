@@ -53,11 +53,42 @@ export interface ExocortexInvariantViolation {
  * when READING `<field>:` → `exo:Asset_<field>`.
  */
 export const UNPREFIXED_ASSET_FIELDS: ReadonlySet<string> = new Set([
-  "archived",
   "draft",
   "pinned",
   "aliases",
 ]);
+
+/**
+ * Bare frontmatter keys that are still READ as `exo:Asset_<key>` (same
+ * indexing as {@link UNPREFIXED_ASSET_FIELDS}) but are NO LONGER the canonical
+ * physical key — the canonical key is the prefixed `exo__Asset_<key>`, declared
+ * in the `exoas-exo` TBox. Writers never emit the bare form; readers accept it
+ * for every asset that has not been migrated yet.
+ *
+ * `archived` moved here 2026-09-15 (founder decision, ticket `da0f73a3`, req
+ * `960d7a3f`): `exo__Asset_archived` is declared as an `exo__DatatypeProperty`
+ * (domain `exo__Asset`), the ~1270 existing `archived: true` carriers keep
+ * indexing under the SAME predicate `exo:Asset_archived` until migrated with
+ * `repair-frontmatter --canonicalize-keys`, so the exocmd preconditions that
+ * test `exo:Asset_archived "true"` see both forms by construction.
+ */
+export const LEGACY_UNPREFIXED_ASSET_FIELDS: ReadonlySet<string> = new Set([
+  "archived",
+]);
+
+/**
+ * Legacy physical keys that a write to the canonical key must ALSO clear:
+ * `exo__Asset_archived` ← `archived`. Consulted by
+ * `FrontmatterService.updateProperty` / `removeProperty` so a single write
+ * migrates the carrier (never leaves both keys on disk) and a removal of the
+ * canonical key clears a legacy-only carrier (the `un-archive` grounding).
+ */
+export const LEGACY_YAML_KEYS: ReadonlyMap<string, readonly string[]> = new Map(
+  [...LEGACY_UNPREFIXED_ASSET_FIELDS].map((field) => [
+    `exo__Asset_${field}`,
+    [field] as readonly string[],
+  ]),
+);
 
 /** `exo__Asset_<field>` shape; group 1 = the bare field name. */
 const ASSET_PREFIXED_SHAPE = /^exo__Asset_(.+)$/;
@@ -82,11 +113,48 @@ const ASSET_PREFIXED_SHAPE = /^exo__Asset_(.+)$/;
  * Property NAME guards and TBox validation still run on the RDF/prefixed form;
  * only the physical YAML key is canonicalised here. A bare `aliases` (already
  * canonical) passes through unchanged.
+ *
+ * The {@link LEGACY_UNPREFIXED_ASSET_FIELDS} direction is the OPPOSITE: a bare
+ * `archived` handed to a writer is UPGRADED to `exo__Asset_archived` (req
+ * `960d7a3f`, Scenario C), and `exo__Asset_archived` stays prefixed — so every
+ * writer that reaches `FrontmatterService` (groundings whose `targetProperty`
+ * is still the bare name, `ArchiveAssetService`, the CLI `archive` executors)
+ * emits the declared key without each call site repeating the rule.
  */
 export function canonicalYamlKey(property: string): string {
   const m = ASSET_PREFIXED_SHAPE.exec(property);
   if (m && UNPREFIXED_ASSET_FIELDS.has(m[1])) return m[1];
+  if (LEGACY_UNPREFIXED_ASSET_FIELDS.has(property)) return `exo__Asset_${property}`;
   return property;
+}
+
+/**
+ * Issue #4219 — a POSIX bracket expression is NOT a wikilink.
+ *
+ * `[[:space:]]` in a body is `[` + the character class `[:space:]`, but the
+ * wikilink tokenizer (`[[<target>]]`) reads it as a link to `:space:`. Two
+ * opposite failures followed, both silent in their own way:
+ *   - indexing emitted `exo__Asset_bodyLink → ":space:"` — a junk edge no SHACL
+ *     shape judges (16 of them in vault-exodev, plus one `:слово:`);
+ *   - `set-body` REFUSED the same body ("file not found in vault"), so any edit
+ *     of a note that merely quotes a bash pattern needed
+ *     `--skip-wikilink-validation`, which drops validation for the WHOLE body.
+ *
+ * The discriminator is the shape of the target, not a list of class names: a
+ * target wrapped in colons cannot exist in either naming scheme. Measured on
+ * vault-exodev before the fix — assets whose label has this shape: **0**; files
+ * with a colon in the name: **0**. So skipping these cannot lose a working
+ * edge, only a junk one.
+ *
+ * ⛔ Deliberately NOT an allow-list of the twelve POSIX class names: the corpus
+ * already contains `[[:слово:]]` (a documentation example, non-Latin), which
+ * such a list would miss while being exactly as wrong a link.
+ *
+ * Exported so the indexer and the CLI's wikilink validator reach the same
+ * verdict through this function rather than through two copies free to drift.
+ */
+export function isPosixBracketExpression(target: string): boolean {
+  return /^:[^\s[\]|]+:$/.test(target);
 }
 
 /**
@@ -359,9 +427,24 @@ export class NoteToRDFConverter {
       // `?s exo:Asset_archived true` can match assets that carry the bare
       // Obsidian-style flag in frontmatter (`archived: true`). Keys outside
       // the whitelist remain skipped to avoid uncontrolled triple growth.
-      const normalizedKey = UNPREFIXED_ASSET_FIELDS.has(key)
-        ? `exo__Asset_${key}`
-        : key;
+      // req 960d7a3f: the LEGACY set (`archived`) is read the same way — a
+      // not-yet-migrated `archived: true` and the canonical
+      // `exo__Asset_archived: true` both index as `exo:Asset_archived`.
+      // Canonical wins when BOTH spellings coexist (a state reachable only
+      // past the chokepoint: Obsidian's Properties panel, external tools):
+      // skip the legacy key so the graph carries exactly ONE
+      // `exo:Asset_archived` triple — the same priority as
+      // `MetadataHelpers.ARCHIVED_FLAG_KEYS`, so readers and preconditions agree.
+      if (
+        LEGACY_UNPREFIXED_ASSET_FIELDS.has(key) &&
+        Object.prototype.hasOwnProperty.call(frontmatter, `exo__Asset_${key}`)
+      ) {
+        continue;
+      }
+      const normalizedKey =
+        UNPREFIXED_ASSET_FIELDS.has(key) || LEGACY_UNPREFIXED_ASSET_FIELDS.has(key)
+          ? `exo__Asset_${key}`
+          : key;
       if (!this.isExocortexProperty(normalizedKey)) {
         continue;
       }
@@ -377,7 +460,9 @@ export class NoteToRDFConverter {
         // are NOT skipped — only null/undefined/blank-string. For exo__Asset_label
         // the basename fallback below still synthesises the label triple.
         if (
-          (key === "exo__Asset_label" || UNPREFIXED_ASSET_FIELDS.has(key)) &&
+          (key === "exo__Asset_label" ||
+            UNPREFIXED_ASSET_FIELDS.has(key) ||
+            LEGACY_UNPREFIXED_ASSET_FIELDS.has(key)) &&
           (val == null || (typeof val === "string" && val.trim() === ""))
         ) {
           continue;
@@ -783,11 +868,14 @@ export class NoteToRDFConverter {
   async convertVault(
     options: {
       excludedFolders?: string[];
+      /** Per-file commit observer — see `convertVaultWithValidation` (#4263). */
+      onFileTriples?: (file: IFile, triples: Triple[]) => void;
     } = {},
   ): Promise<Triple[]> {
     const result = await this.convertVaultWithValidation({
       strict: false,
       excludedFolders: options.excludedFolders,
+      onFileTriples: options.onFileTriples,
     });
     return result.triples;
   }
@@ -889,6 +977,35 @@ export class NoteToRDFConverter {
        * notice), so tiny vaults stay quiet.
        */
       progressIntervalFiles?: number;
+      /**
+       * Restrict the walk to these files instead of `vault.getAllFiles()`
+       * (#4263 — CLI triple-cache delta refresh re-parses only the files whose
+       * mtime changed). Folder exclusions (`excludedFolders` + FileSpace
+       * prefixes) still apply to the subset; wikilink TARGET resolution still
+       * goes through the full vault adapter, so a subset conversion emits the
+       * same triples for a file as a full walk would. Omit → whole vault.
+       */
+      files?: IFile[];
+      /**
+       * Skip {@link discoverFileSpaceExclusions} (a `getFrontmatter` per vault
+       * file — the walk a delta pass exists to avoid) and use these
+       * previously-discovered FileSpace mount prefixes instead (#4263: the CLI
+       * cache persists `fileSpaces.prefixes` from its last full walk). Omit →
+       * discover from the vault as before. An empty array is honoured as
+       * "no FileSpaces" (no discovery).
+       */
+      fileSpacePrefixes?: string[];
+      /**
+       * Per-file commit observer (#4263): called once for every file whose
+       * candidate triples were committed to the result, with exactly the
+       * triples that file contributed (in commit order). Skipped / excluded
+       * files never reach it. Lets a caller keep file→triple provenance
+       * without re-deriving it from subject IRIs (reified statements, enum
+       * `rdf:type` side-triples and blank nodes do NOT carry the file's own
+       * subject). Best-effort: a throwing observer is isolated like
+       * `onProgress` and never aborts the walk.
+       */
+      onFileTriples?: (file: IFile, triples: Triple[]) => void;
     } = {}
   ): Promise<{
     triples: Triple[];
@@ -896,7 +1013,7 @@ export class NoteToRDFConverter {
     summary: { total: number; indexed: number; skipped: number };
     fileSpaces: FileSpaceDiscoveryResult;
   }> {
-    const allFiles = this.vault.getAllFiles();
+    const allFiles = options.files ?? this.vault.getAllFiles();
     const allTriples: Triple[] = [];
     const skippedFiles: Array<{ path: string; reason: string }> = [];
     const strict = options.strict ?? false;
@@ -915,7 +1032,9 @@ export class NoteToRDFConverter {
     // user-configured `excludedFolders` below. The declarations themselves
     // are ordinary assets and keep indexing (convention: they live OUTSIDE
     // their mount folder — discovery warns otherwise).
-    const fileSpaces = discoverFileSpaceExclusions(this.vault);
+    const fileSpaces: FileSpaceDiscoveryResult = options.fileSpacePrefixes
+      ? { prefixes: options.fileSpacePrefixes, declarationPaths: [], warnings: [] }
+      : discoverFileSpaceExclusions(this.vault);
     for (const warning of fileSpaces.warnings) {
       this.logger.warn(`FileSpace discovery: ${warning}`);
     }
@@ -1006,6 +1125,14 @@ export class NoteToRDFConverter {
 
         const candidate = await this.convertNote(file);
         allTriples.push(...candidate);
+        if (options.onFileTriples) {
+          try {
+            options.onFileTriples(file, candidate);
+          } catch {
+            // Isolate observer failures — provenance is best-effort for the
+            // walk itself (the caller decides what a missing entry means).
+          }
+        }
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
 
@@ -1579,9 +1706,20 @@ export class NoteToRDFConverter {
     }
 
     if (typeof value === "number") {
+      // Ticket d5ad5217 (founder decision 2026-09-19): a whole YAML number is
+      // tagged xsd:integer, a fractional one xsd:decimal — the same rule the
+      // JSON-LD parser applies (RDFSerializer.collectTriplesForValue), so one
+      // number gets one tag whichever way it enters the graph. Every number was
+      // xsd:decimal before; CacheManager.CACHE_FORMAT_VERSION was bumped with
+      // this change so a warm triple cache cannot serve the old tag.
+      // Known pre-existing edge (both paths, 0 live values in the three vaults):
+      // a whole number >= 1e21 has value.toString() === "1e+21", which is not a
+      // valid xsd:integer lexical form — not handled here, tracked separately.
       return [new Literal(
         value.toString(),
-        Namespace.XSD.term("decimal")
+        Number.isInteger(value)
+          ? Namespace.XSD.term("integer")
+          : Namespace.XSD.term("decimal")
       )];
     }
 
@@ -1702,7 +1840,9 @@ export class NoteToRDFConverter {
   private async preResolveWikilinkTargets(
     frontmatter: Record<string, unknown>,
   ): Promise<void> {
-    const withFallback = this.vault.getFrontmatterWithFallback;
+    // Optional adapter capability — bound once (lint: unbound-method) so the
+    // absence check and the call below refer to the same method.
+    const withFallback = this.vault.getFrontmatterWithFallback?.bind(this.vault);
     if (!withFallback) {
       return; // CLI adapter / in-memory doubles: nothing to fall back to
     }
@@ -1731,7 +1871,7 @@ export class NoteToRDFConverter {
         }
         this.preResolvedTargetFm.set(
           resolvedFile.path,
-          await withFallback.call(this.vault, resolvedFile),
+          await withFallback(resolvedFile),
         );
       }
     }
@@ -1892,7 +2032,20 @@ export class NoteToRDFConverter {
 
     while ((match = pattern.exec(bodyContent)) !== null) {
       // match[1] contains the link target (without alias)
-      if (match[1]) {
+      // Issue #4219 — a POSIX bracket expression quoted in the body
+      // (`[[:space:]]` inside a grep pattern) is not a link target.
+      //
+      // The DECISION is taken on the trimmed target because the CLI's
+      // WikilinkValidator trims before asking the same question; testing the
+      // raw capture here would disagree with it on `[[ :space: ]]` — the
+      // validator would skip the link while this side still emitted the junk
+      // edge, which is precisely the drift sharing one predicate is meant to
+      // prevent (PR #4301 review, MEDIUM).
+      //
+      // ⛔ The VALUE added stays the raw capture: trimming it would silently
+      // change how every padded link (`[[ Note A ]]`) is indexed — a wider
+      // behaviour change than this fix is scoped to make.
+      if (match[1] && !isPosixBracketExpression(match[1].trim())) {
         links.add(match[1]);
       }
     }

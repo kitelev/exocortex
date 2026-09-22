@@ -23,8 +23,6 @@ method-exists	packages/obsidian-plugin/tests/unit/presentation/fileexplorer/File
 method-exists	packages/obsidian-plugin/tests/unit/presentation/properties/PropertiesLabelPatch.test.ts	2
 method-exists	packages/obsidian-plugin/tests/unit/renderers/dailyTasks/DailyTasksRenderer.timeEstimate.test.ts	1
 method-exists	packages/obsidian-plugin/tests/unit/sync/SyncCommands.test.ts	1
-vacuous-length	packages/cli/tests/unit/cache/CacheManager.test.ts	1
-vacuous-length	packages/cli/tests/unit/executors/BatchExecutor.test.ts	1
 vacuous-length	packages/cli/tests/unit/utils/ExitCodes.test.ts	1
 vacuous-length	packages/core/tests/sparql/compliance/built-in-functions.test.ts	1
 vacuous-length	packages/core/tests/unit/infrastructure/sparql/executors/BGPExecutor.branch.test.ts	1

@@ -31,6 +31,7 @@ import {
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import * as yaml from "js-yaml";
 
 const { applyCommand } = await import("../../src/commands/apply.js");
 
@@ -59,14 +60,25 @@ const SET_LABEL_STEP_DELETE = "f7790001-0000-0000-0000-000000000005";
 const SET_LABEL_STEP_UPDATED = "f7790001-0000-0000-0000-000000000006";
 
 // --- LEGACY (pre-#3798) 2-step set-label — used ONLY by the self-contained
-//     revert-verify test to prove the OLD grounding exhibits the bug
-//     (accumulates aliases, does not bump updatedAt). integration-test-revert-verify.
+//     revert-verify test to prove the OLD grounding exhibits the aliases bug
+//     (accumulates aliases). Its "does not bump updatedAt" half became the
+//     EXECUTOR's guarantee under req 454ccedf (ticket 533856e4) — see B6 below.
 const SET_LABEL_LEGACY_CMD = "f7790001-0000-0000-0000-0000000000a1";
 const SET_LABEL_LEGACY_GROUNDING = "f7790001-0000-0000-0000-0000000000a2";
 
 // --- set-parent command + grounding ------------------------------------------
 const SET_PARENT_CMD = "f7790002-0000-0000-0000-000000000001";
 const SET_PARENT_GROUNDING = "f7790002-0000-0000-0000-000000000002";
+
+// --- service_call commands (req 8d27f21d, ticket 8421b014) -------------------
+// Mirrors the production groundings 85687461 (set-planned-start: serviceId
+// updateProperty + payload property) and f8893042 (plan-for-evening: serviceId
+// planForEvening) — the two write channels the executor never sees.
+const GT_SERVICE_CALL = "9bf9fc99-ac37-4e51-b9f5-bd920099947c";
+const SET_PLANNED_START_CMD = "f7790003-0000-0000-0000-000000000001";
+const SET_PLANNED_START_GROUNDING = "f7790003-0000-0000-0000-000000000002";
+const PLAN_FOR_EVENING_CMD = "f7790003-0000-0000-0000-000000000003";
+const PLAN_FOR_EVENING_GROUNDING = "f7790003-0000-0000-0000-000000000004";
 
 const fm = (lines: string[]): string => ["---", ...lines, "---", ""].join("\n");
 
@@ -177,6 +189,40 @@ const SET_PARENT_GROUNDING_MD = fm([
   `exocmd__Grounding_targetValueRef: "$input.parent"`,
 ]);
 
+const SET_PLANNED_START_CMD_MD = fm([
+  `exo__Asset_uid: ${SET_PLANNED_START_CMD}`,
+  `exo__Asset_label: "Set Planned Start"`,
+  `exo__Instance_class: ["[[exocmd__Command]]"]`,
+  `exocmd__Command_grounding: "[[${SET_PLANNED_START_GROUNDING}|g]]"`,
+  `exocmd__Command_cliName: set-planned-start`,
+]);
+
+const SET_PLANNED_START_GROUNDING_MD = fm([
+  `exo__Asset_uid: ${SET_PLANNED_START_GROUNDING}`,
+  `exo__Asset_label: "Set planned start timestamp"`,
+  `exo__Instance_class: ["[[exocmd__Grounding]]"]`,
+  `exocmd__Grounding_type: "[[${GT_SERVICE_CALL}]]"`,
+  `exocmd__Grounding_serviceId: "updateProperty"`,
+  `exocmd__Grounding_serviceCallPayload: '{"property":"ems__Effort_plannedStartTimestamp"}'`,
+  `exocmd__Grounding_inputSchema: '{"type":"object","properties":{"value":{"type":"string","title":"Planned start (date)"}},"required":["value"]}'`,
+]);
+
+const PLAN_FOR_EVENING_CMD_MD = fm([
+  `exo__Asset_uid: ${PLAN_FOR_EVENING_CMD}`,
+  `exo__Asset_label: "Plan for Evening"`,
+  `exo__Instance_class: ["[[exocmd__Command]]"]`,
+  `exocmd__Command_grounding: "[[${PLAN_FOR_EVENING_GROUNDING}|g]]"`,
+  `exocmd__Command_cliName: plan-for-evening`,
+]);
+
+const PLAN_FOR_EVENING_GROUNDING_MD = fm([
+  `exo__Asset_uid: ${PLAN_FOR_EVENING_GROUNDING}`,
+  `exo__Asset_label: "Plan for evening via service"`,
+  `exo__Instance_class: ["[[exocmd__Grounding]]"]`,
+  `exocmd__Grounding_type: "[[${GT_SERVICE_CALL}]]"`,
+  `exocmd__Grounding_serviceId: "planForEvening"`,
+]);
+
 function targetMd(
   uid: string,
   label: string,
@@ -216,6 +262,10 @@ function buildVault(): { root: string } {
   write(SET_LABEL_LEGACY_GROUNDING, SET_LABEL_LEGACY_GROUNDING_MD);
   write(SET_PARENT_CMD, SET_PARENT_CMD_MD);
   write(SET_PARENT_GROUNDING, SET_PARENT_GROUNDING_MD);
+  write(SET_PLANNED_START_CMD, SET_PLANNED_START_CMD_MD); // req 8d27f21d
+  write(SET_PLANNED_START_GROUNDING, SET_PLANNED_START_GROUNDING_MD);
+  write(PLAN_FOR_EVENING_CMD, PLAN_FOR_EVENING_CMD_MD);
+  write(PLAN_FOR_EVENING_GROUNDING, PLAN_FOR_EVENING_GROUNDING_MD);
   return { root };
 }
 
@@ -278,6 +328,13 @@ describe("Issue #3779 — CLI apply mutation parity (relabel + explicit parent)"
     return fs.readFileSync(path.join(root, rel), "utf-8");
   }
 
+  /** The frontmatter block parsed by the REAL js-yaml (ticket 4f226028). */
+  function loadFrontmatter(content: string): Record<string, unknown> {
+    const m = /^---\n([\s\S]*?)\n---/.exec(content);
+    if (!m) throw new Error("no frontmatter block");
+    return yaml.load(m[1]) as Record<string, unknown>;
+  }
+
   it("@req:f7790000-3779-4aaa-8aaa-000000000001 set-parent sets ems__Effort_parent to an explicit UID as a wikilink (Gap 2, real mutation)", async () => {
     const rel = writeTarget("aaaaaaaa-3779-4000-8000-000000000001", "Child Task");
     const parentUid = "99999999-3779-4000-8000-000000000009";
@@ -289,6 +346,138 @@ describe("Issue #3779 — CLI apply mutation parity (relabel + explicit parent)"
     expect(written).toContain(`ems__Effort_parent: "[[${parentUid}]]"`);
     // The literal placeholder must never persist.
     expect(written).not.toContain("$input.parent");
+  });
+
+  // ---------------------------------------------------------------------------
+  // req 454ccedf (ticket 533856e4) — B1. `set-parent` is a SINGLE property_set
+  // grounding with no data-side "Bump updatedAt" step, and on the published CLI
+  // 16.240.4 it left exo__Asset_updatedAt untouched (repro n = 3 by execution:
+  // set-parent / set-criticality-low / rollback-to-backlog; control set-label
+  // — a composite carrying step 49e00287 — bumped). The stamp now lives in the
+  // executor, so this real `apply` over a temp vault observes it on disk.
+  // ---------------------------------------------------------------------------
+  it("@req:454ccedf-fefe-4cfe-bdf7-704f050c1f34 B1 set-parent (single property_set, no data-side bump step) stamps exo__Asset_updatedAt on the real apply path", async () => {
+    const rel = writeTarget(
+      "aaaaaaaa-3779-4000-8000-000000000011",
+      "Child Task",
+      true,
+      { updatedAt: "2020-01-01T00:00:00" },
+    );
+    const parentUid = "99999999-3779-4000-8000-000000000009";
+
+    await runApply("set-parent", rel, `{"parent":"${parentUid}"}`);
+
+    const written = read(rel);
+    expect(written).toContain(`ems__Effort_parent: "[[${parentUid}]]"`);
+    expect(written).not.toContain("exo__Asset_updatedAt: 2020-01-01T00:00:00");
+    expect(written).toMatch(
+      /^exo__Asset_updatedAt: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/m,
+    );
+    // exactly one key line — replaced, not duplicated
+    expect((written.match(/^exo__Asset_updatedAt:/gm) ?? []).length).toBe(1);
+    // the file stays parseable by the real parser
+    expect(loadFrontmatter(written).ems__Effort_parent).toBe(`[[${parentUid}]]`);
+  });
+
+  it("@req:454ccedf-fefe-4cfe-bdf7-704f050c1f34 B7 re-applying set-parent with the SAME parent is a no-op: file byte-identical, updatedAt not touched", async () => {
+    const rel = writeTarget(
+      "aaaaaaaa-3779-4000-8000-000000000012",
+      "Child Task",
+      true,
+      { updatedAt: "2020-01-01T00:00:00" },
+    );
+    const parentUid = "99999999-3779-4000-8000-000000000009";
+    await runApply("set-parent", rel, `{"parent":"${parentUid}"}`);
+    const afterFirst = read(rel);
+    expect(afterFirst).not.toContain("exo__Asset_updatedAt: 2020-01-01T00:00:00");
+
+    // Freeze what the first apply wrote by seeding it back with a stale stamp
+    // that the second (idempotent) apply must NOT overwrite.
+    const frozen = afterFirst.replace(
+      /^exo__Asset_updatedAt: .*$/m,
+      "exo__Asset_updatedAt: 2021-02-03T04:05:06",
+    );
+    fs.writeFileSync(path.join(root, rel), frozen, "utf-8");
+
+    await runApply("set-parent", rel, `{"parent":"${parentUid}"}`);
+
+    expect(read(rel)).toBe(frozen);
+  });
+
+  // ---------------------------------------------------------------------------
+  // req 8d27f21d (ticket 8421b014) — service_call groundings: the service
+  // writes past the executor's own write points (updateProperty →
+  // fsAdapter.updateFile; planForEvening → IVaultAdapter.modify); the executor
+  // stamps by comparing the target's bytes before/after the call.
+  // ---------------------------------------------------------------------------
+  it("@req:8d27f21d-4673-4490-866e-dfe4078c03a6 I1 set-planned-start (service_call updateProperty → fsAdapter.updateFile) stamps exo__Asset_updatedAt on the real apply path", async () => {
+    const rel = writeTarget(
+      "aaaaaaaa-8421-4000-8000-000000000001",
+      "Service Task",
+      true,
+      { updatedAt: "2020-01-01T00:00:00" },
+    );
+
+    await runApply("set-planned-start", rel, `{"value":"2026-07-25T09:00:00"}`);
+
+    const written = read(rel);
+    expect(written).toContain(
+      "ems__Effort_plannedStartTimestamp: 2026-07-25T09:00:00",
+    );
+    expect(written).not.toContain("exo__Asset_updatedAt: 2020-01-01T00:00:00");
+    expect(written).toMatch(
+      /^exo__Asset_updatedAt: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/m,
+    );
+    expect((written.match(/^exo__Asset_updatedAt:/gm) ?? []).length).toBe(1);
+    expect(
+      loadFrontmatter(written).ems__Effort_plannedStartTimestamp,
+    ).toBeDefined();
+  });
+
+  it("@req:8d27f21d-4673-4490-866e-dfe4078c03a6 I2 plan-for-evening (service_call planForEvening → IVaultAdapter.modify, a channel the executor never sees) stamps exo__Asset_updatedAt on the real apply path", async () => {
+    const rel = writeTarget(
+      "aaaaaaaa-8421-4000-8000-000000000002",
+      "Evening Task",
+      true,
+      { updatedAt: "2020-01-01T00:00:00" },
+    );
+
+    await runApply("plan-for-evening", rel);
+
+    const written = read(rel);
+    // TaskStatusService.planForEvening writes the planned-start timestamp.
+    expect(written).toMatch(/^ems__Effort_plannedStartTimestamp: /m);
+    expect(written).not.toContain("exo__Asset_updatedAt: 2020-01-01T00:00:00");
+    expect(written).toMatch(
+      /^exo__Asset_updatedAt: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/m,
+    );
+    expect((written.match(/^exo__Asset_updatedAt:/gm) ?? []).length).toBe(1);
+  });
+
+  it("@req:8d27f21d-4673-4490-866e-dfe4078c03a6 I3 re-applying set-planned-start with the SAME value is a no-op: file byte-identical, updatedAt not touched", async () => {
+    const rel = writeTarget(
+      "aaaaaaaa-8421-4000-8000-000000000003",
+      "Service Task",
+      true,
+      { updatedAt: "2020-01-01T00:00:00" },
+    );
+    await runApply("set-planned-start", rel, `{"value":"2026-07-25T09:00:00"}`);
+    const afterFirst = read(rel);
+    expect(afterFirst).not.toContain(
+      "exo__Asset_updatedAt: 2020-01-01T00:00:00",
+    );
+
+    // Freeze what the first apply wrote with a stale stamp the idempotent
+    // second apply must NOT overwrite (same shape as B7).
+    const frozen = afterFirst.replace(
+      /^exo__Asset_updatedAt: .*$/m,
+      "exo__Asset_updatedAt: 2021-02-03T04:05:06",
+    );
+    fs.writeFileSync(path.join(root, rel), frozen, "utf-8");
+
+    await runApply("set-planned-start", rel, `{"value":"2026-07-25T09:00:00"}`);
+
+    expect(read(rel)).toBe(frozen);
   });
 
   it("@req:f7790000-3779-4aaa-8aaa-000000000001 set-parent fails loud (no write) when the named input key is missing", async () => {
@@ -364,16 +553,57 @@ describe("Issue #3779 — CLI apply mutation parity (relabel + explicit parent)"
     expect(written).toContain(`- "Meeting: Q3 review"`);
     // #3798 — single canonical alias (the seeded "Old Label" alias is cleared).
     expect(written).not.toContain(`- "Old Label"`);
+    // ticket 4f226028 (I3) — "stays parseable" is asserted with the REAL parser.
+    const fm = loadFrontmatter(written);
+    expect(fm.exo__Asset_label).toBe("Meeting: Q3 review");
+    expect(fm.aliases).toEqual(["Meeting: Q3 review"]);
   });
+
+  // ---------------------------------------------------------------------------
+  // Ticket 4f226028 — the aliases entry is written by the SAME YAML escaper as
+  // the label. Before the fix `property_append` hand-wrapped the value in `"…"`
+  // without escaping, so a label carrying an interior `"` produced
+  // `  - "Label with "inner" quotes"` — js-yaml: `bad indentation of a mapping
+  // entry`, the whole frontmatter unparseable (req 27fbe40b broke
+  // `requirements-trace` on every PR) — and a `\` was silently swallowed
+  // (alias ≠ label, file still parseable). Each axis runs the REAL published
+  // composite shape through the real `apply` pipeline and parses the mutated
+  // file with js-yaml (the parser the CLI adapters and Obsidian use).
+  // ---------------------------------------------------------------------------
+  it.each([
+    ["I1 interior double quotes", 'Label with "inner" quotes'],
+    ["I2 hash + backslash", "Note #42 about \\ backslash"],
+    ["I2b colon-space + quoted wikilink", 'Key: value (x: "[[y]]", z)'],
+  ])(
+    "@req:f7790000-3779-4bbb-8bbb-000000000002 %s — set-label escapes the alias like the label: file parses, aliases deep-equals [label]",
+    async (_axis, label) => {
+      const rel = writeTarget("bbbbbbbb-3779-4000-8000-00000000004f", "Old Label");
+
+      await runApply("set-label", rel, JSON.stringify({ label }));
+
+      const written = read(rel);
+      const fm = loadFrontmatter(written); // throws on the pre-fix shape
+      expect(fm.exo__Asset_label).toBe(label);
+      expect(fm.aliases).toEqual([label]);
+      expect(written).not.toContain(`- "Old Label"`);
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // #3798 revert-verify (integration-test-revert-verify): the OLD 2-step
   // composite (property_set label + property_append aliases — NO delete, NO
-  // updatedAt) must EXHIBIT the bug the 4-step fix removes. This runs the legacy
-  // grounding through the SAME real `apply` pipeline, proving the assertions
-  // above are non-vacuous (they would fail on the pre-fix grounding).
+  // updatedAt step) must EXHIBIT the DATA bug the 4-step fix removes (BUG 1,
+  // aliases accumulate). This runs the legacy grounding through the SAME real
+  // `apply` pipeline, proving the aliases assertions above are non-vacuous.
+  //
+  // req 454ccedf (ticket 533856e4) — B6: the former "BUG 2 — updatedAt is NOT
+  // bumped" half of this axis is INVERTED on purpose. The bump is no longer a
+  // property of the data (step 49e00287) but of the EXECUTOR: a grounding
+  // without the step still records the modification. What #3798 fixed in the
+  // data was the aliases mirror; the updatedAt half is now guaranteed one level
+  // below, for every mutating grounding, including this legacy one.
   // ---------------------------------------------------------------------------
-  it("@req:f7790000-3779-4bbb-8bbb-000000000002 REVERT-VERIFY: the legacy 2-step set-label ACCUMULATES aliases and does NOT bump updatedAt (the #3798 bug)", async () => {
+  it("@req:f7790000-3779-4bbb-8bbb-000000000002 @req:454ccedf-fefe-4cfe-bdf7-704f050c1f34 REVERT-VERIFY / B6: the legacy 2-step set-label still ACCUMULATES aliases (the #3798 data bug) but the executor bumps updatedAt even without the data step", async () => {
     const rel = writeTarget(
       "bbbbbbbb-3779-4000-8000-0000000000af",
       "Old Label",
@@ -390,7 +620,12 @@ describe("Issue #3779 — CLI apply mutation parity (relabel + explicit parent)"
     expect(written).toContain(`- "Stale Alias"`);
     expect(written).toContain(`- "New Label"`);
     expect((written.match(/^\s+- /gm) ?? []).length).toBeGreaterThan(1);
-    // BUG 2 — updatedAt is NOT bumped (stays the seeded 2020 value).
-    expect(written).toContain("exo__Asset_updatedAt: 2020-01-01T00:00:00");
+    // B6 — updatedAt IS bumped by the executor although the legacy composite
+    // carries no "Bump updatedAt" step (was: "BUG 2 — stays the seeded value").
+    expect(written).not.toContain("exo__Asset_updatedAt: 2020-01-01T00:00:00");
+    expect(written).toMatch(
+      /^exo__Asset_updatedAt: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/m,
+    );
+    expect((written.match(/^exo__Asset_updatedAt:/gm) ?? []).length).toBe(1);
   });
 });

@@ -79,7 +79,11 @@ import {
   OUTBOX_REMOTE_ABSENT,
   type OutboxStorePort,
 } from "./LocalOutboxStore";
-import { isAuthError } from "./CredentialStore";
+import {
+  isAuthError,
+  isRefNotFoundError,
+  REF_NOT_FOUND_HINT,
+} from "./CredentialStore";
 import { redactSecrets, scanForSecrets } from "./secretScan";
 import {
   withRateLimitBackoff,
@@ -490,6 +494,25 @@ function diffTrees(
   }
   const deleted = base.filter((b) => !headPaths.has(b.path));
   return { changed, deleted };
+}
+
+/**
+ * #4234 — «the remote does not know this object»: HTTP 404 (unknown object
+ * on the Git Data endpoint `git/commits/{sha}`) or 422 (malformed / bad
+ * object state) over the transport error-message contract
+ * (`GitHub request {METHOD} {url} → HTTP {status}: {body}`). Anchored on the
+ * contract's `→ HTTP` so a status literal inside a response BODY cannot
+ * match. Deliberately NOT a catch-all: 401/403 are auth (`isAuthError`),
+ * 5xx / network are transient — neither says the commit is gone.
+ *
+ * ⚠ A 404 here is AMBIGUOUS: GitHub also answers 404 for a private repo
+ * that lies outside a fine-grained PAT's repository allowlist
+ * (existence-hiding). `resolveBaseTreeSha` disambiguates with one head-ref
+ * lookup before trusting it (#4236).
+ */
+function isCommitUnknownError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /→ HTTP (?:404|422)\b/.test(msg);
 }
 
 function errMsg(err: unknown): string {
@@ -1388,7 +1411,9 @@ export class SyncEngine {
         actualBaseTreeSha =
           prefetchedHead === watermark.lastSyncedSha
             ? watermark.rootTreeSha
-            : await this.resolveBaseTreeSha(spec, watermark);
+            : await this.resolveBaseTreeSha(spec, watermark, {
+                headReachable: true,
+              });
       } else {
         actualBaseTreeSha = await this.resolveBaseTreeSha(spec, watermark);
       }
@@ -1762,6 +1787,15 @@ export class SyncEngine {
             `authentication failed: ${errMsg(err)} — the PAT is expired, revoked or under-scoped; update it in the per-device secure storage (R8). Never treated as success.`,
           ),
         });
+      }
+      if (isRefNotFoundError(err)) {
+        // #4236 — repo invisible to this token (or gone): name the token,
+        // never merge/quarantine advice.
+        const detail = redact(
+          `${spec.owner}/${spec.repo}@${spec.branch} is not reachable: ${errMsg(err)} — ${REF_NOT_FOUND_HINT}`,
+        );
+        warnings.push(`sync failed: ${detail}`);
+        return result("error", { detail });
       }
       warnings.push(`sync failed: ${redact(errMsg(err))}`);
       return result("error", { detail: redact(errMsg(err)) });
@@ -2201,10 +2235,35 @@ export class SyncEngine {
   /**
    * D22 — resolve the ACTUAL base tree on the remote; never trust the stored
    * watermark blindly (R10). `null` = commit not resolvable (GC'd, rewritten).
+   *
+   * #4234 — ONLY «the remote does not know this commit» (HTTP 404 / 422)
+   * means «not resolvable». Every other failure — 401/403 from an expired or
+   * under-scoped PAT, 5xx, network, a malformed response — says nothing about
+   * the commit and MUST propagate so `sync()` classifies it (`auth-required`
+   * / `error`). The previous catch-all mapped an under-scoped fine-grained
+   * PAT's `HTTP 403: Resource not accessible by personal access token` to
+   * `null`, and ChangeDetector then reported a phantom «full-conflict —
+   * base-mismatch … must go through merge/quarantine» while the post-sync
+   * parity round on the same repo correctly said `auth-required`.
+   *
+   * #4236 — a 404 on `git/commits/{sha}` is AMBIGUOUS: GitHub also hides a
+   * private repo that lies OUTSIDE a fine-grained PAT's repository allowlist
+   * behind 404 (existence-hiding), and a deleted/renamed repo answers the
+   * same. Before trusting «commit unknown» we resolve the head ref ONCE
+   * (`git/refs/heads/{branch}`, only on this rare branch — the steady-state
+   * path pays nothing): head reachable ⇒ the commit alone is gone ⇒ `null`
+   * (genuine GC'd / rewritten base, unchanged behaviour); head ALSO 404 ⇒
+   * the repo itself is not visible to this token ⇒ the head error propagates
+   * and `sync()` reports `error` with the allowlist hint
+   * (`isRefNotFoundError`), not a phantom base-mismatch. Any other head
+   * failure (401/403/5xx/network) propagates as-is so the classifier sees
+   * the real cause. Callers that have ALREADY resolved the head this cycle
+   * pass `headReachable: true` to skip the probe.
    */
   private async resolveBaseTreeSha(
     spec: SyncRepoSpec,
     watermark: WatermarkRecord,
+    opts: { headReachable?: boolean } = {},
   ): Promise<string | null> {
     try {
       return (
@@ -2216,7 +2275,19 @@ export class SyncEngine {
           this.deps.baseURL,
         )
       ).treeSha;
-    } catch {
+    } catch (err) {
+      if (!isCommitUnknownError(err)) throw err;
+      if (opts.headReachable === true) return null;
+      // Head probe: any failure here (404 = repo invisible, 401/403 = auth,
+      // 5xx = transient) propagates AS-IS — `sync()`'s catch classifies it
+      // (`isRefNotFoundError` → allowlist hint) in ONE place for every path.
+      await getHeadSha(
+        this.transport,
+        spec.owner,
+        spec.repo,
+        spec.branch,
+        this.deps.baseURL,
+      );
       return null;
     }
   }

@@ -1,5 +1,11 @@
-import { Vault, TFile, TFolder, MetadataCache, App, parseYaml } from "obsidian";
-import { IVaultAdapter, IFile, IFolder, IFrontmatter, FrontmatterService } from "@kitelev/exocortex-core";
+import { Vault, TFile, TFolder, MetadataCache, App, parseYaml, requireApiVersion } from "obsidian";
+import {
+  IVaultAdapter,
+  IFile,
+  IFolder,
+  IFrontmatter,
+  FrontmatterService,
+} from "@kitelev/exocortex-core";
 
 /** A linkpath body that is exactly a uuid — the `uid-bare` wikilink form. */
 const UUID_LINKPATH =
@@ -44,7 +50,19 @@ export class ObsidianVaultAdapter implements IVaultAdapter {
 
   async delete(file: IFile): Promise<void> {
     const obsidianFile = this.toObsidianFile(file);
-    await this.app.fileManager.trashFile(obsidianFile);
+    // `FileManager.trashFile` (honours the user's "deleted files" setting)
+    // exists since Obsidian 1.6.6 while manifest `minAppVersion` is 1.5.0
+    // (obsidianmd/no-unsupported-api). Older hosts used to die here with a bare
+    // `TypeError: trashFile is not a function`; fail loud with the real reason
+    // instead. `Vault.trash`/`Vault.delete` are not used as a fallback on
+    // purpose — they bypass that user setting (obsidianmd/prefer-file-manager-trash-file).
+    if (requireApiVersion("1.6.6")) {
+      await this.app.fileManager.trashFile(obsidianFile);
+      return;
+    }
+    throw new Error(
+      `Deleting "${file.path}" requires Obsidian 1.6.6 or newer (FileManager.trashFile).`,
+    );
   }
 
   async exists(path: string): Promise<boolean> {
@@ -142,6 +160,23 @@ export class ObsidianVaultAdapter implements IVaultAdapter {
     }
   }
 
+  /**
+   * Write the updater's result into the file's frontmatter through the core
+   * carrier of the key dialect, `FrontmatterService.applyPatch` (req
+   * `2a020489`; the plugin-side guarantees are req `de7131ae`):
+   * `canonicalYamlKey(normalizeIRI(key))` per key, `normalizeIRIValue` per
+   * string value, canonical-wins on a dual payload, `LEGACY_YAML_KEYS` of each
+   * written canonical key removed, keys the updater does not return left in
+   * place (PATCH — Obsidian's `processFrontMatter` hands us the live object and
+   * the helper mutates it). Nothing of the rule lives here: the contract is on
+   * `IVaultFrontmatterManager.updateFrontmatter` and on the helper.
+   *
+   * The only production caller (`LayoutService.handleCellEdit`) re-emits every
+   * current key next to the edited one, so editing ANY cell of a legacy
+   * `archived:` carrier migrates the flag as a side effect (req `de7131ae`
+   * Scenario E) — graph-neutral (same predicate `exo:Asset_archived`),
+   * accepted by ORCH decision `eb07dc18`.
+   */
   async updateFrontmatter(
     file: IFile,
     updater: (current: IFrontmatter) => IFrontmatter,
@@ -153,14 +188,7 @@ export class ObsidianVaultAdapter implements IVaultAdapter {
     await this.app.fileManager.processFrontMatter(
       obsidianFile,
       (frontmatter) => {
-        Object.keys(newFrontmatter).forEach((key) => {
-          const normalizedKey = FrontmatterService.normalizeIRI(key);
-          let value = newFrontmatter[key];
-          if (typeof value === "string") {
-            value = FrontmatterService.normalizeIRIValue(value);
-          }
-          frontmatter[normalizedKey] = value;
-        });
+        FrontmatterService.applyPatch(frontmatter, newFrontmatter);
       },
     );
   }

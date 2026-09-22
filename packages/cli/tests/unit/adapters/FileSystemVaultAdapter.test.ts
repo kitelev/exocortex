@@ -5,6 +5,11 @@ import path from "path";
 // parser — the barrel mock must provide the REAL implementation (not a stub);
 // imported straight from source so it is not intercepted by the mock.
 import { parseYamlFrontmatterTolerant } from "../../../../core/src/utilities/parseYamlFrontmatter.js";
+// req 2a020489: `updateFrontmatter` goes through the REAL core carrier
+// `FrontmatterService.applyPatch` — the barrel mock must pass it through (a
+// missing named export would fail to link the whole suite, a stub would make
+// the dialect untestable here). Imported from source, past the mock.
+import { FrontmatterService } from "../../../../core/src/utilities/FrontmatterService.js";
 
 // Mock exocortex module before import
 jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
@@ -12,6 +17,7 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   IFile: class {},
   IFolder: class {},
   IFrontmatter: class {},
+  FrontmatterService,
   parseYamlFrontmatterTolerant,
 }));
 

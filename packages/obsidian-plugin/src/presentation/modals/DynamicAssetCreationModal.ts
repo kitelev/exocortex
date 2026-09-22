@@ -435,7 +435,7 @@ export class DynamicAssetCreationModal extends Modal {
   ): void {
     setting.addText((text) => {
       text
-        .setPlaceholder("[[Note name]]") // eslint-disable-line obsidianmd/ui/sentence-case
+        .setPlaceholder("[[Note name]]")
         .setValue(String(this.propertyValues[prop.uri] || ""))
         .onChange((value) => {
           // Auto-wrap in wikilink syntax if not already
@@ -556,7 +556,7 @@ export class DynamicAssetCreationModal extends Modal {
    * Focus on the first input field.
    */
   private focusInput(): void {
-    setTimeout(() => {
+    window.setTimeout(() => {
       this.inputEl?.focus();
     }, 50);
   }

@@ -1,5 +1,6 @@
 import { DisplayNameTemplateEngine } from "./DisplayNameTemplateEngine";
 import { ownProperty } from "./keyPathResolver";
+import { unwrapLinkTarget } from "./linkTarget";
 import type { MetadataResolver } from "./DisplayNameTemplateEngine";
 import type { PrintNameRuleService, ParticipatingRule } from "./PrintNameRuleService";
 import type { DisplayNameSettings } from "./DisplayNameSettings";
@@ -42,6 +43,13 @@ export interface ResolvedDisplayName {
  * mixin directly; the three concrete property metaclasses inherit it via exo__Property.
  * Verified against the live TBox (vault-my exoas-exo, 2026-07-29).
  */
+/**
+ * Depth cap for the nested displayName render (req 0f992e88). Three hops covers every composition
+ * the vault declares today (a review → its quarter → that quarter's year) while keeping a cyclic
+ * or pathological chain bounded by construction rather than by the data being well-formed.
+ */
+const MAX_NESTED_DISPLAY_NAME_DEPTH = 3;
+
 const SLUGABLE_METACLASS_KEYS: ReadonlySet<string> = new Set<string>([
   "8619c4fc-64f1-4869-b17e-e34186cacca9",
   "exo__Class",
@@ -56,6 +64,11 @@ const SLUGABLE_METACLASS_KEYS: ReadonlySet<string> = new Set<string>([
 ]);
 
 export class DisplayNameResolver {
+  /** How many nested renders deep a printed reference may go (req 0f992e88). */
+  private nestedDepth = 0;
+  /** Targets currently being rendered — a re-entered reference prints its linkpath instead. */
+  private readonly nestedTargets = new Set<string>();
+
   constructor(
     private readonly settings: DisplayNameSettings,
     private readonly ruleService?: PrintNameRuleService | null,
@@ -90,10 +103,14 @@ export class DisplayNameResolver {
     if (projection !== null) return { displayName: projection, provenance: "tboxProjection" };
 
     const { template, separator, provenance } = this.resolveRenderSpec(assetClasses, metadata);
-    const engine = new DisplayNameTemplateEngine(
-      template,
-      separator ? { separator } : {},
-    );
+    const engine = new DisplayNameTemplateEngine(template, {
+      ...(separator ? { separator } : {}),
+      // req 0f992e88 — the engine asks for a referenced asset's composed name only where it
+      // would otherwise print a bare linkpath; the recursion and its bounds live HERE because
+      // the engine renders one template and knows nothing about specs.
+      nestedDisplayName: (wikilink: string, targetMetadata?: Record<string, unknown> | null) =>
+        this.resolveNestedDisplayName(wikilink, targetMetadata),
+    });
 
     return {
       displayName: engine.render(
@@ -104,6 +121,77 @@ export class DisplayNameResolver {
       ),
       provenance,
     };
+  }
+
+  /**
+   * The COMPOSED displayName of a REFERENCED asset — the value an
+   * `exo__PrintedProperty` prints when the reference has no display alias and the target has no
+   * `exo__Asset_label` (req 0f992e88, issue #4303). Before this requirement that position printed
+   * the bare linkpath, which in a UID-canon vault is a UID.
+   *
+   * ⛔ Only a name the engine COMPOSED qualifies — provenance `spec` (a vault
+   * `exo__DisplayNameSpec`) or `tboxProjection` (the `prefix#slug` projection). `classTemplate`
+   * and `default` are refused deliberately, not defensively: rendered over a MISSING label the
+   * default classSuffix template yields debris such as `(period__Quarter)`, which is strictly
+   * worse than the UID it would replace. The refusal is what keeps the fallback a name.
+   *
+   * ⛤ BOUNDED, because this is the one place the naming model became recursive: a depth cap and
+   * a re-entry set. A→B→A terminates with the re-entered side printing its linkpath, exactly as
+   * it did before. The state lives on the instance and is unwound in `finally`; `render` is
+   * synchronous and single-threaded, so a nested render cannot interleave with another.
+   */
+  private resolveNestedDisplayName(
+    wikilink: string,
+    resolvedMetadata?: Record<string, unknown> | null,
+  ): string | null {
+    // Without a metadata resolver there is no way to reach the target at all — and calling
+    // through it would throw. The pre-requirement output (the bare linkpath) is the right answer.
+    if (!this.metadataResolver) return null;
+
+    // ⛤ `.md` is stripped so the re-entry key is the ASSET, not the spelling of the reference:
+    // `[[uid]]` and `[[uid.md]]` name one target and must collide in `nestedTargets`. The depth
+    // cap alone would already bound them, but a guard that silently keys on a spelling is the
+    // kind that stops working when someone later raises the cap.
+    const target = unwrapLinkTarget(wikilink).replace(/\.md$/, "");
+    if (this.nestedDepth >= MAX_NESTED_DISPLAY_NAME_DEPTH) return null;
+    if (this.nestedTargets.has(target)) return null;
+
+    // The caller (the engine) has usually dereferenced this very target already — reuse its
+    // result rather than paying a second `readFileSync` on the filesystem adapter. `undefined`
+    // means "not looked up yet"; `null` means "looked up, does not resolve".
+    const targetMetadata =
+      resolvedMetadata !== undefined ? resolvedMetadata : this.metadataResolver(wikilink);
+    // Defensive, stated as such: an unresolvable reference would render as `default` below and be
+    // refused by the provenance gate anyway — this only skips the work.
+    if (!targetMetadata) return null;
+
+    this.nestedDepth += 1;
+    this.nestedTargets.add(target);
+    try {
+      // The basename handed down is the unwrapped linkpath — the very string the caller prints
+      // when this returns null, so the nested render's own last resort equals the previous output.
+      const rendered = this.resolveWithProvenance({
+        metadata: targetMetadata,
+        basename: target,
+      });
+      if (rendered.provenance !== "spec" && rendered.provenance !== "tboxProjection") return null;
+      return rendered.displayName;
+    } catch {
+      // ⛔ CONTAINMENT, not tidiness. Before this requirement, printing a reference read ONE
+      // frontmatter key of the target; now it runs the target's WHOLE render — class extraction,
+      // the TBox projection, spec composition — over data the referring asset's author does not
+      // control. None of the twelve call sites wraps `resolve()`, and this class already carries
+      // the scar of that (see the classTemplates note above: "an uncaught throw here breaks naming
+      // wholesale rather than spoiling one name"). A defect in ONE label-less target must degrade
+      // to its linkpath, not blank the name of everything that references it.
+      //
+      // ⛤ Swallowed rather than logged BY CONSTRUCTION: archgate ARCH-008 `no-domain-side-effects`
+      // forbids console in the domain layer, and this class takes no logger port.
+      return null;
+    } finally {
+      this.nestedTargets.delete(target);
+      this.nestedDepth -= 1;
+    }
   }
 
   /**

@@ -1,4 +1,5 @@
 import type { IRI, Literal, Triple } from '../infrastructure/sparql/algebra/AlgebraOperation';
+import { IRI as RdfIRI } from '../domain/models/rdf/IRI';
 
 export type Severity = 'sh:Violation' | 'sh:Warning' | 'sh:Info';
 
@@ -154,6 +155,101 @@ function isXSDDatatypeIRI(iri: string): boolean {
   return XSD_DATATYPE_PREFIXES.some((prefix) => iri.startsWith(prefix));
 }
 
+/** Local name of an XSD datatype IRI in either accepted prefix form; null otherwise. */
+function xsdLocalName(iri: string): string | null {
+  for (const prefix of XSD_DATATYPE_PREFIXES) {
+    if (iri.startsWith(prefix)) return iri.substring(prefix.length);
+  }
+  return null;
+}
+
+const XSD_DECIMAL = 'http://www.w3.org/2001/XMLSchema#decimal';
+const XSD_INTEGER = 'http://www.w3.org/2001/XMLSchema#integer';
+const XSD_STRING = 'http://www.w3.org/2001/XMLSchema#string';
+
+const INTEGER_LEXICAL = /^[+-]?\d+$/;
+const NON_NEGATIVE_INTEGER_LEXICAL = /^\+?\d+$/;
+const DECIMAL_LEXICAL = /^[+-]?(\d+(\.\d*)?|\.\d+)$/;
+const FLOAT_LEXICAL = /^([+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?|[+-]?INF|NaN)$/;
+
+/**
+ * Lexical spaces (XSD 1.1 §3.3, the subset a YAML number can denote) that a
+ * NUMBER-TAGGED literal (`xsd:integer` or `xsd:decimal` — the two tags
+ * NoteToRDFConverter emits for a YAML number, ticket d5ad5217) may satisfy by
+ * its lexical form. Keyed by the expected datatype's local name; a datatype
+ * absent here keeps strict tag equality for a NUMBER tag (e.g. xsd:string,
+ * xsd:dateTime, xsd:anyURI — a number under xsd:anyURI is a violation). The
+ * STRING tag has its own two excuses below: xsd:boolean and xsd:anyURI.
+ */
+const DECIMAL_TAG_LEXICAL: Readonly<Record<string, RegExp>> = {
+  integer: INTEGER_LEXICAL,
+  long: INTEGER_LEXICAL,
+  int: INTEGER_LEXICAL,
+  short: INTEGER_LEXICAL,
+  byte: INTEGER_LEXICAL,
+  nonNegativeInteger: NON_NEGATIVE_INTEGER_LEXICAL,
+  unsignedLong: NON_NEGATIVE_INTEGER_LEXICAL,
+  unsignedInt: NON_NEGATIVE_INTEGER_LEXICAL,
+  unsignedShort: NON_NEGATIVE_INTEGER_LEXICAL,
+  unsignedByte: NON_NEGATIVE_INTEGER_LEXICAL,
+  positiveInteger: /^\+?0*[1-9]\d*$/,
+  nonPositiveInteger: /^(-\d+|\+?0+)$/,
+  negativeInteger: /^-0*[1-9]\d*$/,
+  decimal: DECIMAL_LEXICAL,
+  float: FLOAT_LEXICAL,
+  double: FLOAT_LEXICAL,
+  gYear: /^-?\d{4,}(Z|[+-]\d{2}:\d{2})?$/,
+};
+
+const BOOLEAN_LEXICAL = /^(true|false)$/;
+
+/**
+ * sh:datatype conformance of a literal (ticket a9b55ead; integer tag d5ad5217).
+ *
+ * A YAML frontmatter scalar carries no datatype: NoteToRDFConverter tags a
+ * whole YAML number `xsd:integer` and a fractional one `xsd:decimal`
+ * (`pmi__Principle_number: 7` → `"7"^^xsd:integer`, `7.5` → `"7.5"^^xsd:decimal`;
+ * parity with the JSON-LD parser, founder decision 2026-09-19), and a YAML
+ * boolean as a plain literal (`"true"^^xsd:string`). Those tags are a
+ * converter artefact, not the author's declaration — the declared range is.
+ * So, ONLY where the tag is that artefact, the literal conforms when its
+ * LEXICAL form is valid for the expected datatype:
+ *   - tag xsd:integer / xsd:decimal + expected numeric family / gYear → lexical check
+ *   - tag xsd:string   + expected xsd:boolean            → `true` | `false`
+ *   - tag xsd:string   + expected xsd:anyURI             → `IRI.isValidIRI(value)`
+ *     (ticket e55b0a07, amendment of req b0ad1160 under the same founder rule:
+ *     the converter tags EVERY YAML string xsd:string, so an anyURI range was
+ *     unreachable by construction). The lexicon is core's single IRI notion —
+ *     an ABSOLUTE IRI: non-empty, no whitespace, scheme in the core allowlist,
+ *     WHATWG-parseable or `urn:`. Relative references, empty strings and
+ *     schemes outside the allowlist are violations — deliberately stricter
+ *     than XSD 1.1 §3.3.17, whose lexical space admits any string.
+ * Every other pairing keeps strict tag equality (W3C SHACL semantics): an ISO
+ * string tagged xsd:dateTime under xsd:date, a quoted "10" (xsd:string) under
+ * xsd:integer, a number under xsd:string and a number under xsd:anyURI are
+ * still violations.
+ */
+function literalConformsToDatatype(
+  value: string,
+  literalDatatype: string,
+  expected: string,
+): boolean {
+  if (literalDatatype === expected) return true;
+  const local = xsdLocalName(expected);
+  if (local === null) return false;
+  if (literalDatatype === XSD_DECIMAL || literalDatatype === XSD_INTEGER) {
+    const lexical = DECIMAL_TAG_LEXICAL[local];
+    return lexical !== undefined && lexical.test(value);
+  }
+  if (literalDatatype === XSD_STRING && local === 'boolean') {
+    return BOOLEAN_LEXICAL.test(value);
+  }
+  if (literalDatatype === XSD_STRING && local === 'anyURI') {
+    return RdfIRI.isValidIRI(value);
+  }
+  return false;
+}
+
 /**
  * Extract bare UUID from a vault subject IRI of the form
  * `obsidian://vault/.../<uuid>.md` or `obsidian://vault/<uuid>.md`.
@@ -293,6 +389,36 @@ export function validate(
             // and are never registered in subjectClasses. Skip the sh:class check for
             // them — they are authoritative by definition (fix: 5 external IRI violations).
             if (isExternalOntologyIRI(obj.value)) continue;
+            // Mirror of the Literal branch below. A range entry naming an XSD
+            // datatype expresses `sh:datatype`, which by SHACL semantics
+            // constrains *Literal* nodes only (see XSD_DATATYPE_PREFIXES: "All
+            // other range entries are sh:class constraints (apply to IRI nodes
+            // only)"). Judging an IRI against such an entry as if it were a
+            // class asks whether the value is an instance of `xsd:string`,
+            // which no well-formed vault asset can be — so for well-formed
+            // data the check had no reachable green outcome.
+            //
+            // ⛔ Not "no green outcome for ANY data", which an earlier revision
+            // of this comment claimed: a subject whose own `exo__Instance_class`
+            // points at a datatype IRI makes `vc === expectedClass` true, and
+            // the pre-fix branch did go green there (measured, PR #4304 review).
+            // That input is corrupt, and both revisions treat it identically —
+            // the claim was wrong, the conclusion was not.
+            //
+            // It would also blame the wrong actor: the node kind here is not
+            // authored but INFERRED. The converter expands a bare
+            // `prefix__Name` string into a symbolic IRI without consulting the
+            // declared range (`valueToRDFObject` → `isClassReference`), so an
+            // IRI under a datatype-only range says nothing about what the
+            // author actually wrote. Issue #4268.
+            const classRanges = shape.range.filter((r) => !isXSDDatatypeIRI(r));
+            // ⚠ Accepted consequence: an IRI value under a datatype-only range
+            // now yields no signal at all — including a genuinely dangling
+            // reference, which used to surface as the `unresolvable-ref`
+            // warning below. That warning was a side effect of a class check
+            // that does not apply here; the dangling-reference signal for such
+            // predicates belongs with the TBox fix (#4305), not here.
+            if (classRanges.length === 0) continue;
             // Class range: value's class(es) must satisfy range via hierarchy.
             // Direct lookup first; if it misses and the value IRI ends with a
             // UUID-named markdown file, fall back to the UID-keyed index so
@@ -307,7 +433,7 @@ export function validate(
               }
             }
             // R13: ANY-of semantics — any value class matching any range class satisfies
-            const rangeConforms = shape.range.some((expectedClass) =>
+            const rangeConforms = classRanges.some((expectedClass) =>
               valueClasses.some(
                 (vc) => vc === expectedClass || hierarchy.isSubClassOf(vc, expectedClass),
               ),
@@ -332,11 +458,11 @@ export function validate(
                 severity: unresolvableRef ? 'sh:Warning' : shape.severity,
                 constraint: 'class',
                 message: unresolvableRef
-                  ? `sh:class unresolvable-ref: <${obj.value}> has no resolvable type in this vault (cross-vault, symbolic, or external reference); not validated against ${shape.range.join(' | ')}`
+                  ? `sh:class unresolvable-ref: <${obj.value}> has no resolvable type in this vault (cross-vault, symbolic, or external reference); not validated against ${classRanges.join(' | ')}`
                   : shape.message ??
-                    `sh:class violation: <${obj.value}> does not conform to expected class ${shape.range.join(' | ')}`,
+                    `sh:class violation: <${obj.value}> does not conform to expected class ${classRanges.join(' | ')}`,
                 actualValue: obj.value,
-                expectedRange: shape.range.join(' | '),
+                expectedRange: classRanges.join(' | '),
               });
             }
           } else if (obj.type === 'literal') {
@@ -353,7 +479,9 @@ export function validate(
             if (datatypeRanges.length === 0) continue;
             const literalDatatype =
               obj.datatype ?? 'http://www.w3.org/2001/XMLSchema#string';
-            const datatypeConforms = datatypeRanges.some((r) => r === literalDatatype);
+            const datatypeConforms = datatypeRanges.some((r) =>
+              literalConformsToDatatype(obj.value, literalDatatype, r),
+            );
             if (!datatypeConforms) {
               violations.push({
                 focusNode: subjectIRI,

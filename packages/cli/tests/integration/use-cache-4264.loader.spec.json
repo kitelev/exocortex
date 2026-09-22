@@ -1,0 +1,45 @@
+{
+  "_doc": "Revert-verify mutants for #4264 (req cb707868-356f-495d-825a-182e66ba8bcd), subject packages/cli/src/cache/loadVaultTriples.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/use-cache-4264.loader.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's subject and runs the two #4264 suites; `expect` names the axes that MUST go red). Six specs, one per subject file, because the driver mutates one file per spec. Recorded runs: see PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/cache/loadVaultTriples.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/use-cache-apply-write-through-4264.integration.test.ts tests/unit/cache/CacheManager.writeThrough.test.ts tests/unit/cache/loadVaultTriples.test.ts 2>&1",
+  "red_re": "› ([AULP]\\d+\\w*) ",
+  "mutants": {
+    "L5_caller_adapter_ignored_on_full_parse": {
+      "from": "  const vaultAdapter =\n    options.vaultAdapter ?? new FileSystemVaultAdapter(vaultPath);",
+      "to": "  const vaultAdapter = new FileSystemVaultAdapter(vaultPath);",
+      "expect": ["L1"]
+    },
+    "L6_vault_mismatch_guard_removed": {
+      "from": "    if (cacheManager.getCachePath() !== expectedCachePath) {",
+      "to": "    if (cacheManager.getCachePath() !== expectedCachePath && false) {",
+      "expect": ["L3"]
+    },
+    "L1_write_through_failure_propagates_to_the_command": {
+      "from": "  try {\n    return await cacheManager.refreshAfterWrite();\n  } catch (error) {\n    return {\n      mode: \"failed\",\n      reparsedFiles: 0,\n      reason: error instanceof Error ? error.message : String(error),\n    };\n  }",
+      "to": "  return await cacheManager.refreshAfterWrite();",
+      "expect": ["A5"]
+    },
+    "L2_caller_owned_cache_manager_ignored": {
+      "from": "    const cacheManager = options.cacheManager ?? new CacheManager(vaultPath);",
+      "to": "    const cacheManager = new CacheManager(vaultPath);",
+      "expect": ["A8"]
+    },
+    "L3_hit_notice_mislabelled_as_delta": {
+      "from": "    case \"hit\":\n      return \"⚡ triple cache: hit\";",
+      "to": "    case \"hit\":\n      return \"♻️  triple cache: delta (0 file(s) re-parsed)\";",
+      "expect": ["A3", "A4", "A9"]
+    },
+    "L4_loader_result_drops_the_cache_manager": {
+      "from": "      reparsedFiles: cacheResult.reparsedFiles,\n      cacheManager,\n      explicitCount: cacheResult.explicitCount,",
+      "to": "      reparsedFiles: cacheResult.reparsedFiles,\n      explicitCount: cacheResult.explicitCount,",
+      "expect": ["A3", "A4"],
+      "_note": "anchor re-based 2026-09-19 (#4272 added explicitCount/zeroTriplePaths after cacheManager); expectation unchanged"
+    }
+  }
+}

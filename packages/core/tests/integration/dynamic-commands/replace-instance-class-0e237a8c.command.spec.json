@@ -1,0 +1,35 @@
+{
+  "_doc": "Mutants for req 0e237a8c on the COMMAND asset. Subject is vault DATA, not code: the guard's product is the shipped assetspace, so each mutant is a plausible way a future edit unwires the command while the engine (req 02de55a4) stays correct. Anchors carry a leading newline because the asset body documents the same lines in a YAML fence (integration-test-revert-verify §A12 fourth form). Every `expect` below is the MEASURED red set; the prediction written BEFORE the run is quoted in each `_note`.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "red_re": "› (D\\d+) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/exoas-exocmd/exocmd/7f1b47a3-9997-4d1f-9c6f-9ca52b06f778.md",
+  "harness": "cd \"$(dirname {subject})/../../core\" && node ../../node_modules/jest/bin/jest.js tests/integration/dynamic-commands/replace-instance-class-shape.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_cliname_renamed": {
+      "_note": "`apply replace-instance-class` stops resolving — the only sanctioned entry point. Predicted D1.",
+      "from": "\nexocmd__Command_cliName: replace-instance-class\n",
+      "to": "\nexocmd__Command_cliName: replace-instance-class-mutant\n",
+      "expect": ["D1"]
+    },
+    "M2_grounding_repointed": {
+      "_note": "Command points at the APPEND grounding instead — it would silently add a class rather than swap one, which is the exact contradictory two-class state req 02de55a4 R3 exists to prevent. Predicted D1.",
+      "from": "\nexocmd__Command_grounding: \"[[60db3634-4752-4811-802d-5a28c510a4bc]]\"\n",
+      "to": "\nexocmd__Command_grounding: \"[[ac0cf4ce-d9cf-4e1d-87e0-5bdf441d7dfe]]\"\n",
+      "expect": ["D1"]
+    },
+    "M3_destructive_cleared": {
+      "_note": "CLI stops prompting before rewriting a guarded property. Predicted D1.",
+      "from": "\nexocmd__Command_destructive: true\n",
+      "to": "\nexocmd__Command_destructive: false\n",
+      "expect": ["D1"]
+    }
+  }
+}

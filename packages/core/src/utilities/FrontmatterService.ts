@@ -10,7 +10,9 @@
 
 import { loadDefaultSpec, orderProperties } from "../services/OrderSpecResolver";
 import { serializeYamlScalar, STRING_SCALAR_PROPERTIES } from "./yamlScalar";
-import { canonicalYamlKey } from "../services/NoteToRDFConverter";
+import { canonicalYamlKey, LEGACY_YAML_KEYS } from "../services/NoteToRDFConverter";
+import type { IFrontmatter } from "../interfaces/IVaultAdapter";
+import { iriToObsidianName } from "./iriToObsidianName";
 
 /**
  * Result of frontmatter parsing operation
@@ -223,10 +225,34 @@ export class FrontmatterService {
     // Replace frontmatter block in original content. Function-replacer so a
     // `$`-bearing value spliced into `updatedFrontmatter` is not re-interpreted
     // as a String.replace pattern (#3748 family / #3795 review H1).
-    return content.replace(
+    const replaced = content.replace(
       FrontmatterService.FRONTMATTER_REGEX,
       () => `---\n${updatedFrontmatter}\n---`,
     );
+    // req 960d7a3f (Scenario C): a write to the canonical key also clears its
+    // LEGACY physical key(s) (`exo__Asset_archived` ← bare `archived`), so one
+    // write migrates the carrier and the file never carries both spellings.
+    return this.removeLegacyKeys(replaced, property);
+  }
+
+  /**
+   * Remove every legacy physical spelling of `canonicalKey` (see
+   * {@link LEGACY_YAML_KEYS}); a no-op for keys that have none.
+   */
+  private removeLegacyKeys(content: string, canonicalKey: string): string {
+    let result = content;
+    for (const legacy of LEGACY_YAML_KEYS.get(canonicalKey) ?? []) {
+      // `removePhysicalKey` keeps the historical byte-shape of `removeProperty`
+      // (a key on the FIRST line is replaced by a blank line). A migrated
+      // legacy key must not leave that blank line behind, so remember whether
+      // the legacy key led the block and strip the blank line it becomes.
+      const ledTheBlock = new RegExp("^---\\r?\\n" + legacy + ":").test(result);
+      result = this.removePhysicalKey(result, legacy);
+      if (ledTheBlock) {
+        result = result.replace(/^---(\r?\n)\1/, "---$1");
+      }
+    }
+    return result;
   }
 
   /**
@@ -265,6 +291,22 @@ export class FrontmatterService {
    */
   removeProperty(content: string, property: string): string {
     property = canonicalYamlKey(property);
+    // req 960d7a3f (Scenario D): removing the canonical key also clears its
+    // LEGACY spelling(s) — `un-archive` on a not-yet-migrated `archived: true`
+    // carrier must leave neither key behind.
+    return this.removeLegacyKeys(
+      this.removePhysicalKey(content, property),
+      property,
+    );
+  }
+
+  /**
+   * Remove ONE physical YAML key (no canonicalisation, no legacy expansion) —
+   * the primitive behind {@link removeProperty}. Kept separate so a legacy
+   * spelling can be removed without being re-canonicalised into the very key
+   * that was just written.
+   */
+  private removePhysicalKey(content: string, property: string): string {
     const parsed = this.parse(content);
 
     if (!parsed.exists) {
@@ -339,50 +381,170 @@ export class FrontmatterService {
     );
   }
 
-  /** Namespace IRI → Obsidian property name prefix map */
-  private static readonly IRI_PREFIX_MAP: Record<string, string> = {
-    "https://exocortex.my/ontology/ems#": "ems__",
-    "https://exocortex.my/ontology/exo#": "exo__",
-    "https://exocortex.my/ontology/exocmd#": "exocmd__",
-    "https://exocortex.my/ontology/ims#": "ims__",
-    "https://exocortex.my/ontology/ztlk#": "ztlk__",
-    "https://exocortex.my/ontology/ptms#": "ptms__",
-    "https://exocortex.my/ontology/lit#": "lit__",
-    "https://exocortex.my/ontology/inbox#": "inbox__",
-    "https://exocortex.my/ontology/pmbok#": "pmbok__",
-  };
-
   /**
    * Reverse-map a full IRI property name to Obsidian-style name.
    * E.g. "https://exocortex.my/ontology/ems#Effort_status" → "ems__Effort_status"
    * Non-IRI values pass through unchanged.
+   *
+   * ⛔ The result is the PHYSICAL WRITE KEY, not a display hint:
+   * {@link updateProperty} and {@link applyPatch} both splice
+   * `canonicalYamlKey(normalizeIRI(key))` into the YAML block. So whatever this
+   * returns for an unrecognised shape becomes a real frontmatter key on disk —
+   * which is why the two failure modes below were silent (`changed: true`, no
+   * error) rather than loud. Ticket `c8fc6793`.
+   *
+   * ONE source of truth: `iriToObsidianName` → `Namespace.fromTermIRI`, the
+   * shared inverse of the forward emission path (`Namespace.fromPropertyKey` /
+   * `Namespace.term`). It resolves EVERY registered W3C vocabulary and EVERY
+   * ad-hoc `https://exocortex.my/ontology/<prefix>#` namespace.
+   *
+   * ⛤ A static NINE-namespace `IRI_PREFIX_MAP` used to sit here as a HOT PATH,
+   * guarded by the same local-name rule so that it could only answer FASTER,
+   * never DIFFERENTLY (ticket `c8fc6793`, req `eac1690d`). Ticket `6572f3f3` /
+   * req `38e3f174` removed it: a second literal list of bases is precisely what
+   * {@link Namespace.fromTermIRI}'s own docstring warns against, and it is the
+   * reason the three independent IRI↔prefix implementations could drift. The
+   * measured price of the removal is +300 ns per key — +4.5 µs on a 15-key
+   * asset write, +72 ms across a 16 000-file sweep — i.e. below the noise of the
+   * file I/O it accompanies. Both prior failure modes stay closed, now by the
+   * single inverse rather than by keeping two branches in agreement:
+   *
+   *   - `…/ontology/flow#Stage_chatId` (namespace outside the old nine) →
+   *     `flow__Stage_chatId`, not the raw IRI as a physical key.
+   *   - `…/ontology/ems#` (EMPTY local name — the shape of every
+   *     `exo__Ontology_url`) → returned untouched, not the junk prefix `ems__`.
+   *
+   * ⛤ Of the three implementations named in `6572f3f3` two are now one; the
+   * third, `PropertySchemaResolver`, derives from the same inverse as of req
+   * `38e3f174`.
    */
   static normalizeIRI(property: string): string {
-    const hash = property.lastIndexOf("#");
-    if (hash < 0) return property;
-    const ns = property.substring(0, hash + 1);
-    const local = property.substring(hash + 1);
-    const prefix = FrontmatterService.IRI_PREFIX_MAP[ns];
-    return prefix ? prefix + local : property;
+    // ⛔ LOAD-BEARING, not a micro-optimisation. Besides "no hash ⇒ not a term
+    // IRI", this early return is the only thing keeping `iriToObsidianName`'s
+    // SECOND shape (vault URL → basename) out of the write-key path:
+    // `obsidian://vault/a/b.md` would otherwise become the key `b`. That shape
+    // is consumed by {@link normalizeIRIValue} with its own anchored regex, so
+    // this function must leave it alone. Measured on `origin/main` 0857307b:
+    // deleting this line reddened NOTHING across 132 tests in 4 suites — the
+    // property was true but unlocked; req `38e3f174` Scenario H is its spec.
+    if (property.lastIndexOf("#") < 0) return property;
+    return iriToObsidianName(property) ?? property;
   }
 
   /**
    * Reverse-map an IRI value to wikilink format.
    * E.g. "obsidian://vault/ems/ems__EffortStatusDoing.md" → "\"[[ems__EffortStatusDoing]]\""
    * Non-IRI and non-obsidian:// values pass through unchanged.
+   *
+   * Two forms, one per write path (req `27fbe40b`, ticket 73b16cc4):
+   * - default — the QUOTED YAML scalar `"[[x]]"`, ready to be spliced into a
+   *   frontmatter block as text ({@link updateProperty} inserts it verbatim);
+   * - `{ bare: true }` — the bare `[[x]]`, for the OBJECT path
+   *   ({@link applyPatch}): the value becomes a property of the live object
+   *   and the serialiser (js-yaml on the CLI, Obsidian's `processFrontMatter`
+   *   in the plugin) quotes it on disk — pre-quoting would make the quotes
+   *   part of the string (`'"[[x]]"'`, the double-wrap PR #4243's review named).
    */
-  static normalizeIRIValue(value: string): string {
+  static normalizeIRIValue(
+    value: string,
+    options: { readonly bare?: boolean } = {},
+  ): string {
+    const wrap = (inner: string): string =>
+      options.bare ? `[[${inner}]]` : `"[[${inner}]]"`;
     // Handle obsidian:// vault URLs
     const obsMatch = value.match(/^obsidian:\/\/vault\/.*\/([^/]+)\.md$/);
     if (obsMatch) {
-      return `"[[${obsMatch[1]}]]"`;
+      return wrap(obsMatch[1]);
     }
     // Handle full ontology IRIs as values
     const normalized = FrontmatterService.normalizeIRI(value);
     if (normalized !== value) {
-      return `"[[${normalized}]]"`;
+      return wrap(normalized);
     }
     return value;
+  }
+
+  /**
+   * Apply `patch` to the live frontmatter OBJECT `target` in the chokepoint's
+   * key dialect — the single carrier of that dialect for the object-shaped
+   * write path (req `2a020489`; the text-shaped path is {@link updateProperty},
+   * which applies the same rule one property at a time).
+   *
+   * Both production `IVaultAdapter.updateFrontmatter` implementations call
+   * this and re-implement none of it: `ObsidianVaultAdapter` hands in the live
+   * object Obsidian's `processFrontMatter` gives it (which is why this mutates
+   * `target` in place rather than returning a copy), `FileSystemVaultAdapter`
+   * hands in the parsed YAML block it is about to serialise back.
+   *
+   * Contract (port JSDoc `IVaultFrontmatterManager.updateFrontmatter` says the
+   * same from the caller's side):
+   *
+   * 1. **PATCH, not REPLACE** — every key of `target` that `patch` does not
+   *    carry is left untouched.
+   * 2. **Omission is not deletion** — the only keys ever removed from `target`
+   *    are the {@link LEGACY_YAML_KEYS} spellings of a canonical key this call
+   *    has just written (bare `archived` after a write of
+   *    `exo__Asset_archived`); removing a property is {@link removeProperty}'s
+   *    job, not this one's.
+   * 3. **Every written key goes through the dialect** — each patch key is
+   *    mapped through `canonicalYamlKey(normalizeIRI(key))` (`archived` →
+   *    `exo__Asset_archived`, `exo__Asset_aliases` → `aliases`, an
+   *    `https://…#Local` IRI → `prefix__Local`, anything else → itself), each
+   *    string value through {@link normalizeIRIValue}, and a patch that carries
+   *    BOTH spellings of one key resolves canonical-wins (the legacy entry is
+   *    skipped when the patch already holds the canonical key — the same
+   *    priority `NoteToRDFConverter` guard M1 and
+   *    `MetadataHelpers.ARCHIVED_FLAG_KEYS` apply on the read side). A patch
+   *    that re-emits the full object (`{...current, [prop]: value}`) therefore
+   *    canonicalises every current key, which is what migrates a legacy
+   *    carrier on any edit (req `de7131ae` Scenario E).
+   *
+   * A patch value of `undefined` is "no opinion": the key is neither written
+   * nor legacy-dropped (the CLI dumper would otherwise delete it — a removal
+   * this path must not express).
+   *
+   * Not covered (named, not changed — PR #4241 review LOW-3): the reverse
+   * write of the UNPREFIXED direction. A literal `exo__Asset_aliases:` already
+   * on disk is NOT removed here, because {@link LEGACY_YAML_KEYS} has no entry
+   * for it; the chokepoint behaves the same.
+   *
+   * Reference values are stored BARE (`[[x]]`, req `27fbe40b`): this is the
+   * object path, so the serialiser quotes the string on disk — the CLI adapter
+   * with `quoteStyle: "double"` (js-yaml 5) writes `key: "[[x]]"` for a
+   * reference string, the same line the text path {@link updateProperty}
+   * writes; pre-quoting (the pre-27fbe40b behaviour) made the quotes part of
+   * the value (`"\"[[x]]\""` on disk). Arrays are not normalised on either path.
+   *
+   * @returns `target`, for callers that serialise the result.
+   */
+  static applyPatch(target: IFrontmatter, patch: IFrontmatter): IFrontmatter {
+    for (const key of Object.keys(patch)) {
+      const canonicalKey = canonicalYamlKey(FrontmatterService.normalizeIRI(key));
+      if (
+        canonicalKey !== key &&
+        Object.prototype.hasOwnProperty.call(patch, canonicalKey)
+      ) {
+        // Canonical-wins: the patch already carries the canonical spelling of
+        // this key; the legacy/prefixed alias must not overwrite it.
+        continue;
+      }
+      let value = patch[key];
+      if (value === undefined) {
+        // `undefined` is "no opinion", not a value: writing it would make the
+        // CLI's YAML dumper DROP the key (js-yaml skips undefined), i.e. a
+        // deletion the contract says this path cannot express — so neither
+        // the write nor the legacy-spelling drop happens (PR #4243 review).
+        continue;
+      }
+      if (typeof value === "string") {
+        value = FrontmatterService.normalizeIRIValue(value, { bare: true });
+      }
+      target[canonicalKey] = value;
+      for (const legacy of LEGACY_YAML_KEYS.get(canonicalKey) ?? []) {
+        delete target[legacy];
+      }
+    }
+    return target;
   }
 
   /**
@@ -401,7 +563,11 @@ export class FrontmatterService {
    * // result === '---\nstatus: draft\npriority: high\n---\nBody content'
    * ```
    */
-  createFrontmatter(content: string, properties: Record<string, unknown>): string {
+  createFrontmatter(
+    content: string,
+    properties: Record<string, unknown>,
+    declaredRangeOf?: (suppliedKey: string) => readonly string[] | undefined,
+  ): string {
     // req 869561bf — canonicalise BEFORE ordering, so the order spec and the
     // `STRING_SCALAR_PROPERTIES` lookup inside `serializeValue` both see the key
     // the file will actually carry. Doing it per-entry during the map instead
@@ -409,14 +575,30 @@ export class FrontmatterService {
     // as duplicate YAML keys; collapsing them here makes last-write-wins
     // explicit and keeps the emitted document parseable.
     const canonical: Record<string, unknown> = {};
+    // Ticket 534a7a46 — the key each canonical key was SUPPLIED as, because the
+    // range lookup is made with THAT one, exactly as in this method's twin
+    // `MetadataHelpers.buildFileContent`: the TBox keys a range by the def's
+    // `prefix__Name` label, so `exo__Asset_pinned` resolves a range in both
+    // writers even though it is EMITTED as the bare `pinned:` key, and a caller
+    // passing the bare `aliases` resolves nothing in either. When two supplied
+    // keys collapse onto one canonical key the later entry wins the value, so it
+    // also wins the lookup key.
+    const suppliedKeyOf: Record<string, string> = {};
     for (const [key, value] of Object.entries(properties)) {
-      canonical[canonicalYamlKey(key)] = value;
+      const canonicalKey = canonicalYamlKey(key);
+      canonical[canonicalKey] = value;
+      suppliedKeyOf[canonicalKey] = key;
     }
     const ordered = orderProperties(canonical, loadDefaultSpec());
     // Issue #3748: quote scalars on new-asset writes so a label / alias
     // containing `: ` (or another YAML indicator) stays valid YAML.
-    const frontmatterLines = Object.entries(ordered).map(
-      ([key, value]) => this.serializeValue(key, value, true),
+    const frontmatterLines = Object.entries(ordered).map(([key, value]) =>
+      this.serializeValue(
+        key,
+        value,
+        true,
+        declaredRangeOf?.(suppliedKeyOf[key] ?? key),
+      ),
     );
 
     const frontmatterBlock = `---\n${frontmatterLines.join("\n")}\n---`;
@@ -481,6 +663,7 @@ export class FrontmatterService {
     property: string,
     value: unknown,
     quoteScalars = false,
+    declaredRange?: readonly string[],
   ): string {
     // #3750 MEDIUM-3: also quote scalar-looking strings (123 / true / date)
     // for string-semantic properties (label / aliases) so they round-trip as
@@ -493,13 +676,13 @@ export class FrontmatterService {
       const items = value
         .map(
           (v) =>
-            `  - ${quoteScalars ? serializeYamlScalar(v, quoteAmbiguous) : String(v)}`,
+            `  - ${quoteScalars ? serializeYamlScalar(v, quoteAmbiguous, declaredRange) : String(v)}`,
         )
         .join("\n");
       return `${property}:\n${items}`;
     }
     const scalar = quoteScalars
-      ? serializeYamlScalar(value, quoteAmbiguous)
+      ? serializeYamlScalar(value, quoteAmbiguous, declaredRange)
       : String(value);
     return `${property}: ${scalar}`;
   }

@@ -1,0 +1,23 @@
+{
+  "_doc": "Non-vacuity mutant for the D4 control. D4 must stay GREEN under every mutant of the reclass pair above — which is indistinguishable from an axis that cannot red at all unless its own mutant is shown (integration-test-revert-verify §A55).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "red_re": "› (D\\d+) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/exoas-exocmd/exocmd/e258207a-4544-4809-8ee3-96eb111ecd84.md",
+  "harness": "cd \"$(dirname {subject})/../../core\" && node ../../node_modules/jest/bin/jest.js tests/integration/dynamic-commands/replace-instance-class-shape.test.ts --verbose 2>&1",
+  "mutants": {
+    "M9_sibling_cliname_renamed": {
+      "_note": "The additive sibling is disturbed. Predicted D4 — and D1..D3 must stay green, proving the control is independent of the reclass pair.",
+      "from": "\nexocmd__Command_cliName: append-instance-class\n",
+      "to": "\nexocmd__Command_cliName: append-instance-class-mutant\n",
+      "expect": ["D4"]
+    }
+  }
+}

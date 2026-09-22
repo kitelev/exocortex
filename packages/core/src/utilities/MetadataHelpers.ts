@@ -77,46 +77,54 @@ export class MetadataHelpers {
     return false;
   }
 
+  /**
+   * Whether an asset is archived, reading the three carrier spellings in
+   * priority order (req 960d7a3f, ticket da0f73a3):
+   *
+   *   1. `exo__Asset_archived` — the CANONICAL key (declared in the exoas-exo
+   *      TBox, the only spelling writers emit since 2026-09-15);
+   *   2. `exo__Asset_isArchived` — read-only compatibility alias (never
+   *      written; 0 carriers measured across the three canonical vaults);
+   *   3. `archived` — the legacy bare Obsidian-style key, still carried by
+   *      not-yet-migrated assets.
+   *
+   * The FIRST spelling present decides (a `false` under a higher-priority key
+   * is not overridden by a `true` under a lower one). Accepted truthy forms:
+   * `true`, `1`, `"true"`, `"yes"`, `"1"` (case-insensitive, trimmed); a
+   * SINGLE-element YAML list is unwrapped (`archived:\n  - true` — the shape
+   * Obsidian's list-typed property editor produces; AreaHierarchyBuilder /
+   * AreaSelectionModal precedent); any other shape (multi-element list,
+   * object) is NOT archived.
+   */
   static isAssetArchived(metadata: Record<string, unknown>): boolean {
-    // Check exo__Asset_isArchived field with full truthy value support
-    const exoArchivedValue = metadata?.exo__Asset_isArchived;
-    if (exoArchivedValue !== undefined && exoArchivedValue !== null) {
-      if (exoArchivedValue === true || exoArchivedValue === 1) {
-        return true;
-      }
-      if (typeof exoArchivedValue === "string") {
-        const normalized = exoArchivedValue.toLowerCase().trim();
-        if (normalized === "true" || normalized === "yes" || normalized === "1") {
-          return true;
-        }
-      }
-      if (typeof exoArchivedValue === "boolean") {
-        return exoArchivedValue;
-      }
+    for (const key of MetadataHelpers.ARCHIVED_FLAG_KEYS) {
+      const raw = metadata?.[key];
+      if (raw === undefined || raw === null) continue;
+      return MetadataHelpers.isTruthyFlag(raw);
     }
+    return false;
+  }
 
-    // Fallback to legacy 'archived' field
-    const archivedValue = metadata?.archived;
+  /**
+   * Archive-flag carrier keys in priority order — canonical, compatibility
+   * alias, legacy bare. Exported so readers that key off the property NAME
+   * (plugin layout-section dependencies, relation-column filters) list the
+   * same spellings instead of re-deriving them.
+   */
+  static readonly ARCHIVED_FLAG_KEYS: readonly string[] = [
+    "exo__Asset_archived",
+    "exo__Asset_isArchived",
+    "archived",
+  ];
 
-    if (archivedValue === undefined || archivedValue === null) {
-      return false;
+  private static isTruthyFlag(raw: unknown): boolean {
+    const value = Array.isArray(raw) ? (raw.length === 1 ? raw[0] : undefined) : raw;
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value !== 0;
+    if (typeof value === "string") {
+      const normalized = value.toLowerCase().trim();
+      return normalized === "true" || normalized === "yes" || normalized === "1";
     }
-
-    if (typeof archivedValue === "boolean") {
-      return archivedValue;
-    }
-
-    if (typeof archivedValue === "number") {
-      return archivedValue !== 0;
-    }
-
-    if (typeof archivedValue === "string") {
-      const normalized = archivedValue.toLowerCase().trim();
-      return (
-        normalized === "true" || normalized === "yes" || normalized === "1"
-      );
-    }
-
     return false;
   }
 
@@ -144,9 +152,32 @@ export class MetadataHelpers {
     return `"${value}"`;
   }
 
+  /**
+   * @param declaredRangeOf — the property's declared `exo__Property_range`
+   *   values (ticket 2227d660), when the caller has a TBox to read them from
+   *   (`cli create` → `PropertyNameValidator`). Each scalar is then typed by
+   *   its range (`serializeYamlScalar`'s third argument); a key the lookup does
+   *   not know — or no lookup at all — keeps the shape-based behaviour, so the
+   *   plugin / apply callers are unaffected.
+   *
+   *   The lookup is called with the key AS THE CALLER SUPPLIED IT (before
+   *   `canonicalYamlKey`), the same key `set-property` resolves its range by
+   *   (ticket 8185c9dd, review #4282 LOW-1). Two layers of key mapping exist:
+   *   a DIRECT caller of this method supplies its own (possibly prefixed) keys
+   *   and this method maps them; `GenericAssetCreationService` hands in
+   *   already-canonical keys and maps canonical→supplied inside the lambda it
+   *   passes as `declaredRangeOf`. `cli create` keys its map by
+   *   the def's `prefix__Name` label, so `exo__Asset_pinned` resolves a
+   *   declared range in BOTH writers even though it is EMITTED as the bare
+   *   `pinned:` key (`UNPREFIXED_ASSET_FIELDS`); a caller passing the bare
+   *   `aliases` resolves nothing in both (no def carries that label) — the
+   *   two writers agree by construction. The `STRING_SCALAR_PROPERTIES` rule
+   *   stays keyed by the emitted name, as before.
+   */
   static buildFileContent(
     frontmatter: Record<string, unknown>,
     bodyContent?: string,
+    declaredRangeOf?: (suppliedKey: string) => readonly string[] | undefined,
   ): string {
     // req 869561bf — the asset-creation twin of
     // `FrontmatterService.createFrontmatter`; canonicalise on the same terms so
@@ -155,8 +186,15 @@ export class MetadataHelpers {
     // keeps a scalar-looking alias a string instead of letting YAML coerce it
     // to a Date — the #3750 MEDIUM-3 guarantee.
     const canonical: Record<string, unknown> = {};
+    // The key each canonical key was SUPPLIED as — the range lookup below is
+    // made with it (ticket 8185c9dd). When two supplied keys collapse onto one
+    // canonical key (`aliases` + `exo__Asset_aliases`) the later entry wins the
+    // value, so it also wins the lookup key.
+    const suppliedKeyOf: Record<string, string> = {};
     for (const [key, value] of Object.entries(frontmatter)) {
-      canonical[canonicalYamlKey(key)] = value;
+      const canonicalKey = canonicalYamlKey(key);
+      canonical[canonicalKey] = value;
+      suppliedKeyOf[canonicalKey] = key;
     }
     const ordered = orderProperties(canonical, loadDefaultSpec());
     const frontmatterLines = Object.entries(ordered)
@@ -167,13 +205,23 @@ export class MetadataHelpers {
         // (FrontmatterService.serializeValue). Scalar-looking coercion (#3750
         // MEDIUM-3) is gated to string-semantic properties (label/aliases).
         const quoteAmbiguous = STRING_SCALAR_PROPERTIES.has(key);
+        // Ticket 2227d660: the declared range (when the caller can read the
+        // TBox) types a canonical scalar — `-1001234567890` under
+        // `xsd:integer` stays bare, `42` under `xsd:string` is quoted. Looked
+        // up by the SUPPLIED key (ticket 8185c9dd): the map is keyed by the
+        // def's `prefix__Name` label, and a whitelisted bare key (`pinned`) is
+        // emitted unprefixed.
+        const declaredRange = declaredRangeOf?.(suppliedKeyOf[key] ?? key);
         if (Array.isArray(value)) {
           const arrayItems = value
-            .map((item) => `  - ${serializeYamlScalar(item, quoteAmbiguous)}`)
+            .map(
+              (item) =>
+                `  - ${serializeYamlScalar(item, quoteAmbiguous, declaredRange)}`,
+            )
             .join("\n");
           return `${key}:\n${arrayItems}`;
         }
-        return `${key}: ${serializeYamlScalar(value, quoteAmbiguous)}`;
+        return `${key}: ${serializeYamlScalar(value, quoteAmbiguous, declaredRange)}`;
       })
       .join("\n");
 

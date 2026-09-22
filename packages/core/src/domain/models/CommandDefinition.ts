@@ -215,6 +215,15 @@ export interface GroundingDefinition {
    *  `targetValue` for property_append semantics. Disjoint with
    *  `serviceCallPayload`. */
   readonly appendExpression?: string;
+  /** Req 02de55a4 (issue #4308): the value to FIND in an array-typed property
+   *  for `property_replace`. Resolved by `substituteVariables`, same token set
+   *  as `appendExpression`. A value absent from the list is a refusal, not an
+   *  append — see {@link GroundingType.PROPERTY_REPLACE}. */
+  readonly replaceFromExpression?: string;
+  /** Req 02de55a4 (issue #4308): the value to PUT IN ITS PLACE for
+   *  `property_replace`. Resolved by `substituteVariables`. Co-values and their
+   *  order are untouched. */
+  readonly replaceToExpression?: string;
   /** SPARQL UPDATE query (for sparql_update) */
   readonly sparqlUpdate?: string;
   /** Ordered sub-steps (for composite type) */

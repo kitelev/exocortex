@@ -107,6 +107,19 @@ export interface GenericAssetCreationConfig {
    * formatter (unchanged plugin/apply behaviour).
    */
   shapeRegistry?: ShapeRegistry;
+
+  /**
+   * Declared `exo__Property_range` values by property name (`prefix__Name`),
+   * as the mounted TBox writes them (`xsd:integer`, a class wikilink, …) —
+   * ticket 2227d660. When present, every frontmatter scalar is typed by its
+   * property's range on serialization (`MetadataHelpers.buildFileContent` →
+   * `serializeYamlScalar`): a canonical number under a numeric range stays
+   * bare even with a leading `-`, a number under `xsd:string` is quoted. A
+   * name absent from the map — or no map at all (plugin / apply callers) —
+   * keeps the shape-based behaviour. `cli create` fills it from the same
+   * one-pass TBox scan `PropertyNameValidator` already runs for the key check.
+   */
+  declaredRanges?: ReadonlyMap<string, readonly string[]>;
 }
 
 /**
@@ -235,7 +248,27 @@ export class GenericAssetCreationService {
       propertyDefinitions || [],
       uid,
     );
-    const content = MetadataHelpers.buildFileContent(frontmatter, config.body);
+    const declaredRanges = config.declaredRanges;
+    // Ticket 8185c9dd (review #4282 LOW-1): `generateFrontmatter` stores each
+    // `propertyValues` entry under its CANONICAL key (`exo__Asset_pinned` →
+    // `pinned`), while `declaredRanges` is keyed by the def's `prefix__Name`
+    // label — the key the caller SUPPLIED and the key `set-property` resolves
+    // by. Map the canonical key back to the supplied one for the lookup so the
+    // two writers type a whitelisted bare field identically. (Second layer of
+    // the key mapping: `MetadataHelpers.buildFileContent` maps the keys a
+    // DIRECT caller supplies; here the frontmatter is already canonical, so the
+    // reverse map lives in this lambda.)
+    const suppliedKeyOf = new Map<string, string>();
+    for (const rawKey of Object.keys(config.propertyValues ?? {})) {
+      suppliedKeyOf.set(canonicalYamlKey(rawKey), rawKey);
+    }
+    const content = MetadataHelpers.buildFileContent(
+      frontmatter,
+      config.body,
+      declaredRanges === undefined
+        ? undefined
+        : (key) => declaredRanges.get(suppliedKeyOf.get(key) ?? key),
+    );
 
     const folderPath = config.folderPath || this.getDefaultFolderPath(config);
     const fileName = `${uid}.md`;
@@ -361,11 +394,14 @@ export class GenericAssetCreationService {
         //
         // ⚠ Two consequences worth naming, both deliberate:
         //  1. The downstream `propertyTypeMap` / `shouldEmitAsArray` lookups now
-        //     receive the BARE name, so `Namespace.fromPropertyKey("archived")`
-        //     returns null and a shape declared under `exo#Asset_archived` no
-        //     longer resolves. Benign for the four whitelisted fields (booleans
-        //     and `aliases`; `shouldEmitAsArray` only matters for `[[…]]`
-        //     values) — but it IS a coupling, not an accident.
+        //     receive the BARE name for the whitelisted fields (`draft`,
+        //     `pinned`, `aliases`), so `Namespace.fromPropertyKey("draft")`
+        //     returns null and a shape declared under `exo#Asset_draft` no
+        //     longer resolves. Benign for those fields (booleans and
+        //     `aliases`; `shouldEmitAsArray` only matters for `[[…]]` values)
+        //     — but it IS a coupling, not an accident. `archived` runs the
+        //     OTHER way since req 960d7a3f: a bare `archived` is upgraded to
+        //     `exo__Asset_archived`, so its TBox shape DOES resolve.
         //  2. Skipping is silent. `create.ts` therefore REFUSES
         //     `--property exo__Asset_aliases` up front rather than letting the
         //     value vanish here. That refusal is CLI-only: another caller

@@ -3,10 +3,11 @@ import { extractAssetReference } from "@kitelev/exocortex-core";
 import type { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 
 /**
- * Shared CLI-side folder-repair helpers. Consumed by both
- * `FolderRepairExecutor` (single-file `repair-folder` command) and
- * `BatchExecutor` (batch `repair-folder` operation). Previously duplicated in
- * each executor (audit #3384 finding H4).
+ * Shared CLI-side folder-repair helpers. Consumed by `FolderRepairExecutor`
+ * (single-file `repair-folder` command) and the `audit-*` / `create` /
+ * `set-property` commands. Previously duplicated across executors (audit #3384
+ * finding H4; the batch `repair-folder` copy went with the dead `BatchExecutor`,
+ * ticket 99a904a9).
  *
  * These implement the CLI's Node-fs reference-resolution strategy, which is
  * deliberately distinct from the plugin/grounding path (core
@@ -44,9 +45,9 @@ export async function findReferencedFile(
 
   // Try 2: Same folder as source file. `path.dirname` returns "." for a
   // root-level source; both prior copies resolved identically here —
-  // FolderRepairExecutor produced "./<ref>.md" and BatchExecutor produced
-  // "<ref>.md", which `NodeFsAdapter.resolvePath` (path.join) and the
-  // downstream `path.dirname` collapse to the same value.
+  // FolderRepairExecutor produced "./<ref>.md" and the (since removed) batch
+  // copy produced "<ref>.md", which `NodeFsAdapter.resolvePath` (path.join)
+  // and the downstream `path.dirname` collapse to the same value.
   const sourceDir = path.dirname(sourceFilePath);
   const sameFolderPath =
     sourceDir !== "." ? `${sourceDir}/${normalizedRef}` : normalizedRef;
@@ -145,17 +146,34 @@ function wikilinkTarget(ref: unknown): string | null {
 }
 
 /**
- * Resolve the co-location target folder for a NEW instance-asset by
- * CLASS-and-ANCHOR neighbour (issue #3934) — the fail-open successor to
- * {@link resolveCoLocationFolder} for the case where the asset's
- * `exo__Asset_isDefinedBy` yields no folder (bang-anchor `[[!kitelev]]` /
- * `[[!aiKnow]]`, empty, or unresolvable). Places the new asset next to its
- * EXISTING sibling instances, deriving the folder from where they already live —
- * data-driven, with NO hardcoded class→folder map, so the product obeys the
- * co-location invariant itself rather than requiring an explicit `--folder`
- * (Andrey's design decision, #3934).
+ * Both sibling populations of a class, produced by one vault scan
+ * ({@link scanClassNeighbours}). Kept as a pair so the fail-open diagnostic
+ * quotes the very counts the placement decision was taken on.
+ */
+export interface ClassNeighbourScan {
+  /**
+   * Folders holding siblings of the class that ALSO share the new asset's
+   * isDefinedBy anchor — the population priority-2 places by.
+   */
+  sameAnchor: Map<string, number>;
+  /**
+   * Folders holding siblings of the class under ANY anchor. Superset of
+   * {@link sameAnchor}; used ONLY for the fail-open diagnostic (a class whose
+   * instances demonstrably live somewhere, while THIS create lands in the
+   * inbox default, means the placement was decided by the absence of an
+   * anchor — not by the class having no home).
+   */
+  anyAnchor: Map<string, number>;
+}
+
+/**
+ * One full-vault frontmatter scan producing BOTH sibling populations of a class
+ * (issue #3934 for the placement, 3f8b640f for the diagnostic). One pass, two
+ * answers: the diagnostic is DERIVED from the very scan that decides placement
+ * rather than authored next to it, so the numbers printed can never drift from
+ * the numbers the decision used.
  *
- * A file is a sibling iff BOTH:
+ * A file is a `sameAnchor` sibling iff BOTH:
  *   1. any value of its `exo__Instance_class` (a string OR a YAML list) resolves
  *      via {@link wikilinkTarget} to the created asset's class UID OR its
  *      short-name label — matching bare-uid `[[uid]]`, alias `[[uid|label]]`,
@@ -166,37 +184,38 @@ function wikilinkTarget(ref: unknown): string | null {
  *      asset's (`newAnchor` = {@link wikilinkTarget} of the new isDefinedBy,
  *      e.g. `!kitelev` / `!aiKnow`, or null for an empty isDefinedBy).
  *
+ * `anyAnchor` drops requirement 2 — it is every home of the class, and feeds
+ * ONLY the diagnostic.
+ *
  * The anchor is the audience/home signal: a single class can span multiple
  * homes (e.g. `inbox__ExoAssistantKnowledge` is used both for RFCs anchored
  * `[[!kitelev]]` living in `exoas-exodev/inbox/` AND for ExoAssistant infra
  * knowledge anchored to the resolvable `$exoass` ontology living in
- * `exoas-exoass/exoass/`). Matching class ALONE would let the larger, differently-
- * anchored population outvote the true neighbours; matching class AND the same
- * anchor selects exactly the assets whose placement was governed by the same
- * (unresolvable/bang) anchor as the new one. The resolvable-isDefinedBy assets
- * co-located via priority-1 never share a bang anchor, so they are excluded.
+ * `exoas-exoass/exoass/`). Matching class ALONE would let the larger,
+ * differently-anchored population outvote the true neighbours; matching class
+ * AND the same anchor selects exactly the assets whose placement was governed
+ * by the same (unresolvable/bang) anchor as the new one. The
+ * resolvable-isDefinedBy assets co-located via priority-1 never share a bang
+ * anchor, so they are excluded.
  *
- * Returns the vault-relative folder holding the MOST such siblings (canonical
- * home; deterministic lexicographic tie-break), or `null` when no class+anchor
- * sibling exists. A root-level majority (`path.dirname` → ".") returns "" so the
- * caller — whose truthiness check mirrors {@link resolveCoLocationFolder} —
- * keeps its `01 Inbox` default rather than writing to the vault root.
- *
- * One full-vault frontmatter scan; runs ONLY in the fail-open branch
- * (isDefinedBy already failed to resolve a folder), so the cost is bounded to
- * the rare bang-anchor RFC/aiKnow create.
+ * Runs ONLY in the fail-open branch (isDefinedBy already failed to resolve a
+ * folder), so the cost is bounded to the rare bang-anchor RFC/aiKnow create.
  */
-export async function resolveNeighbourFolderByClass(
+export async function scanClassNeighbours(
   fsAdapter: NodeFsAdapter,
   classUid: string,
   classLabel: string,
   isDefinedBy: unknown,
-): Promise<string | null> {
+): Promise<ClassNeighbourScan> {
+  const empty: ClassNeighbourScan = {
+    sameAnchor: new Map(),
+    anyAnchor: new Map(),
+  };
   const targets = new Set<string>();
   if (classUid) targets.add(classUid);
   if (classLabel) targets.add(classLabel);
   if (targets.size === 0) {
-    return null;
+    return empty;
   }
   // The new asset's audience anchor (`!kitelev` / `!aiKnow` / an unresolvable
   // uid, or null for empty). Only siblings sharing this exact anchor count.
@@ -204,16 +223,13 @@ export async function resolveNeighbourFolderByClass(
 
   const allFiles = await fsAdapter.getMarkdownFiles();
   const folderCounts = new Map<string, number>();
+  const anyAnchorCounts = new Map<string, number>();
 
   for (const file of allFiles) {
     let metadata: Record<string, unknown>;
     try {
       metadata = await fsAdapter.getFileMetadata(file);
     } catch {
-      continue;
-    }
-    // 2. same isDefinedBy anchor as the new asset.
-    if (wikilinkTarget(metadata["exo__Asset_isDefinedBy"]) !== newAnchor) {
       continue;
     }
     // 1. class matches (any wikilink form, list-aware).
@@ -228,9 +244,29 @@ export async function resolveNeighbourFolderByClass(
     }
     const dir = path.dirname(file);
     const folder = dir === "." ? "" : dir;
+    anyAnchorCounts.set(folder, (anyAnchorCounts.get(folder) ?? 0) + 1);
+    // 2. same isDefinedBy anchor as the new asset.
+    if (wikilinkTarget(metadata["exo__Asset_isDefinedBy"]) !== newAnchor) {
+      continue;
+    }
     folderCounts.set(folder, (folderCounts.get(folder) ?? 0) + 1);
   }
 
+  return { sameAnchor: folderCounts, anyAnchor: anyAnchorCounts };
+}
+
+/**
+ * Canonical home = the vault-relative folder holding the MOST siblings of the
+ * given population; ties resolve lexicographically, so the answer is
+ * deterministic. Returns `null` for an empty population.
+ *
+ * A root-level majority (`path.dirname` → ".") is recorded as "" so the caller —
+ * whose truthiness check mirrors {@link resolveCoLocationFolder} — keeps its
+ * `01 Inbox` default rather than writing to the vault root.
+ */
+export function pickCanonicalHome(
+  folderCounts: Map<string, number>,
+): string | null {
   if (folderCounts.size === 0) {
     return null;
   }
@@ -249,4 +285,30 @@ export async function resolveNeighbourFolderByClass(
     }
   }
   return best;
+}
+
+/**
+ * The pre-3f8b640f placement contract (`folder | null`), preserved verbatim as
+ * a thin composition of {@link scanClassNeighbours} and
+ * {@link pickCanonicalHome}.
+ *
+ * ⛔ It has NO production caller since 3f8b640f — `create` needs both
+ * populations and therefore calls the two halves directly. It is kept as the
+ * named statement of the #3934 contract, and `folderRepairHelpers.test.ts`
+ * asserts it stays byte-equal to that composition, so the claim can go red
+ * instead of merely being written down.
+ */
+export async function resolveNeighbourFolderByClass(
+  fsAdapter: NodeFsAdapter,
+  classUid: string,
+  classLabel: string,
+  isDefinedBy: unknown,
+): Promise<string | null> {
+  const { sameAnchor } = await scanClassNeighbours(
+    fsAdapter,
+    classUid,
+    classLabel,
+    isDefinedBy,
+  );
+  return pickCanonicalHome(sameAnchor);
 }

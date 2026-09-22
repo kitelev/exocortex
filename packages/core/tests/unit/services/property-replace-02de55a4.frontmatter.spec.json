@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutants for requirement 02de55a4-0a07-4347-b434-bb4a48eb0163 (issue #4308) on the BDD loader — the mirror of property-replace-02de55a4.resolver.spec.json. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). The harness is the SAME file as the resolver spec on purpose: P4 is the only axis in the suite that reads both loaders off one source record, so it is the axis that must redden here — and the fact that P1/P2/P3/P5 stay green under these mutants is what proves P4 measures the PARITY and not either loader alone. Every `expect` is the MEASURED red set; the prediction written before the run is quoted in each `_note`. ⛤ The same two predicates are also asserted inside `tests/domain/models/GroundingFrontmatterParser.test.ts` ('maps every exocmd__Grounding_* key…'), which lives outside this harness and reddens under these mutants too; it is not listed in `expect` because `red_re` only captures the P-axes of the parity suite.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› (P\\d+) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/domain/models/GroundingFrontmatterParser.ts",
+  "harness": "cd \"$(dirname {subject})/../../..\" && node ../../node_modules/jest/bin/jest.js tests/unit/services/CommandResolver.propertyReplace.test.ts --verbose 2>&1",
+  "mutants": {
+    "M11_bdd_loader_ignores_from": {
+      "_note": "The BDD loader no longer maps `exocmd__Grounding_replaceFromExpression` — the migration landed in production only. Predicted P4.",
+      "from": "    replaceFromExpression: fm[\"exocmd__Grounding_replaceFromExpression\"] as\n",
+      "to": "    replaceFromExpression: fm[\"exocmd__Grounding_replaceFromExpression__mutant\"] as\n",
+      "expect": ["P4"]
+    },
+    "M12_bdd_loader_ignores_to": {
+      "_note": "Same on `_replaceToExpression`. Predicted P4.",
+      "from": "    replaceToExpression: fm[\"exocmd__Grounding_replaceToExpression\"] as\n",
+      "to": "    replaceToExpression: fm[\"exocmd__Grounding_replaceToExpression__mutant\"] as\n",
+      "expect": ["P4"]
+    }
+  }
+}

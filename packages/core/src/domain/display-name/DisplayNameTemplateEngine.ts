@@ -21,6 +21,20 @@ import { resolveKeyPath, type MetadataResolver } from "./keyPathResolver";
 
 export type { MetadataResolver };
 
+/**
+ * The compiled form of `exo__PrintedPropertyValueSourceDisplayName` — the suffix a placeholder
+ * carries when its part asked for the target's COMPOSED name (req ff1482f2).
+ *
+ * ⛔ ONE constant for BOTH halves of the round trip. `PrintNameRuleService` writes the suffix and
+ * this file reads it back; with a literal on each side nothing links them, and an edit to one
+ * alone would break the feature silently — no test would notice, because each side's fixtures
+ * would still agree with its own copy (review of #4311).
+ */
+export const COMPOSED_SOURCE_MARKER = "displayName";
+
+/** What a compiled placeholder actually carries: `{{key!displayName}}` / `{{key::FMT!displayName}}`. */
+const COMPOSED_SOURCE_SUFFIX = `!${COMPOSED_SOURCE_MARKER}`;
+
 export class DisplayNameTemplateEngine {
   private static readonly PLACEHOLDER_PATTERN = /\{\{([^}]+)\}\}/g;
   private static readonly WIKILINK_PATTERN = /^\[\[|\]\]$/g;
@@ -40,10 +54,24 @@ export class DisplayNameTemplateEngine {
    *   and cleaned INDEPENDENTLY, a field that renders empty is DROPPED together with its
    *   adjacent separator, and the survivors are re-joined by the separator. Absent → the
    *   original single-pass path, byte-identical (onto-RFC 0ba349ed, issue #4012).
+   * @param options.nestedDisplayName OPT-IN (default absent). Asked for the COMPOSED displayName
+   *   of a referenced asset, and asked ONLY where this engine would otherwise print the bare
+   *   linkpath — i.e. when the reference carries no display alias AND the target has no
+   *   `exo__Asset_label`. In a UID-canon vault that fallback is a bare UID, which is not a name
+   *   but the absence of one leaking into a sibling's title (req 0f992e88, issue #4303). The hop
+   *   is supplied by `DisplayNameResolver`, which owns the recursion and its bounds; an engine
+   *   constructed WITHOUT it is byte-identical to before the requirement.
    */
   constructor(
     private readonly template: string,
-    private readonly options: { joinArrayValues?: boolean; separator?: string } = {},
+    private readonly options: {
+      joinArrayValues?: boolean;
+      separator?: string;
+      nestedDisplayName?: (
+        wikilink: string,
+        targetMetadata?: Record<string, unknown> | null,
+      ) => string | null;
+    } = {},
   ) {}
 
   /**
@@ -75,13 +103,35 @@ export class DisplayNameTemplateEngine {
       );
     }
 
+    // ⛤ Count, while substituting, how many placeholders rendered to something. A template
+    // whose placeholders ALL came back empty produced only its own literals — `Q2-`, `2025-`,
+    // `-W`, `-` — and that is not a name: it outranks the asset's correct exo__Asset_label
+    // purely because its provenance is `spec` (req c67e4c69).
+    let placeholders = 0;
+    let nonEmpty = 0;
     const result = this.renderSegment(
       this.template,
       metadata,
       basename,
       createdDate,
       metadataResolver,
+      () => {
+        placeholders += 1;
+      },
+      () => {
+        nonEmpty += 1;
+      },
     );
+
+    // Separator mode already declines in this situation ("the affixes alone are not a name");
+    // this is the same judgement on the plain path, minus ONE case. ⛔ The exception is not
+    // defensive: declining hands the caller null, and a caller with no exo__Asset_label falls
+    // through to the BASENAME — which for a UID-canon asset is a bare UID inside a title, the
+    // exact defect req 0f992e88 exists to prevent. There the literals, poor as they are, are
+    // the lesser evil (measured: 3 live assets, all affix-only specs).
+    if (placeholders > 0 && nonEmpty === 0 && DisplayNameTemplateEngine.hasReadableFallback(metadata, basename)) {
+      return null;
+    }
 
     // Clean up the result to handle edge cases from missing values
     const cleanedResult = this.cleanupResult(result);
@@ -94,19 +144,60 @@ export class DisplayNameTemplateEngine {
     return cleanedResult;
   }
 
-  /** Substitute every {{placeholder}} in a template segment. */
+  /**
+   * Would declining (returning null) leave the caller with something READABLE?
+   *
+   * A caller that gets null falls back to `exo__Asset_label`, and failing that to the file's
+   * basename. So declining is an improvement exactly when one of those two is a name — and a
+   * UUID basename is not (req 0f992e88: a bare UID inside a title is the defect, not the cure).
+   *
+   * ⛔ A BLANK basename is not a name either, and it fails the UUID test, so testing only for
+   * "is it a UUID" would answer "readable" for a caller that has NOTHING to fall back to. The
+   * public entry `render()` is reachable with `basename: ""` — `ConceptDefinitionResolver`
+   * passes that literal — so the case is not hypothetical, and blank is judged BEFORE the
+   * UUID test rather than through it.
+   */
+  private static hasReadableFallback(
+    metadata: Record<string, unknown>,
+    basename: string,
+  ): boolean {
+    const label = metadata.exo__Asset_label;
+    if (typeof label === "string" && label.trim() !== "") return true;
+    const trimmed = basename.trim();
+    if (trimmed === "") return false;
+    return !DisplayNameTemplateEngine.UUID_PATTERN.test(trimmed);
+  }
+
+  /**
+   * Substitute every {{placeholder}} in a template segment.
+   *
+   * `onPlaceholder` / `onNonEmpty` let the caller count what the substitution produced without
+   * re-running it — the emptiness verdict must be taken from the SAME pass that builds the
+   * string, or the two could disagree.
+   */
   private renderSegment(
     segment: string,
     metadata: Record<string, unknown>,
     basename: string,
     createdDate?: Date,
     metadataResolver?: MetadataResolver,
+    onPlaceholder?: () => void,
+    onNonEmpty?: () => void,
   ): string {
     return segment.replace(
       DisplayNameTemplateEngine.PLACEHOLDER_PATTERN,
       (_, key: string) => {
         const trimmedKey = key.trim();
-        return this.resolveValue(trimmedKey, metadata, basename, createdDate, metadataResolver);
+        onPlaceholder?.();
+        const value = this.resolveValue(
+          trimmedKey,
+          metadata,
+          basename,
+          createdDate,
+          metadataResolver,
+        );
+        if (value.trim() !== "") onNonEmpty?.();
+        return value;
       },
     );
   }
@@ -317,7 +408,7 @@ export class DisplayNameTemplateEngine {
     // `::` is a reserved sequence of the template micro-syntax: frontmatter keys have the shape
     // `prefix__Name` and never contain it. Split on the FIRST `::`; a trailing empty format is
     // ignored (the key is then used verbatim).
-    const { path, format } = DisplayNameTemplateEngine.splitKeyAndFormat(key);
+    const { path, format, preferComposed } = DisplayNameTemplateEngine.splitKeyAndFormat(key);
 
     // A part may declare an ORDERED PREFERENCE LIST rather than one key —
     // `exo__PrintedProperty_property` as a multi-value wikilink list, compiled
@@ -350,9 +441,12 @@ export class DisplayNameTemplateEngine {
         // `"2026-01-24T13:50:17.000Z"` (quotes included) and lose the literal digits.
         const formatted = DisplayNameTemplateEngine.applyValueFormat(value, format);
         // Fail-open: unrecognised value → print it as usual.
-        rendered = formatted !== null ? formatted : this.formatValue(value, metadataResolver);
+        rendered =
+          formatted !== null
+            ? formatted
+            : this.formatValue(value, metadataResolver, preferComposed);
       } else {
-        rendered = this.formatValue(value, metadataResolver);
+        rendered = this.formatValue(value, metadataResolver, preferComposed);
       }
 
       if (rendered !== "") return rendered;
@@ -365,14 +459,44 @@ export class DisplayNameTemplateEngine {
     return lastRendered;
   }
 
-  /** Split a placeholder key into its frontmatter path and its optional value format. */
-  private static splitKeyAndFormat(key: string): { path: string; format?: string } {
-    const idx = key.indexOf("::");
-    if (idx <= 0) return { path: key };
-    const path = key.slice(0, idx).trim();
-    const format = key.slice(idx + 2).trim();
-    if (!path || !format) return { path: key };
-    return { path, format };
+  /**
+   * Split a placeholder key into its frontmatter path, its optional value format, and its
+   * optional VALUE SOURCE.
+   *
+   * The source rides in the placeholder as `!displayName` for the same reason the format rides
+   * as `::FORMAT`: both are declared per PART, while the compiled artifact is ONE template string
+   * per spec (req ff1482f2).
+   *
+   * ⛔ Anchored on the SUFFIX, not on the first `!`. The frontmatter key cannot contain one —
+   * it is `prefix__Name` or a dot-path `a.b` — but the FORMAT can: `exo__PrintedProperty_format`
+   * documents every non-token character as a literal, so `DD!MM` is a legal format. With
+   * `indexOf` the compiled `{{key::DD!MM!displayName}}` matched the `!` INSIDE the format, the
+   * marker branch never fired, and the part rendered `20!09!displayName` — the marker leaking
+   * into the output AND the declared source silently dropped (review of #4311). The compiler
+   * always appends the marker last, so the suffix is the only place it can legitimately be.
+   */
+  private static splitKeyAndFormat(key: string): {
+    path: string;
+    format?: string;
+    preferComposed?: boolean;
+  } {
+    let rest = key;
+    let preferComposed = false;
+    const trimmedKey = rest.trimEnd();
+    if (
+      trimmedKey.length > COMPOSED_SOURCE_SUFFIX.length &&
+      trimmedKey.endsWith(COMPOSED_SOURCE_SUFFIX)
+    ) {
+      preferComposed = true;
+      rest = trimmedKey.slice(0, -COMPOSED_SOURCE_SUFFIX.length).trim();
+    }
+
+    const idx = rest.indexOf("::");
+    if (idx <= 0) return preferComposed ? { path: rest, preferComposed } : { path: rest };
+    const path = rest.slice(0, idx).trim();
+    const format = rest.slice(idx + 2).trim();
+    if (!path || !format) return preferComposed ? { path: rest, preferComposed } : { path: rest };
+    return preferComposed ? { path, format, preferComposed } : { path, format };
   }
 
   /**
@@ -469,7 +593,11 @@ export class DisplayNameTemplateEngine {
    * - [[target]] with metadataResolver → resolved exo__Asset_label
    * - [[target]] without resolver → target (stripped brackets)
    */
-  private formatWikilinkValue(value: string, metadataResolver?: MetadataResolver): string {
+  private formatWikilinkValue(
+    value: string,
+    metadataResolver?: MetadataResolver,
+    preferComposed = false,
+  ): string {
     // Match wikilink pattern: [[target]] or [[target|alias]]
     const match = value.match(/^\[\[([^\]|]+?)(?:\|([^\]]+))?\]\]$/);
     if (!match) {
@@ -480,20 +608,49 @@ export class DisplayNameTemplateEngine {
     const target = match[1].trim();
     const alias = match[2]?.trim();
 
-    // If alias exists, use it directly
+    // An authored alias is the data author's own override and wins over every declaration,
+    // including a part asking for the composed name (req ff1482f2).
     if (alias) {
       return alias;
     }
 
-    // Try to resolve label via metadataResolver
-    if (metadataResolver) {
-      const resolved = metadataResolver(value);
-      if (resolved) {
-        const label = resolved.exo__Asset_label;
-        if (typeof label === "string" && label.trim()) {
-          return label.trim();
-        }
-      }
+    // Resolve the target ONCE and reuse the result for both the label read and the composed-name
+    // hop. Without that the hop would dereference the SAME target a second time, and for the
+    // filesystem adapter a dereference is a `readFileSync` — i.e. every label-less or dangling
+    // reference in a vault sweep would cost two disk reads instead of one (review of #4303).
+    const resolvedTarget = metadataResolver ? metadataResolver(value) : undefined;
+    const rawLabel = resolvedTarget?.exo__Asset_label;
+    const label = typeof rawLabel === "string" && rawLabel.trim() ? rawLabel.trim() : null;
+
+    const composed = (): string | null => {
+      const rendered = this.options.nestedDisplayName?.(value, resolvedTarget);
+      return rendered !== null && rendered !== undefined && rendered.trim() !== ""
+        ? rendered.trim()
+        : null;
+    };
+
+    // ⛤ The ORDER is the whole contract of the two requirements this method carries.
+    //
+    // Without a declaration (req 0f992e88): label → composed → linkpath. The composed name is
+    // asked for ONLY where the value printed so far stops being a name — `target` is a bare UID
+    // in a UID-canon vault — so an asset that HAS a label keeps printing it and nothing rendered
+    // today changes (measured 2026-09-20 on this branch: 0 of 51 052 live assets rendered
+    // differently across the three canonical vaults — a SNAPSHOT of those corpora, not an
+    // invariant; the axes below are what actually holds the ordering).
+    //
+    // With `exo__PrintedProperty_valueSource = …SourceDisplayName` (req ff1482f2): composed →
+    // label → linkpath. The declaration is a PREFERENCE, not a guarantee: when nothing composes
+    // (no participating spec, a cycle, the depth cap) the label is still printed.
+    if (preferComposed) {
+      const preferred = composed();
+      if (preferred !== null) return preferred;
+    }
+
+    if (label !== null) return label;
+
+    if (!preferComposed) {
+      const fallback = composed();
+      if (fallback !== null) return fallback;
     }
 
     // Fallback: return target without brackets
@@ -504,13 +661,17 @@ export class DisplayNameTemplateEngine {
    * Format a value for display.
    * Parses wikilinks to extract alias or resolve label via metadataResolver.
    */
-  private formatValue(value: unknown, metadataResolver?: MetadataResolver): string {
+  private formatValue(
+    value: unknown,
+    metadataResolver?: MetadataResolver,
+    preferComposed = false,
+  ): string {
     if (value === null || value === undefined) {
       return "";
     }
 
     if (typeof value === "string") {
-      return this.formatWikilinkValue(value, metadataResolver);
+      return this.formatWikilinkValue(value, metadataResolver, preferComposed);
     }
 
     if (Array.isArray(value)) {
@@ -522,7 +683,7 @@ export class DisplayNameTemplateEngine {
         // value that resolves only to a bare UID (fail-closed). The default path is first-only.
         const parts: string[] = [];
         for (const item of value) {
-          const formatted = this.formatValue(item, metadataResolver);
+          const formatted = this.formatValue(item, metadataResolver, preferComposed);
           if (formatted && !DisplayNameTemplateEngine.UUID_PATTERN.test(formatted)) {
             parts.push(formatted);
           }
@@ -530,7 +691,7 @@ export class DisplayNameTemplateEngine {
         return parts.join(" ");
       }
       // For arrays, use the first value (default — displayName path, unchanged).
-      return this.formatValue(value[0], metadataResolver);
+      return this.formatValue(value[0], metadataResolver, preferComposed);
     }
 
     if (typeof value === "object") {

@@ -129,6 +129,25 @@ cd ~/Developer/exocortex-development
 
 **Remember**: Disk space is cheap, broken sessions are expensive.
 
+### Fresh worktree: suites fail with `ENOENT: scandir '.../packages/exoas-exocmd/exocmd'`
+
+`packages/exoas-exocmd` and `packages/exoas-exo` are **data submodules** (ontology assets),
+deliberately excluded from the npm workspaces. `git worktree add` does not initialise them, so
+suites that read vault fixtures fail on a missing directory. This is the **environment**, not your
+diff — and the failure count looks alarming enough to be mistaken for a regression you introduced.
+
+**Discriminator**: the message is `ENOENT` on a _submodule directory_, not a type or assertion
+error; and exactly the vault-fixture readers go red (`PrototypePreconditionForgetGuard`,
+`PrototypePreconditionRevertVerify`, `grounding-type-vault-fixture-parity`) while the rest of the
+suite set is green.
+
+```bash
+git submodule update --init packages/exoas-exocmd packages/exoas-exo
+```
+
+**Second discriminator, when the cause is still unclear**: run the same suite against the pristine
+file (`git stash -u`). Failing identically ⇒ environment.
+
 ---
 
 ## Git & CI Issues

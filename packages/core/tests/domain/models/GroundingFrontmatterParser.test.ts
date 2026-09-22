@@ -24,6 +24,8 @@ describe("parseGroundingDefinitionFromFrontmatter", () => {
         exocmd__Grounding_targetValueSubstitution: "8f111111-2222-3333-4444-555555555555",
         exocmd__Grounding_serviceCallPayload: '{"a":1}',
         exocmd__Grounding_appendExpression: "$target.exo__Asset_label",
+        exocmd__Grounding_replaceFromExpression: "$input.from",
+        exocmd__Grounding_replaceToExpression: "$input.to",
         exocmd__Grounding_targetClass: "gtd__InboxItem",
         exocmd__Grounding_targetPrototype: "proto-uid",
         exocmd__Grounding_targetFolder: "01 Inbox",
@@ -50,6 +52,12 @@ describe("parseGroundingDefinitionFromFrontmatter", () => {
       );
       expect(def.serviceCallPayload).toBe('{"a":1}');
       expect(def.appendExpression).toBe("$target.exo__Asset_label");
+      // Req 02de55a4 — this BDD loader MUST stay in parity with the production
+      // one (CommandResolver.loadGroundingDefinition): reading a grounding
+      // predicate in only one of them leaves the feature dead in prod under a
+      // fully green suite (multi-parser-predicate-migration).
+      expect(def.replaceFromExpression).toBe("$input.from");
+      expect(def.replaceToExpression).toBe("$input.to");
       expect(def.targetClass).toBe("gtd__InboxItem");
       expect(def.targetPrototype).toBe("proto-uid");
       expect(def.targetFolder).toBe("01 Inbox");

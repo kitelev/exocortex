@@ -17,13 +17,14 @@ describe("GroundingType", () => {
     expect(GroundingType.CREATE_INSTANCE).toBe("create_instance");
   });
 
-  it("should have exactly 11 values", () => {
+  it("should have exactly 12 values", () => {
     // SPARQL_UPDATE, PROPERTY_DELETE, PROPERTY_SET, COMPOSITE, SERVICE_CALL,
     // CREATE_INSTANCE, PROPERTY_APPEND (#3132), PROPERTY_INCREMENT (#3134),
     // PROPERTY_SHIFT (#3134), WORKFLOW_TRANSITION (RFC 36347daf Phase 2),
-    // BODY_TEMPLATE (subproject 17f58ebe Веха 3).
+    // BODY_TEMPLATE (subproject 17f58ebe Веха 3),
+    // PROPERTY_REPLACE (req 02de55a4, issue #4308).
     const values = Object.values(GroundingType);
-    expect(values).toHaveLength(11);
+    expect(values).toHaveLength(12);
   });
 });
 

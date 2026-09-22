@@ -17,6 +17,7 @@ import { describe, it, expect } from "@jest/globals";
 import {
   testPatConnection,
   describePatConnection,
+  patTail,
   type PatTestClient,
   type PatConnectionResult,
 } from "../../../../src/presentation/settings/patConnectionTest";
@@ -153,5 +154,33 @@ describe("describePatConnection — message formatting (single source for both s
     expect(
       describePatConnection({ ok: false, reason: "HTTP 401: Bad credentials" }),
     ).toBe("Test connection failed: HTTP 401: Bad credentials");
+  });
+});
+
+// #4231 — the Settings status line names WHICH token a test exercised via a
+// non-secret 4-char tail (the same tail GitHub's own token list shows).
+describe("patTail — non-secret token identifier", () => {
+  it("returns an ellipsis + the last 4 characters of a real-shape token", () => {
+    expect(
+      patTail("github_pat_22CHARSIDENTIFIER00_secretsecretsecretsecretsecretsecretsecretsecretsecretaj0S"),
+    ).toBe("…aj0S");
+    expect(patTail("ghp_abcdefghijklmnopqrstuvwxyz0123456789")).toBe("…6789");
+  });
+
+  it("trims surrounding whitespace before taking the tail (pasted tokens carry newlines)", () => {
+    expect(patTail("  ghp_abcdefghijklmnopqrstuvwxyz0123456789\n")).toBe("…6789");
+  });
+
+  it("fully masks tokens too short to keep 4 chars private", () => {
+    expect(patTail("short")).toBe("…****");
+    expect(patTail("12345678")).toBe("…****");
+    expect(patTail("")).toBe("…****");
+  });
+
+  it("never leaks more than 4 characters of the token", () => {
+    const token = "ghp_" + "x".repeat(40);
+    const tail = patTail(token);
+    expect(tail.length).toBe(5);
+    expect(token.endsWith(tail.slice(1))).toBe(true);
   });
 });

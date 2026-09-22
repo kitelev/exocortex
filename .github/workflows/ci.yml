@@ -137,7 +137,9 @@ jobs:
   # any direct dep introduces a high/critical advisory.
   npm-audit-exocortex:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    # 4 audit attempts x 45 s back-off (see the retry loop below) no longer
+    # fit the 2-minute budget the single-shot step had.
+    timeout-minutes: 5
 
     steps:
       - name: Checkout
@@ -162,9 +164,53 @@ jobs:
       # bump their nested minimatch). The genuine production path (the CLI's
       # runtime `glob`) IS fixed: glob bumped to ^11 → minimatch@10 →
       # brace-expansion@5.0.8, and `--omit=dev` here is 0-high.
+      #
+      # Retry ONLY on a registry/endpoint failure (ticket 60958576, 2026-09-19).
+      # `npm audit` reads the lockfile alone (arborist `audit()` -> loadVirtual;
+      # an installed tree is never consulted), asks the bulk advisory endpoint
+      # first and falls back to `/-/npm/v1/security/audits/quick` only when the
+      # bulk call throws (@npmcli/arborist lib/audit-report.js). On 2026-09-19
+      # the registry retired the quick endpoint (400 "This endpoint is being
+      # retired"), so a transient bulk failure (here: npm's scheduled
+      # maintenance 17:00-19:00 UTC, runs 35458341882 / 35458082931 / 35457855468)
+      # now surfaces as a red job -> CI workflow_run.conclusion=failure ->
+      # Auto Release is SKIPPED for every merge until the next green run on main.
+      # npm's own fetch-retries (2 x >=10 s) do not span such a window.
+      #
+      # The loop below repeats the audit only when the output carries an
+      # endpoint/transport error marker; a non-zero exit for any other reason
+      # (advisories found at --audit-level=high) fails immediately, so the gate
+      # stays honest and fast. A maintenance window longer than the 4 x 45 s
+      # budget still needs a manual `gh run rerun <run-id> --failed`.
       - name: npm audit (block high+ in production deps)
-        run: npm audit --audit-level=high --omit=dev
         working-directory: packages/core
+        shell: bash
+        run: |
+          # `shell: bash` runs with -e; the loop must read the audit rc itself.
+          set +e
+          set -uo pipefail
+          attempts=4
+          pause=45
+          transient='audit endpoint returned an error|npm warn audit [45][0-9][0-9] |Bad Request|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|fetch failed'
+          for i in $(seq 1 "$attempts"); do
+            log="$(mktemp)"
+            npm audit --audit-level=high --omit=dev 2>&1 | tee "$log"
+            rc=${PIPESTATUS[0]}
+            if [ "$rc" -eq 0 ]; then
+              exit 0
+            fi
+            if grep -Eq "$transient" "$log"; then
+              if [ "$i" -lt "$attempts" ]; then
+                echo "::warning::npm audit attempt $i/$attempts hit a registry/endpoint error (rc=$rc); retrying in ${pause}s"
+                sleep "$pause"
+                continue
+              fi
+              echo "::error::npm audit endpoint failed on all $attempts attempts (rc=$rc); if npm is under maintenance, re-run this job (gh run rerun <run-id> --failed)"
+              exit "$rc"
+            fi
+            echo "::error::npm audit failed (rc=$rc) for a non-transient reason (advisories at --audit-level=high?) — not retrying"
+            exit "$rc"
+          done
 
   lint:
     runs-on: ubuntu-latest

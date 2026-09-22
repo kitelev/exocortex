@@ -117,6 +117,7 @@ test.describe("EKA GUI BDD — data-driven precondition under a cold store", () 
   let vaultPath: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let launcher: any;
+  const launchAbort = new AbortController();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let window: any;
 
@@ -124,7 +125,9 @@ test.describe("EKA GUI BDD — data-driven precondition under a cold store", () 
     vaultPath = setupGuiVault();
     writeSeeds(vaultPath);
     log(`cold-isdefinedby: vault ${vaultPath}`);
-    launcher = await launchObsidianWithPlugin(vaultPath, "cold-isdefinedby");
+    launcher = await launchObsidianWithPlugin(vaultPath, "cold-isdefinedby", {
+      signal: launchAbort.signal,
+    });
     window = await launcher.getWindow();
     registerConfirmAutoAccept(window);
     // A complete store is the PRECONDITION of this suite, not its subject: the
@@ -134,6 +137,7 @@ test.describe("EKA GUI BDD — data-driven precondition under a cold store", () 
   });
 
   test.afterAll(async () => {
+    launchAbort.abort();
     await launcher?.close().catch(() => undefined);
   });
 

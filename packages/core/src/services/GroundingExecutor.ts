@@ -22,10 +22,17 @@ import { IRI } from "../domain/models/rdf/IRI";
 import type { WorkflowDefinition } from "../domain/models/WorkflowDefinition";
 import { FrontmatterService } from "../utilities/FrontmatterService";
 import {
+  decodeYamlQuotedScalar,
+  isCompleteDoubleQuotedScalar,
+  quoteYamlString,
+  scalarTypingForRange,
   serializeYamlScalar,
   STRING_SCALAR_PROPERTIES,
 } from "../utilities/yamlScalar";
 import { canonicalYamlKey } from "./NoteToRDFConverter";
+import { extractAssetReference } from "../utilities/extractAssetReference";
+import { iriToObsidianName } from "../utilities/iriToObsidianName";
+import type { DeclaredRangesResolver } from "./DeclaredRangesResolver";
 import type { NamedQueryRunnerPort } from "./NamedQueryRunner";
 import { iriToVaultPath, vaultPathToIRI } from "../infrastructure/vault/iri";
 import { DateFormatter } from "../utilities/DateFormatter";
@@ -155,6 +162,111 @@ function resolveClassFlipTarget(
  * UI layer collects these via modals; CLI via interactive prompts or --arg flags.
  */
 export type UserInput = Record<string, unknown>;
+
+/**
+ * RFC-028 Findings 3+4 (extended for named `$input.<key>` keys, Issue #3779):
+ * decide whether a value TEMPLATE references an input the caller did not
+ * provide, and name the key they owe us.
+ *
+ * Checked against the TEMPLATE — never the substituted output — so a value that
+ * legitimately RESOLVES to free text containing a `$input` / `$value` substring
+ * (relabel to "Fix $input handling") is not mis-flagged (#3779 review MEDIUM).
+ *
+ * Issue #4298 — exported so a PRE-FLIGHT check (`apply --dry-run`) reaches the
+ * verdict through THIS code rather than a copy of it. A copy would be a second
+ * source of truth for "which key is missing", free to drift from the executing
+ * one; then a dry-run could bless a call the real run refuses, which is exactly
+ * the defect being fixed.
+ *
+ * @returns the `--input '{"<key>":...}'` hint, or `null` when nothing is missing.
+ */
+export function missingInputHint(
+  template: string,
+  userInput?: UserInput,
+): string | null {
+  const inputRecord = (userInput ?? {}) as Record<string, unknown>;
+  const isProvided = (v: unknown): boolean => v !== undefined && v !== null;
+  const referencedKeys = [...template.matchAll(/\$input\.([A-Za-z_]\w*)/g)].map(
+    (m) => m[1],
+  );
+  const usesAnonInput =
+    /\$input\b(?!\.)/.test(template) || /\$value\b/.test(template);
+  const missingKey = referencedKeys.find((k) => !isProvided(inputRecord[k]));
+  if (missingKey !== undefined) return `--input '{"${missingKey}":...}'`;
+  if (usesAnonInput && !isProvided(inputRecord.value))
+    return `--input '{"value":...}'`;
+  return null;
+}
+
+/** The ONE wording for a missing-input refusal (Issue #4298 — shared verbatim
+ * between the executing path and the `--dry-run` pre-flight). */
+export function missingInputError(hint: string): string {
+  return `property_set: value template references an input that was not provided (${hint} required)`;
+}
+
+/**
+ * Issue #4298 — pre-flight a grounding WITHOUT executing it: walk its
+ * `property_set` value templates (and, for a composite, those of every step)
+ * and return the first missing-input hint.
+ *
+ * ⛔ Only STATICALLY KNOWN value sources are inspected. `targetValueQuery`
+ * computes its template by RUNNING a query, so the template does not exist
+ * before execution and this function deliberately says nothing about it — a
+ * pre-flight that guessed there could refuse a call that would have succeeded,
+ * which is worse than the false-green it replaces.
+ *
+ * @returns the hint for the first step that is missing an input, else `null`.
+ */
+export function findMissingInput(
+  grounding: GroundingDefinition,
+  userInput?: UserInput,
+): string | null {
+  const staticTemplate = (g: GroundingDefinition): string | undefined => {
+    // ⛔ Type-gated on purpose. `missingInputHint` is consulted by exactly ONE
+    // place in the executing path — `executePropertySet` — so a `property_append`
+    // / `body_template` / `service_call` grounding is NEVER refused for a missing
+    // input, however its own fields read. Those types can still CARRY a stray
+    // `targetValue*` (the parser keeps unknown-for-the-type fields, and the
+    // executor simply ignores them); without this gate the pre-flight would
+    // refuse a call the executor would have run happily — a false refusal, which
+    // is worse than the false-green this whole change removes.
+    if (g.type !== GroundingType.PROPERTY_SET) return undefined;
+    if (g.targetValueRef !== undefined) return `"[[${g.targetValueRef}]]"`;
+    if (g.targetValueLiteral !== undefined) return g.targetValueLiteral;
+    if (g.targetValueSubstitution !== undefined)
+      return g.targetValueSubstitution;
+    return undefined; // targetValueQuery — template only exists after the query runs
+  };
+
+  const visit = (g: GroundingDefinition): string | null => {
+    const template = staticTemplate(g);
+    if (template !== undefined) {
+      const hint = missingInputHint(template, userInput);
+      if (hint !== null) return hint;
+    }
+    for (const step of g.steps ?? []) {
+      const hint = visit(step);
+      if (hint !== null) return hint;
+    }
+    return null;
+  };
+
+  return visit(grounding);
+}
+
+/**
+ * req 8d27f21d — what `executeServiceCall` remembers about its target across
+ * `service.execute`: the bytes before the call and, for a target that is not
+ * yet UUID-canon-named, the path rename-to-uid would move it to.
+ */
+interface ServiceCallSnapshot {
+  bytes: string;
+  canon?: string;
+}
+
+/** Well-formed UUID (8-4-4-4-12 hex) — the only uid shape that may become a path. */
+const UUID_CANON_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Issue #3220 — execution-time class-label → canonical-UID resolver.
@@ -394,6 +506,12 @@ export class GroundingExecutor {
   private readonly groundingLoader?: GroundingLoaderPort;
   private readonly templateLoader?: TemplateLoaderPort;
   private readonly namedQueryRunner?: NamedQueryRunnerPort;
+  // Ticket 534a7a46 — the property's declared `exo__Property_range`, so the two
+  // write paths of this executor type a YAML scalar by the DECLARATION the way
+  // `cli create` / `cli set-property` have since ticket 2227d660 (CLI↔UI parity
+  // #3417). A port rather than a store: this class owns no triple store, and
+  // every other TBox-derived lookup it performs is already injected the same way.
+  private readonly declaredRanges?: DeclaredRangesResolver;
   private readonly clock: IClock;
   private readonly uidGen: IUidGenerator;
 
@@ -427,6 +545,11 @@ export class GroundingExecutor {
       // asset's frontmatter for the SECOND hop of `targetRefProperty`. When
       // absent, the two-hop resolver yields nothing (no routing, no failure).
       refToFrontmatter?: RefToFrontmatterResolver;
+      // Ticket 534a7a46 — declared-range typing for the scalars this executor
+      // writes. When absent (tests, headless runners, any caller without a TBox
+      // source) both write paths stay BYTE-IDENTICAL to their pre-ticket output:
+      // fail-open by construction, so a vault with no mounted TBox keeps working.
+      declaredRanges?: DeclaredRangesResolver;
     },
   ) {
     this.frontmatterService = new FrontmatterService();
@@ -440,6 +563,7 @@ export class GroundingExecutor {
     this.groundingLoader = options?.groundingLoader;
     this.templateLoader = options?.templateLoader;
     this.namedQueryRunner = options?.namedQueryRunner;
+    this.declaredRanges = options?.declaredRanges;
     this.clock = options?.clock ?? liveClock();
     this.uidGen = options?.uidGenerator ?? liveUidGenerator();
   }
@@ -473,6 +597,14 @@ export class GroundingExecutor {
           return await this.executePropertyDelete(
             grounding,
             targetFilePath,
+          );
+
+        case GroundingType.PROPERTY_REPLACE:
+          return await this.executePropertyReplace(
+            grounding,
+            targetIRI,
+            targetFilePath,
+            userInput,
           );
 
         case GroundingType.COMPOSITE:
@@ -559,6 +691,59 @@ export class GroundingExecutor {
 
   // -- Private: Grounding Type Implementations --
 
+  /**
+   * req 454ccedf (ticket 533856e4) — the last-modified invariant is a property
+   * of the EXECUTOR, not of the data. Every mutating grounding branch passes
+   * the content it is about to write through here, so `exo__Asset_updatedAt`
+   * records the modification whether or not the command's grounding carries
+   * the data-side "Bump updatedAt" step (`49e00287`): 19 of the 74 cliName'd
+   * commands mutate through a single non-composite grounding and never bumped
+   * (`set-parent`, `set-criticality-*`, `archive`, `shift-day-*`, …). The
+   * plugin executes buttons through this same executor, so CLI/UI parity holds
+   * by construction.
+   *
+   * Four deliberate NON-stamps keep the stamp an invariant rather than noise:
+   *   - `updated === original` — the write would leave the file byte-identical
+   *     (property_set to the value already on disk, property_append of an
+   *     alias already present, property_delete of an absent key). An idempotent
+   *     re-apply must not manufacture a spurious ExoSync delta — the same rule
+   *     `remove-property` follows ("bumps only when a change occurs"). ⚠ The
+   *     predicate is on BYTES, not semantics: `votes: 3` re-set as `"3"`, or a
+   *     list re-serialised with different indentation, IS a change and stamps.
+   *   - the branch's OWN target property is `exo__Asset_updatedAt` (the
+   *     composite step `49e00287` writes `$nowLocal`): that explicit write IS
+   *     the stamp; writing a second one would only risk a one-second skew
+   *     between two writers of the same key.
+   *   - the mutated content has no frontmatter block (a plain-markdown
+   *     `body_template` target): the executor does not invent one.
+   *   - refusals return BEFORE any write and the composite rollback restores
+   *     the pre-composite bytes verbatim — neither reaches this helper.
+   *
+   * Value shape is `DateFormatter.toLocalTimestamp(clock.now())` —
+   * `YYYY-MM-DDTHH:mm:ss`, exactly what `$nowLocal` and `create_instance`
+   * write — from the injected clock, so tests pin it.
+   */
+  private stampUpdatedAt(
+    original: string,
+    updated: string,
+    targetProperty?: string,
+  ): string {
+    if (updated === original) return updated;
+    if (
+      targetProperty !== undefined &&
+      canonicalYamlKey(FrontmatterService.normalizeIRI(targetProperty)) ===
+        "exo__Asset_updatedAt"
+    ) {
+      return updated;
+    }
+    if (!this.frontmatterService.parse(updated).exists) return updated;
+    return this.frontmatterService.updateProperty(
+      updated,
+      "exo__Asset_updatedAt",
+      DateFormatter.toLocalTimestamp(this.clock.now()),
+    );
+  }
+
   private async executePropertySet(
     grounding: GroundingDefinition,
     targetIRI: string,
@@ -638,30 +823,71 @@ export class GroundingExecutor {
     // substituted output — so a value that legitimately RESOLVES to free text
     // containing a "$input"/"$value" substring (e.g. relabel to
     // "Fix $input handling") is never mis-flagged (#3779 code-review MEDIUM).
-    const inputRecord = (userInput ?? {}) as Record<string, unknown>;
-    const isProvided = (v: unknown): boolean => v !== undefined && v !== null;
-    const referencedKeys = [
-      ...effectiveValue.matchAll(/\$input\.([A-Za-z_]\w*)/g),
-    ].map((m) => m[1]);
-    const usesAnonInput =
-      /\$input\b(?!\.)/.test(effectiveValue) || /\$value\b/.test(effectiveValue);
-    const missingKey = referencedKeys.find((k) => !isProvided(inputRecord[k]));
-    if (missingKey !== undefined || (usesAnonInput && !isProvided(inputRecord.value))) {
-      const hint =
-        missingKey !== undefined
-          ? `--input '{"${missingKey}":...}'`
-          : `--input '{"value":...}'`;
+    const missingHint = missingInputHint(effectiveValue, userInput);
+    if (missingHint !== null) {
       return {
         success: false,
-        error: `property_set: value template references an input that was not provided (${hint} required)`,
+        error: missingInputError(missingHint),
       };
     }
 
-    const substitutedValue = this.substituteVariables(
-      effectiveValue,
-      targetIRI,
-      userInput,
-    );
+    // req b06129dc (ticket 52199c53) — a `targetValueRef` fed from the user's
+    // input (`$input.parent`, `$input.blocker`) is a REFERENCE by contract: the
+    // executor wraps it as `"[[<ref>]]"` itself (above), so an input that
+    // arrives already wrapped — `[[uid]]`, `[[uid|alias]]`, `"[[uid]]"`, the
+    // form one copies out of another frontmatter — used to become the broken
+    // `"[[[[uid]]]]"` at rc 0. Unlike `targetValueSubstitution` (req 29e0d1b6,
+    // where the value may legitimately be free text and a `[[` is ambiguous),
+    // a `[[` inside a targetValueRef input has exactly one possible meaning, so
+    // it is normalised — through `extractAssetReference`, the SAME function
+    // every reader uses to resolve a stored reference — rather than refused.
+    //
+    // The residue check runs on the value after ONE unwrap of the OUTER quotes
+    // and brackets but BEFORE the alias strip: `extractAssetReference` drops
+    // everything after the first `|`, so checking its output would let
+    // `[[uid|alias]] see also` and `[[uid|alias]] [[other]]` through as
+    // "[[uid]]" (PR #4242 review MEDIUM). Any `[[` / `]]` left at that point
+    // (nested brackets, a link inside prose) is not a reference and is refused
+    // loudly; so is an empty input (it used to be written as `"[[]]"`).
+    // Runs AFTER the missing-input gate above: the gate reads the TEMPLATE, so
+    // an absent `$input.<key>` keeps its own, more specific, refusal. Static
+    // refs (no `$…` token) take the generic path and are byte-identical.
+    const isInputRef =
+      grounding.targetValueRef !== undefined &&
+      /\$/.test(grounding.targetValueRef);
+    let substitutedValue: string;
+    if (isInputRef) {
+      const resolvedRef = this.substituteVariables(
+        grounding.targetValueRef as string,
+        targetIRI,
+        userInput,
+      );
+      const unwrapped = resolvedRef
+        .trim()
+        .replace(/^["']|["']$/g, "")
+        .replace(/^\[\[|\]\]$/g, "");
+      const bareRef = /\[\[|\]\]/.test(unwrapped)
+        ? null
+        : extractAssetReference(resolvedRef)?.trim() || null;
+      if (bareRef === null) {
+        return {
+          success: false,
+          error:
+            `property_set: asset-reference value ${JSON.stringify(resolvedRef)} for ` +
+            `${grounding.targetProperty} is not a single reference — pass a BARE uid ` +
+            `(or one [[uid]] / [[uid|alias]] wikilink, which is unwrapped); nested ` +
+            `brackets, a link inside prose or an empty value would be written as a ` +
+            `broken link.`,
+        };
+      }
+      substitutedValue = `"[[${bareRef}]]"`;
+    } else {
+      substitutedValue = this.substituteVariables(
+        effectiveValue,
+        targetIRI,
+        userInput,
+      );
+    }
 
     // Issue #3779: for string-semantic properties (`exo__Asset_label`,
     // `aliases`) a substitution-derived value (e.g. a relabel `$input.label`
@@ -683,9 +909,54 @@ export class GroundingExecutor {
       grounding.targetProperty,
     );
     const canonicalTargetProperty = canonicalYamlKey(normalizedTargetProperty);
-    const valueToWrite = STRING_SCALAR_PROPERTIES.has(canonicalTargetProperty)
-      ? serializeYamlScalar(substitutedValue, true)
-      : substitutedValue;
+    // Ticket 534a7a46 — declared-range typing, GATED on the declaration actually
+    // typing something. The gate is load-bearing, not defensive: `updateProperty`
+    // writes verbatim because callers pre-format, so routing an UNTYPED value
+    // through `serializeYamlScalar` would let the shape guards inside
+    // `needsYamlQuoting` quote a deliberate flow array (`["[[ems__Task]]"]`, the
+    // multi-class convert value) on its leading `[` and an already-quoted
+    // wikilink on its leading `"`. With no typing range the expression below is
+    // byte-identical to the pre-ticket one.
+    //
+    // ⛤ `iriToObsidianName` here is DEFENSIVE, and saying so is the point: on
+    // every path that goes through `CommandResolver` this field has ALREADY been
+    // put in `<prefix>__<Name>` form by the same namespace-registry inverse
+    // (`getObsidianName` → `iriToObsidianName(obj.value) ?? obj.value`,
+    // CommandResolver.ts:3696), so `iriToObsidianName` returns null and the
+    // fallback below is what runs. It is kept because `execute()` is public and a
+    // hand-built grounding can carry the IRI form (probed 2026-09-20: the range
+    // then resolves and the scalar is typed, while the write key degrades to the
+    // raw IRI — a pre-existing defect of that unreachable shape, raised
+    // separately rather than adopted here).
+    //
+    // ⛔ What is NOT defensive is the inverse inside the RESOLVER
+    // (`DeclaredRangesResolver`): there the key is derived from a definition's
+    // label, which the converter emits as a symbolic IRI in 478 of 485 cases, and
+    // reversing it through a static nine-namespace prefix map would resolve 23 of
+    // the 104 typing definitions measured on vault-exodev and silently miss the
+    // other 81 — flow, pmi, person, team, bot, exodev. ⛤ Such a map no longer
+    // exists in this repository (retired by ticket 6572f3f3 / req 38e3f174); the measurement is
+    // kept because it is WHY the shared inverse is the right read, and axes
+    // K1 / K4 pin it. The `STRING_SCALAR_PROPERTIES` lookup keeps using the canonical
+    // key, unchanged.
+    const rangeLookupKey =
+      iriToObsidianName(grounding.targetProperty) ?? normalizedTargetProperty;
+    const declaredRange = this.declaredRanges
+      ? (await this.declaredRanges([rangeLookupKey])).get(rangeLookupKey)
+      : undefined;
+    const isStringScalarProperty = STRING_SCALAR_PROPERTIES.has(
+      canonicalTargetProperty,
+    );
+    const valueToWrite =
+      scalarTypingForRange(declaredRange) !== undefined
+        ? serializeYamlScalar(
+            substitutedValue,
+            isStringScalarProperty,
+            declaredRange,
+          )
+        : isStringScalarProperty
+          ? serializeYamlScalar(substitutedValue, true)
+          : substitutedValue;
 
     // ⛤ The WRITE KEY is not decided here. `FrontmatterService.updateProperty`
     // canonicalises on entry, so every writer that reaches the primitive — this
@@ -749,10 +1020,14 @@ export class GroundingExecutor {
     }
 
     const content = await this.fileReader.readFile(effectiveFilePath);
-    const updated = this.frontmatterService.updateProperty(
+    const updated = this.stampUpdatedAt(
       content,
+      this.frontmatterService.updateProperty(
+        content,
+        grounding.targetProperty,
+        valueToWrite,
+      ),
       grounding.targetProperty,
-      valueToWrite,
     );
     await this.fileWriter.updateFile(effectiveFilePath, updated);
 
@@ -886,8 +1161,9 @@ export class GroundingExecutor {
     }
 
     const content = await this.fileReader.readFile(filePath);
-    const updated = this.frontmatterService.removeProperty(
+    const updated = this.stampUpdatedAt(
       content,
+      this.frontmatterService.removeProperty(content, grounding.targetProperty),
       grounding.targetProperty,
     );
     await this.fileWriter.updateFile(filePath, updated);
@@ -1172,8 +1448,134 @@ export class GroundingExecutor {
         ? vaultPathToIRI(filePath)
         : targetIRI;
 
+    // req 8d27f21d (ticket 8421b014, sibling of 454ccedf) — the last-modified
+    // invariant reaches the NINTH grounding type here. The service writes its
+    // target through channels this executor never sees (IVaultAdapter.modify /
+    // process / IFileSystemWriter.updateFile / vault.rename), so the stamp is
+    // decided by the target's BYTES: snapshot before the call, re-read after
+    // it returned, stamp only when they differ. See stampServiceCallTarget.
+    const before = await this.readServiceCallSnapshot(filePath);
     await service.execute(serviceTargetIRI, mergedInput);
+    await this.stampServiceCallTarget(filePath, before, mergedInput);
     return { success: true };
+  }
+
+  /**
+   * req 8d27f21d — the service_call target BEFORE `service.execute`: its bytes
+   * and, when the target is NOT yet UUID-canon-named, the path it would move
+   * to under rename-to-uid (`<same folder>/<exo__Asset_uid>.md`). `undefined`
+   * when there is nothing to compare against (no path, or the path does not
+   * exist yet — a satellite-creating step with no target).
+   *
+   * The relocation candidate is decided HERE, before the call, on purpose:
+   *   - the uid comes from the target's frontmatter, i.e. from user data, and
+   *     becomes a write path — so it must be a well-formed UUID (review LOW-1);
+   *     anything else yields no candidate at all;
+   *   - a candidate that ALREADY exists before the call is not a rename target
+   *     but a neighbour (a duplicate uid in the folder): after a move-only
+   *     service the executor must not mistake it for the moved file and stamp a
+   *     file the service never touched (review observation) — so it is
+   *     dropped up front.
+   */
+  private async readServiceCallSnapshot(
+    filePath: string,
+  ): Promise<ServiceCallSnapshot | undefined> {
+    if (!filePath) return undefined;
+    if (!(await this.fileReader.fileExists(filePath))) return undefined;
+    const bytes = await this.fileReader.readFile(filePath);
+    const uidRaw = this.frontmatterService.parseObject(bytes)?.exo__Asset_uid;
+    const uid =
+      typeof uidRaw === "string" ? uidRaw.trim().replace(/^"|"$/g, "") : "";
+    if (!UUID_CANON_RE.test(uid)) return { bytes };
+    const slash = filePath.lastIndexOf("/");
+    const folder = slash >= 0 ? filePath.slice(0, slash + 1) : "";
+    const canon = `${folder}${uid}.md`;
+    if (canon === filePath) return { bytes };
+    if (await this.fileReader.fileExists(canon)) return { bytes };
+    return { bytes, canon };
+  }
+
+  /**
+   * req 8d27f21d (ticket 8421b014) — stamp `exo__Asset_updatedAt` on the
+   * service_call target the service just changed.
+   *
+   * Runs strictly on the success path, AFTER `service.execute` returned: a
+   * throwing service never reaches this point, so the target keeps whatever
+   * the service left and the result is `{ success: false }` (execute's catch);
+   * a failure while re-reading or writing the stamp surfaces the same way, with
+   * its own message — never a silent half-stamp.
+   *
+   * Why bytes and not a writer hook (measured @ d0216a8a, 2026-09-17): the 17
+   * service_call commands write through FOUR channels — `IVaultAdapter.modify`
+   * (TaskStatusService, PropertyCleanupService, FixMissingLabelService,
+   * ArchiveAssetService), `IVaultAdapter.process` + `rename`
+   * (RenameToUidService), `IFileSystemWriter.updateFile` (the updateProperty /
+   * removeProperty / setStatus factories) and the create channels of the
+   * satellite services — and `packages/services` called
+   * `IVaultAdapter.updateFrontmatter` zero times. There is no single
+   * service-side write point; the single point is here.
+   *
+   * NON-stamps, same rules as `stampUpdatedAt` (req 454ccedf):
+   *   - byte-identical target — a no-op service, a satellite-only service
+   *     (create-note, duplicate-asset, create-related-*: the target is never
+   *     written), a move-only service (repair-folder). Nothing is written.
+   *   - the service was told to write `exo__Asset_updatedAt` itself
+   *     (updateProperty / removeProperty with `property = exo__Asset_updatedAt`)
+   *     — it owns the key; exactly one key line.
+   *   - a target without a frontmatter block.
+   *
+   * Re-locate: rename-to-uid rewrites the target AND renames it to
+   * `<same folder>/<exo__Asset_uid>.md` (UUID-canon — the same shape
+   * `executeCreateInstance` builds for a new instance). When the snapshot path
+   * is gone, the executor looks for the file at the candidate the snapshot
+   * pre-computed BEFORE the call (well-formed UUID only, and only if nothing
+   * lived there yet — see readServiceCallSnapshot). A move to ANOTHER folder
+   * (repair-folder) does not resolve and is left alone — its content did not
+   * change anyway.
+   *
+   * Not governed (req 8d27f21d §Not governed): files the service changed
+   * BESIDES its target (rename-to-uid's `updateLinks` in other assets) and the
+   * satellite files themselves (their `updatedAt` is the create side).
+   */
+  private async stampServiceCallTarget(
+    filePath: string,
+    snapshot: ServiceCallSnapshot | undefined,
+    mergedInput?: UserInput,
+  ): Promise<void> {
+    if (snapshot === undefined) return;
+    const path = await this.locateServiceCallTarget(filePath, snapshot);
+    if (path === undefined) return;
+    const before = snapshot.bytes;
+    const after = await this.fileReader.readFile(path);
+    if (after === before) return;
+    const ownProperty =
+      typeof mergedInput?.property === "string"
+        ? mergedInput.property
+        : undefined;
+    const stamped = this.stampUpdatedAt(before, after, ownProperty);
+    if (stamped === after) return;
+    await this.fileWriter.updateFile(path, stamped);
+  }
+
+  /**
+   * req 8d27f21d — where the service_call target lives AFTER the service ran:
+   * the snapshot path when it still exists, else the UUID-canon candidate the
+   * snapshot pre-computed (rename-to-uid moved it there — the candidate did
+   * not exist before the call, see readServiceCallSnapshot), else nowhere
+   * (a move to another folder: content unchanged, nothing to stamp).
+   */
+  private async locateServiceCallTarget(
+    filePath: string,
+    snapshot: ServiceCallSnapshot,
+  ): Promise<string | undefined> {
+    if (await this.fileReader.fileExists(filePath)) return filePath;
+    if (
+      snapshot.canon !== undefined &&
+      (await this.fileReader.fileExists(snapshot.canon))
+    ) {
+      return snapshot.canon;
+    }
+    return undefined;
   }
 
   private async executeConvertToTask(filePath: string): Promise<ExecutionResult> {
@@ -1183,10 +1585,14 @@ export class GroundingExecutor {
     // exo__Instance_class is UUID-canon when a resolver is wired; falls back
     // to label-form for tests/CLI/headless. See resolveClassRefToUid.
     const classRef = await this.resolveClassRefToUid("ems__Task");
-    const updated = this.frontmatterService.updateProperty(
+    const updated = this.stampUpdatedAt(
       content,
+      this.frontmatterService.updateProperty(
+        content,
+        "exo__Instance_class",
+        `["[[${classRef}]]"]`,
+      ),
       "exo__Instance_class",
-      `["[[${classRef}]]"]`,
     );
     await this.fileWriter.updateFile(filePath, updated);
     return { success: true };
@@ -1196,10 +1602,14 @@ export class GroundingExecutor {
     const content = await this.fileReader.readFile(filePath);
     // Issue #3222: see executeConvertToTask — same UID-canon resolution.
     const classRef = await this.resolveClassRefToUid("ems__Project");
-    const updated = this.frontmatterService.updateProperty(
+    const updated = this.stampUpdatedAt(
       content,
+      this.frontmatterService.updateProperty(
+        content,
+        "exo__Instance_class",
+        `["[[${classRef}]]"]`,
+      ),
       "exo__Instance_class",
-      `["[[${classRef}]]"]`,
     );
     await this.fileWriter.updateFile(filePath, updated);
     return { success: true };
@@ -1273,7 +1683,17 @@ export class GroundingExecutor {
         error: `body_template: failed to read target file "${targetFilePath}": ${error instanceof Error ? error.message : String(error)}`,
       };
     }
-    const newContent = GroundingExecutor.replaceBody(content, resolved);
+    // req 454ccedf — the stamp keys on the frontmatter of the CONTENT ABOUT TO
+    // BE WRITTEN, not of the original: a plain-markdown target stays plain
+    // (no invented block), while a template that itself opens with `---`
+    // turns the file INTO a frontmatter-bearing asset and is stamped like one
+    // — after this write the file HAS a frontmatter block, so the stamp lands
+    // where every later mutation will look for it (review nit-1, named
+    // rather than special-cased).
+    const newContent = this.stampUpdatedAt(
+      content,
+      GroundingExecutor.replaceBody(content, resolved),
+    );
     await this.fileWriter.updateFile(targetFilePath, newContent);
     return { success: true };
   }
@@ -1502,7 +1922,23 @@ export class GroundingExecutor {
     // it via $randomUUIDv4 token; top-up guaranteed it's set otherwise).
     const uid = properties.exo__Asset_uid as string;
 
-    const content = this.frontmatterService.createFrontmatter("", properties);
+    // Ticket 534a7a46 — the declared range types each scalar, so a button press
+    // lands the same YAML form `cli create` writes. The keys are read HERE, on
+    // the statement before the write, and nothing mutates `properties` after
+    // this point: a snapshot taken any earlier would miss the keys the steps
+    // above inject (`$randomUUIDv4` uid top-up, `linkBackProperty`,
+    // `applyPrototypeTimePropagation`) — the class of defect
+    // `self-satisfying-metric-weak-verifier` §A49 records.
+    const declaredRanges = this.declaredRanges
+      ? await this.declaredRanges(Object.keys(properties))
+      : undefined;
+    const content = this.frontmatterService.createFrontmatter(
+      "",
+      properties,
+      declaredRanges === undefined
+        ? undefined
+        : (suppliedKey) => declaredRanges.get(suppliedKey),
+    );
     // Issue #3136 (Q3.b closure): allow `$targetFolder` / `$target` tokens in
     // `grounding.targetFolder` so new instances can inherit the target's
     // parent folder declaratively (replacing legacy `createTaskForDailyNote`).
@@ -2697,8 +3133,13 @@ export class GroundingExecutor {
             `only scalar properties are supported for substitution`,
         );
       }
-      // Strip surrounding YAML quotes if present (parseObject preserves them).
-      return String(fmValue).replace(/^["'](.*)["']$/, "$1");
+      // `parseObject` is textual — the value arrives as the RAW scalar text,
+      // quotes and escapes included. Decode it to the string VALUE (ticket
+      // 4f226028): stripping only the outer quotes left interior escapes
+      // (`\"`, `\\`) in the substituted text, so every consumer that
+      // re-quotes the result (`property_set` / `property_append` /
+      // `labelTemplate` → `quoteYamlString`) double-escaped it.
+      return decodeYamlQuotedScalar(String(fmValue));
     });
 
     // $targetFolder is resolved BEFORE the generic `$target` substitution so
@@ -2811,25 +3252,160 @@ export class GroundingExecutor {
         ? [String(existingRaw)]
         : [];
 
-    // Set-based dedup. Compare against unquoted form so a stored
-    // `"Foo"` (with YAML quotes) does not duplicate a plain `Foo`.
-    const stripQuotes = (s: string): string =>
-      s.replace(/^["'](.*)["']$/, "$1");
-    const seen = new Set(existing.map(stripQuotes));
+    // The value to append is the string VALUE. `$target.<prop>` already
+    // arrives decoded; a `$input.*` value is a USER value, not YAML text, and
+    // is treated exactly as `property_set` treats its substituted value:
+    // only a COMPLETE double-quoted scalar (the pre-wrapped `"[[uid]]"` the
+    // CLI / ReferencePicker commit) is unwrapped, everything else — including
+    // a single-quoted `'Foo'` — is the literal value (PR #4250 review LOW:
+    // decoding both here while the label step quotes `'Foo'` as a string
+    // would make alias ≠ label). `existing` holds the RAW list items as they
+    // sit on disk (`parseObject` is textual), so the Set-based dedup compares
+    // DECODED forms: a stored `"Say \"hi\""` is the same alias as the plain
+    // `Say "hi"`.
+    const plain = isCompleteDoubleQuotedScalar(resolvedValue)
+      ? decodeYamlQuotedScalar(resolvedValue)
+      : resolvedValue;
+    const seen = new Set(existing.map(decodeYamlQuotedScalar));
     let merged: string[];
-    if (seen.has(stripQuotes(resolvedValue))) {
+    if (seen.has(plain)) {
       merged = existing;
     } else {
-      // Preserve YAML-quoted form for string values to round-trip safely
-      // through serializeValue (matches LabelToAliasService behavior).
-      const formatted = `"${stripQuotes(resolvedValue)}"`;
-      merged = [...existing, formatted];
+      // Ticket 4f226028 — ONE writer for label and aliases. `updateProperty`
+      // emits list items verbatim (no `quoteScalars` on that path), so the
+      // item must be a complete, correctly ESCAPED double-quoted scalar here.
+      // `quoteYamlString` is the same escaper `property_set` / the create path
+      // use (`serializeYamlScalar`); the previous hand-built `"${value}"`
+      // wrap left an interior `"` / `\` unescaped, which made the whole
+      // frontmatter unparseable (req 27fbe40b: `requirements-trace` red on
+      // every PR). Always-quoted keeps the on-disk alias shape (`- "Foo"`).
+      merged = [...existing, quoteYamlString(plain)];
     }
 
-    const updated = this.frontmatterService.updateProperty(
+    const updated = this.stampUpdatedAt(
       content,
+      this.frontmatterService.updateProperty(
+        content,
+        grounding.targetProperty,
+        merged,
+      ),
       grounding.targetProperty,
-      merged,
+    );
+    await this.fileWriter.updateFile(filePath, updated);
+
+    return { success: true };
+  }
+
+  /**
+   * `property_replace` — swap EXACTLY ONE value of an array-typed frontmatter
+   * property, leaving its co-values and their order untouched.
+   * Requirement `02de55a4-0a07-4347-b434-bb4a48eb0163` (issue #4308).
+   *
+   * Reads:
+   * - `grounding.targetProperty` — the array property to edit.
+   * - `grounding.replaceFromExpression` — the value to find (substituted).
+   * - `grounding.replaceToExpression` — the value to put in its place.
+   *
+   * Refuses (leaving the file byte-identical) when:
+   * - any of the three is missing;
+   * - the on-disk value is not a LIST — for a scalar, "replace one element" is
+   *   identical to `property_set`, and silently turning `prop: X` into
+   *   `prop:\n  - Y` would change the YAML shape as a side effect;
+   * - `from` is not among the current values. ⛔ This refusal is load-bearing:
+   *   without it the type degenerates into `property_append` on every miss and
+   *   silently produces the contradictory two-value state it exists to prevent.
+   *
+   * Comparison is on DECODED forms (as in `executePropertyAppend`): `existing`
+   * holds the raw on-disk items, so a stored `"Say \"hi\""` matches a plain
+   * `Say "hi"`.
+   */
+  private async executePropertyReplace(
+    grounding: GroundingDefinition,
+    targetIRI: string,
+    filePath: string,
+    userInput?: UserInput,
+  ): Promise<ExecutionResult> {
+    if (!grounding.targetProperty) {
+      return {
+        success: false,
+        error: "property_replace requires targetProperty",
+      };
+    }
+    if (grounding.replaceFromExpression === undefined) {
+      return {
+        success: false,
+        error: "property_replace requires replaceFromExpression",
+      };
+    }
+    if (grounding.replaceToExpression === undefined) {
+      return {
+        success: false,
+        error: "property_replace requires replaceToExpression",
+      };
+    }
+
+    const content = await this.fileReader.readFile(filePath);
+    const targetFrontmatter =
+      this.frontmatterService.parseObject(content) ?? {};
+
+    const existingRaw = targetFrontmatter[grounding.targetProperty];
+    if (!Array.isArray(existingRaw)) {
+      return {
+        success: false,
+        error:
+          `property_replace: <${grounding.targetProperty}> is not a list on this asset ` +
+          `(replacing one element of a scalar is identical to property_set — use that instead)`,
+      };
+    }
+    const existing: string[] = existingRaw;
+
+    const plainOf = (expression: string): string => {
+      const resolved = this.substituteVariables(
+        expression,
+        targetIRI,
+        userInput,
+        targetFrontmatter,
+      );
+      return isCompleteDoubleQuotedScalar(resolved)
+        ? decodeYamlQuotedScalar(resolved)
+        : resolved;
+    };
+
+    const fromPlain = plainOf(grounding.replaceFromExpression);
+    const toPlain = plainOf(grounding.replaceToExpression);
+
+    const fromIndex = existing.findIndex(
+      (item) => decodeYamlQuotedScalar(item) === fromPlain,
+    );
+    if (fromIndex === -1) {
+      return {
+        success: false,
+        error:
+          `property_replace: "${fromPlain}" is not a value of ` +
+          `<${grounding.targetProperty}> on this asset — refusing rather than appending`,
+      };
+    }
+
+    // Idempotence: when `to` is ALREADY present elsewhere in the list, drop the
+    // `from` item instead of writing a duplicate.
+    const toIndexElsewhere = existing.findIndex(
+      (item, i) => i !== fromIndex && decodeYamlQuotedScalar(item) === toPlain,
+    );
+    const merged =
+      toIndexElsewhere === -1
+        ? existing.map((item, i) =>
+            i === fromIndex ? quoteYamlString(toPlain) : item,
+          )
+        : existing.filter((_, i) => i !== fromIndex);
+
+    const updated = this.stampUpdatedAt(
+      content,
+      this.frontmatterService.updateProperty(
+        content,
+        grounding.targetProperty,
+        merged,
+      ),
+      grounding.targetProperty,
     );
     await this.fileWriter.updateFile(filePath, updated);
 
@@ -2897,10 +3473,14 @@ export class GroundingExecutor {
     }
 
     const next = current + delta;
-    const updated = this.frontmatterService.updateProperty(
+    const updated = this.stampUpdatedAt(
       content,
+      this.frontmatterService.updateProperty(
+        content,
+        grounding.targetProperty,
+        next,
+      ),
       grounding.targetProperty,
-      next,
     );
     await this.fileWriter.updateFile(filePath, updated);
     return { success: true };
@@ -2982,10 +3562,14 @@ export class GroundingExecutor {
     }
 
     const nextTimestamp = DateFormatter.toLocalTimestamp(shifted);
-    const updated = this.frontmatterService.updateProperty(
+    const updated = this.stampUpdatedAt(
       content,
+      this.frontmatterService.updateProperty(
+        content,
+        grounding.targetProperty,
+        nextTimestamp,
+      ),
       grounding.targetProperty,
-      nextTimestamp,
     );
     await this.fileWriter.updateFile(filePath, updated);
     return { success: true };

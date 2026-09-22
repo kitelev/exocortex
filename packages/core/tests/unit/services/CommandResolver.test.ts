@@ -661,6 +661,107 @@ describe("CommandResolver", () => {
       ]);
     });
 
+    // req c4adae42 (ticket efe33c5d) — the loader honours the JSON-Schema
+    // `format: "asset-reference"` on a string property (the set-parent /
+    // link-to-parent shape) and projects it as `assetRef`; nothing else in the
+    // projection changes. Each axis is revert-verified by a mutant (PR body):
+    // M1 (drop the format read) → RED only L1.
+    describe("inputSchema `format: asset-reference` → assetRef (req c4adae42) [REVERT-VERIFY]", () => {
+      const REQ = "@req:c4adae42-a109-4dd8-ae85-530a58a65869";
+      const PROPERTY_SET_TYPE = "[[cf3bb923-f1f1-40be-b728-782844402426]]";
+
+      async function loadProjected(
+        uid: string,
+        properties: Record<string, Record<string, unknown>>,
+        required: string[] = [],
+      ): Promise<Array<Record<string, unknown>>> {
+        const groundingSubject = new IRI(`obsidian://vault/gnd-${uid}.md`);
+        await store.addAll([
+          new Triple(groundingSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
+          new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal(`gnd-${uid}`)),
+          new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal(`Grounding ${uid}`)),
+          new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal(PROPERTY_SET_TYPE)),
+          new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_targetProperty"), new Literal("ems__Effort_parent")),
+          new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_targetValueRef"), new Literal("$input.parent")),
+          new Triple(
+            groundingSubject,
+            Namespace.EXOCMD.term("Grounding_inputSchema"),
+            new Literal(JSON.stringify({ type: "object", properties, required })),
+          ),
+        ]);
+        await addCommandAsset(store, { uid: `cmd-${uid}`, label: `Command ${uid}`, groundingRef: `gnd-${uid}` });
+        const cmd = await resolver.loadCommand(`cmd-${uid}`);
+        return (cmd!.grounding as unknown as Record<string, unknown>)["inputSchema"] as Array<
+          Record<string, unknown>
+        >;
+      }
+
+      it(`L1 projects \`type: string\` + \`format: asset-reference\` as assetRef and keeps an explicit targetClassUid ${REQ}`, async () => {
+        // The live set-parent shape (exoas-exocmd 18f12de2) plus one field
+        // that also declares a class, to show the propagation is unchanged.
+        const fields = await loadProjected(
+          "l1",
+          {
+            parent: { type: "string", title: "Parent", format: "asset-reference" },
+            blocker: {
+              type: "string",
+              title: "Blocker",
+              format: "asset-reference",
+              targetClassUid: "1b20a8f0-d745-4e93-91db-4531b3df120e",
+            },
+          },
+          ["parent"],
+        );
+        expect(fields).toEqual([
+          { name: "parent", type: "assetRef", label: "Parent", required: true },
+          {
+            name: "blocker",
+            type: "assetRef",
+            label: "Blocker",
+            required: false,
+            targetClassUid: "1b20a8f0-d745-4e93-91db-4531b3df120e",
+          },
+        ]);
+      });
+
+      it(`L2 (negative control) any other format on a string stays text ${REQ}`, async () => {
+        const fields = await loadProjected("l2", {
+          when: { type: "string", title: "When", format: "date-time" },
+          note: { type: "string", title: "Note" },
+        });
+        expect(fields.map((f) => [f.name, f.type])).toEqual([
+          ["when", "text"],
+          ["note", "text"],
+        ]);
+      });
+
+      it(`L3 (control) \`type: assetRef\` is projected unchanged ${REQ}`, async () => {
+        const fields = await loadProjected("l3", {
+          ontology: { type: "assetRef", title: "Ontology", targetClassUid: "829b9b3b-6fc3-4276-be6a-27d3398c012e" },
+        });
+        expect(fields).toEqual([
+          {
+            name: "ontology",
+            type: "assetRef",
+            label: "Ontology",
+            required: false,
+            targetClassUid: "829b9b3b-6fc3-4276-be6a-27d3398c012e",
+          },
+        ]);
+      });
+
+      it(`L4 \`format: asset-reference\` on a non-string type does not rewrite the type ${REQ}`, async () => {
+        const fields = await loadProjected("l4", {
+          count: { type: "number", title: "Count", format: "asset-reference" },
+          flag: { type: "boolean", title: "Flag", format: "asset-reference" },
+        });
+        expect(fields.map((f) => [f.name, f.type])).toEqual([
+          ["count", "number"],
+          ["flag", "boolean"],
+        ]);
+      });
+    });
+
     // RFC v2 Phase 5 (#3167): the legacy fail-loud-on-invalid-JSON test was
     // removed alongside the parser. Invalid JSON in the deprecated triple is
     // simply ignored — there is no longer a parser to throw.

@@ -86,11 +86,6 @@
       "count": 1
     },
     {
-      "file": "packages/cli/tests/unit/cache/CacheManager.test.ts",
-      "code": "TS2345",
-      "count": 4
-    },
-    {
       "file": "packages/cli/tests/unit/CliApplyProfileService.parked.test.ts",
       "code": "TS6133",
       "count": 2
@@ -204,26 +199,6 @@
       "file": "packages/cli/tests/unit/executors/AssetCreationExecutor.test.ts",
       "code": "TS6133",
       "count": 2
-    },
-    {
-      "file": "packages/cli/tests/unit/executors/BatchExecutor.repair-folder.test.ts",
-      "code": "TS2345",
-      "count": 45
-    },
-    {
-      "file": "packages/cli/tests/unit/executors/BatchExecutor.repair-folder.test.ts",
-      "code": "TS6133",
-      "count": 1
-    },
-    {
-      "file": "packages/cli/tests/unit/executors/BatchExecutor.test.ts",
-      "code": "TS2345",
-      "count": 15
-    },
-    {
-      "file": "packages/cli/tests/unit/executors/BatchExecutor.test.ts",
-      "code": "TS6133",
-      "count": 1
     },
     {
       "file": "packages/cli/tests/unit/executors/CommandExecutor.error.test.ts",

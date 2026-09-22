@@ -1,0 +1,43 @@
+{
+  "_doc": "Revert-verify mutants for ticket 2227d660 (req 21ceea14, PR fix/writer-types-by-declared-range). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/writer-range-typing-2227d660.setproperty.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's set-property.ts and runs the suites named in `harness`; `expect` names the axes that MUST go red). cli suites resolve @kitelev/exocortex-core from core SRC (jest moduleNameMapper), so a core mutant reaches the cli axes without a build. Guards enumerated from `git diff -U0` (integration-test-revert-verify §A8). Recorded runs: see PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([RGDSQW]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/set-property.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/set-property.range-typing.integration.test.ts tests/integration/create.range-typing.integration.test.ts 2>&1",
+  "mutants": {
+    "MR24_range_not_read_(pre-ticket_state)": {
+      "from": "        const declaredRange =\n          await propertyNameValidator.declaredRange(property);",
+      "to": "        const declaredRange = undefined as\n          | readonly string[]\n          | undefined;",
+      "expect": [
+        "S1",
+        "S2",
+        "S2b",
+        "S5"
+      ]
+    },
+    "MR25_array_items_untyped": {
+      "from": "    return value.map((v) =>\n      serializeYamlScalar(v, quoteAmbiguous, declaredRange),\n    );",
+      "to": "    return value.map((v) => serializeYamlScalar(v, quoteAmbiguous));",
+      "expect": [
+        "S5"
+      ]
+    },
+    "MR25b_scalar_untyped": {
+      "from": "  return serializeYamlScalar(value, quoteAmbiguous, declaredRange);\n}",
+      "to": "  return serializeYamlScalar(value, quoteAmbiguous);\n}",
+      "expect": [
+        "S1",
+        "S2",
+        "S2b"
+      ]
+    }
+  }
+}

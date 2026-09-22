@@ -2,24 +2,46 @@ name: AssetSpace CI (reusable)
 
 # Reusable per-AssetSpace SHACL CI gate for the Exocortex Knowledge Architecture
 # (EKA Alpha 16-repo schema). Canonical home: kitelev/exoas-ci ;
-# .github/workflows/assetspace-ci.yml@main. This file under exocortex/docs/ci/
+# .github/workflows/assetspace-ci.yml@main. The copy under exocortex/docs/ci/
 # is the REVIEWED REFERENCE COPY (issue #3513) — keep it in sync with exoas-ci.
 #
 # What it does, for the calling AssetSpace repo's checked-out content:
 #   1. resolve-deps — resolve the repo's transitive exo__AssetSpace_dependsOn
 #      closure from the central registry (kitelev/exoas-registry), so the
 #      dependent TBox is materialised and cross-repo class references resolve
-#      (issue #3513, builds on #3511). Without this the SHACL gate has no shapes
-#      to apply (false-negative) or demotes every in-scope ref to a warning.
-#   2. validate schema --shapes-mode --vault . --also <each-dep> — SHACL-lite
-#      conformance over the repo + resolved TBox. Genuine sh:Violation fails the
-#      gate (exit 1); unresolvable cross-repo refs are sh:Warning (do NOT fail).
-#   3. audit ontology-imports — cross-ontology closure / SCC check (unchanged).
+#      (issue #3513, builds on #3511).
+#   2. validate schema --shapes-mode --vault <merged> — SHACL-lite conformance
+#      over a SINGLE MERGED vault that contains the calling repo's content +
+#      every resolved dependency, unified under one vault root (one link index,
+#      one graph). Genuine sh:Violation fails the gate (exit 1); unresolvable
+#      cross-repo refs are sh:Warning (do NOT fail).
+#   3. audit ontology-imports — cross-ontology closure / SCC check (advisory).
+#   4. audit ontology-membership — exo__Ontology_admits allow-list conformance
+#      (KSD ArchUnit cohesion ratchet, req c23f6f50): every member of an ontology
+#      declaring exo__Ontology_admits must carry an admitted exo__Instance_class
+#      (subsumption-aware). Fail-open (ontologies without _admits are skipped);
+#      gates like SHACL (exit 1) unless warn_only.
+#   5. command smoke (OPT-IN, `command_smoke: true`) — behavioural check that a
+#      homoiconic command still WRITES what its inheritance rules promise, not
+#      merely that the data validates. Seeds an ems__Task fixture into the merged
+#      vault, runs `apply <command_smoke_cli>` for real (⛔ not --dry-run — that
+#      prints no frontmatter), and asserts the created asset carries
+#      ems__Effort_parent pointing at the fixture, then re-runs SHACL to prove
+#      the write introduced no new violation. Gates like SHACL unless warn_only.
 #
-# Severity contract (CLI #3488): "zero false-positives from unresolvable
-# cross-repo refs" is achieved by the CLI's severity split — a class ref whose
-# target is absent from the resolved graph is a sh:Warning, never a violation.
-# So a dep that fails to clone DEGRADES to warnings, never to a false red.
+# MERGE vs --also (issue #3523, orchestrator decision 2026-06-14, Option 2):
+# Earlier this gate passed each dependency as a separate `--also <dir>` vault.
+# That produced FALSE sh:class violations: a cross-vault wikilink reference
+# resolves to filename-form IRI (obsidian://vault/<uid>.md) while its subject —
+# parsed in the separate --also vault — is stored under symbolic-form IRI
+# (https://exocortex.my/ontology/<ns>#<local>); the forms don't unify across the
+# --also boundary, so a valid class membership read as a violation. Empirically
+# (CLI 16.92.0): exoas-exocmd = 0 standalone, 30 with `--also`, 0 when deps are
+# merged into ONE vault dir. Fix: assemble a single merged vault (rsync deps +
+# self into one root) and validate it as one graph — the CLI de-dups by subject,
+# so cross-repo class membership resolves correctly. #3523 stays open as the
+# proper CLI-side `--also` IRI-unify fix (fast-follow); this gate no longer
+# depends on it.
 #
 # Caller usage (.github/workflows/ci.yml in an AssetSpace repo):
 #   jobs:
@@ -48,6 +70,25 @@ on:
         description: "@kitelev/exocortex-cli version spec (must include `resolve-deps`, i.e. >= the issue #3513 release)"
         type: string
         default: "latest"
+      command_smoke:
+        description: "Run the opt-in behavioural command smoke (see step 5 in the header). Off by default."
+        type: boolean
+        default: false
+      command_smoke_cli:
+        description: "cliName of the command the smoke applies to an ems__Task fixture"
+        type: string
+        default: "create-action"
+      command_smoke_sources:
+        description: |
+          Extra clone URLs (whitespace/newline separated) merged into the smoke
+          vault ON TOP of the dependsOn closure. Needed when the command's
+          BEHAVIOUR requires a TBox the calling repo does not ontologically
+          depend on — e.g. exoas-exocmd carries the commands but the ems classes
+          live in exoas-public, which depends on exocmd, so declaring the
+          reverse in the registry would make the dependsOn DAG cyclic. This
+          input keeps that runtime-only need out of the ontological graph.
+        type: string
+        default: ""
     secrets:
       registry_token:
         description: "Optional PAT for cloning the registry + PRIVATE dependency repos. Falls back to anonymous (public repos)."
@@ -65,7 +106,7 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Resolve + materialise dependent TBox (registry dependsOn closure)
+      - name: Resolve dependent TBox + assemble single merged validation vault
         id: deps
         if: ${{ inputs.resolve_deps }}
         env:
@@ -77,8 +118,12 @@ jobs:
           GIT_ALLOW_PROTOCOL: "https:ssh"
         run: |
           set -uo pipefail
-          ALSO_FILE="$RUNNER_TEMP/also-args.txt"
-          : > "$ALSO_FILE"
+          MERGED="$RUNNER_TEMP/merged"
+          rm -rf "$MERGED"; mkdir -p "$MERGED"
+          # The calling repo's own content goes into the merged vault first, under
+          # a unique subdir so dep subdirs can never collide with it. All .md
+          # assets end up under one vault root → one link index → one graph.
+          rsync -a --exclude='.git' ./ "$MERGED/_self/"
 
           auth_url() {
             # Inject token into an https URL for private-repo clones; pass through otherwise.
@@ -93,6 +138,7 @@ jobs:
           echo "::group::Clone central registry"
           if ! git clone --depth 1 -- "$(auth_url "${{ inputs.registry_url }}")" "$RUNNER_TEMP/registry" 2>/dev/null; then
             echo "⚠️  Could not clone registry ${{ inputs.registry_url }} — validating standalone (deps unresolved → warnings only)."
+            echo "merged_dir=$MERGED" >> "$GITHUB_OUTPUT"
             echo "::endgroup::"
             exit 0
           fi
@@ -109,15 +155,16 @@ jobs:
           printf '%s\n' "$DEP_URLS"
           echo "::endgroup::"
 
-          echo "::group::Clone dependency repos"
+          echo "::group::Clone + merge dependency repos into the single validation vault"
           i=0
           while IFS= read -r url; do
             [ -z "$url" ] && continue
             name="dep-$i-$(basename "$url" .git)"
             target="$RUNNER_TEMP/deps/$name"
             if git clone --depth 1 -- "$(auth_url "$url")" "$target" 2>/dev/null; then
-              echo "  ✓ $url → $target"
-              printf -- '--also\n%s\n' "$target" >> "$ALSO_FILE"
+              # Merge the dep's content into the single vault under its own subdir.
+              rsync -a --exclude='.git' "$target/" "$MERGED/_dep-$i/"
+              echo "  ✓ $url → merged/_dep-$i ($name)"
             else
               # Best-effort: a dep we can't clone (private, no token) degrades to
               # sh:Warning in validation — never a false violation. Do not fail.
@@ -127,22 +174,25 @@ jobs:
           done <<< "$DEP_URLS"
           echo "::endgroup::"
 
-          echo "also_file=$ALSO_FILE" >> "$GITHUB_OUTPUT"
+          echo "merged_dir=$MERGED" >> "$GITHUB_OUTPUT"
 
-      - name: SHACL-lite schema validation (registry-resolved, blocking unless warn_only)
+      - name: SHACL-lite schema validation (single-graph merged vault, blocking unless warn_only)
         id: shacl
         continue-on-error: ${{ inputs.warn_only }}
         run: |
           set -uo pipefail
-          ALSO_ARGS=()
-          if [ -n "${{ steps.deps.outputs.also_file }}" ] && [ -f "${{ steps.deps.outputs.also_file }}" ]; then
-            while IFS= read -r line; do
-              [ -n "$line" ] && ALSO_ARGS+=("$line")
-            done < "${{ steps.deps.outputs.also_file }}"
+          MERGED="${{ steps.deps.outputs.merged_dir }}"
+          if [ -n "$MERGED" ] && [ -d "$MERGED" ]; then
+            VAULT="$MERGED"
+            echo "Validating MERGED single-graph vault (self + resolved deps unified — avoids the cross-vault --also IRI-form mismatch, #3523)."
+          else
+            # resolve_deps disabled, or registry/deps unavailable → validate the
+            # calling repo standalone (cross-repo refs degrade to warnings).
+            VAULT="."
+            echo "No merged vault available — validating the calling repo standalone."
           fi
-          echo "Validating with ${#ALSO_ARGS[@]} --also token(s) (deps resolved via registry)."
           npx -y @kitelev/exocortex-cli@${{ inputs.cli_version }} validate schema \
-            --shapes-mode --vault . "${ALSO_ARGS[@]}" --output text | tee "$RUNNER_TEMP/shacl-report.txt"
+            --shapes-mode --vault "$VAULT" --output text | tee "$RUNNER_TEMP/shacl-report.txt"
           # Propagate the validate exit code (PIPESTATUS[0]) so violations fail the gate.
           exit "${PIPESTATUS[0]}"
 
@@ -157,13 +207,147 @@ jobs:
           npx -y @kitelev/exocortex-cli@${{ inputs.cli_version }} audit ontology-imports \
             --vault . --output text | tee "$RUNNER_TEMP/imports-report.txt"
 
+      - name: Ontology-membership audit (exo__Ontology_admits allow-list, blocking unless warn_only)
+        id: membership
+        continue-on-error: ${{ inputs.warn_only }}
+        # Cohesion-side KSD ArchUnit ratchet (req c23f6f50) — the complement of
+        # the coupling-side ontology-imports audit. Every member of an ontology
+        # that DECLARES exo__Ontology_admits must carry an admitted
+        # exo__Instance_class (directly or via a exo__Class_superClass
+        # subsumption walk). FAIL-OPEN: ontologies without _admits are skipped
+        # (audit-first — the ratchet only bites opted-in ontologies), so this is
+        # inert for repos that have not authored allow-lists yet. GATES like the
+        # SHACL step (`exit "${PIPESTATUS[0]}"`) for gate-green (warn_only:false)
+        # repos, advisory for warn-only pilots. Runs on the MERGED single-graph
+        # vault so cross-repo class-defs (concept__Concept, exo__Property, …)
+        # resolve for the superClass walk (mirrors the SHACL step's VAULT logic).
+        run: |
+          set -uo pipefail
+          MERGED="${{ steps.deps.outputs.merged_dir }}"
+          if [ -n "$MERGED" ] && [ -d "$MERGED" ]; then
+            VAULT="$MERGED"
+          else
+            VAULT="."
+          fi
+          npx -y @kitelev/exocortex-cli@${{ inputs.cli_version }} audit ontology-membership \
+            --vault "$VAULT" --output text | tee "$RUNNER_TEMP/membership-report.txt"
+          exit "${PIPESTATUS[0]}"
+
+      - name: Command smoke (opt-in behavioural gate)
+        id: smoke
+        if: ${{ inputs.command_smoke }}
+        continue-on-error: ${{ inputs.warn_only }}
+        env:
+          GH_CLONE_TOKEN: ${{ secrets.registry_token }}
+          GIT_ALLOW_PROTOCOL: "https:ssh"
+          SMOKE_CLI: ${{ inputs.command_smoke_cli }}
+          SMOKE_SOURCES: ${{ inputs.command_smoke_sources }}
+        # Behavioural complement to the SHACL gate: SHACL proves the data is
+        # WELL-FORMED, this proves a command still DOES what its inheritance
+        # rules promise. Runs the real `apply` (⛔ never --dry-run: it prints a
+        # preview, not the written frontmatter) against a copy of the merged
+        # vault, so nothing the smoke writes can reach the repo checkout.
+        run: |
+          set -uo pipefail
+          MERGED="${{ steps.deps.outputs.merged_dir }}"
+          if [ -n "$MERGED" ] && [ -d "$MERGED" ]; then
+            SMOKE="$RUNNER_TEMP/smoke"
+            rm -rf "$SMOKE"; cp -R "$MERGED" "$SMOKE"
+          else
+            SMOKE="$RUNNER_TEMP/smoke"
+            rm -rf "$SMOKE"; mkdir -p "$SMOKE/_self"
+            rsync -a --exclude='.git' ./ "$SMOKE/_self/"
+          fi
+
+          # Extra runtime-only TBox sources (see the command_smoke_sources docs).
+          i=0
+          for url in $SMOKE_SOURCES; do
+            i=$((i + 1))
+            auth="$url"
+            if [ -n "${GH_CLONE_TOKEN:-}" ] && printf '%s' "$url" | grep -q '^https://github.com/'; then
+              auth="https://x-access-token:${GH_CLONE_TOKEN}@github.com/${url#https://github.com/}"
+            fi
+            echo "::group::Clone smoke source $url"
+            if git clone --depth 1 -- "$auth" "$RUNNER_TEMP/smoke-src-$i"; then
+              rsync -a --exclude='.git' "$RUNNER_TEMP/smoke-src-$i/" "$SMOKE/_smoke-src-$i/"
+            else
+              echo "❌ command smoke: could not clone $url — the fixture's TBox would be missing, which makes the smoke vacuous."
+              exit 1
+            fi
+            echo "::endgroup::"
+          done
+
+          # ems__Task fixture. UID-named, class by UID (1b20a8f0 = ems__Task),
+          # status Backlog (753a44d5) so the command's precondition admits it.
+          TASK_UID="$(uuidgen | tr 'A-Z' 'a-z')"
+          cat > "$SMOKE/ci-smoke-task.md" <<FIXTURE
+          ---
+          exo__Asset_uid: $TASK_UID
+          exo__Asset_createdAt: 2026-01-01T00:00:00
+          exo__Instance_class:
+            - "[[1b20a8f0-d745-4e93-91db-4531b3df120e]]"
+          exo__Asset_label: CI command-smoke Task
+          ems__Effort_status: "[[753a44d5-846c-4b82-9196-4fd9a4d48777]]"
+          ---
+
+          Fixture for the AssetSpace CI command smoke. Not part of the repo.
+          FIXTURE
+          sed -i 's/^          //' "$SMOKE/ci-smoke-task.md"
+
+          # Canary: the fixture's class must actually resolve in this vault,
+          # otherwise a green smoke would mean nothing (the rule's condition is
+          # matched by UID and would silently never fire).
+          if ! find "$SMOKE" -name '1b20a8f0-d745-4e93-91db-4531b3df120e.md' | grep -q .; then
+            echo "❌ command smoke: ems__Task class def (1b20a8f0) is not present in the smoke vault."
+            echo "   The dependsOn closure does not carry the ems TBox — add its repo to command_smoke_sources."
+            exit 1
+          fi
+
+          BEFORE="$(find "$SMOKE" -name '*.md' | wc -l | tr -d ' ')"
+          echo "::group::apply $SMOKE_CLI"
+          npx -y @kitelev/exocortex-cli@${{ inputs.cli_version }} apply "$SMOKE_CLI" \
+            "ci-smoke-task.md" --vault "$SMOKE" --input '{"label":"ci-command-smoke"}' --yes \
+            | tee "$RUNNER_TEMP/smoke-apply.txt"
+          rc="${PIPESTATUS[0]}"
+          echo "::endgroup::"
+          if [ "$rc" -ne 0 ]; then
+            echo "❌ command smoke: apply $SMOKE_CLI exited $rc"
+            exit 1
+          fi
+
+          AFTER="$(find "$SMOKE" -name '*.md' | wc -l | tr -d ' ')"
+          if [ "$AFTER" -le "$BEFORE" ]; then
+            echo "❌ command smoke: apply reported success but created no file ($BEFORE → $AFTER)."
+            exit 1
+          fi
+
+          CREATED="$(sed -n 's/.*→ //p' "$RUNNER_TEMP/smoke-apply.txt" | tail -1)"
+          if [ -z "$CREATED" ] || [ ! -f "$SMOKE/$CREATED" ]; then
+            echo "❌ command smoke: could not locate the created asset (parsed: '${CREATED:-<empty>}')."
+            exit 1
+          fi
+          echo "Created: $CREATED"
+          cat "$SMOKE/$CREATED"
+
+          if ! grep -q "ems__Effort_parent:.*$TASK_UID" "$SMOKE/$CREATED"; then
+            echo "❌ command smoke: the created asset has no ems__Effort_parent pointing at the fixture task ($TASK_UID)."
+            echo "   The Task-conditioned inheritance rule is not reaching this command — it was probably unwired."
+            exit 1
+          fi
+          echo "✅ ems__Effort_parent → $TASK_UID"
+
+          # The write must not introduce new violations either.
+          npx -y @kitelev/exocortex-cli@${{ inputs.cli_version }} validate schema \
+            --shapes-mode --vault "$SMOKE" --output text | tee "$RUNNER_TEMP/smoke-shacl.txt"
+          exit "${PIPESTATUS[0]}"
+
       - name: CI summary
         if: always()
         run: |
           {
             echo "## AssetSpace CI — ${{ github.repository }}"
             echo "Mode: ${{ inputs.warn_only && 'warn-only (non-blocking pilot)' || 'blocking gate' }}"
-            echo "Dependency resolution: ${{ inputs.resolve_deps && 'registry-driven (issue #3513)' || 'disabled (standalone)' }}"
+            echo "Dependency resolution: ${{ inputs.resolve_deps && 'registry-driven single-graph merge (issue #3513 / #3523)' || 'disabled (standalone)' }}"
             echo ""
             echo "### SHACL-lite (validate schema --shapes-mode)  outcome=${{ steps.shacl.outcome }}"
             echo '```'
@@ -173,4 +357,14 @@ jobs:
             echo '```'
             tail -10 "$RUNNER_TEMP/imports-report.txt" 2>/dev/null || echo "(no report)"
             echo '```'
+            echo "### ontology-membership audit  outcome=${{ steps.membership.outcome }}"
+            echo '```'
+            tail -10 "$RUNNER_TEMP/membership-report.txt" 2>/dev/null || echo "(no report)"
+            echo '```'
+            if [ "${{ inputs.command_smoke }}" = "true" ]; then
+              echo "### command smoke (${{ inputs.command_smoke_cli }})  outcome=${{ steps.smoke.outcome }}"
+              echo '```'
+              tail -20 "$RUNNER_TEMP/smoke-apply.txt" 2>/dev/null || echo "(no report)"
+              echo '```'
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

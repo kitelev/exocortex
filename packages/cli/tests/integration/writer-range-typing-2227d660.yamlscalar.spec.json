@@ -1,0 +1,158 @@
+{
+  "_doc": "Revert-verify mutants for ticket 2227d660 (req 21ceea14, PR fix/writer-types-by-declared-range). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/writer-range-typing-2227d660.yamlscalar.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's yamlScalar.ts and runs the suites named in `harness`; `expect` names the axes that MUST go red). cli suites resolve @kitelev/exocortex-core from core SRC (jest moduleNameMapper), so a core mutant reaches the cli axes without a build. Guards enumerated from `git diff -U0` (integration-test-revert-verify §A8). Recorded runs: see PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([RGDSQW]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/utilities/yamlScalar.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/utilities/yamlScalar.test.ts tests/utilities/MetadataHelpers.yamlQuoting.test.ts tests/unit/services/GenericAssetCreationService.test.ts 2>&1 ; cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/set-property.range-typing.integration.test.ts tests/integration/create.range-typing.integration.test.ts 2>&1",
+  "mutants": {
+    "MR1_multi_valued_range_takes_first_value": {
+      "from": "  if (declaredRange === undefined || declaredRange.length !== 1) {\n    return undefined;\n  }\n  const local = xsdDatatypeLocalName(declaredRange[0].trim());",
+      "to": "  if (declaredRange === undefined || declaredRange.length === 0) {\n    return undefined;\n  }\n  const local = xsdDatatypeLocalName(declaredRange[0].trim());",
+      "expect": [
+        "R11",
+        "R12"
+      ]
+    },
+    "MR2_foreign_curie_typed_as_string": {
+      "from": "  if (local === null) return undefined;\n  const numeric = xsdNumericFamily(local);",
+      "to": "  if (local === null) return \"string\";\n  const numeric = xsdNumericFamily(local);",
+      "expect": [
+        "R12"
+      ]
+    },
+    "MR3_numeric_family_dropped": {
+      "from": "  if (numeric !== null) return numeric;\n",
+      "to": "  void numeric;\n",
+      "expect": [
+        "R1",
+        "R2",
+        "R3",
+        "R12",
+        "S1",
+        "W1",
+        "W4"
+      ]
+    },
+    "MR4_boolean_typing_dropped": {
+      "from": "  if (local === \"boolean\") return \"boolean\";\n",
+      "to": "",
+      "expect": [
+        "R4",
+        "R12"
+      ]
+    },
+    "MR5_string_typing_dropped": {
+      "from": "  if (local === \"string\") return \"string\";\n",
+      "to": "",
+      "expect": [
+        "R5",
+        "R12",
+        "S2",
+        "W2"
+      ]
+    },
+    "MR6_integer_branch_removed_(pre-ticket_shape_rule)": {
+      "from": "  if (\n    typing === \"integer\" &&\n    CANONICAL_INTEGER_LEXICAL.test(value) &&\n    Number.isSafeInteger(Number(value))\n  ) {\n    return false;\n  }\n",
+      "to": "  /* MR6: integer branch removed — a canonical negative is quoted again */\n",
+      "expect": [
+        "R1",
+        "R2",
+        "S1",
+        "S5",
+        "W1",
+        "W4",
+        "G1",
+        "D1"
+      ]
+    },
+    "MR7_integer_lexical_admits_leading_zero": {
+      "from": "const CANONICAL_INTEGER_LEXICAL = /^[+-]?(?:0|[1-9][0-9]*)$/;",
+      "to": "const CANONICAL_INTEGER_LEXICAL = /^[+-]?[0-9]+$/;",
+      "expect": [
+        "R9"
+      ]
+    },
+    "MR8_safe_integer_guard_dropped": {
+      "from": "    CANONICAL_INTEGER_LEXICAL.test(value) &&\n    Number.isSafeInteger(Number(value))\n  ) {",
+      "to": "    CANONICAL_INTEGER_LEXICAL.test(value)\n  ) {",
+      "expect": [
+        "R8"
+      ]
+    },
+    "MR9_integer_lexical_admits_any_signed_run": {
+      "from": "const CANONICAL_INTEGER_LEXICAL = /^[+-]?(?:0|[1-9][0-9]*)$/;",
+      "to": "const CANONICAL_INTEGER_LEXICAL = /^[+-]?\\S+$/;",
+      "expect": [
+        "R7",
+        "R9"
+      ]
+    },
+    "MR10_decimal_branch_removed": {
+      "from": "  if (typing === \"decimal\" && CANONICAL_DECIMAL_LEXICAL.test(value)) {\n    return false;\n  }\n",
+      "to": "",
+      "expect": [
+        "R3",
+        "S2b"
+      ]
+    },
+    "MR11_decimal_lexical_admits_dot_forms": {
+      "from": "const CANONICAL_DECIMAL_LEXICAL = /^[+-]?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$/;",
+      "to": "const CANONICAL_DECIMAL_LEXICAL = /^[+-]?[0-9.]+(?:e[0-9]+)?$/;",
+      "expect": [
+        "R9",
+        "R13"
+      ]
+    },
+    "MR12_boolean_branch_removed": {
+      "from": "  if (typing === \"boolean\" && CANONICAL_BOOLEAN_LEXICAL.test(value)) {\n    return false;\n  }\n",
+      "to": "",
+      "expect": [
+        "R4"
+      ]
+    },
+    "MR13_string_branch_removed": {
+      "from": "  if (\n    typing === \"string\" &&\n    looksLikeNonStringScalar(value) &&\n    !CANONICAL_YAML_BOOLEAN.test(value)\n  ) {\n    return true;\n  }\n",
+      "to": "",
+      "expect": [
+        "R5",
+        "S2",
+        "W2",
+        "W4",
+        "G1",
+        "D1"
+      ]
+    },
+    "MR14_boolean_exclusion_dropped_under_string_range": {
+      "from": "    looksLikeNonStringScalar(value) &&\n    !CANONICAL_YAML_BOOLEAN.test(value)\n  ) {\n    return true;",
+      "to": "    looksLikeNonStringScalar(value)\n  ) {\n    return true;",
+      "expect": [
+        "R6"
+      ]
+    },
+    "MR15_serializeYamlScalar_drops_the_range": {
+      "from": "  return needsYamlQuoting(value, quoteAmbiguousScalars, declaredRange)\n",
+      "to": "  void declaredRange;\n  return needsYamlQuoting(value, quoteAmbiguousScalars)\n",
+      "expect": [
+        "R1",
+        "R3",
+        "R4",
+        "R5",
+        "S1",
+        "S2",
+        "W1",
+        "W2",
+        "W4",
+        "G1",
+        "D1"
+      ]
+    }
+  }
+}

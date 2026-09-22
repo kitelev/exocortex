@@ -3,11 +3,10 @@ import type { ITripleStore } from "../interfaces/ITripleStore";
 import { IRI } from "../domain/models/rdf/IRI";
 import { Literal } from "../domain/models/rdf/Literal";
 import { Namespace } from "../domain/models/rdf/Namespace";
+import { xsdDatatypeIRI } from "../utilities/xsdDatatype";
 
 // W3C SHACL namespace base
 const SH_NS = "http://www.w3.org/ns/shacl#";
-// XML Schema Datatypes namespace base
-const XSD_NS = "http://www.w3.org/2001/XMLSchema#";
 
 // Legacy whitelist retained for documentation; runtime resolution now goes
 // through Namespace.fromPropertyKey, which auto-extends to any well-formed
@@ -26,6 +25,32 @@ const NAMESPACE_MAP: ReadonlyArray<[string, Namespace]> = [
 
 void NAMESPACE_MAP;
 
+/** One `exo__Class_superClass` declaration seen by the FS scan (ticket 84bb4d08). */
+interface FsClassEdge {
+  /** Keys the declaring class file can be named by: filename stem, `exo__Asset_uid`, `exo__Asset_label`. */
+  childKeys: readonly string[];
+  /** Keys of every declared superclass (wikilink ref, and both halves of `uid|alias`). */
+  parentKeys: readonly string[];
+}
+
+/** A file with an `exo__Property_domain`, kept until the class hierarchy is known. */
+interface FsCandidate {
+  filePath: string;
+  fm: Record<string, string | string[]>;
+}
+
+interface FsScan {
+  classEdges: FsClassEdge[];
+  candidates: FsCandidate[];
+  /**
+   * `uid → symbolic label` for every file the pass sees whose
+   * `exo__Asset_label` is a single token parsing as `<prefix>__<Local>`
+   * (ticket 32d44596). Collected during THIS pass — `collectFile` already has
+   * the frontmatter in hand — so the tree is still walked exactly once.
+   */
+  uidToLabel: Map<string, string>;
+}
+
 /** Cached shape format written to / read from ~/.cache/exocortex/property-shapes.json */
 export interface ShapeJSONCache {
   version: number;
@@ -37,14 +62,41 @@ export class ShapeLoader {
   /**
    * Node.js only: walks vaultPath, parses all exo__Property*.md files and
    * builds ShapeRegistry from their frontmatter.
+   *
+   * One pass over the tree collects (a) every `exo__Class_superClass` edge
+   * and (b) every property-definition candidate (frontmatter with an
+   * `exo__Property_domain`); candidates are registered only after the pass,
+   * once the set of classes that IS-A `exo__Property` is known from (a) —
+   * so a def typed `exo__DatatypeProperty` / `exo__StringProperty` / … is
+   * accepted through the declared hierarchy, exactly as loadFromRDFGraph
+   * does through the graph (ticket 84bb4d08).
+   *
+   * The same pass also collects `uid → symbolic label`, which lets a
+   * domain/range written as a bare-UID wikilink (`[[ae56ca4c-…]]` — the
+   * RFC-004 strip-canon form) resolve to its canonical class IRI, as
+   * loadFromRDFGraph already does through `uidToClassIRI` (ticket 32d44596).
    */
   static async loadFromVaultFS(vaultPath: string): Promise<ShapeRegistry> {
-    // eslint-disable-next-line import/no-nodejs-modules
     const { readdir, readFile } = await import("fs/promises");
-    // eslint-disable-next-line import/no-nodejs-modules
     const path = await import("path");
     const registry = new ShapeRegistry();
-    await ShapeLoader.scanDir(vaultPath, registry, { readdir, readFile, path });
+    const scan: FsScan = { classEdges: [], candidates: [], uidToLabel: new Map() };
+    await ShapeLoader.scanDir(vaultPath, scan, { readdir, readFile, path });
+    const propertyClassKeys = ShapeLoader.propertyClassKeysFromEdges(scan.classEdges);
+    for (const candidate of scan.candidates) {
+      // Fail-soft: one malformed property asset should not abort the load.
+      try {
+        ShapeLoader.registerCandidate(
+          candidate,
+          registry,
+          propertyClassKeys,
+          path,
+          scan.uidToLabel,
+        );
+      } catch {
+        // Skip the offending file silently
+      }
+    }
     return registry;
   }
 
@@ -70,14 +122,28 @@ export class ShapeLoader {
     // file-IRI forms.
     const uidToClassIRI = await ShapeLoader.buildUidClassIndex(graph);
 
-    // Find all property definition subjects (exo:Property or exo:ObjectProperty)
-    const [objPropTriples, basePropTriples] = await Promise.all([
-      graph.match(undefined, RDF.term("type"), EXO.term("ObjectProperty")),
-      graph.match(undefined, RDF.term("type"), EXO.term("Property")),
-    ]);
+    // Find all property definition subjects: every node typed as exo:Property
+    // OR any of its (transitive) subclasses — exo:ObjectProperty,
+    // exo:DatatypeProperty, exo:StringProperty → exo:DatatypeProperty, … —
+    // resolved from the graph's own exo:Class_superClass / rdfs:subClassOf
+    // edges (ticket 84bb4d08: an rdf:type-only match on Property|ObjectProperty
+    // left 291/220/200 live defs [exodev/my/tbank] without a shape).
+    const propertyClassIRIs = await ShapeLoader.collectPropertyClassIRIs(
+      graph,
+      uidToClassIRI,
+    );
+    const typeTripleSets = await Promise.all(
+      [...propertyClassIRIs].map(async (classIRI) => {
+        try {
+          return await graph.match(undefined, RDF.term("type"), new IRI(classIRI));
+        } catch {
+          return [];
+        }
+      }),
+    );
 
     const subjects = new Set<string>();
-    for (const t of [...objPropTriples, ...basePropTriples]) {
+    for (const t of typeTripleSets.flat()) {
       if (t.subject instanceof IRI) subjects.add(t.subject.value);
     }
 
@@ -159,15 +225,13 @@ export class ShapeLoader {
             return await ShapeLoader.resolveClassIRI(t.object.value, graph, uidToClassIRI);
           }
           // Plain-string range values (e.g. `exo__Property_range:
-          // "http://www.w3.org/2001/XMLSchema#integer"`) arrive as Literals
-          // because NoteToRDFConverter only emits IRI objects for wikilink
-          // values. Accept any literal whose lexical form is itself a valid
-          // IRI — this covers xsd:* datatype ranges and explicit HTTP IRIs.
+          // "http://www.w3.org/2001/XMLSchema#integer"` or the live-corpus
+          // CURIE form `"xsd:integer"`) arrive as Literals because
+          // NoteToRDFConverter only emits IRI objects for wikilink values.
+          // Resolve them with the SAME helper loadFromVaultFS uses, so the
+          // two loaders agree on `shape.range` (ticket a9b55ead).
           if (t.object instanceof Literal) {
-            const raw = t.object.value;
-            if (raw.startsWith("http://") || raw.startsWith("https://")) {
-              return raw;
-            }
+            return ShapeLoader.datatypeRangeToIRI(t.object.value);
           }
           return null;
         }),
@@ -211,7 +275,6 @@ export class ShapeLoader {
    * Format: ShapeJSONCache — see RFC 82a72aca §"Cached shape format".
    */
   static async loadFromShapeJSON(jsonPath: string): Promise<ShapeRegistry> {
-    // eslint-disable-next-line import/no-nodejs-modules
     const { readFile } = await import("fs/promises");
     const raw = await readFile(jsonPath, "utf-8");
     const cache: ShapeJSONCache = JSON.parse(raw) as ShapeJSONCache;
@@ -227,6 +290,13 @@ export class ShapeLoader {
   /** Matches `obsidian://vault/[<dirs>/]<uuid>.md` and captures the bare UUID. */
   private static readonly FILE_IRI_UID_RE =
     /\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.md$/i;
+
+  /**
+   * A bare UUID — the RFC-004 strip-canon form a class is named by in
+   * `exo__Asset_uid` and in a UID-named filename stem (ticket 32d44596).
+   */
+  private static readonly BARE_UID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   /** Extracts the lowercase UUID from a `…/<uuid>.md` file IRI, or null. */
   private static extractUidFromFileIRI(iri: string): string | null {
@@ -267,6 +337,80 @@ export class ShapeLoader {
       if (classIRI) map.set(uid, classIRI);
     }
     return map;
+  }
+
+  /**
+   * Ticket 84bb4d08: the set of canonical class IRIs whose instances are
+   * property definitions — `exo:Property` plus every class reachable from it
+   * DOWNWARD through `exo:Class_superClass` / `rdfs:subClassOf` edges
+   * (transitive: `exo:StringProperty → exo:DatatypeProperty → exo:Property`).
+   *
+   * Seeded with `exo:Property` and `exo:ObjectProperty` — the two classes the
+   * loader matched before the walk existed — so a graph that carries no TBox
+   * class files (fixtures, partial mounts) keeps its previous behaviour
+   * verbatim; the walk only ever ADDS classes, and starts from BOTH seeds.
+   *
+   * Edge endpoints are canonicalized with the same {@link resolveClassIRI}
+   * used for domain/range, so a file-IRI subject (`obsidian://…/<uid>.md`)
+   * and a symbolic object (`exo#Property`) land in one IRI space. Cycles are
+   * harmless (visited set); unresolvable endpoints stay as file IRIs and
+   * simply never match an `rdf:type` object.
+   */
+  private static async collectPropertyClassIRIs(
+    graph: ITripleStore,
+    uidToClassIRI: ReadonlyMap<string, string>,
+  ): Promise<Set<string>> {
+    const EXO = Namespace.EXO;
+    const RDFS = Namespace.RDFS;
+    const [superTs, subClassOfTs] = await Promise.all([
+      graph.match(undefined, EXO.term("Class_superClass"), undefined),
+      graph.match(undefined, RDFS.term("subClassOf"), undefined),
+    ]);
+
+    // Memoized endpoint canonicalization — the same class file is the subject
+    // of several edges and the object of many more.
+    const resolved = new Map<string, string | null>();
+    const canon = async (iri: string): Promise<string | null> => {
+      let v = resolved.get(iri);
+      if (v === undefined) {
+        v = await ShapeLoader.resolveClassIRI(iri, graph, uidToClassIRI);
+        resolved.set(iri, v);
+      }
+      return v;
+    };
+
+    // parent canonical IRI → child canonical IRIs
+    const children = new Map<string, Set<string>>();
+    for (const t of [...superTs, ...subClassOfTs]) {
+      if (!(t.subject instanceof IRI) || !(t.object instanceof IRI)) continue;
+      const [child, parent] = await Promise.all([
+        canon(t.subject.value),
+        canon(t.object.value),
+      ]);
+      if (!child || !parent || child === parent) continue;
+      const set = children.get(parent) ?? new Set<string>();
+      set.add(child);
+      children.set(parent, set);
+    }
+
+    const result = new Set<string>([
+      EXO.term("Property").value,
+      EXO.term("ObjectProperty").value,
+    ]);
+    // Walk from EVERY seed: exo:ObjectProperty is already in `result`, so
+    // reaching it as a child of exo:Property would not enqueue it — its own
+    // subtree (exo:BooleanProperty ⊑ exo:ObjectProperty in exoas-exo) is only
+    // visited when it is a root of the walk too (review #4271 MEDIUM).
+    const queue = [...result];
+    while (queue.length > 0) {
+      const parent = queue.shift() as string;
+      for (const child of children.get(parent) ?? []) {
+        if (result.has(child)) continue;
+        result.add(child);
+        queue.push(child);
+      }
+    }
+    return result;
   }
 
   /**
@@ -347,9 +491,59 @@ export class ShapeLoader {
     return iri;
   }
 
+  /** exo__Property class UID (`exoas-exo`, `exo__Property`). */
+  private static readonly EXO_PROPERTY_UID = "38277bfa-d7f9-4a75-b856-b23276ab0db3";
+  /** exo__ObjectProperty class UID (`exoas-exo`, `exo__ObjectProperty`). */
+  private static readonly EXO_OBJECT_PROPERTY_UID = "9a1cf31c-9d41-4ef3-9023-584a8d087d16";
+
+  /**
+   * Ticket 84bb4d08 (FS twin of {@link collectPropertyClassIRIs}): the set of
+   * class KEYS — label (`exo__DatatypeProperty`), UID, and filename stem —
+   * under which a property definition's `exo__Instance_class` wikilink may
+   * name a class that IS-A `exo__Property`. Seeded with the two classes the
+   * loader always accepted (`exo__Property`, `exo__ObjectProperty`, label and
+   * UID form), then walked DOWNWARD over the collected `exo__Class_superClass`
+   * edges (BFS; a class already in the set is not re-queued, so a cycle
+   * terminates — same shape as the graph walk).
+   */
+  private static propertyClassKeysFromEdges(edges: readonly FsClassEdge[]): Set<string> {
+    const seeds = [
+      "exo__Property",
+      ShapeLoader.EXO_PROPERTY_UID,
+      "exo__ObjectProperty",
+      ShapeLoader.EXO_OBJECT_PROPERTY_UID,
+    ];
+    const keys = new Set<string>(seeds);
+    const queue = [...seeds];
+    while (queue.length > 0) {
+      const parent = queue.shift() as string;
+      for (const edge of edges) {
+        if (!edge.parentKeys.includes(parent)) continue;
+        if (edge.childKeys.some((k) => keys.has(k))) continue;
+        for (const k of edge.childKeys) {
+          keys.add(k);
+          queue.push(k);
+        }
+      }
+    }
+    return keys;
+  }
+
+  /** All key forms a wikilink value can name a class by: `ref`, and both halves of `uid|alias`. */
+  private static wikilinkClassKeys(value: string): string[] {
+    const ref = ShapeLoader.extractWikilinkRef(value);
+    if (!ref) return [];
+    const out = [ref.trim()];
+    for (const part of ref.split("|")) {
+      const trimmed = part.trim();
+      if (trimmed.length > 0) out.push(trimmed);
+    }
+    return out;
+  }
+
   private static async scanDir(
     dir: string,
-    registry: ShapeRegistry,
+    scan: FsScan,
     io: {
       readdir: (
         p: string,
@@ -365,14 +559,19 @@ export class ShapeLoader {
     } catch {
       return;
     }
+    // readdir order is not guaranteed sorted on any filesystem; scan in name
+    // order so the collected candidate sequence — and therefore which of two
+    // defs sharing a propertyIRI registers last — is the same on every
+    // platform.
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const entry of entries) {
       const full = io.path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        await ShapeLoader.scanDir(full, registry, io);
+        await ShapeLoader.scanDir(full, scan, io);
       } else if (entry.isFile() && entry.name.endsWith(".md")) {
-        // Fail-soft: one malformed property asset should not abort the scan.
+        // Fail-soft: one malformed asset should not abort the scan.
         try {
-          await ShapeLoader.processFile(full, registry, io.readFile, io.path);
+          await ShapeLoader.collectFile(full, scan, io.readFile, io.path);
         } catch {
           // Skip the offending file silently
         }
@@ -380,11 +579,18 @@ export class ShapeLoader {
     }
   }
 
-  private static async processFile(
+  /**
+   * Reads one file's frontmatter and records what the post-scan phase needs:
+   * its `exo__Class_superClass` edge (any asset declaring one — the TBox
+   * class files) and/or itself as a property-definition candidate (any
+   * asset with an `exo__Property_domain`). Everything else is dropped here,
+   * so the pass keeps only the ~hundreds of TBox files in memory.
+   */
+  private static async collectFile(
     filePath: string,
-    registry: ShapeRegistry,
+    scan: FsScan,
     readFile: (p: string, enc: "utf-8") => Promise<string>,
-    path?: typeof import("path"),
+    path: typeof import("path"),
   ): Promise<void> {
     let content: string;
     try {
@@ -396,36 +602,112 @@ export class ShapeLoader {
     const fm = ShapeLoader.parseFrontmatter(content);
     if (!fm) return;
 
-    // Must be a property definition.
+    ShapeLoader.indexUidLabel(filePath, fm, scan.uidToLabel, path);
+
+    const superClasses = ShapeLoader.asArray(fm["exo__Class_superClass"]);
+    if (superClasses.length > 0) {
+      const childKeys = [path.basename(filePath, ".md")];
+      const uidRaw = fm["exo__Asset_uid"];
+      if (typeof uidRaw === "string" && uidRaw.trim().length > 0) {
+        childKeys.push(uidRaw.trim().replace(/^["']|["']$/g, ""));
+      }
+      const labelRaw = fm["exo__Asset_label"];
+      if (typeof labelRaw === "string" && labelRaw.trim().length > 0) {
+        childKeys.push(labelRaw.trim().replace(/^["']|["']$/g, ""));
+      }
+      scan.classEdges.push({
+        childKeys,
+        parentKeys: superClasses.flatMap((v) => ShapeLoader.wikilinkClassKeys(v)),
+      });
+    }
+
+    if (ShapeLoader.asArray(fm["exo__Property_domain"]).length > 0) {
+      scan.candidates.push({ filePath, fm });
+    }
+  }
+
+  /**
+   * Ticket 32d44596 (FS twin of {@link buildUidClassIndex}): records
+   * `uid → label` for a file whose `exo__Asset_label` can name a class in
+   * canonical ontology form, so a domain/range written as a bare-UID wikilink
+   * (`[[ae56ca4c-…]]`, the RFC-004 strip-canon form) resolves to that class.
+   *
+   * Called from {@link collectFile}, i.e. inside the SINGLE pass `scanDir`
+   * already makes — the frontmatter is in hand, so no extra file is read. (The
+   * separate `buildUidLabelMap` traversal was rejected as a double vault scan
+   * in PR #3138, 2026-05-17; only the second walk was refused, not the
+   * resolution.)
+   *
+   * Admission mirrors the graph-side index verbatim: only a single-token label
+   * that parses to a `<prefix>__<Local>` IRI is indexed, so a human-named class
+   * (`concept__Definition (DEPRECATED)`) is left to the open-world handling on
+   * BOTH sides. Keyed by `exo__Asset_uid` and — for a UID-named file — the
+   * filename stem; first-wins, UIDs being unique.
+   */
+  private static indexUidLabel(
+    filePath: string,
+    fm: Record<string, string | string[]>,
+    uidToLabel: Map<string, string>,
+    path: typeof import("path"),
+  ): void {
+    const labelRaw = fm["exo__Asset_label"];
+    if (typeof labelRaw !== "string") return;
+    const label = labelRaw.trim().replace(/^["']|["']$/g, "");
+    // labelToIRI splits on the first `__`; a multi-word label would produce an
+    // invalid IRI — the same restriction buildUidClassIndex applies.
+    if (label.length === 0 || /\s/.test(label)) return;
+    if (!Namespace.fromPropertyKey(label)) return;
+
+    const uidRaw = fm["exo__Asset_uid"];
+    const keys = [
+      typeof uidRaw === "string" ? uidRaw.trim().replace(/^["']|["']$/g, "") : "",
+      path.basename(filePath, ".md"),
+    ];
+    for (const key of keys) {
+      if (!ShapeLoader.BARE_UID_RE.test(key)) continue;
+      const lower = key.toLowerCase();
+      if (!uidToLabel.has(lower)) uidToLabel.set(lower, label);
+    }
+  }
+
+  private static registerCandidate(
+    candidate: FsCandidate,
+    registry: ShapeRegistry,
+    propertyClassKeys: ReadonlySet<string>,
+    path: typeof import("path"),
+    uidToLabel: ReadonlyMap<string, string>,
+  ): void {
+    const { filePath, fm } = candidate;
+
+    // Must be a property definition: some `exo__Instance_class` value names a
+    // class that IS-A `exo__Property` (see propertyClassKeysFromEdges).
     // After RFC-004 UUID-canonicalization (2026-05-16), TBox class IRIs in
     // exo__Instance_class are written as pure UID wikilinks (no alias suffix),
-    // so we must accept both:
-    //   - label-form `[[exo__Property]]` / `[[exo__ObjectProperty]]` (legacy)
+    // so every form is accepted:
+    //   - label-form `[[exo__Property]]` / `[[exo__DatatypeProperty]]` (legacy)
     //   - UID+alias form `[[<uid>|exo__Property]]` (intermediate canon)
     //   - pure UID form `[[<uid>]]` (current strip-canon)
-    const EXO_PROPERTY_UID = "38277bfa-d7f9-4a75-b856-b23276ab0db3";
-    const EXO_OBJECT_PROPERTY_UID = "9a1cf31c-9d41-4ef3-9023-584a8d087d16";
     const classes = ShapeLoader.asArray(fm["exo__Instance_class"]);
-    const isProperty = classes.some((c) => {
-      const ref = ShapeLoader.extractWikilinkRef(c);
-      return (
-        ref === "exo__Property" ||
-        ref === "exo__ObjectProperty" ||
-        ref === EXO_PROPERTY_UID ||
-        ref === EXO_OBJECT_PROPERTY_UID ||
-        ref?.includes("|exo__Property") ||
-        ref?.includes("|exo__ObjectProperty")
-      );
-    });
+    const isProperty = classes.some((c) =>
+      ShapeLoader.wikilinkClassKeys(c).some((k) => propertyClassKeys.has(k)),
+    );
     if (!isProperty) return;
 
     // Resolve label: prefer explicit `exo__Asset_label`, fall back to filename
     // basename for property assets that omit the label field (issue #3099).
+    //
+    // parseFrontmatter is deliberately naive and keeps a value VERBATIM, quotes
+    // included, so every consumer strips the surrounding quotes itself — the same
+    // predicate runs in collectFile (class-edge child keys), indexUidLabel (label
+    // and uid keys) and extractWikilinkRef. Without it a quoted scalar label fails
+    // labelToIRI and the definition is dropped before its domain is parsed at all
+    // (ticket efe993e1). The basename branch needs no strip: a filename cannot
+    // carry surrounding quotes.
     let label: string | null = null;
     const labelRaw = fm["exo__Asset_label"];
     if (typeof labelRaw === "string" && labelRaw.trim().length > 0) {
-      label = labelRaw.trim();
-    } else if (path) {
+      label = labelRaw.trim().replace(/^["']|["']$/g, "");
+    } else {
       const basename = path.basename(filePath, ".md");
       if (Namespace.fromPropertyKey(basename)) {
         label = basename;
@@ -442,13 +724,16 @@ export class ShapeLoader {
     const sevRaw = fm["exo__Property_severity"];
     const minCountRaw = fm["exo__Property_minCount"];
 
+    // Both positions take the UID index: loadFromRDFGraph canonicalizes domain
+    // AND range through resolveClassIRI/uidToClassIRI, so resolving only one of
+    // them here would split the two loaders (parity axes P1 / L4 / V6).
     const domain = ShapeLoader.asArray(domainRaw)
-      .map((v) => ShapeLoader.wikilinkToIRI(v))
+      .map((v) => ShapeLoader.wikilinkToIRI(v, uidToLabel))
       .filter((v): v is string => v !== null);
     if (domain.length === 0) return;
 
     const range = ShapeLoader.asArray(rangeRaw)
-      .map((v) => ShapeLoader.wikilinkToIRI(v))
+      .map((v) => ShapeLoader.wikilinkToIRI(v, uidToLabel))
       .filter((v): v is string => v !== null);
 
     const cardinality = ShapeLoader.cardinalityFromLabel(
@@ -459,8 +744,22 @@ export class ShapeLoader {
       typeof sevRaw === "string" ? sevRaw : undefined,
     );
 
+    // parseFrontmatter keeps a value VERBATIM — quotes included (see the label
+    // branch above and `result[key] = kvMatch[2].trim()` in that parser) — so a
+    // definition written `exo__Property_minCount: "1"` used to reach parseInt
+    // with the quotes still attached, yield NaN and register a shape WITHOUT
+    // the obligation, while loadFromRDFGraph (handed an already-parsed literal)
+    // built minCount 1 from the SAME bytes. The strip below is the predicate the
+    // label branch already applies, verbatim (ticket 15003314).
+    //
+    // DELIBERATE FAIL-OPEN, not an oversight: a value that does not parse as a
+    // number leaves minCount undefined and never throws. The value comes from
+    // USER DATA (the outside world), where failing open is the correct policy;
+    // fail-closed belongs where OUR policy breaks, not someone else's input.
     const minCountParsed =
-      typeof minCountRaw === "string" ? parseInt(minCountRaw, 10) : undefined;
+      typeof minCountRaw === "string"
+        ? parseInt(minCountRaw.trim().replace(/^["']|["']$/g, ""), 10)
+        : undefined;
     const minCount =
       minCountParsed !== undefined && !isNaN(minCountParsed) ? minCountParsed : undefined;
 
@@ -558,8 +857,12 @@ export class ShapeLoader {
   /**
    * Converts a wikilink value to a full IRI string.
    * Handles: "[[ems__Effort]]", "[[uuid|ems__Effort]]", "[[exo__PropertyCardinalitySingle]]"
+   * and — through `uidToLabel` — the bare-UID form "[[ae56ca4c-…]]".
    */
-  private static wikilinkToIRI(value: string): string | null {
+  private static wikilinkToIRI(
+    value: string,
+    uidToLabel?: ReadonlyMap<string, string>,
+  ): string | null {
     const ref = ShapeLoader.extractWikilinkRef(value);
     if (!ref) return null;
 
@@ -572,14 +875,45 @@ export class ShapeLoader {
       if (iri) return iri;
     }
 
-    // Try as a full IRI
-    if (ref.startsWith("http")) return ref;
+    // Full http(s) IRI or CURIE `xsd:<local>` — shared with loadFromRDFGraph
+    const datatypeIRI = ShapeLoader.datatypeRangeToIRI(ref);
+    if (datatypeIRI) return datatypeIRI;
     // Try SHACL prefix
     if (ref.startsWith("sh:")) return SH_NS + ref.substring(3);
-    // Try XSD prefix
-    if (ref.startsWith("xsd:")) return XSD_NS + ref.substring(4);
+
+    // LAST resort (ticket 32d44596): after RFC-004 strip-canon a domain/range
+    // names its class by bare UID, which no branch above can parse. Consulted
+    // only once every one of them returned null, so no value that resolves
+    // today changes. BOTH halves of `uid|alias` are tried — the alias may be a
+    // human label while the UID half is the resolvable one. loadFromRDFGraph
+    // reaches the same class through resolveClassIRI's uidToClassIRI fallback.
+    if (uidToLabel) {
+      for (const candidate of candidates) {
+        const label = uidToLabel.get(candidate.trim().toLowerCase());
+        if (label === undefined) continue;
+        const iri = ShapeLoader.labelToIRI(label);
+        if (iri) return iri;
+      }
+    }
 
     return null;
+  }
+
+  /**
+   * Resolves a range value written as a plain string (no wikilink) to an IRI:
+   * a full `http://` / `https://` IRI is returned as-is, the CURIE `xsd:<local>`
+   * (the form `create --class DatatypeProperty` writes and 100 % of live
+   * datatype ranges use) expands to the W3C XSD namespace via the shared
+   * {@link xsdDatatypeIRI} (local name kept verbatim — `xsd:dateTime` →
+   * `…#dateTime`, the tag the converter emits; the resolver's lower-casing is
+   * its own policy, not the helper's). Anything else is not a datatype range
+   * → null. One implementation for BOTH loaders (loadFromRDFGraph literal
+   * branch + loadFromVaultFS via wikilinkToIRI) so they cannot drift apart
+   * again (ticket a9b55ead).
+   */
+  static datatypeRangeToIRI(raw: string): string | null {
+    if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+    return xsdDatatypeIRI(raw);
   }
 
   private static asArray(v: unknown): string[] {

@@ -117,6 +117,17 @@ export {
 export {
   GroundingExecutor,
   ServiceRegistry,
+  // Issue #4298 — the executor's missing-input verdict, reachable by a
+  // pre-flight (CLI `apply --dry-run`) so the preview and the real run agree
+  // by construction rather than by a maintained copy.
+  //
+  // `missingInputHint` is deliberately NOT re-exported: only `findMissingInput`
+  // (the walker) and `missingInputError` (the shared wording) are needed across
+  // the package boundary, and the hint helper is reachable from tests by its
+  // source path. Keeping it internal keeps the semver surface at what callers
+  // actually use (PR #4299 review, LOW-1).
+  missingInputError,
+  findMissingInput,
   type ExecutionResult,
   type UserInput,
   type IGroundingService,
@@ -149,6 +160,16 @@ export {
   type RequiredPropertyField,
   type RequiredPropertyFieldType,
 } from "./services/RequiredPropertyResolver";
+// Ticket 534a7a46 — declared `exo__Property_range` by the definition's
+// `prefix__Name` label, read from a triple store. The port `GroundingExecutor`
+// takes so its create_instance / property_set writes type a scalar by the
+// declaration, as `cli create` / `cli set-property` do (CLI↔UI parity #3417).
+// Exported next to its sibling above because it is the same kind of thing: a
+// store-backed resolver factory plus its port type.
+export {
+  createTripleStoreDeclaredRanges,
+  type DeclaredRangesResolver,
+} from "./services/DeclaredRangesResolver";
 export { TaskStatusService } from "./services/TaskStatusService";
 export {
   AreaHierarchyBuilder,
@@ -239,8 +260,15 @@ export { FrontmatterService } from "./utilities/FrontmatterService";
 // Exposed so CLI-side mutation primitives (e.g. `set-property`, issue #3795) can
 // pre-format values the same way the create / property_set paths do before
 // handing them to FrontmatterService.updateProperty (which writes verbatim).
+// quoteYamlString — the always-quoted, escaped form (`\" \\ \n \r \t \xNN \uNNNN`) that
+// property_append (#4250) and the RenameToUidService flow-array alias site
+// (ticket 77ffc37a) hand to FrontmatterService.updateProperty; the CLI batch
+// update-label writer went with the dead BatchExecutor (ticket 99a904a9).
 export {
+  quoteYamlString,
   serializeYamlScalar,
+  scalarTypingForRange,
+  type DeclaredRangeTyping,
   STRING_SCALAR_PROPERTIES,
 } from "./utilities/yamlScalar";
 // Tolerant YAML frontmatter parse (#3800) — bare yaml.load throws on a
@@ -249,6 +277,14 @@ export {
 export { parseYamlFrontmatterTolerant } from "./utilities/parseYamlFrontmatter";
 export { DateFormatter } from "./utilities/DateFormatter";
 export { WikiLinkHelpers } from "./utilities/WikiLinkHelpers";
+// Class subsumption over frontmatter `exo__Class_superClass` edges (req
+// 15f48fa1) — the reference-picker candidate resolver's downward closure.
+export {
+  resolveSubsumedClassKeys,
+  instanceClassMatches,
+  extractClassRefTarget,
+  type ClassDefinitionLike,
+} from "./utilities/ClassSubsumption";
 export { MetadataHelpers } from "./utilities/MetadataHelpers";
 export { MetadataExtractor } from "./utilities/MetadataExtractor";
 export { EffortSortingHelpers } from "./utilities/EffortSortingHelpers";
@@ -308,7 +344,12 @@ export {
   normaliseExcludedFolders,
   isPathExcluded,
   UNPREFIXED_ASSET_FIELDS,
+  LEGACY_UNPREFIXED_ASSET_FIELDS,
+  LEGACY_YAML_KEYS,
   canonicalYamlKey,
+  // Issue #4219 — the indexer and the CLI's wikilink validator must agree on
+  // what is NOT a link; sharing the predicate keeps them from drifting apart.
+  isPosixBracketExpression,
   type ExocortexInvariantCode,
   type ExocortexInvariantViolation,
 } from "./services/NoteToRDFConverter";

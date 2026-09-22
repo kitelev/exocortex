@@ -1,0 +1,49 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "ROOT=\"${SUT%%/packages/core/*}\"; cd \"$ROOT\" && npx jest --config packages/core/jest.config.js tests/domain/display-name/printedPropertyValueSource.test.ts tests/domain/display-name/nestedDisplayName.test.ts 2>&1; cd \"$ROOT/packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/resolve-display-name.nestedDisplayName.integration.test.ts 2>&1",
+  "red_re": "› @req:\\S+ ([SVW]\\d+) ",
+  "_doc": "req ff1482f2 — the compile half: resolving the declaration from both identity forms and compiling it into the placeholder.",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/domain/display-name/PrintNameRuleService.ts",
+  "mutants": {
+    "S_M7_declaration_never_read": {
+      "from": "    const preferComposed = PrintNameRuleService.declaresComposedSource(\n      fm.exo__PrintedProperty_valueSource,\n    );",
+      "to": "    const preferComposed = false;",
+      "expect": ["S1", "S2", "S10", "S11", "S12", "S13", "S14"]
+    },
+    "S_M8_marker_not_compiled_into_the_placeholder": {
+      "from": "          const source = p.preferComposed ? `!${COMPOSED_SOURCE_MARKER}` : \"\";",
+      "to": "          const source = \"\";",
+      "expect": ["S1", "S2", "S10", "S11", "S12", "S13", "S14"]
+    },
+    "S_M9_uid_form_not_recognised": {
+      "from": "  \"8bc662e3-2984-4845-9593-d37e0db9b7e3\",\n  \"exo__PrintedPropertyValueSourceDisplayName\",",
+      "to": "  \"exo__PrintedPropertyValueSourceDisplayName\",",
+      "expect": ["S1", "S2", "S10", "S11", "S12", "S13", "S14"]
+    },
+    "S_M11_any_value_counts_as_the_declaration": {
+      "from": "    if (COMPOSED_VALUE_SOURCE_KEYS.has(cleaned)) return true;",
+      "to": "    if (cleaned.length > 0) return true;",
+      "expect": ["S4", "S5"]
+    },
+    "S_M10_array_form_not_unwrapped": {
+      "from": "    if (Array.isArray(value)) {\n      if (value.length === 0) return false;\n      value = value[0];\n    }",
+      "to": "    if (Array.isArray(value)) {\n      return false;\n    }",
+      "expect": ["S10"]
+    },
+    "S_M12_md_suffix_not_stripped": {
+      "from": "    const cleaned = unwrapLinkTarget(value).replace(/\\.md$/, \"\");",
+      "to": "    const cleaned = unwrapLinkTarget(value);",
+      "expect": ["S11"]
+    },
+    "S_M13_label_form_not_recognised": {
+      "from": "  \"8bc662e3-2984-4845-9593-d37e0db9b7e3\",\n  \"exo__PrintedPropertyValueSourceDisplayName\",",
+      "to": "  \"8bc662e3-2984-4845-9593-d37e0db9b7e3\",",
+      "expect": ["S2"]
+    }
+  }
+}

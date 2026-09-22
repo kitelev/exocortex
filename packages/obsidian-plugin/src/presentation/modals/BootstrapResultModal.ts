@@ -111,7 +111,7 @@ export class BootstrapResultModal extends Modal {
       text: copy.nextHint,
     });
 
-    const actions = contentEl.createEl("div", {
+    const actions = contentEl.createDiv({
       cls: "modal-button-container bootstrap-result-actions",
     });
 
@@ -142,12 +142,10 @@ export class BootstrapResultModal extends Modal {
       // Success (§3.3) — the next-step nudge + one-click forward action.
       const nextBtn = actions.createEl("button", {
         cls: "mod-cta bootstrap-result-next-action",
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- "AssetSpace" is the product's domain term (same casing as the "Add AssetSpace by URL" command)
         text: "Add the AssetSpace registry",
       });
       nextBtn.setAttribute(
         "aria-label",
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- "AssetSpace" + "EKA" are product domain terms (matches the "Add AssetSpace by URL" command)
         "Add the AssetSpace registry (opens a dialog pre-filled with the recommended EKA registry)",
       );
       nextBtn.addEventListener("click", () => {

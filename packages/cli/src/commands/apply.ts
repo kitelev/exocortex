@@ -3,7 +3,9 @@ import { existsSync } from "fs";
 import { resolve, relative, isAbsolute, sep as pathSep } from "path";
 import {
   InMemoryTripleStore,
-  NoteToRDFConverter,
+  // Ticket 534a7a46 — read next to the store it reads from: the declared-range
+  // resolver handed to GroundingExecutor below.
+  createTripleStoreDeclaredRanges,
   CommandResolver,
   PreconditionEvaluator,
   GroundingExecutor,
@@ -24,6 +26,8 @@ import {
   createVaultFrontmatterRefToFolderResolver,
   createVaultFrontmatterRefToFrontmatterResolver,
   registerDefaultHostFunctions,
+  findMissingInput,
+  missingInputError,
   vaultPathToIRI,
   IRI,
   liveClock,
@@ -42,13 +46,19 @@ import {
 } from "../utils/errors/index.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
-import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
+import { TripleStoreIndexedFsAdapter } from "../adapters/TripleStoreIndexedFsAdapter.js";
 import { createIsInWrongFolderHostFunction } from "../precondition/createIsInWrongFolderHostFunction.js";
 import { createHasEmptyPropertiesHostFunction } from "../precondition/createHasEmptyPropertiesHostFunction.js";
 import { populateCliServiceRegistry } from "../services/CliServiceRegistryPopulator.js";
 import { FsQueryBodyResolver } from "../services/FsQueryBodyResolver.js";
 import { registerOrderSpecFromVault } from "../services/registerOrderSpec.js";
 import { StderrLogger } from "../infrastructure/StderrLogger";
+import {
+  loadVaultTriples,
+  cacheLoadNotice,
+  writeThroughCache,
+  writeThroughNotice,
+} from "../cache/loadVaultTriples.js";
 
 export interface ApplyOptions {
   vault: string;
@@ -63,6 +73,18 @@ export interface ApplyOptions {
   // `query --format json`. When set, stdout is a single JSON object and the
   // human-readable ✅/📊 notices are suppressed so the object parses cleanly.
   json?: boolean;
+  // #4264 — load the triple store from the persistent per-file cache
+  // (`loadVaultTriples`, hit / delta / rebuild) instead of a full vault parse.
+  // Default off: without the flag the command is byte-identical to before.
+  useCache?: boolean;
+  // #4264 — with --use-cache: after a grounding executed, fold what it wrote
+  // into the persisted cache in THIS process (the delta is paid here, so the
+  // next --use-cache process is a plain hit). Default off — measured on the
+  // bot's 3-writer chain the delta is cheaper when the NEXT reader pays it
+  // (delta-only), and write-through only wins when readers outnumber writers,
+  // which is a property of the consumer's workload, hence its call (decision
+  // ae0b4fce). Refused without --use-cache: there is nothing to write through to.
+  writeThrough?: boolean;
 }
 
 /**
@@ -86,6 +108,14 @@ interface CreatedAsset {
 interface TargetResult {
   ok: boolean;
   created: CreatedAsset[];
+  /**
+   * #4264 — `true` once the grounding was EXECUTED for this target (it may
+   * still have failed part-way, e.g. a composite whose later step threw). A
+   * dry-run, a refused precondition or an early argument error never reach
+   * execution → `false`. Drives the write-through: anything that executed
+   * may have touched the vault, whatever `ok` says.
+   */
+  executed: boolean;
 }
 
 /**
@@ -215,6 +245,7 @@ async function executeOnTarget(
   vaultPath: string,
   tripleStore: InMemoryTripleStore,
   workflowResolver: WorkflowResolver,
+  nodeFsAdapter: TripleStoreIndexedFsAdapter,
   commandUid: string,
   targetRelative: string,
   options: ApplyOptions,
@@ -222,7 +253,7 @@ async function executeOnTarget(
   uidGen: IUidGenerator,
 ): Promise<TargetResult> {
   // Issue #3906 — a failed target contributes no created assets.
-  const failed: TargetResult = { ok: false, created: [] };
+  const failed: TargetResult = { ok: false, created: [], executed: false };
   const targetPath = resolve(vaultPath, targetRelative);
   if (!existsSync(targetPath)) {
     console.error(`❌ Target file not found: ${targetRelative}`);
@@ -340,8 +371,50 @@ async function executeOnTarget(
     return failed;
   }
 
+  // Issue #4298 — parse --input BEFORE the dry-run early return. It used to be
+  // parsed just above `groundingExecutor.execute`, i.e. on the far side of that
+  // return, so a dry-run accepted an --input the real run rejects: a malformed
+  // JSON string, or a well-formed one whose key the grounding never reads. Both
+  // printed "precondition passed" with rc=0 while `--yes` refused with rc=5.
+  // Parsing is pure (no vault access, no side effects), so hoisting it changes
+  // nothing for the executing path — it only lets the preview see the same input.
+  let userInput: Record<string, unknown> | undefined;
+  if (options.input) {
+    try {
+      const parsed = JSON.parse(options.input);
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        throw new Error("must be a JSON object");
+      }
+      userInput = parsed as Record<string, unknown>;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`❌ --input: invalid JSON object (${msg})`);
+      return failed;
+    }
+  }
+
   // Dry-run
   if (options.dryRun) {
+    // Issue #4298 — a preview that cannot fail is not a preview. Ask the SAME
+    // code the executor uses (`missingInputHint`, via `findMissingInput`) whether
+    // any statically-known value template references an input we were not given,
+    // and refuse with the SAME wording and a non-zero exit — so a call copied
+    // from a green dry-run actually runs.
+    //
+    // Silent by construction about `targetValueQuery` steps: their template is
+    // produced by running a query, so it does not exist yet. Guessing there
+    // could refuse a call that would have succeeded — worse than the false-green.
+    const missingInput = findMissingInput(command.grounding, userInput);
+    if (missingInput !== null) {
+      console.error(
+        `❌ "${command.name}" cannot run on "${vaultRelative}": ${missingInputError(missingInput)}`,
+      );
+      return failed;
+    }
     // Issue #3906 — keep stdout clean in --json mode (the envelope is emitted
     // once by the action handler); a dry-run creates nothing → empty `created`.
     if (!options.json) {
@@ -349,7 +422,7 @@ async function executeOnTarget(
         `🔍 Dry-run: would apply "${command.name}" to "${vaultRelative}" (precondition passed).`,
       );
     }
-    return { ok: true, created: [] };
+    return { ok: true, created: [], executed: false };
   }
 
   // Execute grounding
@@ -366,7 +439,14 @@ async function executeOnTarget(
     new EffortStatusWorkflow(),
     new StatusTimestampService(vaultAdapter),
   );
-  const nodeFsAdapter = new NodeFsAdapter(vaultPath);
+  // #4272 — `nodeFsAdapter` is the batch-level TripleStoreIndexedFsAdapter
+  // (built once in the action handler): the create-instance resolvers below
+  // (class label → uid, isDefinedBy → folder, targetRef → frontmatter,
+  // templateRef → path) each bottomed out in NodeFsAdapter.findFilesByMetadata
+  // — a glob + read + YAML parse of EVERY markdown file per call (11 scans =
+  // 183 317 reads for one create-task-instance on a 16 664-file vault). The
+  // adapter answers those lookups from an index over the loader's EXPLICIT
+  // triples and reads only the files it resolves to.
   populateCliServiceRegistry(serviceRegistry, {
     vaultAdapter,
     fsAdapter: nodeFsAdapter,
@@ -433,27 +513,16 @@ async function executeOnTarget(
       // `targetRefProperty` token (UI/CLI parity, Issue #3417). Mirrors the
       // plugin's createObsidianRefToFrontmatterResolver.
       refToFrontmatter: createVaultFrontmatterRefToFrontmatterResolver(nodeFsAdapter),
+      // Ticket 534a7a46 — declared-range typing for the scalars create_instance
+      // and property_set write (UI/CLI parity, Issue #3417). Source is the same
+      // hydrated `tripleStore` this function already hands to WorkflowResolver
+      // and NamedQueryRunner; the plugin wires the identical factory over its own
+      // store, so `apply` and the button reach one implementation, not two.
+      // Without it BOTH paths kept typing by SHAPE while `cli create` /
+      // `cli set-property` typed by the declaration (ticket 2227d660).
+      declaredRanges: createTripleStoreDeclaredRanges(tripleStore),
     },
   );
-
-  let userInput: Record<string, unknown> | undefined;
-  if (options.input) {
-    try {
-      const parsed = JSON.parse(options.input);
-      if (
-        typeof parsed !== "object" ||
-        parsed === null ||
-        Array.isArray(parsed)
-      ) {
-        throw new Error("must be a JSON object");
-      }
-      userInput = parsed as Record<string, unknown>;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`❌ --input: invalid JSON object (${msg})`);
-      return failed;
-    }
-  }
 
   const result = await groundingExecutor.execute(
     command.grounding,
@@ -491,12 +560,12 @@ async function executeOnTarget(
       const suffix = firstPath ? ` → ${firstPath}` : "";
       console.log(`✅ ${msg}${suffix}`);
     }
-    return { ok: true, created };
+    return { ok: true, created, executed: true };
   } else {
     console.error(
       `❌ "${command.name}" failed on "${vaultRelative}": ${result.error}`,
     );
-    return failed;
+    return { ok: false, created: [], executed: true };
   }
 }
 
@@ -523,7 +592,7 @@ export function applyCommand(): Command {
     .option("--yes", "Skip destructive-command confirmation")
     .option(
       "--input <json>",
-      `JSON userInput for a grounding. Value-setting commands need a value key, e.g. set-planned-start / set-scheduled-date: --input '{"value":"<ISO>"}'; set-label: --input '{"value":"New label"}'. The required key is named in the error if omitted.`,
+      `JSON userInput for a grounding. Value-setting commands need a value key, e.g. set-planned-start / set-scheduled-date: --input '{"value":"<ISO>"}'. A command whose grounding declares its own input key uses THAT key: set-label: --input '{"label":"New label"}'. Asset-reference inputs (set-parent: --input '{"parent":"<uid>"}'; set-blocker: --input '{"blocker":"<uid>"}') take a BARE uid; a copied [[uid]] or [[uid|alias]] is accepted and unwrapped, anything else that still looks like a link is refused. The required key is named in the error if omitted.`,
     )
     .option(
       "--seed <uuid>",
@@ -537,6 +606,14 @@ export function applyCommand(): Command {
       "--json",
       "Emit a machine-readable JSON result ({command,target,created:[{uuid,path,label}]}) instead of human-readable output",
     )
+    .option(
+      "--use-cache",
+      "Use the persistent triple cache (hit / delta / rebuild) instead of a full vault parse; a mutation is picked up by the NEXT --use-cache process as a delta unless --write-through is also given",
+    )
+    .option(
+      "--write-through",
+      "With --use-cache: after a grounding executed, fold the mutation into the persistent cache in this process, so the next --use-cache process is a plain hit (the delta is paid by this writer instead of the next reader). Refused without --use-cache",
+    )
     .action(
       async (
         cmdArg: string,
@@ -544,6 +621,16 @@ export function applyCommand(): Command {
         options: ApplyOptions,
       ) => {
         ErrorHandler.setFormat("text" as OutputFormat);
+
+        // #4264 — refused before anything is read or written: without
+        // --use-cache there is no loaded cache state to write through to.
+        if (options.writeThrough && !options.useCache) {
+          process.stderr.write(
+            "❌ --write-through requires --use-cache (there is no cache to write through to without it); nothing was applied\n",
+          );
+          process.exit(ExitCodes.INVALID_ARGUMENTS);
+          return;
+        }
 
         try {
           const vaultPath = resolve(options.vault);
@@ -563,12 +650,29 @@ export function applyCommand(): Command {
             ? seededUidGenerator(options.seed)
             : liveUidGenerator();
 
-          // Build triple store once for the whole batch
-          const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
-          const converter = new NoteToRDFConverter(vaultAdapter);
-          const triples = await converter.convertVault();
+          // Build triple store once for the whole batch. #4264: through the
+          // shared loader — without --use-cache this is the same
+          // `new NoteToRDFConverter(new FileSystemVaultAdapter(vaultPath))
+          // .convertVault()` as before (no cache read, no cache write); with it
+          // the per-file cache (hit / delta / rebuild). The loader's
+          // CacheManager is kept for the write-through after the loop.
+          const useCacheEffective = options.useCache ?? false;
+          const loaded = await loadVaultTriples(vaultPath, {
+            useCache: useCacheEffective,
+          });
+          if (useCacheEffective) {
+            process.stderr.write(`${cacheLoadNotice(loaded)}\n`);
+          }
           const tripleStore = new InMemoryTripleStore();
-          await tripleStore.addAll(triples);
+          await tripleStore.addAll(loaded.triples);
+          // #4272 — one index-backed fs adapter for the whole batch, fed the
+          // loader's EXPLICIT triples (the store above also holds the inferred
+          // layer in its default graph) and the files the loader committed no
+          // triples for (see TripleStoreIndexedFsAdapter).
+          const nodeFsAdapter = new TripleStoreIndexedFsAdapter(vaultPath, {
+            explicitTriples: loaded.triples.slice(0, loaded.explicitCount),
+            zeroTriplePaths: loaded.zeroTriplePaths,
+          });
 
           // RFC 36347daf Phase 3 — construct WorkflowResolver once for the whole
           // batch so its per-class cache survives across stdin-piped targets
@@ -607,6 +711,9 @@ export function applyCommand(): Command {
           // Continue-on-error semantics
           let successCount = 0;
           let failCount = 0;
+          // #4264 — did ANY target reach grounding execution (and so possibly
+          // write)? Drives the write-through below.
+          let anyExecuted = false;
           // Issue #3906 — aggregate the assets created across all targets for
           // the `--json` envelope.
           const allCreated: CreatedAsset[] = [];
@@ -615,6 +722,7 @@ export function applyCommand(): Command {
               vaultPath,
               tripleStore,
               workflowResolver,
+              nodeFsAdapter,
               commandUid,
               target,
               options,
@@ -623,7 +731,32 @@ export function applyCommand(): Command {
             );
             if (targetResult.ok) successCount++;
             else failCount++;
+            if (targetResult.executed) anyExecuted = true;
             allCreated.push(...targetResult.created);
+          }
+
+          // #4264 — write-through (opt-in, --write-through): once ANY target's
+          // grounding executed (a dry-run and a refused precondition never do),
+          // whatever it wrote is folded into the persisted cache — a failed composite may have
+          // landed part of its files, so success is not the criterion (review
+          // of 1e8e8204, L1). Only the changed files + their referrers are
+          // re-parsed; a rebuild-class change is left to the next reader.
+          // Best-effort by construction: `writeThroughCache` never throws, so
+          // the exit code and the stdout envelope below do not depend on it —
+          // the mutation is already on disk, and a cache that could not be
+          // persisted is simply refreshed by the next --use-cache process.
+          // (`--dry-run` never executes a grounding, so `anyExecuted` covers it.)
+          // Without --write-through the cache file is not touched by this
+          // process at all: the next --use-cache reader folds the change in as
+          // its own delta (the default — decision ae0b4fce, numbers in #4264).
+          if (
+            useCacheEffective &&
+            options.writeThrough &&
+            anyExecuted &&
+            loaded.cacheManager
+          ) {
+            const outcome = await writeThroughCache(loaded.cacheManager);
+            process.stderr.write(`${writeThroughNotice(outcome)}\n`);
           }
 
           // Issue #3906 — in --json mode the multi-target summary is suppressed

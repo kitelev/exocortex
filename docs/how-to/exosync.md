@@ -238,11 +238,22 @@ loss and are visible cross-device. Design points:
   `deferredDeletes` warnings and re-surface on every sync. Remote deletes
   _are_ applied locally.
 - **`auth-required`** — HTTP 401, or 403 without rate-limit markers: the
-  PAT is expired, revoked or under-scoped; never treated as success. Known
-  blind spot: an under-scoped _fine-grained_ PAT gets **404** from GitHub
-  on private-repo refs (existence-hiding), which surfaces as a generic
-  error, not as `auth-required` — if a private repo "does not exist",
-  check the PAT's repository allowlist first.
+  PAT is expired, revoked or under-scoped; never treated as success. A
+  fine-grained PAT that _can_ see the repo but lacks the **Contents**
+  permission gets **403 «Resource not accessible by personal access
+  token»** → `auth-required` (also on the watermark base lookup, #4234).
+  A fine-grained PAT whose _repository allowlist omits_ the private repo
+  gets **404** from GitHub (existence-hiding), never `auth-required` — the
+  same answer a deleted/renamed repo gives, and the same answer a visible
+  repo gives when it has no `main` branch (ExoSync syncs `main` only; a repo
+  created with `master` lands here), so the engine cannot tell the three
+  apart. On every path (first sync, the cached steady-state head prefetch,
+  and the base-commit lookup — which probes the head ref once before
+  trusting a 404, #4236) it surfaces as `error` with the detail
+  «`<owner>/<repo>@main` is not reachable … check the token's repository
+  allowlist first». Only when the repo IS visible and the base commit alone
+  is unknown does the sync report `full-conflict — base-mismatch` (a
+  genuinely rewritten / GC'd base).
 - **Rate limits** — every transport call is wrapped in exponential backoff
   with jitter (default 3 retries, 1 s base) on HTTP 429 / 403-rate-limit.
   After the retries the repo's cycle fails warn-not-block.

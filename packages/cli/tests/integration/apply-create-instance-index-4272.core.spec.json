@@ -1,0 +1,19 @@
+{
+  "_doc": "Revert-verify mutant for #4272 (req 5ab3d237-cae9-498c-925c-6951b9c9c5db) on the CORE passthrough, subject packages/core/src/services/NoteToRDFConverter.ts: `convertVault` forwards the caller's `onFileTriples` observer (#4263) to `convertVaultWithValidation`, and `loadVaultTriples` (full parse) derives `zeroTriplePaths` from it. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/apply-create-instance-index-4272.core.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute). The cli jest config maps @kitelev/exocortex-core to core/src, so the mutation is live without a build. Recorded runs: see PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/NoteToRDFConverter.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/cache/loadVaultTriples.test.ts tests/integration/apply-create-instance-index-4272.integration.test.ts 2>&1",
+  "red_re": "› ([UI]\\d+\\w*) ",
+  "mutants": {
+    "P1_convertVault_drops_the_onFileTriples_observer": {
+      "from": "      onFileTriples: options.onFileTriples,\n    });\n    return result.triples;",
+      "to": "      onFileTriples: undefined,\n    });\n    return result.triples;",
+      "expect": ["U11", "I1"]
+    }
+  }
+}

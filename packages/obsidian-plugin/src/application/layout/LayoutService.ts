@@ -22,7 +22,7 @@ import type {
   ILogger,
   INotificationService,
 } from "@kitelev/exocortex-core";
-import { Literal, IRI } from "@kitelev/exocortex-core";
+import { Literal, IRI, FrontmatterService, canonicalYamlKey } from "@kitelev/exocortex-core";
 
 import type {
   Layout,
@@ -334,11 +334,22 @@ export class LayoutService {
       // Format the value for YAML frontmatter
       const formattedValue = this.formatValueForFrontmatter(newValue);
 
+      // req de7131ae (Scenario C): canonicalise the edited column's property
+      // name BEFORE building the payload (`archived` → `exo__Asset_archived`,
+      // `exo__Asset_aliases` → `aliases`, IRI → prefixed). The payload below
+      // re-emits every current key; on a carrier that already holds BOTH
+      // spellings the adapter resolves canonical-wins, so an edit that landed
+      // on the legacy name would lose to the stale canonical value — landing
+      // it on the canonical key keeps the edit under either spelling.
+      const targetKey = canonicalYamlKey(
+        FrontmatterService.normalizeIRI(propertyName),
+      );
+
       // Update frontmatter
       await this.vaultAdapter.updateFrontmatter(vaultFile, (current) => {
         return {
           ...current,
-          [propertyName]: formattedValue,
+          [targetKey]: formattedValue,
         };
       });
 
@@ -708,14 +719,12 @@ export class LayoutService {
       return value.toISOString();
     }
 
-    // String value - check if it needs quoting
-    const stringValue = String(value);
-
-    // Wikilinks should be quoted
-    if (stringValue.startsWith("[[") && stringValue.endsWith("]]")) {
-      return `"${stringValue}"`;
-    }
-
-    return stringValue;
+    // String value — handed to the OBJECT path (`IVaultAdapter.updateFrontmatter`
+    // → `FrontmatterService.applyPatch`), which stores references BARE and lets
+    // Obsidian's `processFrontMatter` quote them on disk (req 27fbe40b,
+    // PR #4248 review MEDIUM). Pre-quoting a `[[x]]` here — the pre-27fbe40b
+    // behaviour — made the quotes part of the string value (`'"[[x]]"'` on
+    // disk), so it is deliberately NOT done any more.
+    return String(value);
   }
 }

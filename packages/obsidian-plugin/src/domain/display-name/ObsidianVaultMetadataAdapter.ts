@@ -49,8 +49,8 @@ export class ObsidianVaultMetadataAdapter implements VaultMetadataPort {
     // ⛤ Сужение УЖЕ сделано строкой выше (`children in file`), и оно duck-typed
     // НАМЕРЕННО: `instanceof TFile` молча ужесточает blocker-путь (req 5cd9fffe) и
     // ломается при двух копиях модуля obsidian. Правило справедливо в общем случае;
-    // здесь его требование опровергнуто тестом, а не проигнорировано.
-    // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast
+    // здесь его требование опровергнуто тестом, а не проигнорировано — исключение
+    // объявлено per-file в eslint.config.mjs (#4232), не inline-директивой.
     return this.app.metadataCache.getFileCache(file as TFile)?.frontmatter ?? {};
   }
 }

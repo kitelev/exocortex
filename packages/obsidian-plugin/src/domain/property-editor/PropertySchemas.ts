@@ -191,7 +191,10 @@ const FALLBACK_PROPERTIES: PropertySchemaDefinition[] = [
     readOnly: true,
   },
   {
-    name: "exo__Asset_isArchived",
+    // req 960d7a3f: the TBox-declared archive flag (exoas-exo 79ca4e3e).
+    // `exo__Asset_isArchived` is a read-only compat alias and is not offered
+    // for editing; the property editor writes the canonical key.
+    name: "exo__Asset_archived",
     type: "boolean",
     required: false,
     label: "Archived",

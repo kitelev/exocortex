@@ -1,0 +1,93 @@
+{
+  "_doc": "Revert-verify mutants for ticket 534a7a46, req 675cb0ab-b73d-4736-934d-6094e792af5d — SUBJECT: packages/core/src/services/DeclaredRangesResolver.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices ONE mutation into the copy's subject and runs the suites named in `harness`; `expect` names the axes that MUST go red). Guards enumerated from `git diff -U0` (integration-test-revert-verify §A8). ⛤ MR3/MR3b are the PAIR that makes the choice of inverse addressable rather than asserted (ORCH plan-gate 2026-09-20): MR3 swaps iriToObsidianName for the static-map reversal and must redden K4 (namespace `team`, ABSENT from the nine-namespace map MR3 inlines — that map was retired from FrontmatterService (retired by ticket 6572f3f3 / req 38e3f174), so MR3 now reproduces a HISTORICAL alternative rather than a live one, and still discriminates) while leaving K16 (`ems`, present) green — an axis written on an in-map namespace would be green under BOTH derivations and prove nothing about the 81 of 104 typing definitions the static map misses. ⛔ NAMED, not mutated (integration-test-revert-verify §A35): the IRI-label fallback is DEFENSIVE on today's data — all 485 ranged definitions carry an rdfs:label literal (measured 2026-09-20, vault-exodev), so no live definition reaches it; MR2/MR3 therefore pin a path that only a synthetic definition takes, and that is stated rather than dressed up as live coverage. The load-bearing read is rdfs:label itself, which MR1b removes.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/DeclaredRangesResolver.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/services/DeclaredRangesResolver.test.ts tests/integration/asset-creation/range-typing-534a7a46.integration.test.ts 2>&1",
+  "env_var": "SUT",
+  "red_re": "› (K\\d+[a-z]?) ",
+  "mutants": {
+    "MR1_literal_label_branch_removed": {
+      "from": "        if (v.length > 0 && !literalLabel.has(s)) literalLabel.set(s, v);",
+      "to": "        if (v.length > 0 && !literalLabel.has(s)) void v;",
+      "expect": [
+        "K3"
+      ],
+      "_note": "Type-PRESERVING by construction (integration-test-revert-verify §A36): the `instanceof Literal` narrowing stays, only the SET is dropped. The first form of this mutant wrapped the branch in `if (false)` and killed the narrowing — tsc TS2339 `Property 'value' does not exist on type 'Object'`, which the driver reports as BROKEN, i.e. no verdict at all. ⛤ Only K3 reddens: it is the one fixture whose label is a literal on exo__Asset_label with no rdfs:label, so nothing else can key it. The live-form fixtures fall through to the IRI inverse and stay green — see MR1c for why that is redundancy, not a hole."
+    },
+    "MR1b_rdfs_label_not_read": {
+      "from": "    const rdfsLabelTriples = await store.match(\n      undefined,\n      RDFS.term(\"label\"),\n      undefined,\n    );",
+      "to": "    const rdfsLabelTriples: typeof exoLabelTriples = [];",
+      "expect": [],
+      "_note": "⛔ MEASURED ZERO, and the measurement CORRECTS this spec's first reading of its own subject. The claim was that reading rdfs:label is THE load-bearing derivation because the converter emits exo__Asset_label as a symbolic IRI in 478 of 485 live definitions. The first half is measured and stands; the conclusion did not: a live-form definition carries BOTH the symbolic IRI and the rdfs:label literal, so with rdfs:label unread the key still resolves through the IRI inverse. The two reads are REDUNDANT on the live shape — either alone suffices — which makes this guard 'under test twice' rather than untested (§A43). MR1c is the pair-mutant that kills both and shows the pair IS load-bearing. Kept as a separate entry because a future definition carrying only one of the two would make this mutant discriminate."
+    },
+    "MR2_iri_label_branch_removed": {
+      "from": "        iriLabel.set(s, t.object.value);",
+      "to": "        void (s + t.object.value);",
+      "expect": [
+        "K4",
+        "K16"
+      ],
+      "_note": "Type-PRESERVING (§A36): the `instanceof IRI` narrowing stays, only the SET is dropped; the first form appended `&& false` to the condition and killed the narrowing (tsc TS2339 → the driver reports BROKEN, i.e. no verdict). ⛤ MEASURED ['K16','K4'] — the two iri-only fixtures, exactly as first predicted. ⚠ Recorded because the prediction was briefly WITHDRAWN on the strength of the BROKEN run: with no verdict available I reasoned the axes must be green by redundancy and set expect to []. That inference was wrong, and only the type-preserving re-run could say so — 'BROKEN' is the absence of a measurement, and treating it as one is how a real discriminating mutant gets written off as defensive."
+    },
+    "MR3_inverse_swapped_for_the_static_prefix_map": {
+      "from": "        (symbolic === undefined ? null : iriToObsidianName(symbolic));",
+      "to": "        (symbolic === undefined\n          ? null\n          : symbolic.replace(\n              /^https:\\/\\/exocortex\\.my\\/ontology\\/(ems|exo|exocmd|ims|ztlk|ptms|lit|inbox|pmbok)#/,\n              \"$1__\",\n            ));",
+      "expect": [
+        "K4"
+      ],
+      "_note": "⛤ THE addressability pair with K16, required by the ORCH plan-gate. The replacement reproduces the OUTCOME that FrontmatterService.normalizeIRI had while it carried a static nine-namespace IRI_PREFIX_MAP — exactly these nine namespaces, and for anything else the IRI UNCHANGED, which is what the untouched `symbolic` is here. ⛤ That map was retired by ticket 6572f3f3 / req 38e3f174; the mutant inlines its own copy, so it keeps discriminating as a historical alternative. Inlined rather than imported because the driver splices ONE mutation per copy, so a mutant needing a second edit (the import) would report BROKEN instead of a verdict (mutant-driver trap 2). Must redden K4 (`team`, absent from the inlined nine) and leave K16 (`ems`, present in them) GREEN — an axis on one of those nine is green under BOTH inverses and would prove nothing about the 81 of 104 typing definitions such a map missed."
+    },
+    "MR4_first_wins_dropped_last_def_wins": {
+      "from": "      if (out.has(key)) continue; // first-wins, as PropertyNameValidator does",
+      "to": "      if (out.has(key) && false) continue; // first-wins, as PropertyNameValidator does",
+      "expect": [
+        "K6"
+      ],
+      "_note": "K6 seeds two definitions under one label with DIFFERENT ranges, so last-wins flips its expected value."
+    },
+    "MR5_unresolvable_label_admitted_as_empty_key": {
+      "from": "      if (key === null || key === undefined || key.length === 0) continue;",
+      "to": "      if (key === null || key === undefined) continue;",
+      "expect": [],
+      "_note": "⛔ MEASURED ZERO ⇒ DEFENSIVE, named rather than dressed as coverage (§A35). K7's unlabelled seed yields `null` from the key derivation, which the `=== null` arm catches, so the `length === 0` arm is reachable only for a definition whose label literal is an EMPTY string — a shape no fixture here builds and none of the 485 live ranged definitions has. Kept because a whitespace-only label would otherwise become a map key."
+    },
+    "MR6_multi_valued_range_collapsed_to_first": {
+      "from": "      const acc = ranges.get(s);\n      if (acc) acc.push(v);\n      else ranges.set(s, [v]);",
+      "to": "      const acc = ranges.get(s);\n      if (acc) void acc;\n      else ranges.set(s, [v]);",
+      "expect": [
+        "K17"
+      ],
+      "_note": "⛤ Pinned by K17, which was ADDED because this mutant first reddened nothing: the file had no fixture whose range carries two values, so the accumulation branch (`acc.push`) was never taken and the guard was unpinnable. The axis is synthetic and says so — multi-valued ranges measure 0 / 0 / 0 across the three vaults — but the guard is what lets scalarTypingForRange see two values and decline to type, which is the fail-open half of the declared-range rule."
+    },
+    "MR7_non_IRI_range_subject_admitted": {
+      "from": "    for (const t of rangeTriples) {\n      if (!(t.subject instanceof IRI)) continue;",
+      "to": "    for (const t of rangeTriples) {\n      if (!(t.subject instanceof IRI) && false) continue;",
+      "expect": [],
+      "_note": "⛔ DEFENSIVE, and a type-preserving mutant is IMPOSSIBLE here by construction: this guard IS the narrowing that makes `t.subject.value` below type-check, so any mutation that removes its effect removes the narrowing and the copy stops compiling (measured: tsc TS2339 `Property 'value' does not exist on type 'Subject'` ⇒ the driver reports BROKEN, which is the absence of a verdict, not a verdict). The `from`/`to` are kept for the record; `expect: []` states that this guard cannot be pinned by this instrument rather than pretending it is covered."
+    },
+    "MR1c_neither_label_predicate_read": {
+      "from": "    const exoLabelTriples = await store.match(\n      undefined,\n      EXO.term(\"Asset_label\"),\n      undefined,\n    );\n    const rdfsLabelTriples = await store.match(\n      undefined,\n      RDFS.term(\"label\"),\n      undefined,\n    );",
+      "to": "    const exoLabelTriples: Awaited<ReturnType<typeof store.match>> = [];\n    const rdfsLabelTriples: typeof exoLabelTriples = [];",
+      "expect": [
+        "K1",
+        "K2",
+        "K3",
+        "K4",
+        "K16",
+        "K5",
+        "K17",
+        "K6",
+        "K7"
+      ],
+      "_note": "⛤ THE pair-mutant MR1b's zero demanded (§A43): neither label predicate is read, so no definition can be keyed at all and every axis of this file loses its subject. This is what makes the PAIR load-bearing where neither half is alone. Wide by construction, and the width is the verdict, not noise."
+    }
+  }
+}

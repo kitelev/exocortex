@@ -2,6 +2,14 @@ import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import obsidianPlugin from 'eslint-plugin-obsidianmd';
 import prettierConfig from 'eslint-config-prettier';
+// #4232 — `obsidianmd/ui/sentence-case` options REPLACE the plugin's default
+// brand/acronym lists (`options?.brands ?? DEFAULT_BRANDS`), they do not extend
+// them. Import the defaults (deep path — the package has no `exports` map) so
+// our additions come ON TOP of GitHub/Obsidian/macOS/HTTP/… A plugin upgrade that
+// moves these files fails config loading LOUDLY, which beats silently losing 120
+// default entries.
+import { DEFAULT_BRANDS } from 'eslint-plugin-obsidianmd/dist/lib/rules/ui/brands.js';
+import { DEFAULT_ACRONYMS } from 'eslint-plugin-obsidianmd/dist/lib/rules/ui/acronyms.js';
 
 export default tseslint.config(
   eslint.configs.recommended,
@@ -57,6 +65,32 @@ export default tseslint.config(
       'obsidianmd/platform': 'warn',
       'obsidianmd/regex-lookbehind': 'error',
       'obsidianmd/no-sample-code': 'warn',
+      // #4232 — brands / acronyms / literal placeholders that the sentence-case
+      // rule must preserve, configured ONCE here instead of per-call-site
+      // `eslint-disable` directives (eslint-plugin-obsidianmd 0.4.1 forbids
+      // disabling any obsidianmd/* rule inline).
+      'obsidianmd/ui/sentence-case': ['warn', {
+        // Defaults first (GitHub, Obsidian, macOS, …), then the product's own
+        // proper nouns. ⛔ Every addition changes what the rule DEMANDS elsewhere
+        // («Copy uid» would become «Copy UID» if UID were listed) — add only
+        // what a real UI string needs and re-run the whole-src config diff.
+        brands: [...DEFAULT_BRANDS, 'Exocortex', 'ExoSync', 'BRAT', 'AssetSpace', 'EKA'],
+        acronyms: [...DEFAULT_ACRONYMS, 'PAT', 'SHACL', 'SPARQL', 'RDF'],
+        // ⚠ A match ANYWHERE exempts the WHOLE string (plugin semantics) — the
+        // prose around a matched path is not checked. Accepted trade-off: the
+        // plugin cannot exempt a substring, and every current match is a bare
+        // placeholder or a path-bearing sentence already in sentence case.
+        ignoreRegex: [
+          '^github_pat_',          // literal token placeholder
+          '^\\d{2} [^\\n]*/',        // vault folder placeholders («09 templates/\n10 drafts/»)
+          '"\\d{2} \\w+/"',          // quoted folder example inside prose («(e.g. "09 Templates/")»)
+          '^assetspaces/',         // vault-relative path placeholders
+          '\\.exocortex/',           // literal `.exocortex/…` paths (the brand «Exocortex» must not re-case them)
+          '^\\[\\[',                 // wikilink placeholders («[[Note name]]»)
+          '^Step \\d+:',           // a11y step prefix in the onboarding panel
+          '^✓',                    // decorative completion glyph
+        ],
+      }],
 
       'no-restricted-syntax': ['error', {
         selector: 'NewExpression[callee.name="Notice"]',
@@ -132,20 +166,22 @@ export default tseslint.config(
   // packages/req-audit is a Node-only, repo-internal DEV TOOL (the RFC 0003
   // requirements-traceability checker run by the `requirements-trace` CI job,
   // RFC 7c7859d1 W-req). It is not plugin/core source and never ships to a
-  // mobile runtime, so the three mobile-safety/plugin-hygiene rules below do not
+  // mobile runtime, so the two mobile-safety/plugin-hygiene rules below do not
   // apply to it — exactly as they do not apply to packages/cli (which lint-staged
   // excludes via its `packages/!(cli)/src/**` glob):
   //   - no-console        — stdout IS this tool's interface; the CI job captures
   //                         the JSON report by redirecting stdout to a file.
-  //   - no-nodejs-modules / no-restricted-imports — the tool's whole job is to
-  //                         walk the filesystem; it runs under Node, never in a
-  //                         WebView.
+  //   - no-restricted-imports — the tool's whole job is to walk the filesystem;
+  //                         it runs under Node, never in a WebView.
+  //   (`import/no-nodejs-modules` is registered by eslint-plugin-obsidianmd's
+  //   recommended config but enabled by nothing — an `off` for it was inert and
+  //   was removed in b151005b; `obsidianmd/no-nodejs-modules` stays at its
+  //   default `warn` here.)
   // Scoped to this package only; every other rule stays in force.
   {
     files: ['packages/req-audit/**/*.ts'],
     rules: {
       'no-console': 'off',
-      'import/no-nodejs-modules': 'off',
       'no-restricted-imports': 'off',
     },
   },
@@ -183,7 +219,6 @@ export default tseslint.config(
       'no-control-regex': 'off',
       'no-restricted-globals': 'off',
       'no-restricted-imports': 'off',
-      'import/no-nodejs-modules': 'off',
       '@typescript-eslint/no-non-null-assertion': 'off',
       '@typescript-eslint/restrict-template-expressions': 'off',
       '@typescript-eslint/no-this-alias': 'off',
@@ -192,6 +227,47 @@ export default tseslint.config(
       '@typescript-eslint/no-require-imports': 'off',
       '@typescript-eslint/no-deprecated': 'off',
       '@typescript-eslint/only-throw-error': 'off',
+    },
+  },
+  // #4232 — `obsidianmd/settings-tab/prefer-setting-definitions` asks for the
+  // obsidian ≥ 1.13 declarative `getSettingDefinitions()` API. The settings
+  // tab is a ~950-line imperative `display()`; migrating it is a feature-size
+  // refactor tracked separately, not lint hygiene. Every other rule that the
+  // eslint-plugin-obsidianmd 0.4.1 bump surfaced for this file is now
+  // satisfied at the source (sentence-case configured above, directives
+  // removed, deprecated `display()` no longer called from code).
+  {
+    files: ['packages/obsidian-plugin/src/presentation/settings/ExocortexSettingTab.ts'],
+    rules: {
+      'obsidianmd/settings-tab/prefer-setting-definitions': 'off',
+    },
+  },
+  // #4232 — the ONE deliberate deviation from `no-tfile-tfolder-cast`: the
+  // adapter narrows a resolved link target by duck-typing (`"children" in
+  // file`) instead of `instanceof TFile`, because `instanceof` silently
+  // tightens the blocker path (req 5cd9fffe — a test with a plain-object mock
+  // proves it) and breaks whenever two copies of the `obsidian` module are
+  // loaded. The rule is right in general; here its demand is refuted by a
+  // test, so the exception lives in config (inline `eslint-disable` of any
+  // obsidianmd/* rule is an error since eslint-plugin-obsidianmd 0.4.1).
+  {
+    files: ['packages/obsidian-plugin/src/domain/display-name/ObsidianVaultMetadataAdapter.ts'],
+    rules: {
+      'obsidianmd/no-tfile-tfolder-cast': 'off',
+    },
+  },
+  // Ticket a9b55ead — pre-existing debt surfaced by lint-staged (`--max-warnings=0`
+  // on the staged file), NOT introduced by the change: `ShapeLoader.loadFromVaultFS`
+  // is the documented Node.js-only loader (CLI path) and already reaches `fs/promises`
+  // / `path` through dynamic `await import()`; the same three lines exist on
+  // origin/main (1171e0ae:43,45,215). `packages/core` has no `Platform` to guard on
+  // and CI `lint` covers only packages/obsidian-plugin/src, so the warning was dormant.
+  // Suppress ONLY this rule for exactly this file; follow-up: an FS-free core
+  // (move loadFromVaultFS to the CLI package) removes the entry.
+  {
+    files: ['packages/core/src/services/ShapeLoader.ts'],
+    rules: {
+      'obsidianmd/no-nodejs-modules': 'off',
     },
   },
   {

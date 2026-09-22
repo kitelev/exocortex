@@ -5,9 +5,10 @@ import { Command } from "commander";
 // package specifier `@kitelev/exocortex-core` is mocked below, so this import
 // reaches the actual module and the mock stays honest (see the comment at the
 // `canonicalYamlKey` entry).
-const { canonicalYamlKey: realCanonicalYamlKey } = await import(
-  "../../../../core/src/services/NoteToRDFConverter.js"
-);
+const {
+  canonicalYamlKey: realCanonicalYamlKey,
+  isPosixBracketExpression: realIsPosixBracketExpression,
+} = await import("../../../../core/src/services/NoteToRDFConverter.js");
 
 // Mock uuid (transitively a GenericAssetCreationService dependency)
 jest.unstable_mockModule("uuid", () => ({
@@ -34,6 +35,17 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
    * to the actual module.
    */
   canonicalYamlKey: realCanonicalYamlKey,
+  /**
+   * Issue #4219 — transitively required: create.ts → WikilinkValidator, which
+   * asks core whether a `[[…]]` target is a POSIX bracket expression rather
+   * than a link.
+   *
+   * ⛤ Same reasoning as `canonicalYamlKey` above: the REAL predicate is wired
+   * in, not a stub. A stub here would let the suite pass against a rule the
+   * indexer no longer shares — and "indexer and validator agree" is precisely
+   * the property the fix exists to guarantee.
+   */
+  isPosixBracketExpression: realIsPosixBracketExpression,
   // Transitively required: create.ts → folderRepairHelpers.ts imports this.
   extractAssetReference: jest.fn((v: unknown) =>
     typeof v === "string"
@@ -77,6 +89,10 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   // #3800: NodeFsAdapter (in the graph) now imports this. Not exercised here
   // (only option registration) → a stub satisfies the ESM named-import binding.
   parseYamlFrontmatterTolerant: jest.fn(),
+  // req 2a020489: FileSystemVaultAdapter (in the graph) now imports this for
+  // `updateFrontmatter`. Not exercised here → a shape-stub satisfies the ESM
+  // named-import binding.
+  FrontmatterService: { applyPatch: jest.fn() },
   // W3 (`create --validate`): create.ts pins the uid + clock before the
   // pre-write SHACL gate so the validated bytes are the written bytes. Never
   // invoked here (no `--validate` in these option-registration tests) → a
@@ -238,10 +254,12 @@ describe("Issue #2333: create command", () => {
     expect(option!.mandatory).toBeFalsy();
   });
 
-  it("should register exactly 15 options", () => {
+  it("should register exactly 17 options", () => {
     const cmd = createCommand();
-    // 15th = `--validate` (W3: opt-in pre-write SHACL-lite conformance gate).
-    expect(cmd.options).toHaveLength(15);
+    // 15th = `--validate` (W3: opt-in pre-write SHACL-lite conformance gate),
+    // 16th = `--use-cache` (#4264: cached vault load for --validate),
+    // 17th = `--write-through` (#4264: opt-in write-through, needs --use-cache).
+    expect(cmd.options).toHaveLength(17);
   });
 
   it("should register --validate as an optional opt-in flag", () => {
@@ -249,5 +267,21 @@ describe("Issue #2333: create command", () => {
     const option = cmd.options.find((o) => o.long === "--validate");
     expect(option).toBeDefined();
     expect(option!.mandatory).toBeFalsy();
+  });
+
+  it("@req:cb707868-356f-495d-825a-182e66ba8bcd should register --use-cache as an optional opt-in flag (default off)", () => {
+    const cmd = createCommand();
+    const option = cmd.options.find((o) => o.long === "--use-cache");
+    expect(option).toBeDefined();
+    expect(option!.mandatory).toBeFalsy();
+    expect(option!.defaultValue).toBeUndefined();
+  });
+
+  it("@req:cb707868-356f-495d-825a-182e66ba8bcd should register --write-through as an optional opt-in flag (default off, i.e. delta-only)", () => {
+    const cmd = createCommand();
+    const option = cmd.options.find((o) => o.long === "--write-through");
+    expect(option).toBeDefined();
+    expect(option!.mandatory).toBeFalsy();
+    expect(option!.defaultValue).toBeUndefined();
   });
 });

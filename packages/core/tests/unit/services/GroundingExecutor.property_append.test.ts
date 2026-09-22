@@ -21,6 +21,7 @@ import {
 } from "../../../src/services/GroundingExecutor";
 import { GroundingType } from "../../../src/domain/constants/GroundingType";
 import { GroundingDefinition } from "../../../src/domain/models/CommandDefinition";
+import * as yaml from "js-yaml";
 
 // -- Mocks --
 
@@ -198,6 +199,213 @@ describe("GroundingExecutor.property_append (Issue #3132)", () => {
       // (the new canonical predicate) instead of legacy targetValue.
       expect(result.error).toMatch(/appendExpression/i);
     });
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Ticket 4f226028 — the appended alias is written by the SAME YAML escaper as
+// the label (`quoteYamlString`), not a hand-built `"${value}"` wrap. Each axis
+// parses the written frontmatter with the REAL js-yaml (the parser Obsidian's
+// metadataCache and the CLI adapters use): an interior `"` / `\` left
+// unescaped makes the whole block unparseable (the incident: req 27fbe40b's
+// aliases broke `requirements-trace` on every PR), a swallowed `\` silently
+// diverges alias from label.
+//
+// @req:f7790000-3779-4bbb-8bbb-000000000002
+// ────────────────────────────────────────────────────────────────────────────
+describe("ticket 4f226028 — aliases entry goes through the YAML escaper (@req:f7790000-3779-4bbb-8bbb-000000000002)", () => {
+  const INPUT_APPEND = makeGrounding({
+    type: GroundingType.PROPERTY_APPEND,
+    targetProperty: "aliases",
+    appendExpression: "$input.label", // the real set-label step b36996d5
+  });
+  const TARGET_APPEND = makeGrounding({
+    type: GroundingType.PROPERTY_APPEND,
+    targetProperty: "aliases",
+    appendExpression: "$target.exo__Asset_label", // Copy Label to Aliases a85668fa
+  });
+
+  /** Frontmatter of the written file, parsed by the real js-yaml. */
+  function loadWritten(writer: ReturnType<typeof createMockWriter>): {
+    written: string;
+    fm: Record<string, unknown>;
+  } {
+    const written = writer.updateFile.mock.calls[0][1] as string;
+    const m = /^---\n([\s\S]*?)\n---/.exec(written);
+    expect(m).not.toBeNull();
+    return {
+      written,
+      fm: yaml.load((m as RegExpExecArray)[1]) as Record<string, unknown>,
+    };
+  }
+
+  it.each([
+    ["U1 interior double quotes", 'Label with "inner" quotes'],
+    ["U2 colon-space + quoted wikilink", 'Key: value (x: "[[y]]", z)'],
+    ["U3 hash + backslash", "Note #42 about \\ backslash"],
+  ])(
+    "%s — $input.label is escaped, the file parses and aliases[0] === label byte-for-byte",
+    async (_axis, label) => {
+      const { executor, writer } = makeExecutor(
+        "---\nexo__Asset_label: Old\n---\nBody",
+      );
+
+      const result = await executor.execute(INPUT_APPEND, TARGET_IRI, FILE_PATH, {
+        label,
+      });
+
+      expect(result.success).toBe(true);
+      const { fm } = loadWritten(writer);
+      expect(fm.aliases).toEqual([label]);
+    },
+  );
+
+  it("U1 writes the escaped double-quoted form on the list line", async () => {
+    const { executor, writer } = makeExecutor(
+      "---\nexo__Asset_label: Old\n---\nBody",
+    );
+
+    await executor.execute(INPUT_APPEND, TARGET_IRI, FILE_PATH, {
+      label: 'Label with "inner" quotes',
+    });
+
+    const { written } = loadWritten(writer);
+    expect(written).toContain('  - "Label with \\"inner\\" quotes"');
+  });
+
+  it("U4 $target.exo__Asset_label stored ESCAPED on disk round-trips: no double escaping, alias === label", async () => {
+    // As `property_set` / the create path write it (serializeYamlScalar).
+    const { executor, writer } = makeExecutor(
+      '---\nexo__Asset_label: "Key: \\"x\\" \\\\ y"\n---\nBody',
+    );
+
+    const result = await executor.execute(TARGET_APPEND, TARGET_IRI, FILE_PATH);
+
+    expect(result.success).toBe(true);
+    const { fm } = loadWritten(writer);
+    expect(fm.exo__Asset_label).toBe('Key: "x" \\ y');
+    expect(fm.aliases).toEqual([fm.exo__Asset_label]);
+  });
+
+  it("U5 dedup compares DECODED forms: an escaped stored alias is not appended twice", async () => {
+    const { executor, writer } = makeExecutor(
+      '---\nexo__Asset_label: "Say \\"hi\\""\naliases:\n  - "Say \\"hi\\""\n---\nBody',
+    );
+
+    const result = await executor.execute(TARGET_APPEND, TARGET_IRI, FILE_PATH);
+
+    expect(result.success).toBe(true);
+    const { fm } = loadWritten(writer);
+    expect(fm.aliases).toEqual(['Say "hi"']);
+  });
+
+  it("U6 a $target.<ref-prop> reference keeps its QUOTED wikilink form (never a bare flow sequence)", async () => {
+    // Regression guard for the decode change: a stored `"[[uid]]"` decodes to
+    // `[[uid]]` and is re-quoted by the escaper — the graph still reads a link.
+    const { executor, writer } = makeExecutor(
+      '---\nems__Effort_parent: "[[99999999-4f22-4000-8000-000000000009]]"\n---\nBody',
+    );
+    const grounding = makeGrounding({
+      type: GroundingType.PROPERTY_APPEND,
+      targetProperty: "exo__Asset_relates",
+      appendExpression: "$target.ems__Effort_parent",
+    });
+
+    const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+    expect(result.success).toBe(true);
+    const { written, fm } = loadWritten(writer);
+    expect(written).toContain('  - "[[99999999-4f22-4000-8000-000000000009]]"');
+    expect(fm.exo__Asset_relates).toEqual([
+      "[[99999999-4f22-4000-8000-000000000009]]",
+    ]);
+  });
+
+  it("U7 create_instance labelTemplate `$target.exo__Asset_label` over an ESCAPED stored label: the created label parses equal (no double escaping)", async () => {
+    // The other production consumer of the `$target.<prop>` decode (9 exocmd
+    // groundings carry `labelTemplate: $target.exo__Asset_label …`).
+    const { executor, writer } = makeExecutor(
+      '---\nexo__Asset_uid: proto-4f22\nexo__Asset_label: "Key: \\"x\\" \\\\ y"\n---\nBody',
+    );
+    const grounding = makeGrounding({
+      type: GroundingType.CREATE_INSTANCE,
+      targetClass: "ems__Action",
+      targetFolder: "/vault/actions",
+      labelTemplate: "$target.exo__Asset_label",
+    });
+
+    const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+    expect(result.success).toBe(true);
+    const created = writer.createFile.mock.calls[0][1] as string;
+    const m = /^---\n([\s\S]*?)\n---/.exec(created);
+    expect(m).not.toBeNull();
+    const fm = yaml.load((m as RegExpExecArray)[1]) as Record<string, unknown>;
+    expect(fm.exo__Asset_label).toBe('Key: "x" \\ y');
+  });
+
+  it("U8 (PR #4250 review MEDIUM) a js-yaml-dumped label with a §5.7 named escape on disk (`\"foo\\_bar\"`, NBSP) copies to aliases equal to the label", async () => {
+    // GREEN on origin/main too (the old byte-preserving wrap kept `\\_`); the
+    // sign of this axis is REVERSED — it guards the decoder against regressing
+    // the non-`quoteYamlString` escapes the object-path writers emit.
+    const { executor, writer } = makeExecutor(
+      '---\nexo__Asset_label: "foo\\_bar"\n---\nBody',
+    );
+
+    const result = await executor.execute(TARGET_APPEND, TARGET_IRI, FILE_PATH);
+
+    expect(result.success).toBe(true);
+    const { fm } = loadWritten(writer);
+    expect(fm.exo__Asset_label).toBe("foo\u00a0bar");
+    expect(fm.aliases).toEqual([fm.exo__Asset_label]);
+  });
+
+  it("U9 (PR #4250 review LOW) a single-quoted $input.label `'Foo'` is a USER value: the alias mirrors the label property_set writes", async () => {
+    const { executor, writer } = makeExecutor(
+      "---\nexo__Asset_label: Old\n---\nBody",
+    );
+
+    await executor.execute(INPUT_APPEND, TARGET_IRI, FILE_PATH, {
+      label: "'Foo'",
+    });
+
+    const { fm } = loadWritten(writer);
+    expect(fm.aliases).toEqual(["'Foo'"]);
+
+    // …and that IS what the label step writes for the same input: the real
+    // set-label step f79e2d7d (property_set exo__Asset_label = $input.label)
+    // quotes `'Foo'` as a string (leading `'` indicator) — label === alias.
+    const { executor: setExec, writer: setWriter } = makeExecutor(
+      "---\nexo__Asset_label: Old\n---\nBody",
+    );
+    await setExec.execute(
+      makeGrounding({
+        type: GroundingType.PROPERTY_SET,
+        targetProperty: "exo__Asset_label",
+        targetValueLiteral: "$input.label",
+      }),
+      TARGET_IRI,
+      FILE_PATH,
+      { label: "'Foo'" },
+    );
+    expect(loadWritten(setWriter).fm.exo__Asset_label).toBe("'Foo'");
+  });
+
+  it("U6b property_set with $target.<prop> still fails loud (no frontmatter context) — unchanged by the decode", async () => {
+    const { executor, writer } = makeExecutor(
+      '---\nems__Effort_parent: "[[99999999-4f22-4000-8000-000000000009]]"\n---\nBody',
+    );
+    const grounding = makeGrounding({
+      type: GroundingType.PROPERTY_SET,
+      targetProperty: "exo__Asset_relates",
+      targetValueLiteral: "$target.ems__Effort_parent",
+    });
+
+    const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/requires target frontmatter context/);
+    expect(writer.updateFile).not.toHaveBeenCalled();
   });
 });
 

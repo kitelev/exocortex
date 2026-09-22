@@ -103,3 +103,85 @@ describe("MetadataHelpers.buildFileContent — YAML-safe scalar quoting (#3750)"
     expect(parsed.aliases).toEqual([item, "plain alias"]);
   });
 });
+
+/**
+ * Ticket 2227d660 — the optional `declaredRangeOf` lookup types each scalar by
+ * its declared `exo__Property_range`. Revert-verify: with the lookup ignored
+ * (`declaredRangeOf?.(key)` → `undefined`) G1 goes RED; G2 is the control
+ * (no lookup = byte-identical to the shape rule) and stays GREEN.
+ */
+describe("MetadataHelpers.buildFileContent — declared-range typing (ticket 2227d660) @req:21ceea14-50dd-4cf8-bd3b-5a50b7c97105", () => {
+  const rangeOf = (key: string): readonly string[] | undefined =>
+    ({
+      ems__Reminder_chatId: ["xsd:integer"],
+      ems__Reminder_text: ["xsd:string"],
+      ems__Reminder_ids: ["xsd:integer"],
+    })[key];
+
+  it("G1 with the lookup: a canonical negative under xsd:integer is bare (reads as a number), a number under xsd:string is quoted (reads as a string); array items follow the same rule", () => {
+    const content = MetadataHelpers.buildFileContent(
+      {
+        exo__Asset_label: "Reminder",
+        ems__Reminder_chatId: "-1001234567890",
+        ems__Reminder_text: "42",
+        ems__Reminder_ids: ["-5", "-6"],
+        exo__Asset_relates: ["-7"],
+      },
+      undefined,
+      rangeOf,
+    );
+    expect(content).toContain("ems__Reminder_chatId: -1001234567890\n");
+    expect(content).toContain('ems__Reminder_text: "42"\n');
+    // Array items of a mapped key follow the same rule…
+    expect(content).toContain("ems__Reminder_ids:\n  - -5\n  - -6\n");
+    // …and a key the lookup does not know keeps the shape rule (leading `-` quoted).
+    expect(content).toContain('exo__Asset_relates:\n  - "-7"\n');
+    const parsed = parseFrontmatter(content);
+    expect(parsed.ems__Reminder_chatId).toBe(-1001234567890);
+    expect(parsed.ems__Reminder_text).toBe("42");
+  });
+
+  it("G2 without the lookup: the pre-ticket shape rule (negative quoted, number bare) is byte-identical", () => {
+    const content = MetadataHelpers.buildFileContent({
+      exo__Asset_label: "Reminder",
+      ems__Reminder_chatId: "-1001234567890",
+      ems__Reminder_text: "42",
+    });
+    expect(content).toContain('ems__Reminder_chatId: "-1001234567890"\n');
+    expect(content).toContain("ems__Reminder_text: 42\n");
+  });
+
+  /**
+   * Ticket 8185c9dd (review #4282 LOW-1) — the lookup is made with the key the
+   * caller SUPPLIED, not the emitted canonical key: `exo__Asset_pinned` is
+   * emitted as the bare `pinned:` (UNPREFIXED_ASSET_FIELDS) but its def is
+   * labelled `exo__Asset_pinned`, the key `set-property` resolves by. Revert-
+   * verify: with `declaredRangeOf?.(key)` (canonical key) G3 goes RED.
+   */
+  it("G3 a whitelisted bare-emitted key (`exo__Asset_pinned` → `pinned:`) resolves its range by the SUPPLIED key — the same key set-property resolves by", () => {
+    const seen: string[] = [];
+    const lookup = (key: string): readonly string[] | undefined => {
+      seen.push(key);
+      return key === "exo__Asset_pinned" ? ["xsd:integer"] : undefined;
+    };
+    const content = MetadataHelpers.buildFileContent(
+      { exo__Asset_label: "Pinned", exo__Asset_pinned: "-1" },
+      undefined,
+      lookup,
+    );
+    // Emitted bare under the canonical key, typed by the def's range.
+    expect(content).toContain("pinned: -1\n");
+    expect(parseFrontmatter(content).pinned).toBe(-1);
+    // The lookup saw the supplied key, never the canonical one.
+    expect(seen).toContain("exo__Asset_pinned");
+    expect(seen).not.toContain("pinned");
+    // Control — the same value supplied under the BARE key resolves nothing
+    // in either writer (no def is labelled `pinned`) → shape rule, quoted.
+    const bare = MetadataHelpers.buildFileContent(
+      { exo__Asset_label: "Pinned", pinned: "-1" },
+      undefined,
+      lookup,
+    );
+    expect(bare).toContain('pinned: "-1"\n');
+  });
+});

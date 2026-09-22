@@ -46,6 +46,35 @@ describe("AtomicFrontmatterService", () => {
     expect(after).toContain("content");
   });
 
+  // req 27fbe40b (ticket 73b16cc4) — the byte-form the claim/spawn writer
+  // produces: `quoteStyle: "double"` is the js-yaml 5 option this package
+  // resolves (js-yaml 4's `quotingType` is ignored here), so every scalar the
+  // dumper must quote (a wikilink, a timestamp-looking string, a digits-only
+  // pid) is double-quoted — the vault convention. Mutant M4 (`quoteStyle:
+  // "single"`, the default) → RED.
+  it("F5 quoted scalars are written double-quoted (wikilink, timestamp, digits-only pid) and read back as strings @req:27fbe40b-080f-4928-b675-3c767223c875", () => {
+    writeFileSync(target, buildMd({ exo__Asset_uid: "uuid-1" }, "# Body\n"));
+
+    const r = atomicUpdateFrontmatter(target, {
+      ems__Effort_status: "[[ems__EffortStatusDoing]]",
+      ems__Effort_startTimestamp: "2026-09-16T10:00:00",
+      aiTask__Task_claimedBy: "12345",
+    });
+    expect(r.success).toBe(true);
+
+    const after = readFileSync(target, "utf8");
+    const block = after.split("---")[1];
+    expect(block).toContain('ems__Effort_status: "[[ems__EffortStatusDoing]]"');
+    expect(block).toContain('ems__Effort_startTimestamp: "2026-09-16T10:00:00"');
+    expect(block).toContain('aiTask__Task_claimedBy: "12345"');
+    expect(block).not.toContain("'");
+
+    const parsed = parseYamlAsReader(block) as Record<string, unknown>;
+    expect(parsed["ems__Effort_status"]).toBe("[[ems__EffortStatusDoing]]");
+    expect(parsed["ems__Effort_startTimestamp"]).toBe("2026-09-16T10:00:00");
+    expect(parsed["aiTask__Task_claimedBy"]).toBe("12345");
+  });
+
   it("returns no-frontmatter for files without frontmatter", () => {
     writeFileSync(target, "no frontmatter here\n");
     const r = atomicUpdateFrontmatter(target, { foo: "bar" });

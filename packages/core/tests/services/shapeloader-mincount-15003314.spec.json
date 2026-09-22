@@ -1,0 +1,42 @@
+{
+  "_doc": "Revert-verify mutants for ticket 15003314 (req bcdd64d8-abc1-48f4-af50-42c8aa3f1978, branch batch6q-mincount). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). The production diff is ONE expression — registerCandidate now strips the surrounding quotes from exo__Property_minCount before parseInt, with the predicate copied verbatim from the exo__Asset_label branch of the same function — so the guards are enumerated INSIDE that expression per integration-test-revert-verify §A8: the strip itself (M1), the apostrophe half of its character class (M2), and the isNaN fail-open that decides what an unparseable value becomes (M5). M6 is the one that proves the PARITY GUARD is not decorative: it breaks a DIFFERENT field's quote INSENSITIVITY (severityFromValue stops matching by .includes and demands the exact token, so a quoted \"sh:Warning\" silently falls back to sh:Violation on the FS side while the graph side, handed the YAML-stripped value, still reads Warning) and Q8 must redden for it — a guard over six fields that only ever reddened for minCount would be a guard in name only. ⛔ THREE conceivable mutations carry no mutant, each for a named reason, not an omission. (a) Unanchoring the character class (/[\"']/g instead of /^[\"']|[\"']$/g) is behaviourally identical on every input this parser can produce: parseFrontmatter already trimmed the value, so the quotes it can carry are the surrounding pair, and an interior quote (`1\"2`) is not a number in either form — the axis would pin behaviour on input the corpus does not contain (the same reasoning, and the same honest wording, as the efe993e1 spec). (b) Removing the leading .trim() is an EQUIVALENT mutant by arithmetic, not by luck: parseFrontmatter assigns `result[key] = kvMatch[2].trim()`, so the value reaching registerCandidate is already trimmed on EVERY path — the .trim() is defensive and kept only because the predicate is a verbatim copy of the label branch, where it is load-bearing (that branch also reads array items). It is named defensive here rather than deleted, so a later reader does not restore it as a fix. (c) The parity fixture's own realism (parseFm stripping BOTH quote styles, the one test-side line this PR changes) cannot carry a mutant because the driver mutates `subject` only; it is instead locked by construction — Q8 asserts `compared === 18`, so a fixture that stopped producing cases fails loudly rather than passing vacuously. Expectations were derived axis-by-axis (what does each one assert), not from the mutant's theme — §A44. Q3 (bare control, literal expectations, no reference to its quoted siblings) and Q9 (the THIRD implementation, RequiredPropertyResolver, which reads the predicate off the graph where the quotes are already gone) are GREEN under every mutant — that is the stronger claim: the unquoted path and the third reader are intact even with the fix removed. ⛔ ONE FURTHER mutation was written, measured and REPLACED rather than kept, and the reason is arithmetic, not a slip: making cardinalityFromLabel skip extractWikilinkRef (ref = raw) reddens NOTHING, because that function's LAST branch matches `ref.includes(CARDINALITY_MULTIPLE_UID)` — a UID substring is found whether or not the surrounding quotes were stripped, so the extractor is defensive for the UID form and the mutant is equivalent on every input the corpus contains. It was swapped for the severityFromValue mutation above, which does change behaviour on a quoted value. Recorded here because §A97: a mutant that reddens nothing is a measurement only once you know WHY, and 'the axis is blind' and 'the guard is defensive' are opposite diagnoses.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/ShapeLoader.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/services/ShapeLoader.test.ts tests/unit/services/RequiredPropertyResolver.test.ts 2>&1",
+  "mutants": {
+    "M1_strip_removed": {
+      "from": "        ? parseInt(minCountRaw.trim().replace(/^[\"']|[\"']$/g, \"\"), 10)",
+      "to": "        ? parseInt(minCountRaw, 10)",
+      "expect": ["Q1", "Q2", "Q4", "Q7", "Q8"]
+    },
+    "M2_apostrophe_dropped": {
+      "from": "        ? parseInt(minCountRaw.trim().replace(/^[\"']|[\"']$/g, \"\"), 10)",
+      "to": "        ? parseInt(minCountRaw.trim().replace(/^[\"]|[\"]$/g, \"\"), 10)",
+      "expect": ["Q2", "Q8"]
+    },
+    "M5_failopen_removed": {
+      "from": "      minCountParsed !== undefined && !isNaN(minCountParsed) ? minCountParsed : undefined;",
+      "to": "      minCountParsed !== undefined ? minCountParsed : undefined;",
+      "expect": ["Q5", "Q6"]
+    },
+    "M6_neighbour_field_quote_insensitivity_broken": {
+      "from": "    if (raw.includes(\"Warning\") || raw === SH_NS + \"Warning\") return \"sh:Warning\";",
+      "to": "    if (raw === \"sh:Warning\" || raw === SH_NS + \"Warning\") return \"sh:Warning\";",
+      "expect": ["Q8"]
+    }
+  },
+  "_coverage": {
+    "_note_Q3": "GREEN by design — the bare-minCount control asserts LITERAL values (minCount 2, range xsd:integer) with no reference to the quoted siblings, so it stays green even with the strip removed entirely. That is the claim: the unquoted path never depended on the fix.",
+    "_note_Q9": "GREEN by design — RequiredPropertyResolver is the THIRD reader of exo__Property_minCount (its own parseInt straight off the triple store, feeding the required create-instance form fields). It sits on the graph path, where YAML removed the quotes before the converter, so no mutation of ShapeLoader can change its verdict. The axis exists to make 'not governed here' a measurement rather than an assumption, and it is expected green under every mutant.",
+    "_arithmetic": "Axes Q1..Q9 = 9. Reddening under at least one mutant: Q1 Q2 Q4 Q5 Q6 Q7 Q8 = 7. Intentionally green: Q3 (bare control) + Q9 (third implementation) = 2. 7 + 2 = 9, none uncovered."
+  }
+}

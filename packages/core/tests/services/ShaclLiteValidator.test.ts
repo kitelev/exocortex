@@ -1367,3 +1367,287 @@ describe('validate — cross-vault UUID-keyed subject resolution', () => {
     expect(report.violations[0].actualValue).toBe('node:B');
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Suite — sh:datatype by LEXICAL form where the tag is a converter artefact
+// (ticket a9b55ead, @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2). NoteToRDFConverter tags every
+// YAML number xsd:decimal and a YAML boolean as a plain literal; the declared
+// range is the source of truth (founder decision 2026-09-18).
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('validate — sh:datatype lexical conformance of converter-tagged literals (@req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2)', () => {
+  const PMI = 'https://exocortex.my/ontology/pmi#';
+  function pmiShape(prop: string, range: string): Shape {
+    return makeShape({ propertyIRI: `${PMI}${prop}`, domain: [`${PMI}Principle`], range: [range] });
+  }
+  function report(prop: string, range: string, value: string, tag?: string) {
+    const triples = [
+      typeTriple('node:A', `${PMI}Principle`),
+      litTriple('node:A', `${PMI}${prop}`, value, tag),
+    ];
+    return validate(triples, makeRegistry([pmiShape(prop, range)]), flatHierarchy);
+  }
+  const datatypeViolations = (r: ReturnType<typeof validate>) =>
+    r.violations.filter((v) => v.constraint === 'datatype');
+
+  it('V1 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 whole number tagged xsd:decimal (YAML `7`) conforms to range xsd:integer', () => {
+    expect(datatypeViolations(report('Principle_number', `${XSD}integer`, '7', `${XSD}decimal`))).toHaveLength(0);
+  });
+
+  it('V2 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 fraction tagged xsd:decimal (YAML `7.5`) violates range xsd:integer', () => {
+    const v = datatypeViolations(report('Principle_number', `${XSD}integer`, '7.5', `${XSD}decimal`));
+    expect(v).toHaveLength(1);
+    expect(v[0].message).toContain('sh:datatype violation');
+    expect(v[0].actualValue).toBe('7.5');
+  });
+
+  it('V3 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 four-digit number tagged xsd:decimal (YAML `1987`) conforms to range xsd:gYear', () => {
+    expect(datatypeViolations(report('Model_originYear', `${XSD}gYear`, '1987', `${XSD}decimal`))).toHaveLength(0);
+  });
+
+  it('V4 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 non-year lexical form under range xsd:gYear violates (decimal `19.87`, string `not-a-year`)', () => {
+    expect(datatypeViolations(report('Model_originYear', `${XSD}gYear`, '19.87', `${XSD}decimal`))).toHaveLength(1);
+    expect(datatypeViolations(report('Model_originYear', `${XSD}gYear`, 'not-a-year', `${XSD}string`))).toHaveLength(1);
+  });
+
+  it('V5 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 explicit non-converter tag keeps STRICT equality: quoted "10" (xsd:string) violates range xsd:integer', () => {
+    expect(datatypeViolations(report('Principle_number', `${XSD}integer`, '10', `${XSD}string`))).toHaveLength(1);
+  });
+
+  it('V6 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 a NUMBER tag under a datatype outside the lexical table keeps strict equality: decimal-tagged `7` under xsd:anyURI violates (the anyURI relaxation of V12-V15 is for the string tag only)', () => {
+    expect(datatypeViolations(report('Principle_number', `${XSD}anyURI`, '7', `${XSD}decimal`))).toHaveLength(1);
+  });
+
+  // V12-V15 — amendment 2026-09-19 (ticket e55b0a07): a STRING-tagged literal under
+  // xsd:anyURI is judged by IRI.isValidIRI (core's single IRI notion, absolute IRI),
+  // deliberately stricter than the XSD 1.1 §3.3.17 letter (any string).
+  it('V12 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 a YAML string that is an absolute URL (string-tagged `https://example.com/video/1`) conforms to range xsd:anyURI', () => {
+    expect(datatypeViolations(report('Principle_sourceUrl', `${XSD}anyURI`, 'https://example.com/video/1', `${XSD}string`))).toHaveLength(0);
+    expect(datatypeViolations(report('Principle_sourceUrl', `${XSD}anyURI`, 'https://ru.wikipedia.org/wiki/Москва', `${XSD}string`))).toHaveLength(0);
+  });
+
+  it('V13 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 a string that is not an IRI under xsd:anyURI violates: `not a uri`, whitespace inside `https://x.com/a b`, leading whitespace ` https://x.com`, empty string', () => {
+    expect(datatypeViolations(report('Principle_sourceUrl', `${XSD}anyURI`, 'not a uri', `${XSD}string`))).toHaveLength(1);
+    expect(datatypeViolations(report('Principle_sourceUrl', `${XSD}anyURI`, 'https://x.com/a b', `${XSD}string`))).toHaveLength(1);
+    // leading whitespace: `new URL` alone would trim it (WHATWG); IRI.isValidIRI rejects it
+    expect(datatypeViolations(report('Principle_sourceUrl', `${XSD}anyURI`, ' https://x.com', `${XSD}string`))).toHaveLength(1);
+    expect(datatypeViolations(report('Principle_sourceUrl', `${XSD}anyURI`, '', `${XSD}string`))).toHaveLength(1);
+  });
+
+  it('V14 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 a relative reference under xsd:anyURI violates (absolute IRI required — IRI.isValidIRI, stricter than XSD 1.1)', () => {
+    expect(datatypeViolations(report('Principle_sourceUrl', `${XSD}anyURI`, '/relative/path', `${XSD}string`))).toHaveLength(1);
+    expect(datatypeViolations(report('Principle_sourceUrl', `${XSD}anyURI`, '#frag', `${XSD}string`))).toHaveLength(1);
+  });
+
+  it('V15 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 the anyURI relaxation is gated on the STRING tag and the anyURI local name: integer-tagged `7` under xsd:anyURI still violates (pair of V6), a URL tagged xsd:token under xsd:anyURI violates, and the IRI lexicon does not leak to xsd:integer', () => {
+    expect(datatypeViolations(report('Principle_number', `${XSD}anyURI`, '7', `${XSD}integer`))).toHaveLength(1);
+    // the XSD_STRING conjunct is load-bearing through the public validate(): a URL carrying a
+    // NON-converter tag (xsd:token) under anyURI is a strict-tag mismatch, not an excused string
+    expect(datatypeViolations(report('Principle_sourceUrl', `${XSD}anyURI`, 'https://example.com/video/1', `${XSD}token`))).toHaveLength(1);
+    // the IRI lexicon is keyed on the anyURI local name: a URL-shaped string-tagged
+    // literal under range xsd:integer is still a strict-tag violation
+    expect(datatypeViolations(report('Principle_number', `${XSD}integer`, 'https://example.com/video/1', `${XSD}string`))).toHaveLength(1);
+  });
+
+  it('V7 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 YAML boolean (plain literal `true`) conforms to range xsd:boolean; `yes` does not', () => {
+    expect(datatypeViolations(report('Principle_isCore', `${XSD}boolean`, 'true'))).toHaveLength(0);
+    expect(datatypeViolations(report('Principle_isCore', `${XSD}boolean`, 'yes'))).toHaveLength(1);
+  });
+
+  it('V8 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 a number under range xsd:string is NOT excused by lexical form (decimal-tagged `7` violates xsd:string)', () => {
+    expect(datatypeViolations(report('Principle_note', `${XSD}string`, '7', `${XSD}decimal`))).toHaveLength(1);
+  });
+
+  // V10 — one conforming + one non-conforming decimal-tagged value per DECIMAL_TAG_LEXICAL
+  // row (review fold LOW-1). `gYear` is V3/V4; `decimal` is V11 (unreachable via the
+  // xsd:decimal tag — tag equality short-circuits before the table is consulted).
+  it.each([
+    ['integer', '7', '7.5'],
+    ['long', '7', '7.5'],
+    ['int', '7', '7.5'],
+    ['short', '7', '7.5'],
+    ['byte', '7', '7.5'],
+    ['nonNegativeInteger', '0', '-1'],
+    ['unsignedLong', '7', '-1'],
+    ['unsignedInt', '7', '-1'],
+    ['unsignedShort', '7', '-1'],
+    ['unsignedByte', '7', '-1'],
+    ['positiveInteger', '7', '0'],
+    ['nonPositiveInteger', '-3', '3'],
+    ['negativeInteger', '-3', '3'],
+    ['float', '1e3', 'abc'],
+    ['double', '-1.5E-2', 'abc'],
+  ])('V10 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 decimal-tagged literal under xsd:%s: %s conforms, %s violates', (local, ok, bad) => {
+    expect(datatypeViolations(report('Principle_number', `${XSD}${local}`, ok, `${XSD}decimal`))).toHaveLength(0);
+    expect(datatypeViolations(report('Principle_number', `${XSD}${local}`, bad, `${XSD}decimal`))).toHaveLength(1);
+  });
+
+  it('V11 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 xsd:decimal range with a decimal-tagged literal conforms by tag equality — the `decimal` lexical row is never consulted (7.5 and 1e3 both conform)', () => {
+    expect(datatypeViolations(report('Principle_weight', `${XSD}decimal`, '7.5', `${XSD}decimal`))).toHaveLength(0);
+    expect(datatypeViolations(report('Principle_weight', `${XSD}decimal`, '1e3', `${XSD}decimal`))).toHaveLength(0);
+  });
+
+  it('V9 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 the Exocortex ad-hoc xsd# prefix form of the range is judged by the same lexical table', () => {
+    const adhoc = 'https://exocortex.my/ontology/xsd#integer';
+    expect(datatypeViolations(report('Principle_number', adhoc, '7', `${XSD}decimal`))).toHaveLength(0);
+    expect(datatypeViolations(report('Principle_number', adhoc, '7.5', `${XSD}decimal`))).toHaveLength(1);
+  });
+});
+
+// Ticket d5ad5217 (founder decision 2026-09-19): the converter now tags a whole YAML
+// number xsd:integer (fractional stays xsd:decimal — parity with the JSON-LD parser),
+// so the lexical table above is consulted for the xsd:integer tag too. Without that
+// every whole number under a non-integer numeric range (gYear, decimal, long, …)
+// would become a strict-tag violation (live delta on aaadac12: +17/+15/+15
+// [vault-exodev / vault-my / vault-tbank], all pmi__Model_originYear + b5a670e8).
+describe('validate — sh:datatype lexical conformance of the xsd:integer converter tag (@req:d553b1a4-c312-4819-964d-fe6dae0a50e1)', () => {
+  const PMI = 'https://exocortex.my/ontology/pmi#';
+  const REQ = '@req:d553b1a4-c312-4819-964d-fe6dae0a50e1';
+  function pmiShape(prop: string, range: string): Shape {
+    return makeShape({ propertyIRI: `${PMI}${prop}`, domain: [`${PMI}Principle`], range: [range] });
+  }
+  function report(prop: string, range: string, value: string, tag?: string) {
+    const triples = [
+      typeTriple('node:A', `${PMI}Principle`),
+      litTriple('node:A', `${PMI}${prop}`, value, tag),
+    ];
+    return validate(triples, makeRegistry([pmiShape(prop, range)]), flatHierarchy);
+  }
+  const datatypeViolations = (r: ReturnType<typeof validate>) =>
+    r.violations.filter((v) => v.constraint === 'datatype');
+
+  it(`I1 ${REQ} whole number tagged xsd:integer (YAML \`7\`) conforms to range xsd:integer by tag equality (control: unchanged behaviour)`, () => {
+    expect(datatypeViolations(report('Principle_number', `${XSD}integer`, '7', `${XSD}integer`))).toHaveLength(0);
+  });
+
+  it(`I2 ${REQ} four-digit number tagged xsd:integer (YAML \`1987\`) conforms to range xsd:gYear; a three-digit one does not`, () => {
+    expect(datatypeViolations(report('Model_originYear', `${XSD}gYear`, '1987', `${XSD}integer`))).toHaveLength(0);
+    expect(datatypeViolations(report('Model_originYear', `${XSD}gYear`, '987', `${XSD}integer`))).toHaveLength(1);
+  });
+
+  it(`I3 ${REQ} whole number tagged xsd:integer (YAML \`20\`) conforms to range xsd:decimal — the \`decimal\` lexical row is reached through the integer tag (integer ⊂ decimal)`, () => {
+    expect(datatypeViolations(report('Principle_weight', `${XSD}decimal`, '20', `${XSD}integer`))).toHaveLength(0);
+    expect(datatypeViolations(report('Principle_weight', `${XSD}decimal`, '-5', `${XSD}integer`))).toHaveLength(0);
+  });
+
+  it(`I4 ${REQ} the integer tag is excused ONLY inside the lexical table: \`7\`^^xsd:integer under xsd:string and under xsd:anyURI violate`, () => {
+    expect(datatypeViolations(report('Principle_note', `${XSD}string`, '7', `${XSD}integer`))).toHaveLength(1);
+    expect(datatypeViolations(report('Principle_number', `${XSD}anyURI`, '7', `${XSD}integer`))).toHaveLength(1);
+    expect(datatypeViolations(report('Principle_since', `${XSD}dateTime`, '7', `${XSD}integer`))).toHaveLength(1);
+  });
+
+  // I5 — one conforming + one non-conforming integer-tagged value per lexical row
+  // whose value space is narrower than "any whole number" (the sign-constrained
+  // integer family) plus the wider rows (long/int/…/float/double) with a conforming
+  // whole number; `gYear` is I2, `decimal` is I3.
+  it.each([
+    ['long', '7', null],
+    ['int', '7', null],
+    ['short', '7', null],
+    ['byte', '7', null],
+    ['nonNegativeInteger', '0', '-1'],
+    ['unsignedLong', '7', '-1'],
+    ['unsignedInt', '7', '-1'],
+    ['unsignedShort', '7', '-1'],
+    ['unsignedByte', '7', '-1'],
+    ['positiveInteger', '7', '0'],
+    ['nonPositiveInteger', '-3', '3'],
+    ['negativeInteger', '-3', '3'],
+    ['float', '1000', null],
+    ['double', '-15', null],
+  ])(`I5 ${REQ} integer-tagged literal under xsd:%s: %s conforms, %s violates`, (local, ok, bad) => {
+    expect(datatypeViolations(report('Principle_number', `${XSD}${local}`, ok, `${XSD}integer`))).toHaveLength(0);
+    if (bad !== null) {
+      expect(datatypeViolations(report('Principle_number', `${XSD}${local}`, bad, `${XSD}integer`))).toHaveLength(1);
+    }
+  });
+
+  it(`I6 ${REQ} the decimal tag keeps its own lexical judgement unchanged: \`7.5\`^^xsd:decimal under xsd:integer still violates, \`7\`^^xsd:decimal still conforms`, () => {
+    expect(datatypeViolations(report('Principle_number', `${XSD}integer`, '7.5', `${XSD}decimal`))).toHaveLength(1);
+    expect(datatypeViolations(report('Principle_number', `${XSD}integer`, '7', `${XSD}decimal`))).toHaveLength(0);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Suite: a datatype range entry does not constrain IRI nodes (Issue #4268)
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('validate — a datatype range entry does not constrain IRI nodes (Issue #4268)', () => {
+  // Live repro (vault-exodev, CLI 16.240.18): `flow__StatusModel_activeStatus`
+  // is declared `exo__Property_range: xsd:string`, and its value is authored as
+  // the bare token `ems__EffortStatusDoing`. The converter expands such a token
+  // into a SYMBOLIC IRI without consulting the declared range, so the object
+  // reaching the validator is an IRI node. Judging it against `xsd:string` as a
+  // class is false BY CONSTRUCTION — nothing is an instance of a datatype — and
+  // it produced 9 violations in 2 nodes where 16.240.16 had none.
+  const FLOW = 'https://exocortex.my/ontology/flow#';
+  const STATUS = `${FLOW}StatusModel_activeStatus`;
+  const DOING = `${EMS}EffortStatusDoing`;
+
+  it('T71: typed IRI value under a datatype-only range → no violation at all', () => {
+    const shape = makeShape({ propertyIRI: STATUS, range: [`${XSD}string`] });
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      // The value MUST be a resolvable subject here. An untyped value takes the
+      // unresolvable-ref path (sh:Warning, conforms=true), which is green with
+      // and without the fix — that fixture would make this axis vacuous.
+      typeTriple(DOING, `${EMS}EffortStatus`),
+      iriTriple('node:A', STATUS, DOING),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.violations).toHaveLength(0);
+    expect(report.conforms).toBe(true);
+  });
+
+  it('T72: a mixed range still enforces its class half, and names only that half', () => {
+    const shape = makeShape({
+      propertyIRI: STATUS,
+      range: [`${EMS}Effort`, `${XSD}string`],
+    });
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      typeTriple('node:B', `${EMS}Task`),
+      iriTriple('node:A', STATUS, 'node:B'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].constraint).toBe('class');
+    // the datatype entry is DROPPED from the expectation, not merely outvoted
+    expect(report.violations[0].expectedRange).toBe(`${EMS}Effort`);
+    expect(report.violations[0].message).not.toContain('XMLSchema');
+  });
+
+  it('T73: unresolvable IRI under a mixed range → warning names only the class half', () => {
+    const shape = makeShape({
+      propertyIRI: STATUS,
+      range: [`${EMS}Effort`, `${XSD}string`],
+    });
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      iriTriple('node:A', STATUS, 'node:Unknown'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].severity).toBe('sh:Warning');
+    expect(report.violations[0].expectedRange).toBe(`${EMS}Effort`);
+    expect(report.violations[0].message).not.toContain('XMLSchema');
+    expect(report.conforms).toBe(true);
+  });
+
+  it('T74: control — the Literal branch is untouched: a bad lexical still violates', () => {
+    const shape = makeShape({
+      propertyIRI: `${EMS}Effort_count`,
+      range: [`${XSD}integer`],
+    });
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      // tag must DIFFER from the expected range — `literalConformsToDatatype`
+      // short-circuits to true when they are equal, so a self-tagged literal
+      // would never reach the lexical judgement and the control would be vacuous.
+      litTriple('node:A', `${EMS}Effort_count`, 'not-a-number', `${XSD}string`),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].constraint).toBe('datatype');
+  });
+});

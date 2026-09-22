@@ -78,7 +78,20 @@ export class PropertyDependencyResolver {
       LayoutSection.RELATIONS,
       LayoutSection.AREA_TREE,
     ],
+    // Archive flag — three carrier spellings (req 960d7a3f): canonical
+    // `exo__Asset_archived`, compat alias `exo__Asset_isArchived`, legacy bare
+    // `archived`. All three affect the same sections.
+    "exo__Asset_archived": [
+      LayoutSection.BUTTONS,
+      LayoutSection.DAILY_TASKS,
+      LayoutSection.RELATIONS,
+    ],
     "exo__Asset_isArchived": [
+      LayoutSection.BUTTONS,
+      LayoutSection.DAILY_TASKS,
+      LayoutSection.RELATIONS,
+    ],
+    "archived": [
       LayoutSection.BUTTONS,
       LayoutSection.DAILY_TASKS,
       LayoutSection.RELATIONS,

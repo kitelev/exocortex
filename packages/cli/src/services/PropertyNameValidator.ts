@@ -9,6 +9,22 @@ interface PropertyNameSet {
   names: Set<string>;
   /** Namespace prefixes seen among the known names (e.g. `ems`, `exo`). */
   prefixes: Set<string>;
+  /**
+   * Declared `exo__Property_range` values by property name, as the TBox
+   * writes them (`xsd:integer`, `[[<class-uid>]]`, …; surrounding quotes
+   * stripped, empty values dropped) — ticket 2227d660. Only defs that pass
+   * the metaclass closure contribute; a def without a range is absent.
+   */
+  ranges: Map<string, readonly string[]>;
+  /**
+   * Conflicting duplicates found during the walk, keyed by property name:
+   * a name declared by two or more defs with DIFFERENT ranges maps to the
+   * ready-to-emit diagnostic naming the winner and the FIRST conflicting twin
+   * in path order (ticket 3fc34b92). Recorded here rather than reported from
+   * the walk, because the walk is cached and does not know which property the
+   * caller is addressing — the accessors do, and they emit.
+   */
+  conflicts: Map<string, string>;
 }
 
 /**
@@ -31,6 +47,13 @@ interface PropertyDefCandidate {
   classRefs: string[];
   /** The `prefix__Name` property label. */
   name: string;
+  /** `exo__Property_range` values as written (quotes stripped), possibly empty. */
+  range: string[];
+}
+
+/** Same declared range, value for value (order-sensitive: a range is written as a list). */
+function sameRange(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
 /**
@@ -96,7 +119,31 @@ export class PropertyNameValidator {
 
   private cache: PropertyNameSet | null = null;
 
-  constructor(private readonly vaultPath: string) {}
+  /**
+   * Property names whose duplicate-range diagnostic has already been delivered
+   * on THIS instance (ticket 3fc34b92). `collect()` is cached, so the walk runs
+   * once and cannot dedupe repeated ADDRESSING of the same name; this latch
+   * does, keeping the guarantee "exactly one line per addressed name".
+   *
+   * ⚠ The unit of that guarantee is the INSTANCE, and every call site today
+   * builds a fresh one per command invocation (`create.ts`, `set-property.ts`,
+   * `remove-property.ts`). A future batch caller that REUSES one instance across
+   * several writes would therefore report each conflicting name once for the
+   * batch, not once per write — which is the right reading of "exactly one line
+   * per addressed name", but it must be a deliberate choice rather than a
+   * surprise, so the invariant is stated here rather than left to convention.
+   */
+  private readonly reported = new Set<string>();
+
+  /** Injectable warn-level diagnostics channel (defaults to no-op, as `CliProfileResolver`). */
+  private readonly warn: (msg: string) => void;
+
+  constructor(
+    private readonly vaultPath: string,
+    options: { warn?: (msg: string) => void } = {},
+  ) {
+    this.warn = options.warn ?? (() => undefined);
+  }
 
   /**
    * Validate the given `--property` KEYS against the mounted TBox.
@@ -172,6 +219,11 @@ export class PropertyNameValidator {
       } catch {
         return;
       }
+      // readdir order is not guaranteed sorted on any filesystem; byte-order
+      // like `ShapeLoader.scanDir`, so which def a duplicate label resolves
+      // to below is the same on every platform (ticket 8185c9dd, review
+      // #4282 NIT-2).
+      entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
       for (const entry of entries) {
         const full = `${dir}/${entry.name}`;
         if (entry.isDirectory()) {
@@ -195,15 +247,91 @@ export class PropertyNameValidator {
 
     const names = new Set<string>();
     const prefixes = new Set<string>();
+    const ranges = new Map<string, readonly string[]>();
+    const conflicts = new Map<string, string>();
     for (const cand of candidates) {
       if (!cand.classRefs.some((r) => metaKeys.has(r))) continue;
       names.add(cand.name);
       const m = PropertyNameValidator.KEY_SHAPE.exec(cand.name);
       if (m) prefixes.add(m[1]);
+      // Ticket 2227d660: the declared range rides along on the same pass so the
+      // writers (`create` / `set-property`) can type a scalar by it at no extra
+      // IO. Two defs sharing a name (a deprecated twin, a re-declaration in
+      // another mounted assetspace): a def with an EMPTY range is skipped
+      // FIRST, before any of the rules below, so a rangeless twin neither wins
+      // nor conflicts; among the RANGED defs the first one in byte-ordered walk
+      // order wins (ticket 8185c9dd, NIT-2 — deterministic on every platform),
+      // and a twin declaring a DIFFERENT range is recorded once per name — the
+      // writer will type by the first def and the author should know which.
+      //
+      // Ticket 3fc34b92: the conflict is only RECORDED here, never reported.
+      // This walk runs once per instance (the cache above) and does not know
+      // which property the caller is addressing, so reporting from it named
+      // every conflicting duplicate in the mounted TBox on every write. The
+      // accessors below know the addressed name and emit there.
+      if (cand.range.length === 0) continue;
+      const first = ranges.get(cand.name);
+      if (first === undefined) {
+        ranges.set(cand.name, cand.range);
+      } else if (!sameRange(first, cand.range) && !conflicts.has(cand.name)) {
+        conflicts.set(
+          cand.name,
+          `[PropertyNameValidator] property ${cand.name} is declared more than once with different exo__Property_range (${first.join(", ")} vs ${cand.range.join(", ")}) — the first def in path order wins`,
+        );
+      }
     }
 
-    this.cache = { names, prefixes };
+    this.cache = { names, prefixes, ranges, conflicts };
     return this.cache;
+  }
+
+  /**
+   * Emit the duplicate-range diagnostic for ONE addressed property name, at
+   * most once per instance (ticket 3fc34b92). A name with no recorded conflict
+   * — the overwhelming majority — costs one Map lookup and stays silent.
+   */
+  private report(conflicts: ReadonlyMap<string, string>, name: string): void {
+    if (this.reported.has(name)) return;
+    const message = conflicts.get(name);
+    if (message === undefined) return;
+    this.reported.add(name);
+    this.warn(message);
+  }
+
+  /**
+   * Declared `exo__Property_range` values of a mounted property def, by its
+   * `prefix__Name` label (ticket 2227d660), or `undefined` when no mounted def
+   * declares one — the writers then fall back to shape-based typing.
+   *
+   * This is the per-name ACCESS point, so it is where a duplicate-range
+   * conflict on THAT name is reported (ticket 3fc34b92) — a conflict on any
+   * other name stays silent here.
+   */
+  async declaredRange(name: string): Promise<readonly string[] | undefined> {
+    const { ranges, conflicts } = await this.collect();
+    this.report(conflicts, name);
+    return ranges.get(name);
+  }
+
+  /**
+   * Every declared range collected on the mounted vault, keyed by property
+   * name — handed to `GenericAssetCreationService` by `cli create` so the
+   * frontmatter it assembles is typed by the same TBox the key check reads.
+   *
+   * A bulk hand-off addresses no name by itself (the service resolves per
+   * supplied key inside), so it reports nothing unless the caller says which
+   * properties it is writing: pass `addressed` — `cli create` passes the very
+   * same key set it hands to {@link validate} — and each of those names gets
+   * its conflict reported exactly once (ticket 3fc34b92).
+   */
+  async declaredRanges(
+    addressed?: Iterable<string>,
+  ): Promise<ReadonlyMap<string, readonly string[]>> {
+    const { ranges, conflicts } = await this.collect();
+    if (addressed !== undefined) {
+      for (const name of addressed) this.report(conflicts, name);
+    }
+    return ranges;
   }
 
   /**
@@ -243,7 +371,10 @@ export class PropertyNameValidator {
 
     // Property-def candidate: a `prefix__Name`-labelled instance.
     if (label === null || !PropertyNameValidator.KEY_SHAPE.test(label)) return;
-    candidates.push({ classRefs: instanceClassRefs, name: label });
+    const range = PropertyNameValidator.asArray(fm["exo__Property_range"])
+      .map((v) => v.replace(/^["']|["']$/g, "").trim())
+      .filter((v) => v.length > 0);
+    candidates.push({ classRefs: instanceClassRefs, name: label, range });
   }
 
   /**

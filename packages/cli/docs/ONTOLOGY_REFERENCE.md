@@ -34,13 +34,13 @@ PREFIX ems: <https://exocortex.my/ontology/ems#>
 
 ### Namespace URIs
 
-| Prefix | Full URI | Purpose |
-|--------|----------|---------|
-| `rdf:` | `http://www.w3.org/1999/02/22-rdf-syntax-ns#` | RDF standard vocabulary |
-| `rdfs:` | `http://www.w3.org/2000/01/rdf-schema#` | RDF Schema vocabulary |
-| `xsd:` | `http://www.w3.org/2001/XMLSchema#` | XML Schema datatypes |
-| `exo:` | `https://exocortex.my/ontology/exo#` | Exocortex core vocabulary |
-| `ems:` | `https://exocortex.my/ontology/ems#` | Effort Management System |
+| Prefix  | Full URI                                      | Purpose                   |
+| ------- | --------------------------------------------- | ------------------------- |
+| `rdf:`  | `http://www.w3.org/1999/02/22-rdf-syntax-ns#` | RDF standard vocabulary   |
+| `rdfs:` | `http://www.w3.org/2000/01/rdf-schema#`       | RDF Schema vocabulary     |
+| `xsd:`  | `http://www.w3.org/2001/XMLSchema#`           | XML Schema datatypes      |
+| `exo:`  | `https://exocortex.my/ontology/exo#`          | Exocortex core vocabulary |
+| `ems:`  | `https://exocortex.my/ontology/ems#`          | Effort Management System  |
 
 ---
 
@@ -48,14 +48,14 @@ PREFIX ems: <https://exocortex.my/ontology/ems#>
 
 ### Class URIs
 
-| Class | URI | Frontmatter Value |
-|-------|-----|-------------------|
-| Task | `ems:Task` | `ems__Task` |
-| Project | `ems:Project` | `ems__Project` |
-| Area | `ems:Area` | `ems__Area` |
-| Meeting | `ems:Meeting` | `ems__Meeting` |
-| Initiative | `ems:Initiative` | `ems__Initiative` |
-| TaskPrototype | `ems:TaskPrototype` | `ems__TaskPrototype` |
+| Class            | URI                    | Frontmatter Value       |
+| ---------------- | ---------------------- | ----------------------- |
+| Task             | `ems:Task`             | `ems__Task`             |
+| Project          | `ems:Project`          | `ems__Project`          |
+| Area             | `ems:Area`             | `ems__Area`             |
+| Meeting          | `ems:Meeting`          | `ems__Meeting`          |
+| Initiative       | `ems:Initiative`       | `ems__Initiative`       |
+| TaskPrototype    | `ems:TaskPrototype`    | `ems__TaskPrototype`    |
 | MeetingPrototype | `ems:MeetingPrototype` | `ems__MeetingPrototype` |
 
 ### Query Examples
@@ -88,12 +88,12 @@ These predicates apply to ALL asset types.
 
 **UUID identifier for the asset**
 
-| Property | Value |
-|----------|-------|
-| URI | `https://exocortex.my/ontology/exo#Asset_uid` |
-| Frontmatter | `exo__Asset_uid` |
-| Type | Literal (UUID v4 string) |
-| Required | Yes |
+| Property    | Value                                         |
+| ----------- | --------------------------------------------- |
+| URI         | `https://exocortex.my/ontology/exo#Asset_uid` |
+| Frontmatter | `exo__Asset_uid`                              |
+| Type        | Literal (UUID v4 string)                      |
+| Required    | Yes                                           |
 
 ```sparql
 SELECT ?asset ?uid WHERE {
@@ -105,12 +105,12 @@ SELECT ?asset ?uid WHERE {
 
 **Human-readable name**
 
-| Property | Value |
-|----------|-------|
-| URI | `https://exocortex.my/ontology/exo#Asset_label` |
-| Frontmatter | `exo__Asset_label` |
-| Type | Literal (string) |
-| Required | Yes |
+| Property    | Value                                           |
+| ----------- | ----------------------------------------------- |
+| URI         | `https://exocortex.my/ontology/exo#Asset_label` |
+| Frontmatter | `exo__Asset_label`                              |
+| Type        | Literal (string)                                |
+| Required    | Yes                                             |
 
 ```sparql
 SELECT ?asset ?label WHERE {
@@ -123,12 +123,12 @@ SELECT ?asset ?label WHERE {
 
 **Creation timestamp**
 
-| Property | Value |
-|----------|-------|
-| URI | `https://exocortex.my/ontology/exo#Asset_createdAt` |
-| Frontmatter | `exo__Asset_createdAt` |
-| Type | Literal (ISO 8601 timestamp) |
-| Required | Yes |
+| Property    | Value                                               |
+| ----------- | --------------------------------------------------- |
+| URI         | `https://exocortex.my/ontology/exo#Asset_createdAt` |
+| Frontmatter | `exo__Asset_createdAt`                              |
+| Type        | Literal (ISO 8601 timestamp)                        |
+| Required    | Yes                                                 |
 
 ```sparql
 SELECT ?asset ?created WHERE {
@@ -142,12 +142,12 @@ ORDER BY DESC(?created)
 
 **Asset type classification**
 
-| Property | Value |
-|----------|-------|
-| URI | `https://exocortex.my/ontology/exo#Instance_class` |
-| Frontmatter | `exo__Instance_class` |
-| Type | IRI (class reference) |
-| Required | Yes |
+| Property    | Value                                              |
+| ----------- | -------------------------------------------------- |
+| URI         | `https://exocortex.my/ontology/exo#Instance_class` |
+| Frontmatter | `exo__Instance_class`                              |
+| Type        | IRI (class reference)                              |
+| Required    | Yes                                                |
 
 ```sparql
 SELECT ?asset ?class WHERE {
@@ -155,34 +155,40 @@ SELECT ?asset ?class WHERE {
 }
 ```
 
-### exo:Asset_isArchived
+### exo:Asset_archived
 
-**Archive status**
+**Archive status** (TBox-declared `exo__DatatypeProperty`, domain `exo__Asset` — `exoas-exo` `79ca4e3e`, founder decision 2026-09-15 / ticket `da0f73a3`)
 
-| Property | Value |
-|----------|-------|
-| URI | `https://exocortex.my/ontology/exo#Asset_isArchived` |
-| Frontmatter | `exo__Asset_isArchived` |
-| Type | Literal (boolean) |
-| Required | No |
+| Property    | Value                                                                                                  |
+| ----------- | ------------------------------------------------------------------------------------------------------ |
+| URI         | `https://exocortex.my/ontology/exo#Asset_archived`                                                     |
+| Frontmatter | `exo__Asset_archived` (canonical); legacy bare `archived` is still READ and indexes under the same URI |
+| Type        | Literal (boolean)                                                                                      |
+| Required    | No                                                                                                     |
+
+Both the canonical key and the legacy bare key emit `exo:Asset_archived "true"`, so this is the predicate the archive/un-archive preconditions test:
 
 ```sparql
 SELECT ?asset ?label WHERE {
   ?asset exo:Asset_label ?label .
-  ?asset exo:Asset_isArchived "true" .
+  ?asset exo:Asset_archived "true" .
 }
 ```
+
+Writers (`archive`, `archive-ontologically`, batch archive, the `archive` grounding) emit only `exo__Asset_archived` and drop a pre-existing bare `archived`; `un-archive` clears both. Migrate a legacy carrier in place with `exocortex repair-frontmatter <path> --canonicalize-keys`.
+
+`exo:Asset_isArchived` (`exo__Asset_isArchived`) is a **deprecated** read-only compatibility alias (`exoas-exo` `7f632d25`, `exo__DeprecatedProperty` → use instead `exo__Asset_archived`): a different predicate that no writer emits and no vault carrier uses.
 
 ### exo:Asset_prototype
 
 **Reference to template/prototype**
 
-| Property | Value |
-|----------|-------|
-| URI | `https://exocortex.my/ontology/exo#Asset_prototype` |
-| Frontmatter | `exo__Asset_prototype` |
-| Type | IRI (reference to prototype note) |
-| Required | For instances from prototypes |
+| Property    | Value                                               |
+| ----------- | --------------------------------------------------- |
+| URI         | `https://exocortex.my/ontology/exo#Asset_prototype` |
+| Frontmatter | `exo__Asset_prototype`                              |
+| Type        | IRI (reference to prototype note)                   |
+| Required    | For instances from prototypes                       |
 
 ```sparql
 SELECT ?task ?label ?prototype WHERE {
@@ -196,12 +202,12 @@ SELECT ?task ?label ?prototype WHERE {
 
 **Ontology reference**
 
-| Property | Value |
-|----------|-------|
-| URI | `https://exocortex.my/ontology/exo#Asset_isDefinedBy` |
-| Frontmatter | `exo__Asset_isDefinedBy` |
-| Type | IRI (reference to ontology note) |
-| Required | Yes |
+| Property    | Value                                                 |
+| ----------- | ----------------------------------------------------- |
+| URI         | `https://exocortex.my/ontology/exo#Asset_isDefinedBy` |
+| Frontmatter | `exo__Asset_isDefinedBy`                              |
+| Type        | IRI (reference to ontology note)                      |
+| Required    | Yes                                                   |
 
 ```sparql
 SELECT ?asset ?ontology WHERE {
@@ -219,12 +225,12 @@ These predicates apply to efforts (Tasks, Projects, Meetings).
 
 **Current workflow status**
 
-| Property | Value |
-|----------|-------|
-| URI | `https://exocortex.my/ontology/ems#Effort_status` |
-| Frontmatter | `ems__Effort_status` |
-| Type | IRI (status class reference) |
-| Values | See [Status Values](#status-values) |
+| Property    | Value                                             |
+| ----------- | ------------------------------------------------- |
+| URI         | `https://exocortex.my/ontology/ems#Effort_status` |
+| Frontmatter | `ems__Effort_status`                              |
+| Type        | IRI (status class reference)                      |
+| Values      | See [Status Values](#status-values)               |
 
 ```sparql
 SELECT ?task ?label ?status WHERE {
@@ -239,12 +245,12 @@ SELECT ?task ?label ?status WHERE {
 
 **Parent area reference**
 
-| Property | Value |
-|----------|-------|
-| URI | `https://exocortex.my/ontology/ems#Effort_area` |
-| Frontmatter | `ems__Effort_area` |
-| Type | IRI (reference to area note) |
-| Required | For tasks created from areas |
+| Property    | Value                                           |
+| ----------- | ----------------------------------------------- |
+| URI         | `https://exocortex.my/ontology/ems#Effort_area` |
+| Frontmatter | `ems__Effort_area`                              |
+| Type        | IRI (reference to area note)                    |
+| Required    | For tasks created from areas                    |
 
 ```sparql
 SELECT ?task ?label ?area WHERE {
@@ -258,12 +264,12 @@ SELECT ?task ?label ?area WHERE {
 
 **Parent project/initiative reference**
 
-| Property | Value |
-|----------|-------|
-| URI | `https://exocortex.my/ontology/ems#Effort_parent` |
-| Frontmatter | `ems__Effort_parent` |
-| Type | IRI (reference to project/initiative note) |
-| Required | For tasks/projects with parent |
+| Property    | Value                                             |
+| ----------- | ------------------------------------------------- |
+| URI         | `https://exocortex.my/ontology/ems#Effort_parent` |
+| Frontmatter | `ems__Effort_parent`                              |
+| Type        | IRI (reference to project/initiative note)        |
+| Required    | For tasks/projects with parent                    |
 
 ```sparql
 SELECT ?task ?label ?project WHERE {
@@ -277,12 +283,12 @@ SELECT ?task ?label ?project WHERE {
 
 **Priority vote count**
 
-| Property | Value |
-|----------|-------|
-| URI | `https://exocortex.my/ontology/ems#Effort_votes` |
-| Frontmatter | `ems__Effort_votes` |
-| Type | Literal (integer) |
-| Default | 0 |
+| Property    | Value                                            |
+| ----------- | ------------------------------------------------ |
+| URI         | `https://exocortex.my/ontology/ems#Effort_votes` |
+| Frontmatter | `ems__Effort_votes`                              |
+| Type        | Literal (integer)                                |
+| Default     | 0                                                |
 
 ```sparql
 SELECT ?task ?label ?votes WHERE {
@@ -298,12 +304,12 @@ ORDER BY DESC(?votes)
 
 **Planned execution day**
 
-| Property | Value |
-|----------|-------|
-| URI | `https://exocortex.my/ontology/ems#Effort_day` |
-| Frontmatter | `ems__Effort_day` |
-| Type | IRI or Literal (date reference) |
-| Format | WikiLink to date: `[[YYYY-MM-DD]]` |
+| Property    | Value                                          |
+| ----------- | ---------------------------------------------- |
+| URI         | `https://exocortex.my/ontology/ems#Effort_day` |
+| Frontmatter | `ems__Effort_day`                              |
+| Type        | IRI or Literal (date reference)                |
+| Format      | WikiLink to date: `[[YYYY-MM-DD]]`             |
 
 ```sparql
 SELECT ?task ?label ?day WHERE {
@@ -318,11 +324,11 @@ SELECT ?task ?label ?day WHERE {
 
 **When effort started (entered Doing)**
 
-| Property | Value |
-|----------|-------|
-| URI | `https://exocortex.my/ontology/ems#Effort_startTimestamp` |
-| Frontmatter | `ems__Effort_startTimestamp` |
-| Type | Literal (ISO 8601 timestamp) |
+| Property    | Value                                                     |
+| ----------- | --------------------------------------------------------- |
+| URI         | `https://exocortex.my/ontology/ems#Effort_startTimestamp` |
+| Frontmatter | `ems__Effort_startTimestamp`                              |
+| Type        | Literal (ISO 8601 timestamp)                              |
 
 ```sparql
 SELECT ?task ?label ?started WHERE {
@@ -337,11 +343,11 @@ ORDER BY DESC(?started)
 
 **When effort paused/stopped**
 
-| Property | Value |
-|----------|-------|
-| URI | `https://exocortex.my/ontology/ems#Effort_endTimestamp` |
-| Frontmatter | `ems__Effort_endTimestamp` |
-| Type | Literal (ISO 8601 timestamp) |
+| Property    | Value                                                   |
+| ----------- | ------------------------------------------------------- |
+| URI         | `https://exocortex.my/ontology/ems#Effort_endTimestamp` |
+| Frontmatter | `ems__Effort_endTimestamp`                              |
+| Type        | Literal (ISO 8601 timestamp)                            |
 
 ```sparql
 SELECT ?task ?label ?ended WHERE {
@@ -354,11 +360,11 @@ SELECT ?task ?label ?ended WHERE {
 
 **When effort completed (moved to Done)**
 
-| Property | Value |
-|----------|-------|
-| URI | `https://exocortex.my/ontology/ems#Effort_resolutionTimestamp` |
-| Frontmatter | `ems__Effort_resolutionTimestamp` |
-| Type | Literal (ISO 8601 timestamp) |
+| Property    | Value                                                          |
+| ----------- | -------------------------------------------------------------- |
+| URI         | `https://exocortex.my/ontology/ems#Effort_resolutionTimestamp` |
+| Frontmatter | `ems__Effort_resolutionTimestamp`                              |
+| Type        | Literal (ISO 8601 timestamp)                                   |
 
 ```sparql
 SELECT ?task ?label ?completed WHERE {
@@ -373,11 +379,11 @@ ORDER BY DESC(?completed)
 
 **Planned start time (for scheduling)**
 
-| Property | Value |
-|----------|-------|
-| URI | `https://exocortex.my/ontology/ems#Effort_plannedStartTimestamp` |
-| Frontmatter | `ems__Effort_plannedStartTimestamp` |
-| Type | Literal (ISO 8601 timestamp) |
+| Property    | Value                                                            |
+| ----------- | ---------------------------------------------------------------- |
+| URI         | `https://exocortex.my/ontology/ems#Effort_plannedStartTimestamp` |
+| Frontmatter | `ems__Effort_plannedStartTimestamp`                              |
+| Type        | Literal (ISO 8601 timestamp)                                     |
 
 ```sparql
 SELECT ?task ?label ?planned WHERE {
@@ -391,12 +397,12 @@ ORDER BY ?planned
 
 **Task size estimate**
 
-| Property | Value |
-|----------|-------|
-| URI | `https://exocortex.my/ontology/ems#Task_size` |
-| Frontmatter | `ems__Task_size` |
-| Type | Literal (S, M, L, XL) |
-| Applies to | Tasks only |
+| Property    | Value                                         |
+| ----------- | --------------------------------------------- |
+| URI         | `https://exocortex.my/ontology/ems#Task_size` |
+| Frontmatter | `ems__Task_size`                              |
+| Type        | Literal (S, M, L, XL)                         |
+| Applies to  | Tasks only                                    |
 
 ```sparql
 SELECT ?task ?label ?size WHERE {
@@ -410,12 +416,12 @@ SELECT ?task ?label ?size WHERE {
 
 **Parent area (for area hierarchy)**
 
-| Property | Value |
-|----------|-------|
-| URI | `https://exocortex.my/ontology/ems#Area_parent` |
-| Frontmatter | `ems__Area_parent` |
-| Type | IRI (reference to parent area note) |
-| Applies to | Areas only |
+| Property    | Value                                           |
+| ----------- | ----------------------------------------------- |
+| URI         | `https://exocortex.my/ontology/ems#Area_parent` |
+| Frontmatter | `ems__Area_parent`                              |
+| Type        | IRI (reference to parent area note)             |
+| Applies to  | Areas only                                      |
 
 ```sparql
 SELECT ?area ?label ?parent WHERE {
@@ -431,13 +437,13 @@ SELECT ?area ?label ?parent WHERE {
 
 ### Status URIs
 
-| Status | URI | Frontmatter Value |
-|--------|-----|-------------------|
-| Draft | `ems:EffortStatusDraft` | `ems__EffortStatusDraft` |
+| Status  | URI                       | Frontmatter Value          |
+| ------- | ------------------------- | -------------------------- |
+| Draft   | `ems:EffortStatusDraft`   | `ems__EffortStatusDraft`   |
 | Backlog | `ems:EffortStatusBacklog` | `ems__EffortStatusBacklog` |
 | Waiting | `ems:EffortStatusWaiting` | `ems__EffortStatusWaiting` |
-| Doing | `ems:EffortStatusDoing` | `ems__EffortStatusDoing` |
-| Done | `ems:EffortStatusDone` | `ems__EffortStatusDone` |
+| Doing   | `ems:EffortStatusDoing`   | `ems__EffortStatusDoing`   |
+| Done    | `ems:EffortStatusDone`    | `ems__EffortStatusDone`    |
 | Trashed | `ems:EffortStatusTrashed` | `ems__EffortStatusTrashed` |
 
 ### Status Workflow
@@ -482,28 +488,33 @@ obsidian://vault/{encoded-path}
 ```
 
 Example:
+
 - Note path: `Tasks/Review PR #123.md`
 - URI: `obsidian://vault/Tasks%2FReview%20PR%20%23123.md`
 
 ### Predicate URIs
 
 Predicates follow the pattern:
+
 ```
 https://exocortex.my/ontology/{namespace}#{PropertyName}
 ```
 
 Examples:
+
 - `https://exocortex.my/ontology/exo#Asset_label`
 - `https://exocortex.my/ontology/ems#Effort_status`
 
 ### Class URIs
 
 Classes follow the pattern:
+
 ```
 https://exocortex.my/ontology/ems#{ClassName}
 ```
 
 Examples:
+
 - `https://exocortex.my/ontology/ems#Task`
 - `https://exocortex.my/ontology/ems#Project`
 

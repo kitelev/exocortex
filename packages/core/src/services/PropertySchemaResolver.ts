@@ -2,6 +2,7 @@ import { injectable } from "tsyringe";
 import type { ILogger } from "../interfaces/ILogger";
 import { PropertyFieldType, rangeToFieldType } from "../domain/types/PropertyFieldType";
 import { extractPropertyLabel } from "../domain/types/PropertyDefinition";
+import { Namespace } from "../domain/models/rdf/Namespace";
 
 export interface PropertySchema {
   type: PropertyFieldType;
@@ -284,32 +285,68 @@ export class PropertySchemaResolver {
     return iri;
   }
 
+  /**
+   * `prefix__LocalName` → full term IRI, derived from
+   * {@link Namespace.KNOWN_NAMESPACES} via `Namespace.fromPropertyKey`.
+   *
+   * ⛔ This used to be a private regex pair — the THIRD independent IRI↔prefix
+   * implementation (ticket `6572f3f3`, req `38e3f174`). Its `switch` sent EVERY
+   * prefix to `https://exocortex.my/ontology/<prefix>#`, so a registered W3C
+   * vocabulary was minted under a namespace that does not exist:
+   * `rdfs__subClassOf` → `…/ontology/rdfs#subClassOf` instead of the canonical
+   * `http://www.w3.org/2000/01/rdf-schema#subClassOf`. Its `^([a-z]+)__` also
+   * refused any prefix carrying a capital or a digit, so `aiKnow__…` / `ns2__…`
+   * were handed to SPARQL as bare frontmatter keys.
+   *
+   * Pass-through is DELIBERATE and load-bearing: an unparseable name is
+   * returned as-is (not `null`), because the caller uses the result as a cache
+   * key and as the `<…>` term of the schema query.
+   */
   private toFullIRI(propertyName: string): string {
+    // ⛤ There are TWO pass-throughs in this method and they are NOT the same
+    // guarantee — saying so is the point, because an earlier revision of this
+    // comment let one stand for both.
+    //
+    //   (a) THIS early return — DEFENSIVE by arithmetic: without it a full IRI
+    //       falls to `fromPropertyKey`, which cannot parse it, and (b) below
+    //       returns the very same string. Measured: removing it reddened
+    //       nothing, so no mutant can distinguish it. Kept because it states
+    //       the intent and costs one comparison.
+    //   (b) The FINAL `return propertyName` — LOAD-BEARING, and pinned by
+    //       mutant MI4: it is what a caller-supplied name with no `__` relies
+    //       on (the result is the cache key AND the `<…>` term of the query).
     if (propertyName.startsWith("http://") || propertyName.startsWith("https://")) {
       return propertyName;
     }
 
-    const match = propertyName.match(/^([a-z]+)__(.+)$/);
-    if (match) {
-      const [, prefix, localName] = match;
-      switch (prefix) {
-        case "ems":
-          return `https://exocortex.my/ontology/ems#${localName}`;
-        case "exo":
-          return `https://exocortex.my/ontology/exo#${localName}`;
-        default:
-          return `https://exocortex.my/ontology/${prefix}#${localName}`;
-      }
+    const parsed = Namespace.fromPropertyKey(propertyName);
+    if (parsed) {
+      return parsed.namespace.term(parsed.localName).value;
     }
 
     return propertyName;
   }
 
+  /**
+   * Full term IRI → `prefix__LocalName`, the exact inverse of {@link toFullIRI},
+   * derived from the SAME array via `Namespace.fromTermIRI`.
+   *
+   * ⛔ The regex it replaces (`/https:\/\/exocortex\.my\/ontology\/([a-z]+)#(.+)$/`)
+   * differed from the canon in four measured ways (req `38e3f174`): it knew no
+   * W3C vocabulary; it refused a prefix with a capital or a digit; it accepted a
+   * local name containing `/` or `#`, which is not a frontmatter key at all; and
+   * — having no `^` anchor — it matched a `…/ontology/<ns>#` fragment ANYWHERE
+   * in the string, so `https://evil.example/x/https://exocortex.my/ontology/ems#Pwned`
+   * yielded `ems__Pwned`. That last one is drift hygiene rather than a
+   * vulnerability, and the reason is the enumerated input set, not the noise
+   * level: the only two inputs are graph IRIs emitted by our own forward path
+   * and the caller-supplied name of {@link getSchema}, whose sole in-repo caller
+   * is unreachable (`initPropertySchemaService` has zero production callers).
+   */
   private fromFullIRI(iri: string): string {
-    const match = iri.match(/https:\/\/exocortex\.my\/ontology\/([a-z]+)#(.+)$/);
-    if (match) {
-      const [, prefix, localName] = match;
-      return `${prefix}__${localName}`;
+    const term = Namespace.fromTermIRI(iri);
+    if (term) {
+      return `${term.namespace.prefix}__${term.localName}`;
     }
     return iri;
   }

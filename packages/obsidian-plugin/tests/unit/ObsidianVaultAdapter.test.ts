@@ -1,5 +1,6 @@
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 import { Vault, TFile, TFolder, MetadataCache, App, FileManager } from "obsidian";
+import * as obsidian from "obsidian";
 import { IFile } from "@kitelev/exocortex-core";
 
 describe("ObsidianVaultAdapter", () => {
@@ -184,6 +185,23 @@ describe("ObsidianVaultAdapter", () => {
       await adapter.delete(file);
 
       expect(mockFileManager.trashFile).toHaveBeenCalledWith(mockTFile);
+    });
+
+    it("fails loud (not TypeError) on an Obsidian host older than 1.6.6, where FileManager.trashFile does not exist", async () => {
+      const file: IFile = {
+        path: "test/file.md",
+        basename: "file",
+        name: "file.md",
+        parent: null,
+      };
+      mockVault.getAbstractFileByPath.mockReturnValue(mockTFile);
+      const spy = jest.spyOn(obsidian, "requireApiVersion").mockReturnValue(false);
+      try {
+        await expect(adapter.delete(file)).rejects.toThrow(/Obsidian 1\.6\.6/);
+        expect(mockFileManager.trashFile).not.toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+      }
     });
 
     it("should throw error if file not found", async () => {
@@ -623,6 +641,145 @@ nested:
         title: "New Title",
         status: "draft",
       });
+    });
+  });
+
+  // req de7131ae — the cell-edit writer speaks the chokepoint's key dialect
+  // (canonicalYamlKey + LEGACY_YAML_KEYS drop + canonical-wins). Each axis is
+  // revert-verified by a mutant that removes ONE guarantee (see PR body).
+  describe("updateFrontmatter — canonical key + legacy-drop (req de7131ae) [REVERT-VERIFY]", () => {
+    const file: IFile = {
+      path: "test/file.md",
+      basename: "file",
+      name: "file.md",
+      parent: null,
+    };
+
+    /** Drive the real adapter against a plain object standing in for Obsidian's live frontmatter. */
+    async function write(
+      live: Record<string, unknown>,
+      payload: Record<string, unknown>,
+    ): Promise<Record<string, unknown>> {
+      mockVault.getAbstractFileByPath.mockReturnValue(mockTFile);
+      mockMetadataCache.getFileCache.mockReturnValue({ frontmatter: { ...live } } as any);
+      mockFileManager.processFrontMatter.mockImplementation(async (_f, processor) => {
+        processor(live);
+      });
+      await adapter.updateFrontmatter(file, () => payload);
+      return live;
+    }
+
+    it("A1 writes exo__Asset_archived and DROPS the legacy bare `archived` key on a legacy carrier @req:de7131ae-f9e5-4498-bf06-41ccbaadc7de", async () => {
+      const live = await write(
+        { archived: true, exo__Asset_uid: "u" },
+        { archived: true, exo__Asset_uid: "u", exo__Asset_archived: false },
+      );
+      expect(live.exo__Asset_archived).toBe(false);
+      expect(live).not.toHaveProperty("archived");
+      expect(Object.keys(live).filter((k) => k.toLowerCase().includes("archived"))).toEqual([
+        "exo__Asset_archived",
+      ]);
+    });
+
+    it("A2 upgrades a bare `archived` payload key to exo__Asset_archived (never writes the bare form) @req:de7131ae-f9e5-4498-bf06-41ccbaadc7de", async () => {
+      const live = await write({ archived: true }, { archived: true });
+      expect(live).toEqual({ exo__Asset_archived: true });
+    });
+
+    it("A3 writes the prefixed exo__Asset_aliases under the live `aliases:` key (869561bf §Scope remainder) @req:de7131ae-f9e5-4498-bf06-41ccbaadc7de", async () => {
+      const live = await write({}, { exo__Asset_aliases: ["x"] });
+      expect(live).toEqual({ aliases: ["x"] });
+      expect(live).not.toHaveProperty("exo__Asset_aliases");
+    });
+
+    it("A4 resolves a payload carrying BOTH spellings canonical-wins (NoteToRDFConverter M1 / ARCHIVED_FLAG_KEYS priority) @req:de7131ae-f9e5-4498-bf06-41ccbaadc7de", async () => {
+      // Legacy entry FIRST in insertion order — a last-write-wins rule would
+      // let the canonical value survive here by accident; flip the order too.
+      const a = await write({}, { archived: true, exo__Asset_archived: false });
+      expect(a).toEqual({ exo__Asset_archived: false });
+      const b = await write({}, { exo__Asset_archived: false, archived: true });
+      expect(b).toEqual({ exo__Asset_archived: false });
+    });
+
+    it("A5 (negative control) leaves keys outside the canonical-key rule untouched @req:de7131ae-f9e5-4498-bf06-41ccbaadc7de", async () => {
+      const live = await write(
+        {},
+        { exo__Asset_isDefinedBy: "[[x]]", ems__Effort_status: "[[y]]", aliases: ["a"] },
+      );
+      expect(live).toEqual({
+        exo__Asset_isDefinedBy: "[[x]]",
+        ems__Effort_status: "[[y]]",
+        aliases: ["a"],
+      });
+    });
+  });
+
+  // req 2a020489 — the port's contract beyond de7131ae, now that the dialect
+  // has ONE carrier (`FrontmatterService.applyPatch`) shared with the CLI
+  // adapter (mirror axes C6/C7 in packages/cli/tests/integration/
+  // filesystem-vault-adapter-patch-dialect.integration.test.ts). Mutant M1
+  // (replace the helper call with a plain key copy in THIS adapter) reddens
+  // A1-A4 + A7 and leaves every C-axis green; helper-body mutants redden both.
+  describe("updateFrontmatter — PATCH contract through the single carrier (req 2a020489) [REVERT-VERIFY]", () => {
+    const file: IFile = {
+      path: "test/file.md",
+      basename: "file",
+      name: "file.md",
+      parent: null,
+    };
+
+    async function write(
+      live: Record<string, unknown>,
+      payload: Record<string, unknown>,
+    ): Promise<Record<string, unknown>> {
+      mockVault.getAbstractFileByPath.mockReturnValue(mockTFile);
+      mockMetadataCache.getFileCache.mockReturnValue({ frontmatter: { ...live } } as any);
+      mockFileManager.processFrontMatter.mockImplementation(async (_f, processor) => {
+        processor(live);
+      });
+      await adapter.updateFrontmatter(file, () => payload);
+      return live;
+    }
+
+    it("A6 PATCH: keys the updater does not return are preserved — omission is not deletion @req:2a020489-00db-4fe9-b2ca-1481cb7da9b1", async () => {
+      const live = await write(
+        { exo__Asset_uid: "u", exo__Asset_label: "L", ems__Effort_status: "[[s]]" },
+        { exo__Asset_label: "New" },
+      );
+      expect(live).toEqual({
+        exo__Asset_uid: "u",
+        exo__Asset_label: "New",
+        ems__Effort_status: "[[s]]",
+      });
+    });
+
+    it("A7 an IRI-form key and an obsidian:// value are normalised to the Obsidian dialect @req:2a020489-00db-4fe9-b2ca-1481cb7da9b1 @req:27fbe40b-080f-4928-b675-3c767223c875", async () => {
+      const live = await write(
+        {},
+        {
+          "https://exocortex.my/ontology/ems#Effort_status":
+            "obsidian://vault/x/ems__EffortStatusDoing.md",
+        },
+      );
+      expect(Object.keys(live)).toEqual(["ems__Effort_status"]);
+      // Tightened from `toContain` to `toBe` by req 27fbe40b (object-path form
+      // decided: the BARE wikilink is handed to processFrontMatter — Obsidian
+      // quotes it on disk; pre-quoting made the quotes part of the value).
+      expect(live.ems__Effort_status).toBe("[[ems__EffortStatusDoing]]");
+    });
+
+    it("E1 the live processFrontMatter object receives the BARE [[uid]] for an obsidian:// value — no embedded quotes @req:27fbe40b-080f-4928-b675-3c767223c875", async () => {
+      const live = await write(
+        { exo__Asset_uid: "u" },
+        {
+          exo__Asset_uid: "u",
+          ems__Effort_parent: "obsidian://vault/x/3f1d005c-7a2e-4b8f-9c1d-5e6f7a8b9c0d.md",
+          exo__Asset_isDefinedBy: "https://exocortex.my/ontology/exo#Asset",
+        },
+      );
+      expect(live.ems__Effort_parent).toBe("[[3f1d005c-7a2e-4b8f-9c1d-5e6f7a8b9c0d]]");
+      expect(live.exo__Asset_isDefinedBy).toBe("[[exo__Asset]]");
+      expect(live.exo__Asset_uid).toBe("u");
     });
   });
 

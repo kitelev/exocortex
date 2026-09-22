@@ -43,6 +43,13 @@ const PREDICATES = {
   INSTANCE_CLASS: Namespace.EXO.term("Instance_class"),
   ASSET_LABEL: Namespace.EXO.term("Asset_label"),
   ASSET_PROTOTYPE: Namespace.EXO.term("Asset_prototype"),
+  // req 960d7a3f: the archive flag is EMITTED as `exo:Asset_archived` — both
+  // the canonical `exo__Asset_archived:` key and the legacy bare `archived:`
+  // index under it (NoteToRDFConverter). `Asset_isArchived` is kept only as the
+  // read-only compat predicate (0 carriers measured); before this fix the
+  // service read ONLY that never-emitted predicate, so `includeArchived: false`
+  // filtered nothing.
+  ASSET_ARCHIVED: Namespace.EXO.term("Asset_archived"),
   ASSET_IS_ARCHIVED: Namespace.EXO.term("Asset_isArchived"),
 
   // Hierarchy
@@ -363,8 +370,11 @@ export class GraphQueryService {
         prototype = this.objectToId(triple.object) ?? value;
       } else if (predicateUri === PREDICATES.EFFORT_PARENT.value) {
         parent = this.objectToId(triple.object) ?? value;
-      } else if (predicateUri === PREDICATES.ASSET_IS_ARCHIVED.value) {
-        isArchived = value === "true" || value === "1";
+      } else if (
+        predicateUri === PREDICATES.ASSET_ARCHIVED.value ||
+        predicateUri === PREDICATES.ASSET_IS_ARCHIVED.value
+      ) {
+        isArchived = isArchived || value === "true" || value === "1";
       } else {
         // Store other properties
         const propName = this.predicateToPropertyName(predicateUri);

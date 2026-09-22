@@ -10,21 +10,50 @@ import {
   vaultPathToIRI,
 } from "@kitelev/exocortex-core";
 import { App, TFile } from "obsidian";
+import * as obsidian from "obsidian";
 import type { ExocortexPluginInterface } from "@plugin/types";
 import { ReactRenderer } from "@plugin/presentation/utils/ReactRenderer";
 import { extractInstanceClass } from "@plugin/domain/property-editor/extractInstanceClass";
+import { getPropertySchemaForClass } from "@plugin/domain/property-editor/PropertySchemas";
+import type { RelationsFormDeps } from "@plugin/presentation/components/property-editor/PropertyEditorForm";
 
 jest.mock("../../src/presentation/utils/ReactRenderer");
 jest.mock("../../src/presentation/components/ErrorBoundary");
 jest.mock("../../src/presentation/components/property-editor/PropertyEditorForm");
 jest.mock("../../src/domain/property-editor/extractInstanceClass");
+// Real implementation by default; the ticket-7d91d13a describe swaps in a
+// wikilink schema so `buildRelationsDeps` exposes the seeded predicate as an option.
+const actualPropertySchemas = jest.requireActual("../../src/domain/property-editor/PropertySchemas");
+jest.mock("../../src/domain/property-editor/PropertySchemas", () => ({
+  ...jest.requireActual("../../src/domain/property-editor/PropertySchemas"),
+  getPropertySchemaForClass: jest.fn(
+    jest.requireActual("../../src/domain/property-editor/PropertySchemas").getPropertySchemaForClass,
+  ),
+}));
 
 jest.mock("obsidian", () => {
   const actual = jest.requireActual("obsidian");
   return {
+    // Keep the ES-module flag the spread drops (it is non-enumerable on the
+    // compiled mock), so `import * as obsidian` yields THIS object instead of
+    // a non-configurable getter wrapper — required for the L2 axes to spy on
+    // `requireApiVersion` (ticket 7c02970c).
+    __esModule: true,
     ...actual,
   };
 });
+// Ticket 7c02970c — the modal logs through the channel-routed Logger; a shared
+// mock per test lets the L1 axes assert the (message, error) pairs.
+jest.mock("../../src/adapters/logging/LoggerFactory", () => ({
+  LoggerFactory: {
+    create: () => ({
+      debug: jest.fn(),
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+    }),
+  },
+}));
 
 describe("PropertyEditorModal", () => {
   let mockApp: App;
@@ -36,6 +65,9 @@ describe("PropertyEditorModal", () => {
   let mockRender: jest.Mock;
   let mockUnmount: jest.Mock;
   let mockNotifier: any;
+  /** The modal's (mocked) Logger `error` — ticket 7c02970c. */
+  const loggerErrorOf = (m: PropertyEditorModal): jest.Mock =>
+    (m as unknown as { logger: { error: jest.Mock } }).logger.error;
 
   beforeEach(() => {
     mockNotifier = {
@@ -88,9 +120,14 @@ describe("PropertyEditorModal", () => {
         if (options?.cls) el.className = options.cls;
         return el;
       }),
-      createDiv: jest.fn().mockImplementation(() => ({
-        createEl: jest.fn(),
-      })),
+      // Ticket 7c02970c — the modal builds its chrome with `createDiv` (the
+      // obsidianmd/prefer-create-el form); mirror createEl's element factory.
+      createDiv: jest.fn().mockImplementation((options?: any) => {
+        const el = document.createElement("div");
+        if (options?.text) el.textContent = options.text;
+        if (options?.cls) el.className = options.cls;
+        return el;
+      }),
       empty: jest.fn(),
     };
   });
@@ -146,17 +183,17 @@ describe("PropertyEditorModal", () => {
 
     it("should create title element", () => {
       modal.onOpen();
-      expect(mockContentEl.createEl).toHaveBeenCalledWith("div", { cls: "modal-title" });
+      expect(mockContentEl.createDiv).toHaveBeenCalledWith({ cls: "modal-title" });
     });
 
     it("should create subtitle element", () => {
       modal.onOpen();
-      expect(mockContentEl.createEl).toHaveBeenCalledWith("div", { cls: "property-editor-subtitle" });
+      expect(mockContentEl.createDiv).toHaveBeenCalledWith({ cls: "property-editor-subtitle" });
     });
 
     it("should create container for React component", () => {
       modal.onOpen();
-      expect(mockContentEl.createEl).toHaveBeenCalledWith("div", { cls: "property-editor-container" });
+      expect(mockContentEl.createDiv).toHaveBeenCalledWith({ cls: "property-editor-container" });
     });
 
     it("should call ReactRenderer.render", () => {
@@ -211,8 +248,10 @@ describe("PropertyEditorModal", () => {
 
       await (modal as any).handleSave({ key1: "value1" });
 
-      expect(mockNotifier.error).toHaveBeenCalledWith(
+      // Ticket 7c02970c — the toast now comes from the Logger's notice channel.
+      expect(loggerErrorOf(modal)).toHaveBeenCalledWith(
         expect.stringContaining("Failed to save properties"),
+        expect.any(Error),
       );
     });
 
@@ -221,8 +260,9 @@ describe("PropertyEditorModal", () => {
 
       await (modal as any).handleSave({ key1: "value1" });
 
-      expect(mockNotifier.error).toHaveBeenCalledWith(
+      expect(loggerErrorOf(modal)).toHaveBeenCalledWith(
         expect.stringContaining("Failed to save properties"),
+        expect.any(Error),
       );
     });
 
@@ -231,8 +271,9 @@ describe("PropertyEditorModal", () => {
 
       await (modal as any).handleSave({ key1: "value1" });
 
-      expect(mockNotifier.error).toHaveBeenCalledWith(
+      expect(loggerErrorOf(modal)).toHaveBeenCalledWith(
         expect.stringContaining("string error"),
+        "string error",
       );
     });
 
@@ -388,6 +429,384 @@ describe("PropertyEditorModal", () => {
       expect(
         (modal as any).predicateDefUidByKey.get("adapter-exo-ims__relatesToConcept"),
       ).toBe("0967a771-c5cf-4fee-9707-9837104977f3");
+    });
+  });
+
+  /**
+   * Ticket 7d91d13a (review LOW-2 of #4247) — the relations-picker's candidate
+   * class is derived from `exo:Property_range`, and the converter emits a class
+   * range as a SYMBOLIC IRI (`…/ems#Effort`) for every class with a
+   * `prefix__LocalName` label (348 of the 350 object ranges in vault-exodev,
+   * 33 namespaces; 2 are path-form). `uidFromIri` sliced that to the bare local
+   * name `Effort`, which is neither the class UID nor its label, so
+   * `findAssetRefCandidates` matched nothing → an EMPTY picker for ~every
+   * predicate regardless of the subsumption resolver (req 15f48fa1).
+   *
+   * Production-shape: the REAL `buildRelationsDeps()` (fake SPARQL api → a REAL
+   * InMemoryTripleStore seeded as the store holds it; schema stubbed to expose
+   * the predicate as a wikilink option) → the option's `rangeClassUid` → the
+   * REAL `resolveCandidates` closure → the REAL `findAssetRefCandidates` over a
+   * fake `app.metadataCache` — i.e. the exact values the RelationsSection reads.
+   *
+   * Revert-verify (mutant driver, `RED: [...]` by axis name):
+   *  - M1 revert to `uidFromIri(range)` alone            → R1, R3, R4 RED
+   *  - M2 normalise via `FrontmatterService.normalizeIRI` → R4 RED (26 live
+   *    namespaces are outside its 9-entry map — the generic inverse is the point)
+   *  - M3 break the path-form fallback (`?? null`)        → R2 RED
+   */
+  describe("buildRelationsDeps — symbolic Property_range → picker candidates (ticket 7d91d13a)", () => {
+    const EXO_PROPERTY_RANGE = Namespace.EXO.term("Property_range");
+    const EXO_ASSET_LABEL = Namespace.EXO.term("Asset_label");
+    const defIri = (path: string): IRI => new IRI(vaultPathToIRI(path));
+    /** `<prefix>#<local>` symbolic class/predicate IRI (ad-hoc namespaces included). */
+    const symbolic = (prefix: string, local: string): IRI => {
+      const ns = Namespace.forPrefix(prefix);
+      if (!ns) throw new Error(`test fixture: bad namespace prefix ${prefix}`);
+      return ns.term(local);
+    };
+
+    // Class UIDs (real ones from the shared TBox where they exist).
+    const ASSET = "aaaaaaaa-0000-4000-8000-000000000001"; // exo__Asset (root, no superClass)
+    const EFFORT = "086f71fa-0000-4000-8000-000000000002"; // ems__Effort → exo__Asset
+    const TASK = "1b20a8f0-d745-4e93-91db-4531b3df120e"; // ems__Task → ems__Effort
+    const PROJECT = "7db5eeff-0000-4000-8000-000000000004"; // ems__Project → ems__Effort
+    const CONCEPT = "cccccccc-0000-4000-8000-000000000005"; // concept__Concept → exo__Asset
+
+    type FakeFile = { basename: string; path: string; fm: Record<string, unknown> };
+    const file = (basename: string, fm: Record<string, unknown>): FakeFile => ({
+      basename,
+      path: `${basename}.md`,
+      fm,
+    });
+    const classDef = (uid: string, label: string, supers: string[]): FakeFile =>
+      file(uid, {
+        exo__Asset_uid: uid,
+        exo__Asset_label: label,
+        exo__Instance_class: ["[[8619c4fc-0000-4000-8000-000000000000|exo__Class]]"],
+        ...(supers.length > 0 ? { exo__Class_superClass: supers } : {}),
+      });
+    const instance = (uid: string, label: string, cls: string): FakeFile =>
+      file(uid, { exo__Asset_uid: uid, exo__Asset_label: label, exo__Instance_class: [cls] });
+
+    /** A vault: the class hierarchy + instances of Task / Project / Concept. */
+    const vaultFiles = (): FakeFile[] => [
+      classDef(ASSET, "exo__Asset", []),
+      classDef(EFFORT, "ems__Effort", [`[[${ASSET}|exo__Asset]]`]),
+      classDef(TASK, "ems__Task", [`[[${EFFORT}|ems__Effort]]`]),
+      classDef(PROJECT, "ems__Project", [`[[${EFFORT}]]`]),
+      classDef(CONCEPT, "concept__Concept", [`[[${ASSET}]]`]),
+      instance("t-1111", "Task one", `[[${TASK}]]`), // UID-form class ref
+      instance("p-2222", "Project two", "[[ems__Project]]"), // legacy label-form class ref
+      instance("c-3333", "Concept three", `[[${CONCEPT}]]`),
+    ];
+
+    const appWith = (files: FakeFile[]): App =>
+      ({
+        vault: {
+          read: jest.fn().mockResolvedValue("---\nkey: value\n---\ncontent"),
+          modify: jest.fn().mockResolvedValue(undefined),
+          getMarkdownFiles: () => files,
+        },
+        metadataCache: {
+          getFileCache: (f: FakeFile) => ({ frontmatter: f.fm }),
+        },
+      }) as unknown as App;
+
+    const pluginWith = (store: InMemoryTripleStore): ExocortexPluginInterface =>
+      ({
+        refreshLayout: jest.fn(),
+        // Store reachable, NOT ready → the reified-relations pass is skipped
+        // (cold-start guard), only the range/schema pass runs.
+        getSPARQLApi: () => ({ getTripleStore: () => store, isReady: () => false }),
+      }) as unknown as ExocortexPluginInterface;
+
+    /** Seed one predicate definition: `key` with the given range object. */
+    const seedPredicate = async (
+      store: InMemoryTripleStore,
+      key: string,
+      defPath: string,
+      range: IRI,
+    ): Promise<void> => {
+      const def = defIri(defPath);
+      await store.add(new Triple(def, EXO_PROPERTY_RANGE, range));
+      // Label = the frontmatter key, emitted as a symbolic IRI (dual-IRI).
+      const [prefix, local] = key.split("__");
+      await store.add(new Triple(def, EXO_ASSET_LABEL, symbolic(prefix, local)));
+    };
+
+    const wikilinkSchema = (...keys: string[]) =>
+      keys.map((name) => ({ name, type: "wikilink" as const, required: false, label: name }));
+
+    const depsFor = async (
+      store: InMemoryTripleStore,
+      files: FakeFile[],
+      ...schemaKeys: string[]
+    ): Promise<RelationsFormDeps> => {
+      (getPropertySchemaForClass as jest.Mock).mockResolvedValue(wikilinkSchema(...schemaKeys));
+      modal = new PropertyEditorModal(
+        appWith(files),
+        pluginWith(store),
+        mockFile,
+        mockFrontmatter,
+        mockNotifier,
+      );
+      const deps = await (modal as any).buildRelationsDeps();
+      expect(deps).toBeDefined();
+      return deps as RelationsFormDeps;
+    };
+
+    afterEach(() => {
+      (getPropertySchemaForClass as jest.Mock).mockReset();
+      (getPropertySchemaForClass as jest.Mock).mockImplementation(
+        actualPropertySchemas.getPropertySchemaForClass,
+      );
+    });
+
+    it("R1 @req:e084627c-38b7-4498-be0a-a3e07e790943 a symbolic range (…/ems#Effort) becomes the class LABEL key and the picker offers the subclass instances", async () => {
+      const store = new InMemoryTripleStore();
+      await seedPredicate(
+        store,
+        "ems__Effort_parent",
+        "assetspaces/kitelev/exoas-public/ems/6528ecfa-0000-4000-8000-000000000006.md",
+        Namespace.EMS.term("Effort"),
+      );
+      const deps = await depsFor(store, vaultFiles(), "ems__Effort_parent");
+
+      const option = deps.predicateOptions.find((o) => o.key === "ems__Effort_parent");
+      expect(option?.rangeClassUid).toBe("ems__Effort");
+
+      // The exact call the RelationsSection makes for the chosen predicate.
+      const candidates = deps.resolveCandidates(option?.rangeClassUid);
+      expect(candidates).toEqual([
+        { uid: "p-2222", label: "Project two" },
+        { uid: "t-1111", label: "Task one" },
+      ]);
+    });
+
+    it("R2 @req:e084627c-38b7-4498-be0a-a3e07e790943 a path-form range (obsidian://…/<uid>.md) still maps to the class UID", async () => {
+      const store = new InMemoryTripleStore();
+      await seedPredicate(
+        store,
+        "concept__Concept_related",
+        "assetspaces/kitelev/exoas-concept/concept/11111111-0000-4000-8000-000000000007.md",
+        defIri("assetspaces/kitelev/exoas-concept/concept/d4efa663-df6e-4794-bed7-a8a25d2971e5.md"),
+      );
+      const deps = await depsFor(store, vaultFiles(), "concept__Concept_related");
+
+      const option = deps.predicateOptions.find((o) => o.key === "concept__Concept_related");
+      expect(option?.rangeClassUid).toBe("d4efa663-df6e-4794-bed7-a8a25d2971e5");
+    });
+
+    it("R3 @req:e084627c-38b7-4498-be0a-a3e07e790943 a symbolic range naming the ROOT class (…/exo#Asset, no superClass) reaches its definition by label and closes every subclass", async () => {
+      const store = new InMemoryTripleStore();
+      await seedPredicate(
+        store,
+        "exo__Asset_relates",
+        "assetspaces/kitelev/exoas-exo/exo/e3a71d16-14b3-4aff-adf7-c9eccd1077b4.md",
+        Namespace.EXO.term("Asset"),
+      );
+      const deps = await depsFor(store, vaultFiles(), "exo__Asset_relates");
+
+      const option = deps.predicateOptions.find((o) => o.key === "exo__Asset_relates");
+      expect(option?.rangeClassUid).toBe("exo__Asset");
+      expect(deps.resolveCandidates(option?.rangeClassUid).map((c) => c.uid)).toEqual([
+        "c-3333",
+        "p-2222",
+        "t-1111",
+      ]);
+    });
+
+    // ⛤ The axis TITLE names `FrontmatterService.IRI_PREFIX_MAP`, which was
+    // retired by ticket 6572f3f3 / req 38e3f174. The title is left verbatim
+    // ON PURPOSE: it is the machine key this req's mutant driver parses out of
+    // the jest output, and renaming it would break that collection. Read the
+    // name as historical — `…/concept#Concept` was outside that map, and the
+    // generic inverse is now the only one.
+    it("R4 @req:e084627c-38b7-4498-be0a-a3e07e790943 a symbolic range in a namespace outside FrontmatterService.IRI_PREFIX_MAP (…/concept#Concept) resolves through the generic inverse", async () => {
+      const store = new InMemoryTripleStore();
+      await seedPredicate(
+        store,
+        "concept__Concept_related",
+        "assetspaces/kitelev/exoas-concept/concept/11111111-0000-4000-8000-000000000007.md",
+        symbolic("concept", "Concept"),
+      );
+      const deps = await depsFor(store, vaultFiles(), "concept__Concept_related");
+
+      const option = deps.predicateOptions.find((o) => o.key === "concept__Concept_related");
+      expect(option?.rangeClassUid).toBe("concept__Concept");
+      expect(deps.resolveCandidates(option?.rangeClassUid)).toEqual([
+        { uid: "c-3333", label: "Concept three" },
+      ]);
+    });
+
+    it("R5 the predicate-definition maps (subject side) are unchanged by the range-key derivation", async () => {
+      const store = new InMemoryTripleStore();
+      await seedPredicate(
+        store,
+        "ems__Effort_parent",
+        "assetspaces/kitelev/exoas-public/ems/6528ecfa-0000-4000-8000-000000000006.md",
+        Namespace.EMS.term("Effort"),
+      );
+      await depsFor(store, vaultFiles(), "ems__Effort_parent");
+      expect((modal as any).predicateDefUidByKey.get("ems__Effort_parent")).toBe(
+        "6528ecfa-0000-4000-8000-000000000006",
+      );
+      expect((modal as any).keyByPredicateDefUid.get("6528ecfa-0000-4000-8000-000000000006")).toBe(
+        "ems__Effort_parent",
+      );
+    });
+  });
+
+  /**
+   * Ticket 7c02970c (parent bbac67ce) — the pre-existing lint debt of this modal
+   * was not cosmetic: three catch handlers logged with a bare `console.error`
+   * (bypassing the plugin's channel-routed Logger: console / notice / file
+   * toggles), and two call sites invoked `FileManager.trashFile` (Obsidian
+   * ≥ 1.6.6) on a plugin whose `minAppVersion` is 1.5.0 — an older host died
+   * with a bare `TypeError: trashFile is not a function`.
+   *
+   * L1 — every catch handler routes through the Logger with the message AND the
+   *      error object (mutant: revert to `console.error` → L1a/L1b/L1c RED).
+   * L2 — statement-file deletion is guarded by `requireApiVersion("1.6.6")`
+   *      through the ONE helper both call sites use (mutants: drop the guard →
+   *      L2a/L2c RED; bypass the helper at either call site → that axis RED).
+   */
+  describe("lint-debt removal — Logger routing + trashFile API guard (ticket 7c02970c)", () => {
+    const flushMicrotasks = async (): Promise<void> => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    const loggerOf = (m: PropertyEditorModal) =>
+      (m as unknown as { logger: { error: jest.Mock } }).logger;
+
+    beforeEach(() => {
+      modal = new PropertyEditorModal(
+        mockApp,
+        mockPlugin,
+        mockFile,
+        mockFrontmatter,
+        mockNotifier,
+      );
+      modal.contentEl = mockContentEl;
+      modal.close = jest.fn();
+    });
+
+    it("L1a a failing relations init is logged through the Logger with the error object", async () => {
+      const boom = new Error("store down");
+      jest.spyOn(modal as any, "buildRelationsDeps").mockRejectedValue(boom);
+      modal.onOpen();
+      await flushMicrotasks();
+      expect(loggerOf(modal).error).toHaveBeenCalledWith(
+        "Relations init error",
+        boom,
+      );
+    });
+
+    it("L1b the ErrorBoundary onError routes the user message + error object through the Logger", () => {
+      modal.onOpen();
+      const boundaryProps = mockRender.mock.calls[0][1].props;
+      const boom = new Error("render exploded");
+      boundaryProps.onError(boom);
+      expect(loggerOf(modal).error).toHaveBeenCalledWith(
+        "Error in property editor: render exploded",
+        boom,
+      );
+    });
+
+    it("L1c a failing save routes the user message + error object through the Logger", async () => {
+      const boom = new Error("disk full");
+      (mockApp.vault.read as jest.Mock).mockRejectedValue(boom);
+      await (modal as any).handleSave({ key1: "value1" });
+      expect(loggerOf(modal).error).toHaveBeenCalledWith(
+        "Failed to save properties: disk full",
+        boom,
+      );
+    });
+
+    it("L3a a failing save toasts ONCE — logger.error exactly once with the full text, notificationService.error never (no double Notice)", async () => {
+      (mockApp.vault.read as jest.Mock).mockRejectedValue(new Error("disk full"));
+      await (modal as any).handleSave({ key1: "value1" });
+      expect(loggerOf(modal).error).toHaveBeenCalledTimes(1);
+      expect(loggerOf(modal).error.mock.calls[0][0]).toBe(
+        "Failed to save properties: disk full",
+      );
+      expect(mockNotifier.error).not.toHaveBeenCalled();
+    });
+
+    it("L3b the ErrorBoundary onError toasts ONCE — logger.error exactly once with the full text, notificationService.error never", () => {
+      modal.onOpen();
+      mockRender.mock.calls[0][1].props.onError(new Error("render exploded"));
+      expect(loggerOf(modal).error).toHaveBeenCalledTimes(1);
+      expect(loggerOf(modal).error.mock.calls[0][0]).toBe(
+        "Error in property editor: render exploded",
+      );
+      expect(mockNotifier.error).not.toHaveBeenCalled();
+    });
+
+    const statementFile = (path: string): TFile =>
+      Object.assign(new TFile(), {
+        path,
+        basename: path.replace(/\.md$/, ""),
+        name: path,
+      });
+
+    it("L2a deleteReified refuses with the real reason on a host older than 1.6.6 and never calls trashFile", async () => {
+      const file = statementFile("statements/s-1.md");
+      const trashFile = jest.fn().mockResolvedValue(undefined);
+      (mockApp as any).vault.getAbstractFileByPath = jest
+        .fn()
+        .mockReturnValue(file);
+      (mockApp as any).fileManager = { trashFile };
+      const spy = jest
+        .spyOn(obsidian, "requireApiVersion")
+        .mockReturnValue(false);
+      try {
+        await expect(
+          (modal as any).deleteReified({ statementPath: "statements/s-1.md" }),
+        ).rejects.toThrow(/Obsidian 1\.6\.6/);
+        expect(trashFile).not.toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("L2b deleteReified trashes the statement via FileManager.trashFile on a host ≥ 1.6.6 (control)", async () => {
+      const file = statementFile("statements/s-1.md");
+      const trashFile = jest.fn().mockResolvedValue(undefined);
+      (mockApp as any).vault.getAbstractFileByPath = jest
+        .fn()
+        .mockReturnValueOnce(file)
+        .mockReturnValueOnce(null); // verify-after-write: gone
+      (mockApp as any).fileManager = { trashFile };
+      await (modal as any).deleteReified({
+        statementPath: "statements/s-1.md",
+      });
+      expect(trashFile).toHaveBeenCalledWith(file);
+      expect(mockNotifier.success).toHaveBeenCalledWith(
+        "Reified relation removed",
+      );
+    });
+
+    it("L2c the reify port's deleteStatement is guarded the same way (second call site)", async () => {
+      const file = statementFile("statements/s-2.md");
+      const trashFile = jest.fn().mockResolvedValue(undefined);
+      (mockApp as any).vault.getAbstractFileByPath = jest
+        .fn()
+        .mockReturnValue(file);
+      (mockApp as any).fileManager = { trashFile };
+      const ports = (modal as any).reifyPorts("anchor-uid");
+      const spy = jest
+        .spyOn(obsidian, "requireApiVersion")
+        .mockReturnValue(false);
+      try {
+        await expect(
+          ports.deleteStatement("statements/s-2.md"),
+        ).rejects.toThrow(/Obsidian 1\.6\.6/);
+        expect(trashFile).not.toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+      }
+      await ports.deleteStatement("statements/s-2.md");
+      expect(trashFile).toHaveBeenCalledWith(file);
     });
   });
 });

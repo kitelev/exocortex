@@ -35,7 +35,7 @@ const VAULT_IRI_PREFIX = "obsidian://vault/";
 const iriOf = (path: string) => new IRI(VAULT_IRI_PREFIX + path);
 
 const A_PATH = "assetspaces/kitelev/exoas-my/my/aaaaaaaa-0001.md";
-const B_PATH = "assetspaces/kitelev/exoas-public/concept/bbbbbbbb-0002.md";
+const B_PATH = "assetspaces/kitelev/exoas-concept/concept/bbbbbbbb-0002.md";
 const S_PATH = "assetspaces/kitelev/exoas-class-relations/cr/11111111-0011.md";
 /** The predicate DEFINITION asset — its label is the frontmatter key. */
 const PRED_PATH =

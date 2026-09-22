@@ -38,11 +38,28 @@ interface PropDef {
   minCount?: number;
   rangeIRI?: string; // IRI object (class file IRI or xsd IRI)
   rangeLiteral?: string; // literal object (xsd datatype as literal)
+  /**
+   * Overrides the domain object with a VERBATIM IRI. The live vaults emit the
+   * domain SYMBOLICALLY (95 of 95 required definitions, measured 2026-09-22);
+   * `domainUid` alone can only model the path form.
+   */
+  domainIRI?: string;
+}
+
+/** A class asset carrying both label twins, as the converter emits them. */
+interface ClassAsset {
+  uid: string;
+  /** `prefix__Name` — emitted as an IRI on exo__Asset_label (§A29). */
+  label: string;
+  /** When false, only the Literal rdfs:label twin is emitted. */
+  labelAsIRI?: boolean;
 }
 
 async function seed(
   props: PropDef[],
   superEdges: Array<[string, string]> = [],
+  classAssets: ClassAsset[] = [],
+  symbolicSuperEdges: Array<[string, string]> = [],
 ): Promise<InMemoryTripleStore> {
   const store = new InMemoryTripleStore();
   const triples: Triple[] = [];
@@ -53,7 +70,7 @@ async function seed(
       new Triple(
         subj,
         EXO.term("Property_domain"),
-        new IRI(fileIRI(p.domainUid)),
+        new IRI(p.domainIRI ?? fileIRI(p.domainUid)),
       ),
     );
     if (p.minCount !== undefined) {
@@ -88,6 +105,35 @@ async function seed(
         new IRI(fileIRI(parent)),
       ),
     );
+  }
+  for (const [childUid, parentIRI] of symbolicSuperEdges) {
+    triples.push(
+      new Triple(
+        new IRI(fileIRI(childUid)),
+        EXO.term("Class_superClass"),
+        new IRI(parentIRI),
+      ),
+    );
+  }
+  for (const c of classAssets) {
+    const subj = new IRI(fileIRI(c.uid));
+    triples.push(new Triple(subj, EXO.term("Asset_uid"), new Literal(c.uid)));
+    if (c.labelAsIRI !== false) {
+      // A `prefix__Name` label parses as a class reference, so the converter
+      // emits exo__Asset_label as an IRI, not a Literal (§A29).
+      const [prefix, local] = c.label.split("__");
+      triples.push(
+        new Triple(
+          subj,
+          EXO.term("Asset_label"),
+          new IRI(`https://exocortex.my/ontology/${prefix}#${local}`),
+        ),
+      );
+    } else {
+      triples.push(
+        new Triple(subj, Namespace.RDFS.term("label"), new Literal(c.label)),
+      );
+    }
   }
   await store.addAll(triples);
   return store;
@@ -176,6 +222,127 @@ describe("createTripleStoreRequiredPropertyResolver", () => {
     expect(byKey["ex__C_norange"]).toBe("text");
   });
 
+  describe("CURIE-literal datatype range `xsd:<local>` (ticket 5380e7fd)", () => {
+    // On the live vaults every datatype range is the CURIE literal form
+    // `"xsd:<local>"`; not one carries the full `http://www.w3.org/2001/XMLSchema#`
+    // form the resolver used to require (measurement table in the PR body).
+    it("@req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 C1 maps a CURIE-literal range (xsd:dateTime / xsd:integer / xsd:boolean / xsd:string) like the full XSD IRI", async () => {
+      const store = await seed([
+        {
+          key: "ems__Reminder_at",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeLiteral: "xsd:dateTime",
+        },
+        {
+          key: "ex__C_count",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeLiteral: "xsd:integer",
+        },
+        {
+          key: "ex__C_flag",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeLiteral: "xsd:boolean",
+        },
+        {
+          key: "ems__Reminder_text",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeLiteral: "xsd:string",
+        },
+      ]);
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      const byKey = Object.fromEntries(
+        fields.map((f) => [f.propertyKey, f.fieldType]),
+      );
+      expect(byKey["ems__Reminder_at"]).toBe("date");
+      expect(byKey["ex__C_count"]).toBe("number");
+      expect(byKey["ex__C_flag"]).toBe("boolean");
+      expect(byKey["ems__Reminder_text"]).toBe("text");
+      for (const f of fields) expect(f.targetClassUid).toBeUndefined();
+    });
+
+    it("@req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 C2 keeps the full XSD IRI form (IRI and literal) mapping unchanged", async () => {
+      const store = await seed([
+        {
+          key: "ex__C_when",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeIRI: `${XSD}dateTime`,
+        },
+        {
+          key: "ex__C_flag",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeLiteral: `${XSD}boolean`,
+        },
+      ]);
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      const byKey = Object.fromEntries(
+        fields.map((f) => [f.propertyKey, f.fieldType]),
+      );
+      expect(byKey["ex__C_when"]).toBe("date");
+      expect(byKey["ex__C_flag"]).toBe("boolean");
+    });
+
+    it("@req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 C3 does NOT treat a foreign-prefix CURIE (ex:date), a bare `xsd:` or an unknown xsd local as a date/number/boolean", async () => {
+      const store = await seed([
+        {
+          key: "ex__C_foreign",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeLiteral: "ex:date",
+        },
+        { key: "ex__C_bare", domainUid: SETTING, minCount: 1, rangeLiteral: "xsd:" },
+        {
+          key: "ex__C_gyear",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeLiteral: "xsd:gYear",
+        },
+      ]);
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      for (const f of fields) {
+        expect(f.fieldType).toBe("text");
+        expect(f.targetClassUid).toBeUndefined();
+      }
+      expect(fields).toHaveLength(3);
+    });
+
+    // b151005b: parsing moved to the shared utilities/xsdDatatype helper, which
+    // keeps the local name as written; the lower-casing that makes a
+    // capitalised local hit the field-type table is THIS resolver's policy and
+    // lives at its call site. Mutant "drop toLowerCase in xsdLocalName" → RED.
+    it("@req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 R1 lower-cases the XSD local name at the resolver (xsd:Integer / …#DateTime → number / date), so case policy stays out of the shared helper", async () => {
+      const store = await seed([
+        {
+          key: "ex__R_count",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeLiteral: "xsd:Integer",
+        },
+        {
+          key: "ex__R_when",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeLiteral: `${XSD}DateTime`,
+        },
+      ]);
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      const byKey = Object.fromEntries(
+        fields.map((f) => [f.propertyKey, f.fieldType]),
+      );
+      expect(byKey["ex__R_count"]).toBe("number");
+      expect(byKey["ex__R_when"]).toBe("date");
+    });
+  });
+
   it("does NOT return required properties of a different class", async () => {
     const store = await seed([
       { key: "exo__Setting_value", domainUid: SETTING, minCount: 1 },
@@ -232,4 +399,315 @@ describe("createTripleStoreRequiredPropertyResolver", () => {
       await createTripleStoreRequiredPropertyResolver(store)(SETTING);
     expect(fields.map((f) => f.propertyKey)).toEqual(["exo__Setting_value"]);
   });
+  /**
+   * Ticket dc04eded (parent bbac67ce) — the converter emits a class range as a
+   * SYMBOLIC IRI (`…/ontology/<ns>#<Local>`) for every class with a
+   * `prefix__LocalName` label — on the live vaults nearly every required
+   * (`minCount > 0`) object range has that form (measured 2026-09-17, see
+   * PR #4254). `uidFrom` only understands path-form / bare-UID values, so every
+   * such field reached the create-instance form as `assetRef` WITHOUT
+   * `targetClassUid` → the plugin's `DynamicFormModal.buildCandidates` skipped
+   * it → a plain text input instead of the reference picker (req c4adae42
+   * consumer control). The same class of defect as ticket 7d91d13a (#4253), on
+   * the second consumer.
+   *
+   * Invariant under test: `fieldTypeFromRange` maps a symbolic range to its
+   * LABEL form `<ns>__<Local>` via `iriToObsidianName` → `Namespace.fromTermIRI`
+   * (the shared inverse — registered AND ad-hoc namespaces; the static
+   * nine-namespace map it was chosen over was retired
+   * (retired by ticket 6572f3f3 / req 38e3f174)); `findAssetRefCandidates` accepts a
+   * class LABEL as the key and closes subclasses from there (req 15f48fa1).
+   * Path-form → bare UID first, as before. Mutant matrix — PR #4254.
+   */
+  describe("symbolic Property_range → targetClassUid label form (ticket dc04eded)", () => {
+    it("@req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 S1 maps a symbolic range in a REGISTERED namespace (ems#Effort) to targetClassUid = ems__Effort", async () => {
+      const store = await seed([
+        {
+          key: "ems__Effort_parent",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeIRI: Namespace.EMS.term("Effort").value,
+        },
+      ]);
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      expect(fields).toHaveLength(1);
+      expect(fields[0]).toMatchObject({
+        propertyKey: "ems__Effort_parent",
+        fieldType: "assetRef",
+        targetClassUid: "ems__Effort",
+      });
+    });
+
+    it("@req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 S2 maps a symbolic range in an AD-HOC namespace (sess#Session, not registered) to targetClassUid = sess__Session", async () => {
+      // `sess` is a live namespace outside every static prefix map.
+      expect(
+        Namespace.knownNamespaces().some((ns) => ns.prefix === "sess"),
+      ).toBe(false);
+      const store = await seed([
+        {
+          key: "sess__LifecycleEvent_session",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeIRI: "https://exocortex.my/ontology/sess#Session",
+        },
+      ]);
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      expect(fields[0]).toMatchObject({
+        fieldType: "assetRef",
+        targetClassUid: "sess__Session",
+      });
+    });
+
+    it("@req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 S3 keeps mapping a path-form range (obsidian://…/<uid>.md and bare-uid form) to the bare class UID", async () => {
+      const store = await seed([
+        {
+          key: "exo__Setting_key",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeIRI: fileIRI(SETTINGKEY),
+        },
+        {
+          // Synthesized no-dir form with an UPPER-CASE hex uid in the filename:
+          // must normalise to the lower-case bare UID (not the raw basename).
+          key: "exo__Setting_kind",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeIRI: `obsidian://vault/${SETTINGKEY.toUpperCase()}.md`,
+        },
+      ]);
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      const byKey = Object.fromEntries(
+        fields.map((f) => [f.propertyKey, f.targetClassUid]),
+      );
+      expect(byKey["exo__Setting_key"]).toBe(SETTINGKEY);
+      expect(byKey["exo__Setting_kind"]).toBe(SETTINGKEY);
+    });
+
+    it("S5 does NOT turn a W3C datatype range (xsd:string as an IRI) into an assetRef", async () => {
+      const store = await seed([
+        {
+          key: "ex__C_text",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeIRI: `${XSD}string`,
+        },
+      ]);
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      expect(fields[0]).toMatchObject({ fieldType: "text" });
+      expect(fields[0].targetClassUid).toBeUndefined();
+    });
+  });
+
+  // ── ticket 15003314: the THIRD reader of exo__Property_minCount ───────────
+  //
+  // ShapeLoader has two implementations (FS / graph) and this resolver is a
+  // third, reading the predicate straight off the triple store with its own
+  // parseInt. It sits on the GRAPH path, where YAML already removed the quotes,
+  // so the quoted-scalar defect fixed in ShapeLoader.loadFromVaultFS does not
+  // reach it. This axis is the CONTROL that says so — it is expected to stay
+  // green with and without that fix, and it is what makes "not governed here"
+  // a measurement rather than an assumption.
+  describe("Q9 quoted minCount on the graph path (control for ticket 15003314)", () => {
+    it("Q9 @req:bcdd64d8-abc1-48f4-af50-42c8aa3f1978 the resolver agrees on BOTH written forms — a definition whose exo__Property_minCount was written quoted reaches it already parsed, so the required field appears exactly as for a bare value", async () => {
+      const { NoteToRDFConverter } = await import(
+        "../../../src/services/NoteToRDFConverter"
+      );
+      const DEF = (label: string, minCountLine: string): string =>
+        [
+          "---",
+          "exo__Instance_class:",
+          '  - "[[exo__Property]]"',
+          `exo__Asset_label: ${label}`,
+          `exo__Property_domain: "[[${SETTING}]]"`,
+          minCountLine,
+          "---",
+          "",
+        ].join("\n");
+      // Exactly how Obsidian's metadataCache hands frontmatter to the converter:
+      // YAML has already removed both quote styles.
+      const parseFm = (content: string): Record<string, unknown> => {
+        const fm: Record<string, unknown> = {};
+        let key: string | null = null;
+        for (const line of content.split("\n").slice(1)) {
+          if (line === "---") break;
+          const item = /^ {2}- "?(.*?)"?$/.exec(line);
+          if (item && key) {
+            (fm[key] as string[]).push(item[1]);
+            continue;
+          }
+          const kv = /^([^:]+):[ \t]*(.*)$/.exec(line);
+          if (!kv) continue;
+          key = kv[1];
+          fm[key] =
+            kv[2] === ""
+              ? []
+              : kv[2].replace(/^"|"$/g, "").replace(/^'|'$/g, "");
+        }
+        return fm;
+      };
+      const run = async (minCountLine: string): Promise<string[]> => {
+        const files: Record<string, string> = {
+          "p.md": DEF("setting__Setting_probe", minCountLine),
+        };
+        const byPath = new Map(
+          Object.entries(files).map(([rel, c]) => [rel, parseFm(c)]),
+        );
+        const fileOf = (rel: string): unknown => ({
+          path: rel,
+          basename: rel.replace(/\.md$/, ""),
+          extension: "md",
+          name: rel,
+          parent: null,
+        });
+        const mockVault = {
+          getFrontmatter: jest.fn((f: { path: string }) => byPath.get(f.path)),
+          getAllFiles: jest.fn().mockReturnValue([]),
+          read: jest.fn().mockResolvedValue(""),
+          getFirstLinkpathDest: jest.fn(() => null),
+        } as never;
+        const converter = new NoteToRDFConverter(mockVault);
+        const store = new InMemoryTripleStore();
+        for (const rel of byPath.keys()) {
+          await store.addAll(
+            await converter.convertNote(fileOf(rel) as never),
+          );
+        }
+        const resolve = createTripleStoreRequiredPropertyResolver(store);
+        return (await resolve(SETTING)).map((f) => f.propertyKey);
+      };
+      const bare = await run("exo__Property_minCount: 1");
+      const quoted = await run('exo__Property_minCount: "1"');
+      expect(bare).toEqual(["setting__Setting_probe"]);
+      expect(quoted).toEqual(bare);
+    });
+  });
+
+  /**
+   * Ticket b4b76541 — the resolver keyed EVERY class reference on `uidFrom`
+   * (path form / bare UID), while the live vaults emit `exo__Property_domain`
+   * and the PARENT of `exo__Class_superClass` SYMBOLICALLY: 95 of 95 required
+   * definitions across the three vaults, and 400 of 408 superClass parents on
+   * vault-exodev (measured 2026-09-22). The end effect was that NO class with a
+   * declared required property produced a single form field — 0 of 23 / 17 / 20
+   * classes on vault-exodev / my / tbank, measured through the production
+   * loader. The same class had already been half-closed for the RANGE position
+   * (ticket dc04eded, PR #4254), whose fix sits BELOW the domain `continue` and
+   * was therefore unreachable on live data.
+   *
+   * Mutants (spec `required-property-class-keys-b4b76541`): symbolic branch of
+   * classKeyOf removed → Y1/Y2/Y5 RED; twin lookup dropped from the walk →
+   * Y1/Y2/Y5 RED; labelKeyOf Literal-only (§A29) → Y1/Y2 RED, Y5 green;
+   * host twin branch removed → Y1/Y2 RED; path-form branch of classKeyOf
+   * removed → Y3 RED.
+   */
+  describe("symbolic class references — domain and superClass parent (ticket b4b76541)", () => {
+    it("Y1 @req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 resolves a required property whose exo__Property_domain is the SYMBOLIC class IRI — the form 95 of 95 live required definitions carry", async () => {
+      const store = await seed(
+        [
+          {
+            key: "exo__Setting_value",
+            domainUid: SETTING,
+            domainIRI: "https://exocortex.my/ontology/exo#Setting",
+            minCount: 1,
+          },
+        ],
+        [],
+        [{ uid: SETTING, label: "exo__Setting" }],
+      );
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      expect(fields.map((f) => f.propertyKey)).toEqual(["exo__Setting_value"]);
+    });
+
+    it("Y2 @req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 inherits a required property declared on an ANCESTOR reached through a SYMBOLIC superClass parent (400 of 408 live parents) — the Gherkin's transitive closure clause", async () => {
+      const store = await seed(
+        [
+          {
+            key: "exo__Setting_value",
+            domainUid: SETTING,
+            domainIRI: "https://exocortex.my/ontology/exo#Setting",
+            minCount: 1,
+          },
+        ],
+        [],
+        [
+          { uid: SETTING, label: "exo__Setting" },
+          { uid: SETTING_SUBCLASS, label: "exo__ScopedSetting" },
+        ],
+        [[SETTING_SUBCLASS, "https://exocortex.my/ontology/exo#Setting"]],
+      );
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(
+          SETTING_SUBCLASS,
+        );
+      expect(fields.map((f) => f.propertyKey)).toEqual(["exo__Setting_value"]);
+    });
+
+    it("Y3 @req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 keeps resolving a PATH-FORM domain unchanged — the public contract of the exported resolver does not shift for inputs that already worked", async () => {
+      const store = await seed([
+        { key: "exo__Setting_value", domainUid: SETTING, minCount: 1 },
+      ]);
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      expect(fields.map((f) => f.propertyKey)).toEqual(["exo__Setting_value"]);
+    });
+
+    it("Y4 @req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 still returns [] for a class that declares NO required property, symbolic domains present or not", async () => {
+      const store = await seed(
+        [
+          {
+            key: "exo__Setting_note",
+            domainUid: SETTING,
+            domainIRI: "https://exocortex.my/ontology/exo#Setting",
+            // minCount 0 — DECLARED but not required. A property with NO
+            // minCount triple never enters the loop at all, which would make
+            // the filter mutant equivalent on this axis (§A97).
+            minCount: 0,
+          },
+        ],
+        [],
+        [{ uid: SETTING, label: "exo__Setting" }],
+      );
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      expect(fields).toEqual([]);
+    });
+
+    it("Y5 @req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 unifies the two spellings through the LITERAL rdfs:label twin as well, not only the IRI-valued exo__Asset_label (§A29)", async () => {
+      const store = await seed(
+        [
+          {
+            key: "exo__Setting_value",
+            domainUid: SETTING,
+            domainIRI: "https://exocortex.my/ontology/exo#Setting",
+            minCount: 1,
+          },
+        ],
+        [],
+        [{ uid: SETTING, label: "exo__Setting", labelAsIRI: false }],
+      );
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      expect(fields.map((f) => f.propertyKey)).toEqual(["exo__Setting_value"]);
+    });
+
+    it("Y6 @req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 does NOT match a symbolic domain whose class asset is absent from the store — the label twin is evidence, never an assumption", async () => {
+      const store = await seed([
+        {
+          key: "exo__Setting_value",
+          domainUid: SETTING,
+          domainIRI: "https://exocortex.my/ontology/exo#Setting",
+          minCount: 1,
+        },
+      ]);
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      expect(fields).toEqual([]);
+    });
+  });
+
 });

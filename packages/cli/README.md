@@ -119,20 +119,40 @@ npx @kitelev/exocortex-cli apply <cmd> [path] [options]
 
 **Options:**
 
-| Option                 | Default | Description                                                       |
-| ---------------------- | ------- | ----------------------------------------------------------------- |
-| `--vault <path>`       | cwd     | Path to Obsidian vault                                            |
-| `--dry-run`            | off     | Evaluate precondition and preview; do not write                   |
-| `--yes`                | off     | Skip destructive-command confirmation                             |
-| `--input <json>`       | —       | JSON object forwarded to `service_call` groundings as `userInput` |
-| `--seed <uuid>`        | —       | Deterministic UID seed for test/replay                            |
-| `--frozen-clock <iso>` | —       | Freeze clock to an ISO timestamp for test/replay                  |
+| Option                 | Default | Description                                                                                                                                    |
+| ---------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--vault <path>`       | cwd     | Path to Obsidian vault                                                                                                                         |
+| `--dry-run`            | off     | Evaluate precondition and preview; do not write                                                                                                |
+| `--yes`                | off     | Skip destructive-command confirmation                                                                                                          |
+| `--input <json>`       | —       | JSON object forwarded to `service_call` groundings as `userInput`                                                                              |
+| `--seed <uuid>`        | —       | Deterministic UID seed for test/replay                                                                                                         |
+| `--frozen-clock <iso>` | —       | Freeze clock to an ISO timestamp for test/replay                                                                                               |
+| `--json`               | off     | Emit a machine-readable `{command,target,created:[…]}` envelope                                                                                |
+| `--use-cache`          | off     | Load the triple store from the persistent cache (the next `--use-cache` process picks the mutation up as a delta) (#4264)                      |
+| `--write-through`      | off     | With `--use-cache`: fold the mutation into the cache in this process so the next process is a plain hit; refused without `--use-cache` (#4264) |
 
 **Behavior:**
 
 - The precondition is evaluated per target; a non-passing ASK aborts before the grounding runs.
 - Commands marked `exocmd__Command_destructive: true` refuse to run without `--dry-run` or `--yes`.
 - Multi-target runs (stdin) use continue-on-error semantics and print a `N/M` summary; the exit code is `5` if any target failed.
+- `--use-cache` (#4264): the triple store comes from `<vault>/.exocortex/cache/triples.json`
+  (hit / delta / rebuild, same loader as `query --use-cache`) instead of a full vault parse.
+  By default the mutating process leaves the cache file untouched (**delta-only**): the next
+  `--use-cache` process folds the change in as its own delta (only the changed files + their
+  referrers re-parsed), and its preconditions see the write. With `--write-through` the
+  writer pays that delta itself right after the grounding executed, so the next process is a
+  plain hit — worth it when readers outnumber writers (measured on the bot's 3-writer chain,
+  delta-only is 1–3 s cheaper and 0.2–0.6 GB lighter in the writer; #4264 has the matrix).
+  `--write-through` without `--use-cache` is refused (exit 2) before anything is applied.
+  Best-effort: a write-through that cannot persist prints a `⚠ triple cache:` warning and
+  leaves the exit code and stdout untouched; the next reader refreshes the cache itself. A
+  change the delta cannot express (a TBox-form asset whose label / TBox-form alias set /
+  class changed, a FileSpace declaration) is left to the next reader's rebuild. One stderr line per cache phase (`⚡ triple cache: hit`,
+  `💾 triple cache: write-through persisted (N file(s) re-parsed)`); stdout is unchanged.
+  Without the flag nothing is read from or written to the cache. On a cache built by
+  `index` the store additionally carries the inferred layer (as `query --use-cache` does);
+  use `index --no-inference` if a precondition must see the explicit graph only.
 
 **Examples:**
 
@@ -217,6 +237,24 @@ npx @kitelev/exocortex-cli query "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }" \
 
 Build or refresh the persistent triple cache used by `--use-cache` consumers. The cache lives at `<vault>/.exocortex/cache/triples.json`.
 
+**Validity and refresh (#4263).** The cache is keyed per file: it stores the mtime, the
+size and the triples of every indexed `.md`. A `--use-cache` command compares that manifest
+with a stat-walk of the vault, so an add / edit / delete anywhere under `assetspaces/**` is
+detected (the vault root directory's mtime is no longer consulted). A small change is
+refreshed incrementally — only the changed files and the files that refer to an added,
+removed or alias-changed target are re-parsed, and the inferred layer `index` materialized
+is recomputed when a touched file feeds an inference engine (class / superclass / type /
+prototype), otherwise kept — while a legacy or corrupt cache, a TBox-form asset
+(`prefix__Name` label or alias) that is added, one with a TBox-form label (or basename) that
+is removed, or one whose referrer-visible projection (label, TBox-form alias set,
+`exo__Instance_class`) changed, a FileSpace declaration change
+or a diff above half the vault falls back to a full rebuild (#4277: a TBox-form asset
+modified WITHOUT changing that projection — a `setting__SettingKey_datatype` edit, a body
+edit — is an ordinary delta). A reader's rebuild inherits the inferred layer of the cache it
+replaces when that cache carried one (#4277). The cache file is written atomically, so
+concurrent commands never read a torn file. `index --force` always rebuilds; `query` reports
+"♻️ Cache refreshed incrementally" on a delta and "🚀 Cache hit!" on a hit.
+
 ```bash
 npx @kitelev/exocortex-cli index --vault ~/vault --stats
 ```
@@ -293,19 +331,30 @@ Create a new vault asset with auto-generated UUID, timestamps, and frontmatter. 
 npx @kitelev/exocortex-cli create --class ztlk__PermanentNote --label "My Note" --vault ~/vault
 ```
 
-| Option                       | Default       | Description                                             |
-| ---------------------------- | ------------- | ------------------------------------------------------- |
-| `--class <name>`             | **required**  | Class short name (e.g. `ztlk__PermanentNote`) or UUID   |
-| `--label <text>`             | **required**  | Human-readable label for the asset                      |
-| `--vault <path>`             | cwd           | Path to Obsidian vault                                  |
-| `--aliases <names...>`       | —             | Additional aliases for the asset                        |
-| `--property <key=value...>`  | —             | Property key-value pairs (repeatable)                   |
-| `--body <text>`              | —             | Markdown body content (use `-` to read from stdin)      |
-| `--body-file <path>`         | —             | Read body content from a file                           |
-| `--dry-run`                  | off           | Preview the exact file content (stderr) without writing |
-| `--created-by <uuid>`        | —             | Creator UUID                                            |
-| `--timezone <tz>`            | `Asia/Almaty` | Timezone for timestamps                                 |
-| `--skip-wikilink-validation` | off           | Skip wikilink existence validation                      |
+| Option                       | Default       | Description                                                                                                                                   |
+| ---------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--class <name>`             | **required**  | Class short name (e.g. `ztlk__PermanentNote`) or UUID                                                                                         |
+| `--label <text>`             | **required**  | Human-readable label for the asset                                                                                                            |
+| `--vault <path>`             | cwd           | Path to Obsidian vault                                                                                                                        |
+| `--aliases <names...>`       | —             | Additional aliases for the asset                                                                                                              |
+| `--property <key=value...>`  | —             | Property key-value pairs (repeatable)                                                                                                         |
+| `--body <text>`              | —             | Markdown body content (use `-` to read from stdin)                                                                                            |
+| `--body-file <path>`         | —             | Read body content from a file                                                                                                                 |
+| `--dry-run`                  | off           | Preview the exact file content (stderr) without writing                                                                                       |
+| `--created-by <uuid>`        | —             | Creator UUID                                                                                                                                  |
+| `--timezone <tz>`            | `Asia/Almaty` | Timezone for timestamps                                                                                                                       |
+| `--skip-wikilink-validation` | off           | Skip wikilink existence validation                                                                                                            |
+| `--validate`                 | off           | SHACL-lite conformance gate BEFORE writing (refuses a non-conformant asset)                                                                   |
+| `--use-cache`                | off           | Cached vault load for `--validate`; the next `--use-cache` process picks the new asset up as a delta (#4264)                                  |
+| `--write-through`            | off           | With `--use-cache`: fold the created asset into an existing cache in this process (next process = hit); refused without `--use-cache` (#4264) |
+
+`--use-cache` governs the two places `create` touches the triple graph: the vault context
+`--validate` loads (through the shared loader — hit / delta / rebuild instead of a full
+parse) and, together with `--write-through`, the write-through of the new asset into an
+EXISTING `.exocortex/cache/triples.json` after a real write (an absent cache is never built
+by `create`; without `--write-through` the next `--use-cache` process picks the asset up as
+a delta). The default `create` path parses no RDF, and SHACL shape loading
+(`ShapeLoader.loadFromVaultFS`) is not covered by the flag.
 
 ```bash
 # With custom properties and body from stdin
@@ -316,6 +365,23 @@ echo "# Content" | npx @kitelev/exocortex-cli create \
   --body - \
   --vault ~/vault
 ```
+
+### resolve-inline-buttons
+
+Print the inline command button-set the plugin would render for an asset — binding-match (Layer A, class hierarchy) ∩ precondition-eval (Layer B). Alias: `resolve-buttons`. The authoritative button-visibility oracle (issue #3833): strictly more complete than `apply <cmd> --dry-run`, which checks the precondition only.
+
+```bash
+npx @kitelev/exocortex-cli resolve-inline-buttons <target> [--json] [--show-hidden] [--use-cache] --vault ~/vault
+```
+
+| Option           | Default | Description                                                                             |
+| ---------------- | ------- | --------------------------------------------------------------------------------------- |
+| `--vault <path>` | cwd     | Path to Obsidian vault                                                                  |
+| `--json`         | off     | Structured `{target, classes, prototype, visible[], hidden[]}` instead of text          |
+| `--show-hidden`  | off     | Also list commands that bind but are hidden by their precondition                       |
+| `--use-cache`    | off     | Load the triple store from the persistent cache (read-only; nothing is written) (#4264) |
+
+With `--use-cache` one stderr line names the load mode (`⚡ triple cache: hit` / delta / rebuild); the stdout document is the same as without the flag, except that a cache built by `index` also carries the inferred layer (see `apply --use-cache`).
 
 ### resolve
 

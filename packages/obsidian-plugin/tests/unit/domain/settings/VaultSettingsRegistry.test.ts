@@ -158,7 +158,9 @@ describe("registry ↔ graph parity (exoas-exo submodule, onto-RFC R3)", () => {
       ) {
         continue;
       }
-      const dt = /exo__SettingKey_datatype: (\S+)/.exec(text);
+      // Predicate renamed exo__SettingKey_datatype -> setting__SettingKey_datatype
+      // (exoas-exo 5a0ceb36, ticket d72aba19 G1); the old name is DEPRECATED.
+      const dt = /setting__SettingKey_datatype: (\S+)/.exec(text);
       if (!dt) continue;
       const uid = /exo__Asset_uid: (\S+)/.exec(text);
       const label = /exo__Asset_label: (\S+)/.exec(text);

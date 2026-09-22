@@ -4,7 +4,10 @@ import type { NodeFsAdapter } from "../../../src/adapters/NodeFsAdapter.js";
 import {
   findReferencedFile,
   normalizePath,
+  pickCanonicalHome,
   resolveCoLocationFolder,
+  resolveNeighbourFolderByClass,
+  scanClassNeighbours,
 } from "../../../src/executors/folderRepairHelpers.js";
 
 /**
@@ -221,5 +224,96 @@ describe("folderRepairHelpers — resolveCoLocationFolder (issue #3520)", () => 
       findFileByUID: jest.fn(async () => "32d2374c.md"),
     });
     expect(await resolveCoLocationFolder(fs, "[[32d2374c]]")).toBe("");
+  });
+});
+
+describe("resolveNeighbourFolderByClass — the #3934 contract, locked (ticket 3f8b640f)", () => {
+  /**
+   * The wrapper has no production caller since 3f8b640f: `create` needs BOTH
+   * sibling populations, so it calls `scanClassNeighbours` + `pickCanonicalHome`
+   * directly. Its docblock claims the wrapper still states the #3934 contract
+   * verbatim — a claim worth writing down only if it can go RED, which is what
+   * these axes are for. Reverting the split, or letting the wrapper drift to
+   * `anyAnchor`, reddens the first one.
+   */
+  const CLS = "b0474610-5fa7-4ec4-a947-f85f26e93455";
+  const FILES: Record<string, Record<string, unknown>> = {
+    "space/inbox/a.md": {
+      exo__Instance_class: `[[${CLS}]]`,
+      exo__Asset_isDefinedBy: "[[!kitelev]]",
+    },
+    "space/inbox/b.md": {
+      exo__Instance_class: [`[[${CLS}|label]]`],
+      exo__Asset_isDefinedBy: "[[!kitelev]]",
+    },
+    "other/home/c.md": {
+      exo__Instance_class: `[[${CLS}]]`,
+      exo__Asset_isDefinedBy: "[[32d2374c]]",
+    },
+  };
+
+  function neighbourVault(): NodeFsAdapter {
+    return {
+      fileExists: jest.fn(async () => false),
+      findFileByUID: jest.fn(async () => null),
+      getMarkdownFiles: jest.fn(async () => Object.keys(FILES)),
+      getFileMetadata: jest.fn(async (f: string) => FILES[f] ?? {}),
+    } as unknown as NodeFsAdapter;
+  }
+
+  it("equals pickCanonicalHome(scanClassNeighbours(...).sameAnchor)", async () => {
+    const scan = await scanClassNeighbours(
+      neighbourVault(),
+      CLS,
+      "someClass",
+      "[[!kitelev]]",
+    );
+    const viaWrapper = await resolveNeighbourFolderByClass(
+      neighbourVault(),
+      CLS,
+      "someClass",
+      "[[!kitelev]]",
+    );
+
+    expect(viaWrapper).toBe(pickCanonicalHome(scan.sameAnchor));
+    expect(viaWrapper).toBe("space/inbox");
+  });
+
+  it("the two populations differ: sameAnchor is anchor-filtered, anyAnchor is every home", async () => {
+    const scan = await scanClassNeighbours(
+      neighbourVault(),
+      CLS,
+      "someClass",
+      "[[!kitelev]]",
+    );
+
+    expect(Object.fromEntries(scan.sameAnchor)).toEqual({ "space/inbox": 2 });
+    expect(Object.fromEntries(scan.anyAnchor)).toEqual({
+      "space/inbox": 2,
+      "other/home": 1,
+    });
+  });
+
+  it("an absent anchor admits only anchor-less siblings → no home, while anyAnchor still sees all three", async () => {
+    const scan = await scanClassNeighbours(
+      neighbourVault(),
+      CLS,
+      "someClass",
+      undefined,
+    );
+
+    expect(pickCanonicalHome(scan.sameAnchor)).toBeNull();
+    expect(
+      await resolveNeighbourFolderByClass(
+        neighbourVault(),
+        CLS,
+        "someClass",
+        undefined,
+      ),
+    ).toBeNull();
+    expect(Object.fromEntries(scan.anyAnchor)).toEqual({
+      "space/inbox": 2,
+      "other/home": 1,
+    });
   });
 });
