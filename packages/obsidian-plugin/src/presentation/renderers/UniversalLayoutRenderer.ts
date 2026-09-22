@@ -111,9 +111,17 @@ export class UniversalLayoutRenderer {
    * on the open note), and it has no access to the Layout — without this the
    * re-render would drop `excludeActions` and resurrect the duplicate Actions
    * on the same page, no reload needed. Per-render state like
-   * `currentFilePath`/`currentConfig`, and the incremental path is gated on
-   * `filePath === this.currentFilePath`, so the cache always belongs to the
-   * file being updated.
+   * `currentFilePath`/`currentConfig`.
+   *
+   * ⛔ Assigned ONLY in the same synchronous block that commits
+   * `currentFilePath` — never earlier. The renderer is a singleton shared by
+   * every pane and takes its file from `getActiveFile()`, so a render of
+   * file B can interleave with, or throw inside, a render of file A. Writing
+   * this field before A's `currentFilePath` commit leaves the pair pointing
+   * at two different files, and the incremental gate (`filePath ===
+   * this.currentFilePath`) then passes while the partitions belong to B —
+   * silently DROPPING A's own Actions. Keeping both writes in one block makes
+   * that desync unrepresentable.
    */
   private currentClaimedDailyPartitions: ReadonlySet<string> = new Set();
 
@@ -412,7 +420,6 @@ export class UniversalLayoutRenderer {
       // so the table keeps running and merely DROPS them — otherwise every
       // Action would render twice (once here, once in the block).
       const dailyTasksBlockActive = claimedDailyPartitions.has("tasks");
-      this.currentClaimedDailyPartitions = claimedDailyPartitions;
 
       // RFC c7da0bca Phase 3b-main — ensure the active file + its class
       // chain + prototype chain are in the triple store before button
@@ -466,6 +473,7 @@ export class UniversalLayoutRenderer {
         await this.exoLayoutRenderer.render(el, currentFile, layout, relations);
         if (!layout.coexistsWithDefault) {
           this.currentFilePath = currentFile.path;
+          this.currentClaimedDailyPartitions = claimedDailyPartitions;
           this.currentConfig = config;
           this.metadataCache.set(
             currentFile.path,
@@ -483,6 +491,7 @@ export class UniversalLayoutRenderer {
       await this.relationsRenderer.render(el, relations, config, renderHeader, this.sectionStateManager.isCollapsed("relations"), currentFile);
 
       this.currentFilePath = currentFile.path;
+      this.currentClaimedDailyPartitions = claimedDailyPartitions;
       this.currentConfig = config;
       this.metadataCache.set(currentFile.path, this.metadataExtractor.extractMetadata(currentFile));
 

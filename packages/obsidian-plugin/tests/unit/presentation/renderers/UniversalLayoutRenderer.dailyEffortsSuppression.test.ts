@@ -224,6 +224,44 @@ describe("UniversalLayoutRenderer — daily-efforts suppression (req a38ac95b h)
     expect(tasksSpy).toHaveBeenCalledTimes(1); // time-table NOT taken away
   });
 
+  // ── req f56eef78 (#3910): the claimed-partition CACHE and `currentFilePath`
+  // must be written in ONE synchronous block. The renderer is a singleton
+  // shared by every pane and takes its file from `getActiveFile()`, so a
+  // render that computes partitions but never commits (it threw, or another
+  // file's render interleaved) must NOT leave its set behind: the incremental
+  // gate keys on `currentFilePath`, and a desynced pair makes it forward
+  // `excludeActions` for a file whose Layout never claimed that partition —
+  // silently dropping that day's own Actions. Found by review round 3, which
+  // proved the desync by execution; C1 is the permanent lock.
+
+  test("@req:f56eef78-61d8-4d12-ac28-886aecefd633 C1: a render that never commits leaves the partition cache untouched", async () => {
+    const { renderer } = buildRenderer(
+      dailyLayout(["a"]),
+      [dailyBlock("a", "actions")],
+    );
+    (renderer as any).buttonGroupsBuilder = {
+      build: jest.fn().mockRejectedValue(new Error("render aborted mid-pipeline")),
+    };
+    const el = enhance(document.createElement("div"));
+    await renderer.render("", el, {} as never);
+
+    // Never committed => the pair must stay consistent, both empty.
+    expect((renderer as any).currentFilePath).toBeNull();
+    expect([...(renderer as any).currentClaimedDailyPartitions]).toEqual([]);
+  });
+
+  test("@req:f56eef78-61d8-4d12-ac28-886aecefd633 C2: a render that DOES commit publishes both halves together", async () => {
+    const { renderer } = buildRenderer(
+      dailyLayout(["a"]),
+      [dailyBlock("a", "actions")],
+    );
+    const el = enhance(document.createElement("div"));
+    await renderer.render("", el, {} as never);
+
+    expect((renderer as any).currentFilePath).toBe("2026-06-28.md");
+    expect([...(renderer as any).currentClaimedDailyPartitions]).toEqual(["actions"]);
+  });
+
   test("@req:f56eef78-61d8-4d12-ac28-886aecefd633 an actions block makes the legacy table DROP the Actions (no duplicate rows)", async () => {
     const { renderer, tasksSpy } = buildRenderer(
       dailyLayout(["a"]),
