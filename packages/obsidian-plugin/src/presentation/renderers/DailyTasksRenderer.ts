@@ -19,6 +19,15 @@ import { DisplayNameResolver } from '@plugin/domain/display-name/DisplayNameReso
 import { DEFAULT_DISPLAY_NAME_SETTINGS } from '@plugin/domain/settings/ExocortexSettings';
 import { ObsidianApp, ExocortexPluginInterface } from '@plugin/types';
 
+/**
+ * req f56eef78 (#3910) — what the active pn__DailyNote Layout already renders,
+ * so this table does not duplicate it. Absent/undefined ⇒ render everything,
+ * which is the pre-#3910 behaviour for every note without such a Layout.
+ */
+export interface DailyTasksRenderOptions {
+  readonly excludeActions?: boolean;
+}
+
 export class DailyTasksRenderer {
   private logger: ILogger;
   private app: ObsidianApp;
@@ -57,6 +66,7 @@ export class DailyTasksRenderer {
     file: TFile,
     renderHeader?: (container: HTMLElement, sectionId: string, title: string) => void,
     isCollapsed?: boolean,
+    options?: DailyTasksRenderOptions,
   ): Promise<void> {
     const dailyNoteInfo = DailyNoteHelpers.extractDailyNoteInfo(
       file,
@@ -69,7 +79,7 @@ export class DailyTasksRenderer {
     }
 
     const day = dailyNoteInfo.day;
-    const tasks = await this.getDailyTasks(day);
+    const tasks = await this.getDailyTasks(day, options);
 
     if (tasks.length === 0) {
       this.logger.debug(`No tasks found for day: ${day}`);
@@ -177,7 +187,10 @@ export class DailyTasksRenderer {
     return new DisplayNameResolver(settings, ruleService, metadataResolver);
   }
 
-  private async getDailyTasks(day: string): Promise<DailyTask[]> {
+  private async getDailyTasks(
+    day: string,
+    options?: DailyTasksRenderOptions,
+  ): Promise<DailyTask[]> {
     try {
       const tasks: DailyTask[] = [];
 
@@ -203,6 +216,19 @@ export class DailyTasksRenderer {
 
         if (isProject) {
           continue;
+        }
+
+        // req f56eef78 (#3910) — when the pn__DailyNote Layout carries a
+        // daily-efforts block with partition "actions", THAT block renders the
+        // day's ems__Action instances. This table's own set is «everything but
+        // Project», so without this skip each Action would render twice.
+        if (options?.excludeActions === true) {
+          const isAction = instanceClassArray.some((c: string) =>
+            String(c).includes(AssetClass.ACTION),
+          );
+          if (isAction) {
+            continue;
+          }
         }
 
         const effortStatus = metadata.ems__Effort_status || "";

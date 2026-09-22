@@ -96,7 +96,12 @@ export class UniversalLayoutRenderer {
     maxEntries: 500,
     ttl: 5 * 60 * 1000, // 5 minutes
   });
-  private debounceTimeout: NodeJS.Timeout | null = null;
+  // `window.setTimeout` (the form the obsidianmd lint rule mandates, and the
+  // one the mobile runtime needs) returns a DOM handle — `number`, not
+  // `NodeJS.Timeout`. ⛔ `ReturnType<typeof window.setTimeout>` does NOT work
+  // here: `window` is `Window & typeof globalThis`, so with @types/node loaded
+  // the Node overload wins and the alias resolves straight back to `Timeout`.
+  private debounceTimeout: number | null = null;
   private currentFilePath: string | null = null;
   private currentConfig: UniversalLayoutConfig = {};
 
@@ -383,8 +388,16 @@ export class UniversalLayoutRenderer {
       const layout = this.resolveLayoutForFile(currentFile);
       const layoutActive =
         layout !== null && this.settings.enableExoLayoutRenderer;
-      const dailyTasksBlockActive =
-        layoutActive && layout !== null && this.layoutHasDailyTasksBlock(layout);
+      const claimedDailyPartitions =
+        layoutActive && layout !== null
+          ? this.layoutClaimedDailyPartitions(layout)
+          : new Set<string>();
+      // The legacy table's own set is «the day's efforts EXCEPT Project», i.e.
+      // exactly `tasks ∪ actions`. A `tasks` block claims the bulk of it, so the
+      // table steps aside entirely; an `actions` block claims only the Actions,
+      // so the table keeps running and merely DROPS them — otherwise every
+      // Action would render twice (once here, once in the block).
+      const dailyTasksBlockActive = claimedDailyPartitions.has("tasks");
 
       // RFC c7da0bca Phase 3b-main — ensure the active file + its class
       // chain + prototype chain are in the triple store before button
@@ -423,7 +436,9 @@ export class UniversalLayoutRenderer {
       }
 
       if (!dailyTasksBlockActive) {
-        await this.dailyTasksRenderer.render(el, currentFile, renderHeader, this.sectionStateManager.isCollapsed("daily-tasks"));
+        await this.dailyTasksRenderer.render(el, currentFile, renderHeader, this.sectionStateManager.isCollapsed("daily-tasks"), {
+          excludeActions: claimedDailyPartitions.has("actions"),
+        });
       }
 
       const relations = await this.relationsRenderer.getAssetRelations(currentFile, config);
@@ -490,26 +505,23 @@ export class UniversalLayoutRenderer {
    * never asked for it. Resolves block refs against the ExoLayout snapshot;
    * returns false when the repository is absent (back-compat).
    */
-  private layoutHasDailyTasksBlock(
+  private layoutClaimedDailyPartitions(
     layout: import("@kitelev/exocortex-core").Layout,
-  ): boolean {
+  ): ReadonlySet<string> {
+    const claimed = new Set<string>();
     const snapshot = this.exoLayoutRepository?.getSnapshot();
-    if (snapshot === undefined) return false;
+    if (snapshot === undefined) return claimed;
     for (const rawRef of layout.blocks) {
       const normalized = WikiLinkHelpers.normalize(rawRef);
       if (!normalized) continue;
       const block =
         snapshot.blocksByUid.get(normalized) ??
         snapshot.blocksByLabel.get(normalized);
-      if (
-        block !== undefined &&
-        block.kind === "daily-efforts-by-class" &&
-        block.partition === "tasks"
-      ) {
-        return true;
+      if (block !== undefined && block.kind === "daily-efforts-by-class") {
+        claimed.add(block.partition);
       }
     }
-    return false;
+    return claimed;
   }
 
   public async refresh(_el?: HTMLElement): Promise<void> {
