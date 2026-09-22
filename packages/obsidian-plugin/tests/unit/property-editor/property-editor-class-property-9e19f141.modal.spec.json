@@ -1,0 +1,69 @@
+{
+ "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+ "harness": "cd \"${SUT%%/packages/obsidian-plugin/src/*}\" && node ./node_modules/jest/bin/jest.js --config packages/obsidian-plugin/jest.config.js packages/obsidian-plugin/tests/unit/property-editor/property-editor-class-property.test.ts --runInBand --verbose 2>&1",
+ "env_var": "SUT",
+ "red_re": "› (P\\d+[a-z]?) ",
+ "symlink_node_modules": [
+  "node_modules",
+  "packages/cli/node_modules",
+  "packages/core/node_modules",
+  "packages/obsidian-plugin/node_modules",
+  "packages/req-audit/node_modules",
+  "packages/test-utils/node_modules"
+ ],
+ "_doc": "Revert-verify mutants for req 9e19f141 (ticket 2c592498) — subject: the MODAL that wires the resolver and memoises the candidate scans. Same harness and axis file as the .schemas spec; the driver mutates ONE subject per spec, hence the split. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout.",
+ "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/presentation/modals/PropertyEditorModal.tsx",
+ "mutants": {
+  "M11_resolver_never_wired": {
+   "from": "    this.initSchemaResolver();",
+   "to": "    void this.initSchemaResolver;",
+   "expect": [
+    "P15",
+    "P20",
+    "P3",
+    "P5",
+    "P6a",
+    "P6b"
+   ]
+  },
+  "M12_stale_resolver_not_cleared": {
+   "from": "    initClassPropertyResolver(\n      ctx ? createTripleStoreClassPropertyResolver(ctx.store) : null,\n    );",
+   "to": "    if (ctx) initClassPropertyResolver(createTripleStoreClassPropertyResolver(ctx.store));",
+   "expect": [
+    "P15"
+   ]
+  },
+  "M13_memoisation_removed": {
+   "from": "      const cached = candidatesByClass.get(rangeClassUid);\n      if (cached) return cached;\n      const found = findAssetRefCandidates(this.app, rangeClassUid);\n      candidatesByClass.set(rangeClassUid, found);\n      return found;",
+   "to": "      void candidatesByClass;\n      return findAssetRefCandidates(this.app, rangeClassUid);",
+   "expect": [
+    "P6a",
+    "P6b"
+   ]
+  },
+  "M14_cache_outlives_the_open": {
+   "from": "    const candidatesByClass = new Map<string, AssetRefCandidate[]>();",
+   "to": "    const candidatesByClass = ((globalThis as unknown as { __mutantCache?: Map<string, AssetRefCandidate[]> }).__mutantCache ??= new Map<string, AssetRefCandidate[]>());",
+   "expect": [
+    "P6b"
+   ]
+  },
+  "M15_scan_even_without_a_range": {
+   "from": "      if (!rangeClassUid) return [];",
+   "to": "      if (!rangeClassUid) return findAssetRefCandidates(this.app, rangeClassUid ?? \"\");",
+   "expect": [
+    "P9"
+   ]
+  },
+  "M21_system_keys_offered_as_predicates": {
+   "from": "      .filter(\n        (p) =>\n          p.type === \"wikilink\" && !p.readOnly && !RELATION_SYSTEM_KEYS.has(p.name),\n      )",
+   "to": "      .filter((p) => p.type === \"wikilink\" && !p.readOnly)",
+   "expect": [
+    "P20"
+   ]
+  }
+ },
+ "_coverage": {
+  "_note_P6a_P6b": "The two memoisation conjuncts are separable ONLY because the axes sit on a range class no other axis scans: M13 (no memoisation) reddens BOTH, M14 (cache outlives the open) reddens P6b alone. On a shared class M14 reddened both, and one red set would have proved one conjunct, not two (integration-test-revert-verify §A110)."
+ }
+}

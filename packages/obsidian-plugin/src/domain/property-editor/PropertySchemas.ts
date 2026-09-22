@@ -1,4 +1,12 @@
-import type { PropertySchemaResolver, ClassHierarchyResolver, EnumValueResolver, EnumValue } from "@kitelev/exocortex-core";
+import type {
+  PropertySchemaResolver,
+  ClassHierarchyResolver,
+  EnumValueResolver,
+  EnumValue,
+  ClassPropertyField,
+  ClassPropertyResolver,
+  RequiredPropertyFieldType,
+} from "@kitelev/exocortex-core";
 import { EFFORT_STATUS_UID, EffortStatus } from "@kitelev/exocortex-core/domain/constants";
 import { PropertySchemaService } from "./PropertySchemaService";
 
@@ -201,6 +209,104 @@ const FALLBACK_PROPERTIES: PropertySchemaDefinition[] = [
   },
 ];
 
+/* ---------------------------------------------------------------------------
+ * req 9e19f141 — the schema provider is fed by the DECLARED-property resolver
+ * (`createTripleStoreClassPropertyResolver`, req 07509cf9, v16.246.0) instead of
+ * the OWL layer below, which is dead on live data: nothing ever calls
+ * `initPropertySchemaService`, so `_schemaService` is `null` and EVERY class got
+ * the four `FALLBACK_PROPERTIES` (two of them read-only ⇒ two editable fields,
+ * and zero `wikilink` keys ⇒ an always-empty relations picker).
+ *
+ * Measured on vault-exodev (--no-cache, 2026-09-22): the `ems__Task` chain
+ * (Task → Effort → AreaAware → … → Asset — the MIXIN is part of it, which is why
+ * a hand-listed set of domains undercounts) DECLARES 73 properties; 38 carry
+ * `exo__Property_range` (all 38 object ranges — zero datatype ones) and 35 carry
+ * none, so those 35 get `text` from the engine's `fieldTypeFromRange` fallback.
+ * Retiring the OWL layer itself is ticket bd752a24, so it stays wired as the
+ * middle fallback here.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Engine field type → property-editor field type. Every branch is load-bearing:
+ * `assetRef` is what turns a declared object property into a reference picker
+ * (and therefore into a Relations-section option), and `date` is the engine's
+ * name for both `xsd:date` and `xsd:dateTime`, which this editor renders with
+ * its `TimestampField`.
+ */
+const SCHEMA_FIELD_TYPE: Record<RequiredPropertyFieldType, PropertyFieldType> = {
+  text: "text",
+  date: "timestamp",
+  number: "number",
+  boolean: "boolean",
+  assetRef: "wikilink",
+};
+
+/**
+ * The fallback list indexed by frontmatter key. DERIVED from
+ * `FALLBACK_PROPERTIES` rather than re-authored: a hand-copied list would be a
+ * claim with no mechanism behind it and would drift from its source silently.
+ *
+ * It exists because the graph does NOT declare everything the editor needs. For
+ * the four keys this list describes, `exo__Property_range` is absent on the live
+ * TBox (measured on vault-exodev 2026-09-22, `--no-cache`: the engine types
+ * `exo__Asset_label`, `_uid`, `_createdAt` and `_archived` all as `text`,
+ * `required: false`), and `readOnly` has no representation in the graph at all —
+ * the only read-only predicate is the dead OWL layer's `exo:schema_readOnly`,
+ * with ZERO live carriers (canary `exo__Property_minCount` = 44 through the same
+ * query path, so that zero is about the data, not a broken query).
+ *
+ * ⚠ It covers exactly the four keys the fallback names. `exo__Asset_updatedAt`
+ * and the DEPRECATED `exo__Asset_isArchived` are declared on the `ems__Task`
+ * chain too and become editable here; a deprecation-aware filter would change
+ * the resolver, which req 9e19f141 lists as a Non-goal. Both are named in the
+ * PR body and carried by a follow-up ticket.
+ */
+const FALLBACK_BY_KEY: ReadonlyMap<string, PropertySchemaDefinition> = new Map(
+  FALLBACK_PROPERTIES.map((p) => [p.name, p]),
+);
+
+/** Map the engine's declared-property fields onto the editor's schema shape. */
+export function classPropertyFieldsToSchema(
+  fields: readonly ClassPropertyField[],
+): PropertySchemaDefinition[] {
+  return fields.map((f) => {
+    const fallback = FALLBACK_BY_KEY.get(f.propertyKey);
+    const engineType = SCHEMA_FIELD_TYPE[f.fieldType];
+    // `text` is the engine's NO-INFORMATION answer — `fieldTypeFromRange` falls
+    // back to it when the property declares no range at all. For a key the
+    // fallback list also describes, that list is then the stronger source: it is
+    // hand-verified and carries the shape the editor shipped with (a boolean
+    // toggle for `_archived` — req 960d7a3f — a timestamp for `_createdAt`, and
+    // `_label` mandatory). A DECLARED range still wins: the graph is the source
+    // of truth wherever it actually says something, so declaring the missing
+    // ranges in the TBox is all it takes to retire this branch.
+    const takeFallbackShape = fallback !== undefined && engineType === "text";
+    return {
+      name: f.propertyKey,
+      type: takeFallbackShape ? fallback.type : engineType,
+      // `minCount > 0` is already a FLAG on the field (req 07509cf9) — no second
+      // pass over the graph is needed to tell a mandatory field from an optional.
+      required: takeFallbackShape ? fallback.required : f.required,
+      label: f.label || f.propertyKey,
+      ...(fallback?.readOnly ? { readOnly: true } : {}),
+    };
+  });
+}
+
+let _classPropertyResolver: ClassPropertyResolver | null = null;
+
+/**
+ * Wire (or clear, with `null`) the declared-property resolver. Called by the
+ * surface that owns a live triple store — the property editor modal — so the
+ * god-file `ExocortexPlugin.ts` and the three production call-sites of
+ * `createTripleStoreRequiredPropertyResolver` stay byte-identical (req 07509cf9).
+ */
+export function initClassPropertyResolver(
+  resolver: ClassPropertyResolver | null,
+): void {
+  _classPropertyResolver = resolver;
+}
+
 let _schemaService: PropertySchemaService | null = null;
 
 export function initPropertySchemaService(
@@ -217,6 +323,15 @@ export function getPropertySchemaService(): PropertySchemaService | null {
 export async function getPropertySchemaForClass(
   instanceClass: string,
 ): Promise<PropertySchemaDefinition[]> {
+  // req 9e19f141 — declared properties first. An empty result is the honest
+  // "this class declares nothing" answer, and it falls through to the previous
+  // behaviour rather than shadowing it.
+  if (_classPropertyResolver) {
+    const declared = await _classPropertyResolver(instanceClass);
+    if (declared.length > 0) {
+      return classPropertyFieldsToSchema(declared);
+    }
+  }
   if (_schemaService) {
     const resolved = await _schemaService.getPropertySchemaForClass(instanceClass);
     if (resolved.length > 0) {

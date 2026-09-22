@@ -1,0 +1,125 @@
+{
+ "_doc": "Revert-verify mutants for req 07509cf9 (ticket 5380e7fd, PR #4325) — the DECLARED-property resolver. Carried over from the session that shipped it: the matrix was run and green there, but the spec was not committed (review NIT), so it is landed here with req 9e19f141. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute).",
+ "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+ "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/RequiredPropertyResolver.ts",
+ "env_var": "SUT",
+ "red_re": "› (D\\d+) ",
+ "harness": "cd \"${SUT%%/packages/core/src/*}\" && NODE_OPTIONS=--experimental-vm-modules node ./node_modules/jest/bin/jest.js --config packages/cli/jest.config.js packages/cli/tests/integration/class-property-live-loader.integration.test.ts packages/cli/tests/integration/class-property-existing-unchanged.integration.test.ts 2>&1",
+ "symlink_node_modules": [
+  "node_modules",
+  "packages/cli/node_modules",
+  "packages/core/node_modules",
+  "packages/obsidian-plugin/node_modules",
+  "packages/req-audit/node_modules",
+  "packages/test-utils/node_modules"
+ ],
+ "mutants": {
+  "M1_drop_domain_membership": {
+   "from": "      if (!domainKey || !classUids.has(domainKey)) continue;",
+   "to": "      if (!domainKey) continue;",
+   "expect": [
+    "D5",
+    "D6",
+    "D7"
+   ]
+  },
+  "M2_new_anchor_domain_to_minCount": {
+   "from": "    const domainTriples = await store.match(\n      undefined,\n      EXO.term(\"Property_domain\"),\n      undefined,\n    );",
+   "to": "    const domainTriples = await store.match(\n      undefined,\n      EXO.term(\"Property_minCount\"),\n      undefined,\n    );",
+   "expect": [
+    "D1",
+    "D2",
+    "D3",
+    "D4",
+    "D5",
+    "D6",
+    "D7"
+   ]
+  },
+  "M3_domain_key_uid_only": {
+   "from": "      const domainKey =\n        t.object instanceof IRI ? classKeyOf(t.object.value) : null;",
+   "to": "      const domainKey =\n        t.object instanceof IRI ? uidFrom(t.object.value) : null;",
+   "expect": [
+    "D1",
+    "D2",
+    "D3",
+    "D4",
+    "D6",
+    "D7"
+   ]
+  },
+  "M4_no_ancestor_walk": {
+   "from": "    // parents of the current key first, then that key's OTHER spelling\n    const next = [...(childToParents.get(cur) ?? []), ...(await twinsOf(cur))];",
+   "to": "    // parents of the current key first, then that key's OTHER spelling\n    const next = [...(await twinsOf(cur))];",
+   "expect": [
+    "D2",
+    "D4",
+    "D6",
+    "D7"
+   ]
+  },
+  "M5_required_never_true": {
+   "from": "          required = true;",
+   "to": "          required = false;",
+   "expect": [
+    "D4",
+    "D6"
+   ]
+  },
+  "M6_required_always_true": {
+   "from": "      let required = false;",
+   "to": "      let required = true;",
+   "expect": [
+    "D1",
+    "D3",
+    "D6",
+    "D7"
+   ]
+  },
+  "M7_label_no_rdfs_twin": {
+   "from": "      // `prefix__Name` label is emitted as an IRI, not a Literal (§A29).\n      let propertyKey: string | null = null;\n      for (const pred of [EXO.term(\"Asset_label\"), RDFS.term(\"label\")]) {",
+   "to": "      // `prefix__Name` label is emitted as an IRI, not a Literal (§A29).\n      let propertyKey: string | null = null;\n      for (const pred of [EXO.term(\"Asset_label\")]) {",
+   "expect": [
+    "D1",
+    "D2",
+    "D3",
+    "D4",
+    "D5",
+    "D6",
+    "D7"
+   ]
+  },
+  "M8_drop_target_class_uid": {
+   "from": "        targetClassUid,\n        required,",
+   "to": "        targetClassUid: undefined,\n        required,",
+   "expect": [
+    "D6",
+    "D7"
+   ]
+  },
+  "M9_OLD_anchor_minCount_to_domain": {
+   "from": "    const minCountTriples = await store.match(\n      undefined,\n      EXO.term(\"Property_minCount\"),\n      undefined,\n    );",
+   "to": "    const minCountTriples = await store.match(\n      undefined,\n      EXO.term(\"Property_domain\"),\n      undefined,\n    );",
+   "expect": [
+    "D8"
+   ]
+  },
+  "M10_no_dedupe_by_key": {
+   "from": "      if (seen.has(propertyKey)) continue;",
+   "to": "      if (seen.has(\"__never__\" + propertyKey)) continue;",
+   "expect": [
+    "D6"
+   ]
+  },
+  "M11_no_deterministic_order": {
+   "from": "    // Deterministic order: the store yields domain triples in file order, which\n    // is an accident of the vault rather than anything a consumer should render.\n    fields.sort((a, b) => a.propertyKey.localeCompare(b.propertyKey));",
+   "to": "    // Deterministic order: the store yields domain triples in file order, which\n    // is an accident of the vault rather than anything a consumer should render.\n    fields.sort(() => 0);",
+   "expect": [
+    "D6"
+   ]
+  }
+ },
+ "_coverage": {
+  "_note_M2_M7": "M2 and M7 yield ONE red set, and that is NOT two locked conjuncts: each of those guards EMPTIES the output on its own, so the axes cannot tell the branches apart. Said out loud rather than presented as coverage (integration-test-revert-verify §A110). M10/M11 also share [D6], but there the branches ARE exhibited by a probe: M10 duplicates the entry, M11 reorders it."
+ }
+}
