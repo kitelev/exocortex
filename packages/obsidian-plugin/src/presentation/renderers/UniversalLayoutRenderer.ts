@@ -104,6 +104,18 @@ export class UniversalLayoutRenderer {
   private debounceTimeout: number | null = null;
   private currentFilePath: string | null = null;
   private currentConfig: UniversalLayoutConfig = {};
+  /**
+   * Daily-efforts partitions claimed by the last full render's Layout, cached
+   * for the INCREMENTAL path. `IncrementalUpdateHandler` re-renders the legacy
+   * daily table on its own (a `pn__DailyNote_day` / `exo__Asset_archived` edit
+   * on the open note), and it has no access to the Layout — without this the
+   * re-render would drop `excludeActions` and resurrect the duplicate Actions
+   * on the same page, no reload needed. Per-render state like
+   * `currentFilePath`/`currentConfig`, and the incremental path is gated on
+   * `filePath === this.currentFilePath`, so the cache always belongs to the
+   * file being updated.
+   */
+  private currentClaimedDailyPartitions: ReadonlySet<string> = new Set();
 
   constructor(
     app: ObsidianApp,
@@ -253,6 +265,7 @@ export class UniversalLayoutRenderer {
     this.incrementalUpdateHandler = new IncrementalUpdateHandler({
       buttonGroupsBuilder: this.buttonGroupsBuilder,
       dailyTasksRenderer: this.dailyTasksRenderer,
+      getClaimedDailyPartitions: () => this.currentClaimedDailyPartitions,
       areaTreeRenderer: this.areaTreeRenderer,
       relationsRenderer: this.relationsRenderer,
       reactRenderer: this.reactRenderer,
@@ -283,6 +296,7 @@ export class UniversalLayoutRenderer {
     this.metadataCache.cleanup();
     this.sectionStateManager.cleanup();
     this.currentFilePath = null;
+    this.currentClaimedDailyPartitions = new Set();
     this.rootContainer = null;
   }
 
@@ -398,6 +412,7 @@ export class UniversalLayoutRenderer {
       // so the table keeps running and merely DROPS them — otherwise every
       // Action would render twice (once here, once in the block).
       const dailyTasksBlockActive = claimedDailyPartitions.has("tasks");
+      this.currentClaimedDailyPartitions = claimedDailyPartitions;
 
       // RFC c7da0bca Phase 3b-main — ensure the active file + its class
       // chain + prototype chain are in the triple store before button

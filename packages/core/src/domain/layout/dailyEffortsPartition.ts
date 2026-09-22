@@ -64,7 +64,7 @@ function toClassArray(value: unknown): string[] {
  * `[[uid|ems__Project]]`, same semantics as the legacy DailyTasksRenderer
  * project skip) OR the normalised UID exactly (catching UID-canon `[[uid]]`).
  */
-function classListMatches(
+export function classListMatches(
   classes: readonly string[],
   symbolicIRI: string,
   uid: string,

@@ -323,4 +323,45 @@ describe("IncrementalUpdateHandler", () => {
       expect(mockDeps.dailyTasksRenderer.render).toHaveBeenCalled();
     });
   });
+
+  /**
+   * `@req:f56eef78-61d8-4d12-ac28-886aecefd633` — the INCREMENTAL path is the
+   * second production call site of `dailyTasksRenderer.render`. It re-renders
+   * the legacy daily table on its own (a `pn__DailyNote_day` /
+   * `exo__Asset_archived` edit on the open note), so if it drops the
+   * `excludeActions` option the duplicate Actions reappear on the same page
+   * with no reload — the exact defect the full-render gate removes.
+   *
+   * ⛔ The pre-existing assertions in this suite are call-count only; they stay
+   * green whatever arguments are passed, so they cannot cover this wiring.
+   */
+  describe("daily-efforts partition gate (req f56eef78)", () => {
+    const driveDailyTasks = async () => {
+      const tasksContainer: any = document.createElement("div");
+      tasksContainer.className = "exocortex-daily-tasks-section";
+      tasksContainer.empty = jest.fn();
+      mockRootContainer.appendChild(tasksContainer);
+      await handler.updateSections(
+        mockRootContainer, mockFile, [LayoutSection.DAILY_TASKS], {});
+      return mockDeps.dailyTasksRenderer.render.mock.calls[0];
+    };
+
+    it("W1: forwards excludeActions:true when the Layout claims the `actions` partition", async () => {
+      mockDeps.getClaimedDailyPartitions = () => new Set(["actions"]);
+      handler = new IncrementalUpdateHandler(mockDeps);
+
+      expect((await driveDailyTasks())[4]).toEqual({ excludeActions: true });
+    });
+
+    it("W2: forwards excludeActions:false when the Layout claims a DIFFERENT partition", async () => {
+      mockDeps.getClaimedDailyPartitions = () => new Set(["projects"]);
+      handler = new IncrementalUpdateHandler(mockDeps);
+
+      expect((await driveDailyTasks())[4]).toEqual({ excludeActions: false });
+    });
+
+    it("W3: forwards excludeActions:false when no partition provider is wired at all", async () => {
+      expect((await driveDailyTasks())[4]).toEqual({ excludeActions: false });
+    });
+  });
 });

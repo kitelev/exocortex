@@ -8,7 +8,13 @@ import {
   DailyTasksTableWithToggle,
   isDateOnlyTimestamp,
 } from '@plugin/presentation/components/DailyTasksTable';
-import { AssetClass, IVaultAdapter, IFile } from "@kitelev/exocortex-core";
+import {
+  AssetClass,
+  EMS_ACTION_CLASS_UID,
+  IVaultAdapter,
+  IFile,
+  classListMatches,
+} from "@kitelev/exocortex-core";
 import { MetadataExtractor } from "@kitelev/exocortex-core";
 import { EffortSortingHelpers } from "@kitelev/exocortex-core";
 import { AssetMetadataService } from "./layout/helpers/AssetMetadataService";
@@ -222,13 +228,22 @@ export class DailyTasksRenderer {
         // daily-efforts block with partition "actions", THAT block renders the
         // day's ems__Action instances. This table's own set is «everything but
         // Project», so without this skip each Action would render twice.
-        if (options?.excludeActions === true) {
-          const isAction = instanceClassArray.some((c: string) =>
-            String(c).includes(AssetClass.ACTION),
-          );
-          if (isAction) {
-            continue;
-          }
+        // ⛔ Must use the SAME predicate as the block that claims the
+        // partition (`partitionDailyEffortsByClass` → `classListMatches`), not
+        // a symbolic-substring lookalike: `exo__Instance_class` is written
+        // UID-canon (`[[<uid>]]`) by `exocortex-cli`, and a symbolic-only test
+        // misses those refs. Two predicates over one carve-out means the block
+        // claims an Action this table also keeps — the exact duplicate this
+        // skip exists to prevent.
+        if (
+          options?.excludeActions === true &&
+          classListMatches(
+            instanceClassArray.map((c: unknown) => String(c)),
+            AssetClass.ACTION,
+            EMS_ACTION_CLASS_UID,
+          )
+        ) {
+          continue;
         }
 
         const effortStatus = metadata.ems__Effort_status || "";
