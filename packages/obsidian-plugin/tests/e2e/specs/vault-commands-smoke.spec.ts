@@ -414,18 +414,36 @@ test.describe("Vault Commands Smoke Tests", () => {
     await expect
       .poll(
         async () => {
-          composition = await openEditorAndReadComposition(window);
+          // An open that lands before the modal renders throws out of
+          // `waitFor`. Playwright's poll does NOT catch a throw from the
+          // generator, so one such attempt would abort the whole 150s poll
+          // instead of retrying — report "nothing matched" and let it retry.
+          try {
+            composition = await openEditorAndReadComposition(window);
+          } catch {
+            composition = { fields: [], options: [] };
+            return seeded.length;
+          }
           const seen = new Set<string>([
             ...composition.fields.map((f) => f.key),
             ...composition.options,
           ]);
-          return seeded.filter((k) => !seen.has(k)).length;
+          const missing = seeded.filter((k) => !seen.has(k)).length;
+          // ⛤ The keys alone are a WEAKER gate than the assertions below, and
+          // the gap is a real window rather than a theoretical one: the form
+          // starts on `getPropertySchemaForClassSync` (the fallback) and, until
+          // `buildRelationsDeps` resolves, renders the wikilink properties as
+          // FIELDS. An open caught in that window shows all six keys with an
+          // EMPTY picker — `missing` is 0, the poll exits, and the picker
+          // assertion reds on a perfectly working provider. Waiting for the
+          // picker too makes the poll gate on the same shape it asserts.
+          return missing + (composition.options.length === 0 ? 1 : 0);
         },
         {
           timeout: 150000,
           intervals: [2000, 3000, 5000, 5000, 10000, 10000, 15000, 15000],
           message:
-            "the property editor never showed the declared properties (it stayed on FALLBACK_PROPERTIES)",
+            "the property editor never showed the declared properties with a populated relations picker (it stayed on FALLBACK_PROPERTIES)",
         },
       )
       .toBe(0);
