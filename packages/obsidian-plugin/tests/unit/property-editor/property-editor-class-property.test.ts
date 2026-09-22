@@ -124,6 +124,8 @@ const BASE_PROPERTY_KEYS = [
   "tst__Base_must",
   "exo__Asset_uid",
   "exo__Asset_createdAt",
+  "exo__Asset_archived",
+  "exo__Asset_isDefinedBy",
 ];
 const DECLARED_KEYS = [...HOST_PROPERTY_KEYS, ...BASE_PROPERTY_KEYS].sort();
 
@@ -152,9 +154,15 @@ const fixtureNotes = (): Note[] => [
   // Inherited from the ancestor: one plain (no range ⇒ `text`), one REQUIRED.
   propertyNote({ uid: "d0000000-0000-4000-8000-000000000011", label: "tst__Base_note", domainUid: CLS_BASE }),
   propertyNote({ uid: "d0000000-0000-4000-8000-000000000012", label: "tst__Base_must", domainUid: CLS_BASE, minCount: 1 }),
-  // The two system keys the fallback list marks read-only.
-  propertyNote({ uid: "d0000000-0000-4000-8000-000000000013", label: "exo__Asset_uid", domainUid: CLS_BASE }),
-  propertyNote({ uid: "d0000000-0000-4000-8000-000000000014", label: "exo__Asset_createdAt", domainUid: CLS_BASE, rangeLiteral: "xsd:dateTime" }),
+  // Three of the four fallback keys are DECLARED here; `exo__Asset_label` is
+  // deliberately left out so "the fallback list does not merge itself in"
+  // stays observable by its ABSENCE.
+  propertyNote({ uid: "d0000000-0000-4000-8000-000000000013", label: "exo__Asset_uid", domainUid: CLS_BASE, rangeLiteral: "xsd:integer" }),
+  propertyNote({ uid: "d0000000-0000-4000-8000-000000000014", label: "exo__Asset_createdAt", domainUid: CLS_BASE }),
+  propertyNote({ uid: "d0000000-0000-4000-8000-000000000017", label: "exo__Asset_archived", domainUid: CLS_BASE }),
+  // A SYSTEM relation key with an object range: it must be typed like any
+  // other reference field, yet never offered as a create-predicate.
+  propertyNote({ uid: "d0000000-0000-4000-8000-000000000018", label: "exo__Asset_isDefinedBy", domainUid: CLS_BASE, rangeUid: CLS_PICK }),
   // Declared on an UNRELATED class — "every declared property" must not be
   // satisfiable by returning everything.
   propertyNote({ uid: "d0000000-0000-4000-8000-000000000015", label: "tst__Other_noise", domainUid: CLS_OTHER }),
@@ -254,12 +262,11 @@ describe("property editor — declared-property schema (req 9e19f141)", () => {
     const schema = await getPropertySchemaForClass(CLS_HOST);
 
     expect(schema.map((p) => p.name).sort()).toEqual(DECLARED_KEYS);
-    // 11 declared against the 4 of the fallback list — the UX number of the req.
-    expect(schema).toHaveLength(12);
+    // 14 declared against the 4 of the fallback list — the shape of the req.
+    expect(schema).toHaveLength(14);
     // Fallback-only keys that the fixture does NOT declare must be absent:
     // their presence would mean the fallback was merged in, not replaced.
     expect(schema.map((p) => p.name)).not.toContain("exo__Asset_label");
-    expect(schema.map((p) => p.name)).not.toContain("exo__Asset_archived");
     // A property declared on an unrelated class must not leak in.
     expect(schema.map((p) => p.name)).not.toContain("tst__Other_noise");
   });
@@ -275,11 +282,18 @@ describe("property editor — declared-property schema (req 9e19f141)", () => {
     const schema = await getPropertySchemaForClass(CLS_HOST);
 
     // The fixture SEEDS `minCount: 1` — the live `ems__Task` chain has none at
-    // all (0 of 72), so without the seed this axis would be vacuously green
+    // all (0 of 73), so without the seed this axis would be vacuously green
     // (`integration-test-revert-verify` §A105 / §A111).
     expect(schema.find((p) => p.name === "tst__Base_must")?.required).toBe(true);
     expect(schema.find((p) => p.name === "tst__Base_note")?.required).toBe(false);
-    expect(schema.filter((p) => p.required)).toHaveLength(1);
+    // Exactly two: the seeded one (from the GRAPH's minCount) and
+    // `exo__Asset_createdAt` (from the FALLBACK shape — see P18). Naming both
+    // keeps the flag observable rather than letting a blanket "required"
+    // pass this axis.
+    expect(schema.filter((p) => p.required).map((p) => p.name).sort()).toEqual([
+      "exo__Asset_createdAt",
+      "tst__Base_must",
+    ]);
   });
 
   it("P8 @req:9e19f141-13f5-451c-abb8-34e24ff0e9d3 declared system keys inherit read-only from the fallback list instead of becoming editable", async () => {
@@ -340,6 +354,43 @@ describe("property editor — declared-property schema (req 9e19f141)", () => {
 
     expect(schema[1].name).toBe("tst__A_unlabelled");
     expect(schema[1].label).toBe("tst__A_unlabelled");
+  });
+
+
+  /**
+   * The live TBox declares NO `exo__Property_range` for the fallback keys
+   * (measured 2026-09-22: the engine types `exo__Asset_label`, `_uid`,
+   * `_createdAt`, `_archived` all as `text`), so taking the engine's answer
+   * verbatim would silently downgrade shipped field shapes. The fixture mirrors
+   * that: these keys are declared WITHOUT a range.
+   */
+  it("P16 @req:9e19f141-13f5-451c-abb8-34e24ff0e9d3 a fallback key the graph cannot type keeps the fallback's field type — a boolean stays a boolean, not text", async () => {
+    const schema = await getPropertySchemaForClass(CLS_HOST);
+    expect(schema.find((p) => p.name === "exo__Asset_archived")?.type).toBe("boolean");
+  });
+
+  it("P17 @req:9e19f141-13f5-451c-abb8-34e24ff0e9d3 the same for a timestamp — a range-less createdAt is not downgraded to text", async () => {
+    const schema = await getPropertySchemaForClass(CLS_HOST);
+    expect(schema.find((p) => p.name === "exo__Asset_createdAt")?.type).toBe("timestamp");
+  });
+
+  it("P18 @req:9e19f141-13f5-451c-abb8-34e24ff0e9d3 a fallback key the graph cannot type keeps the fallback's required flag", async () => {
+    const schema = await getPropertySchemaForClass(CLS_HOST);
+    // `_createdAt` is mandatory in the fallback list; `_archived` is not — so this
+    // is the flag travelling, not a blanket "everything from the fallback is required".
+    expect(schema.find((p) => p.name === "exo__Asset_createdAt")?.required).toBe(true);
+    expect(schema.find((p) => p.name === "exo__Asset_archived")?.required).toBe(false);
+  });
+
+  it("P19 @req:9e19f141-13f5-451c-abb8-34e24ff0e9d3 a DECLARED range still wins over the fallback's guess — the graph is the source wherever it speaks", async () => {
+    const schema = await getPropertySchemaForClass(CLS_HOST);
+    // `exo__Asset_uid` is declared with `xsd:integer` in the fixture. Declaring the
+    // missing ranges in the TBox is exactly how the fallback branch gets retired,
+    // so this input is what production looks like AFTER that repair.
+    const uid = schema.find((p) => p.name === "exo__Asset_uid");
+    expect(uid?.type).toBe("number");
+    // …and the read-only decision is a separate branch, unaffected by it.
+    expect(uid?.readOnly).toBe(true);
   });
 
   // ------------------------------------------------------------------- modal
@@ -495,6 +546,22 @@ describe("property editor — declared-property schema (req 9e19f141)", () => {
       expect(mockRefCandidateCalls.filter((c) => c === rangeKey)).toHaveLength(2);
     });
 
+    it("P20 @req:9e19f141-13f5-451c-abb8-34e24ff0e9d3 a SYSTEM relation key is never offered as a create-predicate, however it is typed", async () => {
+      const deps = await open();
+
+      const offered = deps.predicateOptions.map((o) => o.key);
+      // It IS in the schema as a reference field — the exclusion is about the
+      // create-row, not about typing.
+      const schema = await getPropertySchemaForClass(CLS_HOST);
+      expect(schema.find((p) => p.name === "exo__Asset_isDefinedBy")?.type).toBe("wikilink");
+      // …but offering it would let one click append a SECOND isDefinedBy
+      // (`createInlineRelation` never replaces), breaking co-location.
+      expect(offered).not.toContain("exo__Asset_isDefinedBy");
+      // The non-system reference fields are still offered, so this is an
+      // exclusion and not an empty list.
+      expect(offered).toContain("tst__Host_pick");
+    });
+
     it("P9 @req:9e19f141-13f5-451c-abb8-34e24ff0e9d3 a field with no resolved range class is not scanned at all", async () => {
       const deps = await open();
       mockRefCandidateCalls.length = 0;
@@ -508,7 +575,7 @@ describe("property editor — declared-property schema (req 9e19f141)", () => {
       // A previous modal's resolver, built over a store that may no longer be
       // the live one. Opening without a store must not let it answer.
       initClassPropertyResolver(createTripleStoreClassPropertyResolver(store));
-      expect(await getPropertySchemaForClass(CLS_HOST)).toHaveLength(12);
+      expect(await getPropertySchemaForClass(CLS_HOST)).toHaveLength(14);
 
       plugin = { refreshLayout: jest.fn() } as unknown as ExocortexPluginInterface;
       modal = new PropertyEditorModal(

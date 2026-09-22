@@ -19,6 +19,7 @@
    "to": "  assetRef: \"text\",",
    "expect": [
     "P14",
+    "P20",
     "P3",
     "P5",
     "P6a",
@@ -36,7 +37,9 @@
    "from": "  number: \"number\",",
    "to": "  number: \"text\",",
    "expect": [
-    "P12"
+    "P12",
+    "P19",
+    "P7"
    ]
   },
   "M4_boolean_not_a_boolean_field": {
@@ -47,15 +50,20 @@
    ]
   },
   "M5_readonly_inheritance_dropped": {
-   "from": "const FALLBACK_READ_ONLY_KEYS: ReadonlySet<string> = new Set(\n  FALLBACK_PROPERTIES.filter((p) => p.readOnly).map((p) => p.name),\n);",
-   "to": "const FALLBACK_READ_ONLY_KEYS: ReadonlySet<string> = new Set<string>();",
+   "from": "const FALLBACK_BY_KEY: ReadonlyMap<string, PropertySchemaDefinition> = new Map(\n  FALLBACK_PROPERTIES.map((p) => [p.name, p]),\n);",
+   "to": "const FALLBACK_BY_KEY: ReadonlyMap<string, PropertySchemaDefinition> = new Map();",
    "expect": [
+    "P16",
+    "P17",
+    "P18",
+    "P19",
+    "P7",
     "P8"
    ]
   },
   "M6_required_flag_dropped": {
-   "from": "    required: f.required,",
-   "to": "    required: false,",
+   "from": "      required: takeFallbackShape ? fallback.required : f.required,",
+   "to": "      required: takeFallbackShape ? fallback.required : false,",
    "expect": [
     "P7"
    ]
@@ -85,6 +93,8 @@
     "P13",
     "P14",
     "P15",
+    "P19",
+    "P20",
     "P3",
     "P5",
     "P6a",
@@ -97,6 +107,64 @@
    "to": "    if (declared.length >= 0) {",
    "expect": [
     "P2"
+   ]
+  },
+  "M17_fallback_shape_never_taken": {
+   "from": "    const takeFallbackShape = fallback !== undefined && engineType === \"text\";",
+   "to": "    const takeFallbackShape = false as boolean;",
+   "expect": [
+    "P16",
+    "P17",
+    "P18",
+    "P7"
+   ]
+  },
+  "M18_fallback_shape_beats_declared_range": {
+   "from": "    const takeFallbackShape = fallback !== undefined && engineType === \"text\";",
+   "to": "    const takeFallbackShape = fallback !== undefined;",
+   "expect": [
+    "P19",
+    "P7"
+   ]
+  },
+  "M19_readonly_polarity_flipped": {
+   "from": "      ...(fallback?.readOnly ? { readOnly: true } : {}),",
+   "to": "      ...(fallback?.readOnly ? {} : { readOnly: true }),",
+   "expect": [
+    "P19",
+    "P20",
+    "P3",
+    "P5",
+    "P6a",
+    "P6b",
+    "P8"
+   ]
+  },
+  "M20_text_is_not_the_no_information_type": {
+   "from": "  text: \"text\",",
+   "to": "  text: \"number\",",
+   "expect": [
+    "P14",
+    "P16",
+    "P17",
+    "P18",
+    "P7"
+   ]
+  },
+  "M22_fallback_required_branch_dropped": {
+   "from": "      required: takeFallbackShape ? fallback.required : f.required,",
+   "to": "      required: takeFallbackShape ? false : f.required,",
+   "expect": [
+    "P18",
+    "P7"
+   ]
+  },
+  "M23_fallback_type_branch_dropped": {
+   "from": "      type: takeFallbackShape ? fallback.type : engineType,",
+   "to": "      type: takeFallbackShape ? engineType : engineType,",
+   "expect": [
+    "P16",
+    "P17"
    ]
   }
  }

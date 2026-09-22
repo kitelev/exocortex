@@ -19,6 +19,7 @@
    "to": "    void this.initSchemaResolver;",
    "expect": [
     "P15",
+    "P20",
     "P3",
     "P5",
     "P6a",
@@ -52,6 +53,13 @@
    "to": "      if (!rangeClassUid) return findAssetRefCandidates(this.app, rangeClassUid ?? \"\");",
    "expect": [
     "P9"
+   ]
+  },
+  "M21_system_keys_offered_as_predicates": {
+   "from": "      .filter(\n        (p) =>\n          p.type === \"wikilink\" && !p.readOnly && !RELATION_SYSTEM_KEYS.has(p.name),\n      )",
+   "to": "      .filter((p) => p.type === \"wikilink\" && !p.readOnly)",
+   "expect": [
+    "P20"
    ]
   }
  },

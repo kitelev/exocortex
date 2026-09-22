@@ -218,10 +218,12 @@ const FALLBACK_PROPERTIES: PropertySchemaDefinition[] = [
  * and zero `wikilink` keys ⇒ an always-empty relations picker).
  *
  * Measured on vault-exodev (--no-cache, 2026-09-22): the `ems__Task` chain
- * (Task + Effort + Asset) DECLARES 72 properties; 37 carry `exo__Property_range`
- * (all 37 object ranges — zero datatype ones) and 35 carry none, so those 35 get
- * `text` from the engine's `fieldTypeFromRange` fallback. Retiring the OWL layer
- * itself is ticket bd752a24, so it stays wired as the middle fallback here.
+ * (Task → Effort → AreaAware → … → Asset — the MIXIN is part of it, which is why
+ * a hand-listed set of domains undercounts) DECLARES 73 properties; 38 carry
+ * `exo__Property_range` (all 38 object ranges — zero datatype ones) and 35 carry
+ * none, so those 35 get `text` from the engine's `fieldTypeFromRange` fallback.
+ * Retiring the OWL layer itself is ticket bd752a24, so it stays wired as the
+ * middle fallback here.
  * ------------------------------------------------------------------------- */
 
 /**
@@ -240,38 +242,55 @@ const SCHEMA_FIELD_TYPE: Record<RequiredPropertyFieldType, PropertyFieldType> = 
 };
 
 /**
- * Read-only is NOT something the graph declares, so a DECLARED property has to
- * inherit the decision the fallback list already encodes. DERIVED from
+ * The fallback list indexed by frontmatter key. DERIVED from
  * `FALLBACK_PROPERTIES` rather than re-authored: a hand-copied list would be a
  * claim with no mechanism behind it and would drift from its source silently.
  *
- * ⚠ It covers exactly the keys the fallback marks — `exo__Asset_uid` and
- * `exo__Asset_createdAt`. `exo__Asset_updatedAt` and the DEPRECATED
- * `exo__Asset_isArchived` are declared on the `ems__Task` chain too and become
- * editable here. Deriving them from the graph instead is not possible today:
- * a read-only signal exists in the dead OWL layer's query (`exo:schema_readOnly`,
- * `PropertySchemaResolver`) but has ZERO live carriers — measured on vault-exodev
- * 2026-09-22 with `--no-cache`, canary `exo__Property_minCount` = 44 through the
- * same query path — and a deprecation-aware filter would change the resolver,
- * which req 9e19f141 lists as a Non-goal. Both are named in the PR body.
+ * It exists because the graph does NOT declare everything the editor needs. For
+ * the four keys this list describes, `exo__Property_range` is absent on the live
+ * TBox (measured on vault-exodev 2026-09-22, `--no-cache`: the engine types
+ * `exo__Asset_label`, `_uid`, `_createdAt` and `_archived` all as `text`,
+ * `required: false`), and `readOnly` has no representation in the graph at all —
+ * the only read-only predicate is the dead OWL layer's `exo:schema_readOnly`,
+ * with ZERO live carriers (canary `exo__Property_minCount` = 44 through the same
+ * query path, so that zero is about the data, not a broken query).
+ *
+ * ⚠ It covers exactly the four keys the fallback names. `exo__Asset_updatedAt`
+ * and the DEPRECATED `exo__Asset_isArchived` are declared on the `ems__Task`
+ * chain too and become editable here; a deprecation-aware filter would change
+ * the resolver, which req 9e19f141 lists as a Non-goal. Both are named in the
+ * PR body and carried by a follow-up ticket.
  */
-const FALLBACK_READ_ONLY_KEYS: ReadonlySet<string> = new Set(
-  FALLBACK_PROPERTIES.filter((p) => p.readOnly).map((p) => p.name),
+const FALLBACK_BY_KEY: ReadonlyMap<string, PropertySchemaDefinition> = new Map(
+  FALLBACK_PROPERTIES.map((p) => [p.name, p]),
 );
 
 /** Map the engine's declared-property fields onto the editor's schema shape. */
 export function classPropertyFieldsToSchema(
   fields: readonly ClassPropertyField[],
 ): PropertySchemaDefinition[] {
-  return fields.map((f) => ({
-    name: f.propertyKey,
-    type: SCHEMA_FIELD_TYPE[f.fieldType],
-    // `minCount > 0` is already a FLAG on the field (req 07509cf9) — no second
-    // pass over the graph is needed to tell a mandatory field from an optional.
-    required: f.required,
-    label: f.label || f.propertyKey,
-    ...(FALLBACK_READ_ONLY_KEYS.has(f.propertyKey) ? { readOnly: true } : {}),
-  }));
+  return fields.map((f) => {
+    const fallback = FALLBACK_BY_KEY.get(f.propertyKey);
+    const engineType = SCHEMA_FIELD_TYPE[f.fieldType];
+    // `text` is the engine's NO-INFORMATION answer — `fieldTypeFromRange` falls
+    // back to it when the property declares no range at all. For a key the
+    // fallback list also describes, that list is then the stronger source: it is
+    // hand-verified and carries the shape the editor shipped with (a boolean
+    // toggle for `_archived` — req 960d7a3f — a timestamp for `_createdAt`, and
+    // `_label` mandatory). A DECLARED range still wins: the graph is the source
+    // of truth wherever it actually says something, so declaring the missing
+    // ranges in the TBox is all it takes to retire this branch.
+    const takeFallbackShape = fallback !== undefined && engineType === "text";
+    return {
+      name: f.propertyKey,
+      type: takeFallbackShape ? fallback.type : engineType,
+      // `minCount > 0` is already a FLAG on the field (req 07509cf9) — no second
+      // pass over the graph is needed to tell a mandatory field from an optional.
+      required: takeFallbackShape ? fallback.required : f.required,
+      label: f.label || f.propertyKey,
+      ...(fallback?.readOnly ? { readOnly: true } : {}),
+    };
+  });
 }
 
 let _classPropertyResolver: ClassPropertyResolver | null = null;
@@ -286,10 +305,6 @@ export function initClassPropertyResolver(
   resolver: ClassPropertyResolver | null,
 ): void {
   _classPropertyResolver = resolver;
-}
-
-export function getClassPropertyResolver(): ClassPropertyResolver | null {
-  return _classPropertyResolver;
 }
 
 let _schemaService: PropertySchemaService | null = null;

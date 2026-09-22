@@ -39,6 +39,7 @@ import {
   appendInlineRelationValue,
   removeInlineRelationValue,
   quoteRelationValueForYaml,
+  RELATION_SYSTEM_KEYS,
   type RelationRow,
 } from '@plugin/presentation/components/property-editor/relationsEditorModel';
 import {
@@ -267,7 +268,22 @@ export class PropertyEditorModal extends Modal {
     const initialRows = this.rebuildRows();
 
     const predicateOptions = schema
-      .filter((p) => p.type === "wikilink" && !p.readOnly)
+      // ⛔ `RELATION_SYSTEM_KEYS` must be excluded HERE too, not only where the
+      // existing rows are read (`extractInlineRelations`). Until req 9e19f141 the
+      // schema carried no `wikilink` key at all, so this list was always empty and
+      // the create-row never rendered; now it would offer `exo__Asset_isDefinedBy`
+      // as a predicate, and `createInlineRelation` APPENDS — it never replaces —
+      // so one click would give the asset a SECOND `isDefinedBy` and break
+      // co-location. The engine has no cardinality signal to lean on
+      // (`exo__Property_maxCount`: 0 readers in the resolver, 0 carriers on the
+      // chain), which is why this is a key-set exclusion and not a cardinality
+      // check; the same append hazard for functional NON-system properties
+      // (`ems__Effort_status`, `_parent`, `ems__Task_size`) needs that signal and
+      // is carried by a follow-up ticket.
+      .filter(
+        (p) =>
+          p.type === "wikilink" && !p.readOnly && !RELATION_SYSTEM_KEYS.has(p.name),
+      )
       .map((p) => ({
         key: p.name,
         label: p.label || p.name,
@@ -275,12 +291,16 @@ export class PropertyEditorModal extends Modal {
       }));
 
     // req 9e19f141 — memoised for the lifetime of ONE open: this Map is a local
-    // of this call, and `buildRelationsDeps` runs once per `onOpen`. Reference
-    // fields share their range class (measured on the live `ems__Task` chain:
-    // 37 reference fields over 21 distinct classes ⇒ 16 scans saved per open),
-    // and every scan is a full `getMarkdownFiles()` pass. Deliberately NOT
-    // module-level: a cache outliving the open would serve candidates from a
-    // vault state the user has already changed.
+    // of this call, and `buildRelationsDeps` runs once per `onOpen`.
+    //
+    // ⚠ What it actually saves: `RelationsSection` resolves candidates LAZILY,
+    // for the SELECTED predicate only, so one open costs ONE scan — not one per
+    // reference field. The memo therefore pays off when the user moves between
+    // predicates that share a range class (38 reference fields over 21 distinct
+    // classes on the live `ems__Task` chain), each scan being a full
+    // `getMarkdownFiles()` pass. Deliberately NOT module-level: a cache
+    // outliving the open would serve candidates from a vault state the user has
+    // already changed.
     const candidatesByClass = new Map<string, AssetRefCandidate[]>();
     const resolveCandidates = (
       rangeClassUid: string | undefined,
