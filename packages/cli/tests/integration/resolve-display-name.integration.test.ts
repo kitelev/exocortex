@@ -32,6 +32,9 @@ const LABELLESS_UID = "dddddddd-1111-4222-8333-444444444444";
 const LABELLED_UID = "eeeeeeee-1111-4222-8333-444444444444";
 const UNCOVERED_UID = "ffffffff-1111-4222-8333-444444444444";
 const LITERAL_PART_UID = "11111111-1111-4222-8333-444444444444";
+// L2 is covered by a spec that DECLINES — not "uncovered" — and its basename, not its uid,
+// is what the axis reads. Its own constant, so the name cannot mislead the next reader.
+const READABLE_BASENAME_UID = "22222222-1111-4222-8333-444444444444";
 
 let vault: string;
 
@@ -249,7 +252,7 @@ describe("resolve-display-name — the naming oracle outside Obsidian", () => {
     declineSpecWithLiterals();
     write(`assetspaces/t/${LABELLED_UID}.md`, {
       exo__Asset_uid: LABELLED_UID,
-      exo__Asset_label: "June (t__Widget) (DEPRECATED)",
+      exo__Asset_label: "  June (t__Widget) (DEPRECATED)  ", // padded: .trim() is load-bearing
       exo__Instance_class: [`[[${CLASS_UID}]]`],
       // t__Widget_serial deliberately ABSENT → every property part renders empty → spec declines.
     });
@@ -267,7 +270,7 @@ describe("resolve-display-name — the naming oracle outside Obsidian", () => {
     declineSpecWithLiterals();
     write(`assetspaces/t/${LABELLED_UID}.md`, {
       exo__Asset_uid: LABELLED_UID,
-      exo__Asset_label: "June (t__Widget) (DEPRECATED)",
+      exo__Asset_label: "  June (t__Widget) (DEPRECATED)  ", // padded: .trim() is load-bearing
       exo__Instance_class: [`[[${CLASS_UID}]]`],
     });
 
@@ -285,7 +288,7 @@ describe("resolve-display-name — the naming oracle outside Obsidian", () => {
     // byte-identical, because the fix adds a label tier and touches nothing else.
     declineSpecWithLiterals();
     write(`assetspaces/t/2025-W26.md`, {
-      exo__Asset_uid: UNCOVERED_UID,
+      exo__Asset_uid: READABLE_BASENAME_UID,
       exo__Instance_class: [`[[${CLASS_UID}]]`],
     });
 

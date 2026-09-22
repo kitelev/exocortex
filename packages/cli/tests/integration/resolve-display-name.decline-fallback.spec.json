@@ -21,6 +21,12 @@
       "to": "    resolved.displayName === null\n      ? \"basename\"\n      : resolved.provenance === \"default\"\n        ? hasLabel\n          ? \"label\"\n          : \"basename\"\n        : resolved.provenance;",
       "_note": "The literal pre-fix shape. Reddens L3 only: the printed name still falls to the label, so L1 stays green and the two tiers are proven independent.",
       "expect": ["L3"]
+    },
+    "M3_label_not_trimmed": {
+      "from": "  const labelText = hasLabel ? (rawLabel as string).trim() : null;",
+      "to": "  const labelText = hasLabel ? (rawLabel as string) : null;",
+      "_note": "Added after review round 1 (LOW): .trim() is a guard of this diff and had no mutant, so the L1/L3 fixtures now carry a PADDED label to make it load-bearing. hasLabel already gates on .trim().length > 0, so dropping the strip is cosmetic — a stray-whitespace name, not an inversion — but a guard of the diff without a mutant is not locked (§A8).",
+      "expect": ["L1"]
     }
   }
 }
