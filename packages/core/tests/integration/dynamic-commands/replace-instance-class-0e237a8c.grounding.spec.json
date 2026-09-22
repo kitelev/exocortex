@@ -1,6 +1,6 @@
 {
   "_doc": "Mutants for req 0e237a8c on the GROUNDING asset — the wiring between the command and the `property_replace` primitive. See the command spec for the shared rationale.",
-  "tree": "/Users/kitelev/Developer/exocortex-development/worktrees/feat-property-replace",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
     "packages/cli/node_modules",
@@ -10,7 +10,7 @@
     "packages/test-utils/node_modules"
   ],
   "red_re": "› (D\\d+) ",
-  "subject": "/Users/kitelev/Developer/exocortex-development/worktrees/feat-property-replace/packages/exoas-exocmd/exocmd/60db3634-4752-4811-802d-5a28c510a4bc.md",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/exoas-exocmd/exocmd/60db3634-4752-4811-802d-5a28c510a4bc.md",
   "harness": "cd \"$(dirname {subject})/../../core\" && node ../../node_modules/jest/bin/jest.js tests/integration/dynamic-commands/replace-instance-class-shape.test.ts --verbose 2>&1",
   "mutants": {
     "M4_type_downgraded_to_append": {

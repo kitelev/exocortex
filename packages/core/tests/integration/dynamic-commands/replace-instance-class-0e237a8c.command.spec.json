@@ -1,6 +1,6 @@
 {
   "_doc": "Mutants for req 0e237a8c on the COMMAND asset. Subject is vault DATA, not code: the guard's product is the shipped assetspace, so each mutant is a plausible way a future edit unwires the command while the engine (req 02de55a4) stays correct. Anchors carry a leading newline because the asset body documents the same lines in a YAML fence (integration-test-revert-verify §A12 fourth form). Every `expect` below is the MEASURED red set; the prediction written BEFORE the run is quoted in each `_note`.",
-  "tree": "/Users/kitelev/Developer/exocortex-development/worktrees/feat-property-replace",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
     "packages/cli/node_modules",
@@ -10,7 +10,7 @@
     "packages/test-utils/node_modules"
   ],
   "red_re": "› (D\\d+) ",
-  "subject": "/Users/kitelev/Developer/exocortex-development/worktrees/feat-property-replace/packages/exoas-exocmd/exocmd/7f1b47a3-9997-4d1f-9c6f-9ca52b06f778.md",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/exoas-exocmd/exocmd/7f1b47a3-9997-4d1f-9c6f-9ca52b06f778.md",
   "harness": "cd \"$(dirname {subject})/../../core\" && node ../../node_modules/jest/bin/jest.js tests/integration/dynamic-commands/replace-instance-class-shape.test.ts --verbose 2>&1",
   "mutants": {
     "M1_cliname_renamed": {

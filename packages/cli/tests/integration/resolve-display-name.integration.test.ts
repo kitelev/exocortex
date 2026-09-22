@@ -19,6 +19,9 @@ import { FileSystemVaultAdapter } from "../../src/adapters/FileSystemVaultAdapte
 import { FsVaultMetadataAdapter } from "../../src/adapters/FsVaultMetadataAdapter.js";
 
 const REQ = "@req:f17f7c57-d3b6-42d3-916e-8d59bc8447c5";
+// The decline-fallback axes below close a gap in an ALREADY-ACTIVE requirement rather than
+// specifying new behaviour, so they carry ITS uid (feature-sdd Step 0 §conformance-with-an-active-req).
+const DECLINE_REQ = "@req:c67e4c69-a55e-416e-bcdf-cf15681773a1";
 
 // UID-canon filenames, as the real vault uses — the basename IS the uid, which is precisely why
 // a label-less asset with no spec shows a bare UID (the `basename` source below).
@@ -28,6 +31,10 @@ const PART_UID = "cccccccc-1111-4222-8333-444444444444";
 const LABELLESS_UID = "dddddddd-1111-4222-8333-444444444444";
 const LABELLED_UID = "eeeeeeee-1111-4222-8333-444444444444";
 const UNCOVERED_UID = "ffffffff-1111-4222-8333-444444444444";
+const LITERAL_PART_UID = "11111111-1111-4222-8333-444444444444";
+// L2 is covered by a spec that DECLINES — not "uncovered" — and its basename, not its uid,
+// is what the axis reads. Its own constant, so the name cannot mislead the next reader.
+const READABLE_BASENAME_UID = "22222222-1111-4222-8333-444444444444";
 
 let vault: string;
 
@@ -212,6 +219,83 @@ describe("resolve-display-name — the naming oracle outside Obsidian", () => {
     expect(
       new FileSystemVaultAdapter(vault).getFirstLinkpathDest("t__AliasOnlyName", ""),
     ).not.toBeNull();
+  });
+
+  // ── req c67e4c69 — what the oracle prints when the spec DECLINES ────────────────────────
+  //
+  // c67e4c69 shipped the engine half: a spec whose PROPERTY parts all render empty returns null
+  // rather than gluing its literals together. Its scenario D1 ends "the label is what A CONSUMER
+  // prints" — and this command is a consumer. It printed the BASENAME instead, because
+  // `resolved.displayName ?? basename` never consulted the label. The skip PREDATES c67e4c69
+  // (a separator-mode decline did the same on 16.244.2), but only separator specs declined then,
+  // so it was unreachable in practice; c67e4c69 widened the declining set to every plain spec.
+  //
+  // ⛤ This is the same `null → label → basename` chain TabTitlePatch and GraphViewPatch already
+  // run, so it closes a CLI-vs-Obsidian divergence instead of inventing a policy. The axis below
+  // at "renders NOTHING" pins the NO-label half and is untouched: the bare-UID alarm stays.
+
+  function declineSpecWithLiterals(): void {
+    // A LITERAL part, so an absent property leaves literals behind — c67e4c69's shape ("Q2-",
+    // "-W"), the composition the engine now refuses. Without it the spec renders "" and returns
+    // null through the older empty-result path, which would exercise a different mechanism.
+    write(`assetspaces/t/${LITERAL_PART_UID}.md`, {
+      exo__Asset_uid: LITERAL_PART_UID,
+      exo__Asset_label: "part: prefix",
+      exo__Instance_class: ["[[exo__PrintedLiteral]]"],
+      exo__DisplayNamePart_of: `[[${SPEC_UID}]]`,
+      exo__DisplayNamePart_order: 0,
+      exo__PrintedLiteral_literal: "⚙ ",
+    });
+  }
+
+  it(`${DECLINE_REQ} L1 a DECLINING spec PRINTS the asset's label, not its basename`, async () => {
+    declineSpecWithLiterals();
+    write(`assetspaces/t/${LABELLED_UID}.md`, {
+      exo__Asset_uid: LABELLED_UID,
+      exo__Asset_label: "  June (t__Widget) (DEPRECATED)  ", // padded: .trim() is load-bearing
+      exo__Instance_class: [`[[${CLASS_UID}]]`],
+      // t__Widget_serial deliberately ABSENT → every property part renders empty → spec declines.
+    });
+
+    const r = await resolveDisplayName(vault, `assetspaces/t/${LABELLED_UID}.md`);
+
+    expect(r.displayName).toBe("June (t__Widget) (DEPRECATED)");
+    expect(r.displayName).not.toBe(r.basename); // the defect in one line: this WAS the bare UID
+  });
+
+  it(`${DECLINE_REQ} L3 a DECLINING spec REPORTS source=label, matching what it printed`, async () => {
+    // Split from L1 deliberately: the printed name and the reported source are produced by two
+    // different expressions, so one mutant each — a spec could print the label while still
+    // announcing "basename", and the JSON consumer would read a bare-UID alarm that is not there.
+    declineSpecWithLiterals();
+    write(`assetspaces/t/${LABELLED_UID}.md`, {
+      exo__Asset_uid: LABELLED_UID,
+      exo__Asset_label: "  June (t__Widget) (DEPRECATED)  ", // padded: .trim() is load-bearing
+      exo__Instance_class: [`[[${CLASS_UID}]]`],
+    });
+
+    const r = await resolveDisplayName(vault, `assetspaces/t/${LABELLED_UID}.md`);
+
+    expect(r.source).toBe("label");
+  });
+
+  it(`${DECLINE_REQ} L2 CONTROL — a DECLINING spec with NO label falls to the FILENAME, unchanged`, async () => {
+    // ⛔ The first version of this control asserted a bare UID and failed with "⚙" — with no label
+    // AND a UUID basename, c67e4c69's own control fires and the spec does NOT decline at all
+    // (declining would print the bare UID, the defect req 0f992e88 exists to prevent). So the
+    // engine already protects that alarm and this command cannot silence it. The reachable
+    // no-label decline is c67e4c69's scenario D2: a READABLE filename — and it must stay
+    // byte-identical, because the fix adds a label tier and touches nothing else.
+    declineSpecWithLiterals();
+    write(`assetspaces/t/2025-W26.md`, {
+      exo__Asset_uid: READABLE_BASENAME_UID,
+      exo__Instance_class: [`[[${CLASS_UID}]]`],
+    });
+
+    const r = await resolveDisplayName(vault, "assetspaces/t/2025-W26.md");
+
+    expect(r.displayName).toBe("2025-W26");
+    expect(r.source).toBe("basename");
   });
 
   it(`${REQ} a spec that participates but renders NOTHING reports source=basename, not spec`, async () => {
