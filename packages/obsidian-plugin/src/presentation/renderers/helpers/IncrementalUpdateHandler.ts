@@ -16,6 +16,12 @@ type RenderHeaderFn = (container: HTMLElement, sectionId: string, title: string)
 interface RendererDependencies {
   buttonGroupsBuilder: ButtonGroupsBuilder;
   dailyTasksRenderer: DailyTasksRenderer;
+  /**
+   * Daily-efforts partitions claimed by the active Layout (req f56eef78,
+   * #3910). Supplied by `UniversalLayoutRenderer` from its last full render —
+   * this handler never resolves a Layout itself. Absent ⇒ nothing is claimed.
+   */
+  getClaimedDailyPartitions?: () => ReadonlySet<string>;
   areaTreeRenderer: AreaTreeRenderer;
   relationsRenderer: RelationsRenderer;
   reactRenderer: ReactRenderer;
@@ -211,7 +217,10 @@ export class IncrementalUpdateHandler {
     switch (section) {
       case LayoutSection.DAILY_TASKS:
         await this.deps.dailyTasksRenderer.render(
-          parent, file, renderHeader, ssm.isCollapsed("daily-tasks"));
+          parent, file, renderHeader, ssm.isCollapsed("daily-tasks"), {
+            excludeActions:
+              this.deps.getClaimedDailyPartitions?.().has("actions") === true,
+          });
         break;
       case LayoutSection.AREA_TREE:
         await this.deps.areaTreeRenderer.render(

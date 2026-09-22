@@ -96,9 +96,34 @@ export class UniversalLayoutRenderer {
     maxEntries: 500,
     ttl: 5 * 60 * 1000, // 5 minutes
   });
-  private debounceTimeout: NodeJS.Timeout | null = null;
+  // `window.setTimeout` (the form the obsidianmd lint rule mandates, and the
+  // one the mobile runtime needs) returns a DOM handle — `number`, not
+  // `NodeJS.Timeout`. ⛔ `ReturnType<typeof window.setTimeout>` does NOT work
+  // here: `window` is `Window & typeof globalThis`, so with @types/node loaded
+  // the Node overload wins and the alias resolves straight back to `Timeout`.
+  private debounceTimeout: number | null = null;
   private currentFilePath: string | null = null;
   private currentConfig: UniversalLayoutConfig = {};
+  /**
+   * Daily-efforts partitions claimed by the last full render's Layout, cached
+   * for the INCREMENTAL path. `IncrementalUpdateHandler` re-renders the legacy
+   * daily table on its own (a `pn__DailyNote_day` / `exo__Asset_archived` edit
+   * on the open note), and it has no access to the Layout — without this the
+   * re-render would drop `excludeActions` and resurrect the duplicate Actions
+   * on the same page, no reload needed. Per-render state like
+   * `currentFilePath`/`currentConfig`.
+   *
+   * ⛔ Assigned ONLY in the same synchronous block that commits
+   * `currentFilePath` — never earlier. The renderer is a singleton shared by
+   * every pane and takes its file from `getActiveFile()`, so a render of
+   * file B can interleave with, or throw inside, a render of file A. Writing
+   * this field before A's `currentFilePath` commit leaves the pair pointing
+   * at two different files, and the incremental gate (`filePath ===
+   * this.currentFilePath`) then passes while the partitions belong to B —
+   * silently DROPPING A's own Actions. Keeping both writes in one block makes
+   * that desync unrepresentable.
+   */
+  private currentClaimedDailyPartitions: ReadonlySet<string> = new Set();
 
   constructor(
     app: ObsidianApp,
@@ -248,6 +273,7 @@ export class UniversalLayoutRenderer {
     this.incrementalUpdateHandler = new IncrementalUpdateHandler({
       buttonGroupsBuilder: this.buttonGroupsBuilder,
       dailyTasksRenderer: this.dailyTasksRenderer,
+      getClaimedDailyPartitions: () => this.currentClaimedDailyPartitions,
       areaTreeRenderer: this.areaTreeRenderer,
       relationsRenderer: this.relationsRenderer,
       reactRenderer: this.reactRenderer,
@@ -269,7 +295,7 @@ export class UniversalLayoutRenderer {
 
   cleanup(): void {
     if (this.debounceTimeout) {
-      clearTimeout(this.debounceTimeout);
+      window.clearTimeout(this.debounceTimeout);
       this.debounceTimeout = null;
     }
     this.eventListenerManager.cleanup();
@@ -278,6 +304,7 @@ export class UniversalLayoutRenderer {
     this.metadataCache.cleanup();
     this.sectionStateManager.cleanup();
     this.currentFilePath = null;
+    this.currentClaimedDailyPartitions = new Set();
     this.rootContainer = null;
   }
 
@@ -299,9 +326,9 @@ export class UniversalLayoutRenderer {
   }
 
   public async handleMetadataChange(filePath: string): Promise<void> {
-    if (this.debounceTimeout) clearTimeout(this.debounceTimeout);
+    if (this.debounceTimeout) window.clearTimeout(this.debounceTimeout);
 
-    this.debounceTimeout = setTimeout(async () => {
+    this.debounceTimeout = window.setTimeout(async () => {
       if (!this.rootContainer || filePath !== this.currentFilePath) return;
 
       // Use app.vault to get proper TFile instance (not IFile from adapter)
@@ -369,19 +396,30 @@ export class UniversalLayoutRenderer {
 
       // RFC exo__Layout Phase 2 — resolve the Layout once (reused below for
       // both the daily-tasks suppression decision and block rendering).
-      // RFC pn__DailyNote toggles (req a38ac95b) — when the active layout
-      // carries daily-efforts-by-class blocks, the day's efforts are rendered
-      // through the block pipeline (Actions / Tasks / Projects), so the legacy
-      // catch-all DailyTasksRenderer is suppressed to avoid a duplicate
+      // RFC pn__DailyNote toggles (req a38ac95b; narrowed by req f56eef78,
+      // #3910) — when the active layout carries a daily-efforts-by-class block
+      // with partition `tasks`, that block renders the day's Tasks, so the
+      // legacy catch-all DailyTasksRenderer is suppressed to avoid a duplicate
       // "Tasks" section. Daily navigation (rendered above) is preserved.
-      // Back-compat: when no daily-efforts layout is active (the common case —
-      // no exo__Layout asset targets pn__DailyNote), the legacy renderer runs
-      // exactly as before → zero regression.
+      // A layout carrying ONLY other partitions (Actions / Projects / Closed)
+      // does NOT suppress: those feeds are orthogonal to the time-table, and
+      // suppressing on them removed its columns, sorting and empty slots from a
+      // layout that never claimed them. Back-compat: no layout, or a layout
+      // without daily-efforts blocks (the common case — no exo__Layout asset
+      // targets pn__DailyNote), runs the legacy renderer exactly as before.
       const layout = this.resolveLayoutForFile(currentFile);
       const layoutActive =
         layout !== null && this.settings.enableExoLayoutRenderer;
-      const dailyEffortsLayoutActive =
-        layoutActive && layout !== null && this.layoutHasDailyEffortsBlock(layout);
+      const claimedDailyPartitions =
+        layoutActive && layout !== null
+          ? this.layoutClaimedDailyPartitions(layout)
+          : new Set<string>();
+      // The legacy table's own set is «the day's efforts EXCEPT Project», i.e.
+      // exactly `tasks ∪ actions`. A `tasks` block claims the bulk of it, so the
+      // table steps aside entirely; an `actions` block claims only the Actions,
+      // so the table keeps running and merely DROPS them — otherwise every
+      // Action would render twice (once here, once in the block).
+      const dailyTasksBlockActive = claimedDailyPartitions.has("tasks");
 
       // RFC c7da0bca Phase 3b-main — ensure the active file + its class
       // chain + prototype chain are in the triple store before button
@@ -419,8 +457,10 @@ export class UniversalLayoutRenderer {
         this.renderCommandsSkeleton(el);
       }
 
-      if (!dailyEffortsLayoutActive) {
-        await this.dailyTasksRenderer.render(el, currentFile, renderHeader, this.sectionStateManager.isCollapsed("daily-tasks"));
+      if (!dailyTasksBlockActive) {
+        await this.dailyTasksRenderer.render(el, currentFile, renderHeader, this.sectionStateManager.isCollapsed("daily-tasks"), {
+          excludeActions: claimedDailyPartitions.has("actions"),
+        });
       }
 
       const relations = await this.relationsRenderer.getAssetRelations(currentFile, config);
@@ -433,6 +473,7 @@ export class UniversalLayoutRenderer {
         await this.exoLayoutRenderer.render(el, currentFile, layout, relations);
         if (!layout.coexistsWithDefault) {
           this.currentFilePath = currentFile.path;
+          this.currentClaimedDailyPartitions = claimedDailyPartitions;
           this.currentConfig = config;
           this.metadataCache.set(
             currentFile.path,
@@ -450,6 +491,7 @@ export class UniversalLayoutRenderer {
       await this.relationsRenderer.render(el, relations, config, renderHeader, this.sectionStateManager.isCollapsed("relations"), currentFile);
 
       this.currentFilePath = currentFile.path;
+      this.currentClaimedDailyPartitions = claimedDailyPartitions;
       this.currentConfig = config;
       this.metadataCache.set(currentFile.path, this.metadataExtractor.extractMetadata(currentFile));
 
@@ -477,17 +519,22 @@ export class UniversalLayoutRenderer {
   }
 
   /**
-   * RFC pn__DailyNote toggles (req a38ac95b) — whether the resolved layout
-   * carries at least one `daily-efforts-by-class` block. Drives suppression of
-   * the legacy DailyTasksRenderer (its catch-all "Tasks" would otherwise
-   * duplicate the daily-efforts blocks). Resolves block refs against the
-   * ExoLayout snapshot; returns false when the repository is absent (back-compat).
+   * RFC pn__DailyNote toggles (req a38ac95b; narrowed by req f56eef78, #3910) —
+   * whether the resolved layout claims the legacy time-table's territory, i.e.
+   * carries a `daily-efforts-by-class` block with partition `tasks`. ONLY that
+   * partition suppresses the legacy DailyTasksRenderer: its catch-all "Tasks"
+   * would duplicate a Tasks block, but it does NOT duplicate an Actions /
+   * Projects / Closed block — those are orthogonal feeds, and suppressing on
+   * them took the table's columns, sorting and empty slots from a layout that
+   * never asked for it. Resolves block refs against the ExoLayout snapshot;
+   * returns false when the repository is absent (back-compat).
    */
-  private layoutHasDailyEffortsBlock(
+  private layoutClaimedDailyPartitions(
     layout: import("@kitelev/exocortex-core").Layout,
-  ): boolean {
+  ): ReadonlySet<string> {
+    const claimed = new Set<string>();
     const snapshot = this.exoLayoutRepository?.getSnapshot();
-    if (snapshot === undefined) return false;
+    if (snapshot === undefined) return claimed;
     for (const rawRef of layout.blocks) {
       const normalized = WikiLinkHelpers.normalize(rawRef);
       if (!normalized) continue;
@@ -495,10 +542,10 @@ export class UniversalLayoutRenderer {
         snapshot.blocksByUid.get(normalized) ??
         snapshot.blocksByLabel.get(normalized);
       if (block !== undefined && block.kind === "daily-efforts-by-class") {
-        return true;
+        claimed.add(block.partition);
       }
     }
-    return false;
+    return claimed;
   }
 
   public async refresh(_el?: HTMLElement): Promise<void> {
@@ -516,6 +563,6 @@ export class UniversalLayoutRenderer {
     this.rootContainer.empty();
     await this.render(source, this.rootContainer, {} as MarkdownPostProcessorContext);
 
-    setTimeout(() => { if (scrollParent) scrollParent.scrollTop = scrollTop; }, 50);
+    window.setTimeout(() => { if (scrollParent) scrollParent.scrollTop = scrollTop; }, 50);
   }
 }

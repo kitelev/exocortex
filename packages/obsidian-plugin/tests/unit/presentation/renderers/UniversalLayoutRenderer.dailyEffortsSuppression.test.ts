@@ -64,14 +64,17 @@ function dailyLayout(blocks: string[]): Layout {
   };
 }
 
-function dailyBlock(uid: string): LayoutBlock {
+function dailyBlock(
+  uid: string,
+  partition: "actions" | "tasks" | "projects" | "closed" = "tasks",
+): LayoutBlock {
   return {
     kind: "daily-efforts-by-class",
     uid,
-    title: "Tasks",
+    title: partition,
     collapsed: false,
     sourcePath: `${uid}.md`,
-    partition: "tasks",
+    partition,
   } as LayoutBlock;
 }
 
@@ -192,9 +195,127 @@ describe("UniversalLayoutRenderer — daily-efforts suppression (req a38ac95b h)
     expect(tasksSpy).toHaveBeenCalledTimes(1); // not suppressed
   });
 
-  test("layoutHasDailyEffortsBlock decision (unit)", () => {
+  test("layoutClaimedDailyPartitions decision (unit)", () => {
     const { renderer } = buildRenderer(dailyLayout(["t"]), [dailyBlock("t")]);
-    expect((renderer as any).layoutHasDailyEffortsBlock(dailyLayout(["t"]))).toBe(true);
-    expect((renderer as any).layoutHasDailyEffortsBlock(dailyLayout(["b"]))).toBe(false);
+    expect([
+      ...(renderer as any).layoutClaimedDailyPartitions(dailyLayout(["t"])),
+    ]).toEqual(["tasks"]);
+    expect([
+      ...(renderer as any).layoutClaimedDailyPartitions(dailyLayout(["b"])),
+    ]).toEqual([]);
+  });
+
+  // ── req f56eef78 (#3910): the gate keys on the PARTITION, not on presence ──
+  // Paired by construction: the first axis discriminates this design from the
+  // pre-#3910 one (it was RED before the narrowing), the second discriminates it
+  // from "drop suppression entirely". The third closes the duplicate-row hole
+  // that the narrowing itself opens: the legacy table's set is «everything but
+  // Project», so an Actions block would otherwise render every Action twice.
+
+  test("@req:f56eef78-61d8-4d12-ac28-886aecefd633 layout with ONLY an actions daily-efforts block → legacy DailyTasksRenderer still runs", async () => {
+    const { renderer, navSpy, tasksSpy } = buildRenderer(
+      dailyLayout(["a"]),
+      [dailyBlock("a", "actions")],
+    );
+    const el = enhance(document.createElement("div"));
+    await renderer.render("", el, {} as never);
+
+    expect(navSpy).toHaveBeenCalledTimes(1);
+    expect(tasksSpy).toHaveBeenCalledTimes(1); // time-table NOT taken away
+  });
+
+  // ── req f56eef78 (#3910): the claimed-partition CACHE and `currentFilePath`
+  // must be written in ONE synchronous block. The renderer is a singleton
+  // shared by every pane and takes its file from `getActiveFile()`, so a
+  // render that computes partitions but never commits (it threw, or another
+  // file's render interleaved) must NOT leave its set behind: the incremental
+  // gate keys on `currentFilePath`, and a desynced pair makes it forward
+  // `excludeActions` for a file whose Layout never claimed that partition —
+  // silently dropping that day's own Actions. Found by review round 3, which
+  // proved the desync by execution; C1 is the permanent lock.
+
+  test("@req:f56eef78-61d8-4d12-ac28-886aecefd633 C1: a render that never commits leaves the partition cache untouched", async () => {
+    const { renderer } = buildRenderer(
+      dailyLayout(["a"]),
+      [dailyBlock("a", "actions")],
+    );
+    (renderer as any).buttonGroupsBuilder = {
+      build: jest.fn().mockRejectedValue(new Error("render aborted mid-pipeline")),
+    };
+    const el = enhance(document.createElement("div"));
+    await renderer.render("", el, {} as never);
+
+    // Never committed => the pair must stay consistent, both empty.
+    expect((renderer as any).currentFilePath).toBeNull();
+    expect([...(renderer as any).currentClaimedDailyPartitions]).toEqual([]);
+  });
+
+  test("@req:f56eef78-61d8-4d12-ac28-886aecefd633 C2: a render that DOES commit publishes both halves together", async () => {
+    const { renderer } = buildRenderer(
+      dailyLayout(["a"]),
+      [dailyBlock("a", "actions")],
+    );
+    const el = enhance(document.createElement("div"));
+    await renderer.render("", el, {} as never);
+
+    expect((renderer as any).currentFilePath).toBe("2026-06-28.md");
+    expect([...(renderer as any).currentClaimedDailyPartitions]).toEqual(["actions"]);
+  });
+
+  test("@req:f56eef78-61d8-4d12-ac28-886aecefd633 an actions block makes the legacy table DROP the Actions (no duplicate rows)", async () => {
+    const { renderer, tasksSpy } = buildRenderer(
+      dailyLayout(["a"]),
+      [dailyBlock("a", "actions")],
+    );
+    const el = enhance(document.createElement("div"));
+    await renderer.render("", el, {} as never);
+
+    expect(tasksSpy.mock.calls[0]?.[4]).toEqual({ excludeActions: true });
+  });
+
+  test("@req:f56eef78-61d8-4d12-ac28-886aecefd633 no actions block → the legacy table keeps rendering Actions", async () => {
+    const { renderer, tasksSpy } = buildRenderer(
+      dailyLayout(["p"]),
+      [dailyBlock("p", "projects")],
+    );
+    const el = enhance(document.createElement("div"));
+    await renderer.render("", el, {} as never);
+
+    expect(tasksSpy.mock.calls[0]?.[4]).toEqual({ excludeActions: false });
+  });
+
+  test("@req:f56eef78-61d8-4d12-ac28-886aecefd633 layout with a tasks daily-efforts block → legacy DailyTasksRenderer suppressed", async () => {
+    const { renderer, navSpy, tasksSpy } = buildRenderer(
+      dailyLayout(["t"]),
+      [dailyBlock("t", "tasks")],
+    );
+    const el = enhance(document.createElement("div"));
+    await renderer.render("", el, {} as never);
+
+    expect(navSpy).toHaveBeenCalledTimes(1);
+    expect(tasksSpy).not.toHaveBeenCalled();
+  });
+
+  test("@req:f56eef78-61d8-4d12-ac28-886aecefd633 layout mixing actions + tasks → suppressed (the tasks block claims the bulk)", async () => {
+    const { renderer, tasksSpy } = buildRenderer(
+      dailyLayout(["a", "t"]),
+      [dailyBlock("a", "actions"), dailyBlock("t", "tasks")],
+    );
+    const el = enhance(document.createElement("div"));
+    await renderer.render("", el, {} as never);
+
+    expect(tasksSpy).not.toHaveBeenCalled();
+  });
+
+  test("@req:f56eef78-61d8-4d12-ac28-886aecefd633 every partition is claimed under its own name", () => {
+    const partitions = ["actions", "tasks", "projects", "closed"] as const;
+    for (const partition of partitions) {
+      const { renderer } = buildRenderer(dailyLayout(["p"]), [
+        dailyBlock("p", partition),
+      ]);
+      expect([
+        ...(renderer as any).layoutClaimedDailyPartitions(dailyLayout(["p"])),
+      ]).toEqual([partition]);
+    }
   });
 });

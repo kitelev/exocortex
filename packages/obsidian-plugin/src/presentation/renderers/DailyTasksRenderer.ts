@@ -8,7 +8,13 @@ import {
   DailyTasksTableWithToggle,
   isDateOnlyTimestamp,
 } from '@plugin/presentation/components/DailyTasksTable';
-import { AssetClass, IVaultAdapter, IFile } from "@kitelev/exocortex-core";
+import {
+  AssetClass,
+  EMS_ACTION_CLASS_UID,
+  IVaultAdapter,
+  IFile,
+  classListMatches,
+} from "@kitelev/exocortex-core";
 import { MetadataExtractor } from "@kitelev/exocortex-core";
 import { EffortSortingHelpers } from "@kitelev/exocortex-core";
 import { AssetMetadataService } from "./layout/helpers/AssetMetadataService";
@@ -18,6 +24,15 @@ import { getStatusLabel } from '@plugin/domain/property-editor/PropertySchemas';
 import { DisplayNameResolver } from '@plugin/domain/display-name/DisplayNameResolver';
 import { DEFAULT_DISPLAY_NAME_SETTINGS } from '@plugin/domain/settings/ExocortexSettings';
 import { ObsidianApp, ExocortexPluginInterface } from '@plugin/types';
+
+/**
+ * req f56eef78 (#3910) — what the active pn__DailyNote Layout already renders,
+ * so this table does not duplicate it. Absent/undefined ⇒ render everything,
+ * which is the pre-#3910 behaviour for every note without such a Layout.
+ */
+export interface DailyTasksRenderOptions {
+  readonly excludeActions?: boolean;
+}
 
 export class DailyTasksRenderer {
   private logger: ILogger;
@@ -57,6 +72,7 @@ export class DailyTasksRenderer {
     file: TFile,
     renderHeader?: (container: HTMLElement, sectionId: string, title: string) => void,
     isCollapsed?: boolean,
+    options?: DailyTasksRenderOptions,
   ): Promise<void> {
     const dailyNoteInfo = DailyNoteHelpers.extractDailyNoteInfo(
       file,
@@ -69,7 +85,7 @@ export class DailyTasksRenderer {
     }
 
     const day = dailyNoteInfo.day;
-    const tasks = await this.getDailyTasks(day);
+    const tasks = await this.getDailyTasks(day, options);
 
     if (tasks.length === 0) {
       this.logger.debug(`No tasks found for day: ${day}`);
@@ -177,7 +193,10 @@ export class DailyTasksRenderer {
     return new DisplayNameResolver(settings, ruleService, metadataResolver);
   }
 
-  private async getDailyTasks(day: string): Promise<DailyTask[]> {
+  private async getDailyTasks(
+    day: string,
+    options?: DailyTasksRenderOptions,
+  ): Promise<DailyTask[]> {
     try {
       const tasks: DailyTask[] = [];
 
@@ -202,6 +221,28 @@ export class DailyTasksRenderer {
         );
 
         if (isProject) {
+          continue;
+        }
+
+        // req f56eef78 (#3910) — when the pn__DailyNote Layout carries a
+        // daily-efforts block with partition "actions", THAT block renders the
+        // day's ems__Action instances. This table's own set is «everything but
+        // Project», so without this skip each Action would render twice.
+        // ⛔ Must use the SAME predicate as the block that claims the
+        // partition (`partitionDailyEffortsByClass` → `classListMatches`), not
+        // a symbolic-substring lookalike: `exo__Instance_class` is written
+        // UID-canon (`[[<uid>]]`) by `exocortex-cli`, and a symbolic-only test
+        // misses those refs. Two predicates over one carve-out means the block
+        // claims an Action this table also keeps — the exact duplicate this
+        // skip exists to prevent.
+        if (
+          options?.excludeActions === true &&
+          classListMatches(
+            instanceClassArray.map((c: unknown) => String(c)),
+            AssetClass.ACTION,
+            EMS_ACTION_CLASS_UID,
+          )
+        ) {
           continue;
         }
 

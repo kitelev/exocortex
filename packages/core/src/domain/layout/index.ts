@@ -11,6 +11,7 @@ export {
 export {
   EMS_ACTION_CLASS_UID,
   EMS_PROJECT_CLASS_UID,
+  classListMatches,
   partitionDailyEffortsByClass,
   type DailyEffortsPartitioned,
 } from "./dailyEffortsPartition";

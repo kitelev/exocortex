@@ -593,6 +593,7 @@ export {
   resolveBlockVisibility,
   resolveDailyEffortVisibility,
   EMS_ACTION_CLASS_UID,
+  classListMatches,
   EMS_PROJECT_CLASS_UID,
   partitionDailyEffortsByClass,
   type DailyEffortsPartitioned,
