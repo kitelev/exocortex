@@ -147,8 +147,44 @@ interface CreateCommandOptions {
  * behaviour exceed its spec. Tracked as a follow-up on `ems__Bug` 43e41c8f.
  */
 const CREATE_SELF_MANAGED_FLAGS: Record<string, string> = {
-  aliases: "--aliases <a,b>",
+  aliases: "--aliases <a> <b>",
 };
+
+/**
+ * Ticket bb855bb2 — `--aliases` is VARIADIC (`<names...>`), so the caller passes
+ * each alias as its own argument. A single comma-joined token is therefore not a
+ * list: it is ONE alias whose text happens to contain commas, and it was accepted
+ * without a word. That is how eight concept assets ended up carrying an alias
+ * `Стек,стек,LIFO,stack` (dedup pass 73d7304b) — the caller believed it had
+ * written four.
+ *
+ * Refused rather than split, and the choice is not stylistic: the variadic flag
+ * ALREADY offers the correct form, so a silent split would hide a wrong
+ * invocation instead of correcting it — the same reasoning that makes
+ * `--property aliases=…` a refusal rather than a re-route (req 869561bf).
+ *
+ * The discriminator is a comma NOT followed by a space, which is the shape a
+ * machine-joined list has. A human alias keeps its comma-space (`Иванов, Иван`,
+ * `Ltd., Co.`) and is untouched — the same predicate the concepts-index
+ * generator settled on after the same data (`build-concepts-index.py`,
+ * 2026-09-14).
+ */
+function assertAliasesAreNotAList(aliases: string[] | undefined): void {
+  if (!aliases || aliases.length === 0) return;
+  const listLike = aliases.filter((alias) => /,(?! )/.test(alias));
+  if (listLike.length === 0) return;
+  const shown = listLike.map((alias) => `"${alias}"`).join(", ");
+  const split = listLike[0]
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  throw new Error(
+    `--aliases looks like a comma-joined list: ${shown}. ` +
+      `The flag is variadic — pass each alias as its own argument: ` +
+      `--aliases ${split.map((part) => (part.includes(" ") ? `"${part}"` : part)).join(" ")}. ` +
+      `(A comma FOLLOWED BY A SPACE is treated as part of one alias and is accepted.)`,
+  );
+}
 
 function parseProperties(
   propertyArgs: string[] | undefined,
@@ -367,6 +403,8 @@ export function createCommand(): Command {
           throw new Error("Label cannot be empty");
         }
         const trimmedLabel = options.label.trim();
+
+        assertAliasesAreNotAList(options.aliases);
 
         // Parse properties from --property flags. Kept mutable so the effort
         // status default can be injected (issue #3849) before `propertyValues`
