@@ -203,10 +203,16 @@ describe("UniversalLayoutRenderer — daily-efforts suppression (req a38ac95b h)
   test("layoutClaimedDailyPartitions decision (unit)", () => {
     const { renderer } = buildRenderer(dailyLayout(["t"]), [dailyBlock("t")]);
     expect([
-      ...(renderer as any).layoutClaimedDailyPartitions(dailyLayout(["t"])),
+      ...(renderer as any).layoutClaimedDailyPartitions(
+        dailyLayout(["t"]),
+        dailyNoteFile,
+      ),
     ]).toEqual(["tasks"]);
     expect([
-      ...(renderer as any).layoutClaimedDailyPartitions(dailyLayout(["b"])),
+      ...(renderer as any).layoutClaimedDailyPartitions(
+        dailyLayout(["b"]),
+        dailyNoteFile,
+      ),
     ]).toEqual([]);
   });
 
