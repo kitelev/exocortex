@@ -59,6 +59,18 @@ const STEP_CREATE2_UID = "bbbb000c-0000-0000-0000-00000000000c";
 
 const INPUT_LABEL = "Composite child task";
 
+// --- ticket 3ea02b15 (#4211): composite that MOVES the asset it created ---
+// Mirrors the live `set-ontology` composite (grounding 170d1f56): re-anchor
+// `exo__Asset_isDefinedBy`, then `service_call repairFolder` relocates the file
+// to that ontology's folder. The path recorded at creation time then 404s.
+const GT_SERVICE_CALL = "9bf9fc99-ac37-4e51-b9f5-bd920099947c";
+const MOVE_COMP_CMD_UID = "bbbb000d-0000-0000-0000-00000000000d";
+const MOVE_COMP_GROUNDING_UID = "bbbb000e-0000-0000-0000-00000000000e";
+const STEP_ANCHOR_UID = "bbbb000f-0000-0000-0000-00000000000f";
+const STEP_REPAIR_UID = "bbbb0010-0000-0000-0000-000000000010";
+const ONTO_UID = "bbbb0011-0000-0000-0000-000000000011";
+const ONTO_FOLDER = "Ontologies";
+
 const COMP_CMD_MD = [
   "---",
   `exo__Asset_uid: ${COMP_CMD_UID}`,
@@ -233,6 +245,74 @@ const MULTI_COMP_GROUNDING_MD = [
   "",
 ].join("\n");
 
+const ONTO_MD = [
+  "---",
+  `exo__Asset_uid: ${ONTO_UID}`,
+  `exo__Asset_label: "Target ontology"`,
+  `exo__Asset_isDefinedBy: "[[!kitelev]]"`,
+  `exo__Instance_class:`,
+  `  - "[[exo__Ontology]]"`,
+  "---",
+  "",
+].join("\n");
+
+const MOVE_COMP_CMD_MD = [
+  "---",
+  `exo__Asset_uid: ${MOVE_COMP_CMD_UID}`,
+  `exo__Asset_label: "Create child + relocate it (composite json-test)"`,
+  `exo__Asset_isDefinedBy: "[[!kitelev]]"`,
+  `exo__Instance_class:`,
+  `  - "[[exocmd__Command]]"`,
+  `exocmd__Command_grounding: "[[${MOVE_COMP_GROUNDING_UID}|Move composite grounding]]"`,
+  "---",
+  "",
+].join("\n");
+
+const MOVE_COMP_GROUNDING_MD = [
+  "---",
+  `exo__Asset_uid: ${MOVE_COMP_GROUNDING_UID}`,
+  `exo__Asset_label: "Move composite grounding"`,
+  `exo__Asset_isDefinedBy: "[[!kitelev]]"`,
+  `exo__Instance_class:`,
+  `  - "[[exocmd__Grounding]]"`,
+  `exocmd__Grounding_type: "[[${GT_COMPOSITE}]]"`,
+  `exocmd__Grounding_steps:`,
+  `  - "[[${STEP_CREATE_UID}|Create step]]"`,
+  `  - "[[${STEP_ANCHOR_UID}|Re-anchor the created asset]]"`,
+  `  - "[[${STEP_REPAIR_UID}|Relocate the created asset]]"`,
+  "---",
+  "",
+].join("\n");
+
+const STEP_ANCHOR_MD = [
+  "---",
+  `exo__Asset_uid: ${STEP_ANCHOR_UID}`,
+  `exo__Asset_label: "Re-anchor the created asset"`,
+  `exo__Asset_isDefinedBy: "[[!kitelev]]"`,
+  `exo__Instance_class:`,
+  `  - "[[exocmd__Grounding]]"`,
+  `exocmd__Grounding_type: "[[${GT_PROPERTY_SET}]]"`,
+  `exocmd__Grounding_targetProperty: "exo__Asset_isDefinedBy"`,
+  `exocmd__Grounding_targetValueRef: "[[${ONTO_UID}]]"`,
+  `exocmd__Grounding_targetsCreatedInstance: true`,
+  "---",
+  "",
+].join("\n");
+
+const STEP_REPAIR_MD = [
+  "---",
+  `exo__Asset_uid: ${STEP_REPAIR_UID}`,
+  `exo__Asset_label: "Relocate the created asset"`,
+  `exo__Asset_isDefinedBy: "[[!kitelev]]"`,
+  `exo__Instance_class:`,
+  `  - "[[exocmd__Grounding]]"`,
+  `exocmd__Grounding_type: "[[${GT_SERVICE_CALL}]]"`,
+  `exocmd__Grounding_targetProperty: "repairFolder"`,
+  `exocmd__Grounding_targetsCreatedInstance: true`,
+  "---",
+  "",
+].join("\n");
+
 interface VaultLayout {
   root: string;
   protoRelPath: string;
@@ -255,6 +335,16 @@ function buildVault(): VaultLayout {
   write(MULTI_COMP_CMD_UID, MULTI_COMP_CMD_MD);
   write(MULTI_COMP_GROUNDING_UID, MULTI_COMP_GROUNDING_MD);
   write(STEP_CREATE2_UID, STEP_CREATE2_MD);
+  write(MOVE_COMP_CMD_UID, MOVE_COMP_CMD_MD);
+  write(MOVE_COMP_GROUNDING_UID, MOVE_COMP_GROUNDING_MD);
+  write(STEP_ANCHOR_UID, STEP_ANCHOR_MD);
+  write(STEP_REPAIR_UID, STEP_REPAIR_MD);
+  fs.mkdirSync(path.join(root, ONTO_FOLDER), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, ONTO_FOLDER, `${ONTO_UID}.md`),
+    ONTO_MD,
+    "utf-8",
+  );
   fs.mkdirSync(path.join(root, "Inbox"), { recursive: true });
   fs.mkdirSync(path.join(root, "Inbox2"), { recursive: true });
   return {
@@ -440,5 +530,45 @@ describe("Issue #3918: apply --json surfaces composite create-as-side-effect ass
     expect(logged).toMatch(/→ .*Inbox\//);
     const inbox = fs.readdirSync(vault.inboxDir).filter((f) => f.endsWith(".md"));
     expect(inbox).toHaveLength(1);
+  });
+  /**
+   * Ticket 3ea02b15 (#4211) — `created[].path` must still resolve AFTER a
+   * composite relocated the asset it created. Not a new requirement: req
+   * 8eaae6a9 (Active) already states "And created[0].path resolves to a real
+   * file on disk"; these axes close the gap between that clause and the code.
+   */
+  describe("created[].path survives an in-composite move (ticket 3ea02b15)", () => {
+    it("@req:8eaae6a9-3a11-42cd-a549-c988dae2073b X1 a composite that MOVES its created asset still reports a path that exists", async () => {
+      await runApply(MOVE_COMP_CMD_UID, ["--json"]);
+
+      const parsed = JSON.parse(stdoutChunks.join(""));
+      expect(parsed.created).toHaveLength(1);
+      const entry = parsed.created[0];
+
+      // The create step wrote it into Inbox/; the repairFolder step moved it to
+      // the ontology's folder. Both halves are asserted: the reported path must
+      // exist on disk AND be the post-move one — a stale Inbox/ path satisfies
+      // neither, which is exactly the RED this axis pins.
+      expect(fs.existsSync(path.join(vault.root, entry.path))).toBe(true);
+      expect(entry.path.startsWith(`${ONTO_FOLDER}/`)).toBe(true);
+      expect(fs.existsSync(path.join(vault.inboxDir, `${entry.uuid}.md`))).toBe(
+        false,
+      );
+    });
+
+    it("@req:8eaae6a9-3a11-42cd-a549-c988dae2073b X2 a composite that moves NOTHING reports the creation-time path unchanged", async () => {
+      await runApply(COMP_CMD_UID, ["--json"]);
+
+      const parsed = JSON.parse(stdoutChunks.join(""));
+      expect(parsed.created).toHaveLength(1);
+      const entry = parsed.created[0];
+
+      // Control for X1: the ordinary composite is untouched by the re-resolve —
+      // its path is still the Inbox/ one the create step recorded, and it
+      // exists. Without this, X1 alone would be satisfied by a change that
+      // rewrites every path.
+      expect(entry.path.startsWith("Inbox/")).toBe(true);
+      expect(fs.existsSync(path.join(vault.root, entry.path))).toBe(true);
+    });
   });
 });
