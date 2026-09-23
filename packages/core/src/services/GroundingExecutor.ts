@@ -3048,8 +3048,10 @@ export class GroundingExecutor {
       try {
         vaultListing ??= await this.fileReader.getMarkdownFiles();
       } catch {
-        // No listing available (adapter without a vault-wide walk) — keep the
-        // recorded path rather than failing the composite, which SUCCEEDED.
+        // The listing THREW. Not a hedge against an adapter that lacks the
+        // method — `getMarkdownFiles` is required by `IFileSystemReader`, so no
+        // such implementation exists. Keep the recorded path rather than fail
+        // the composite, which SUCCEEDED: surfacing is not worth losing the run.
         resolved.push(recordedPath);
         continue;
       }

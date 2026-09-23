@@ -60,9 +60,12 @@ const STEP_CREATE2_UID = "bbbb000c-0000-0000-0000-00000000000c";
 const INPUT_LABEL = "Composite child task";
 
 // --- ticket 3ea02b15 (#4211): composite that MOVES the asset it created ---
-// Mirrors the live `set-ontology` composite (grounding 170d1f56): re-anchor
-// `exo__Asset_isDefinedBy`, then `service_call repairFolder` relocates the file
-// to that ontology's folder. The path recorded at creation time then 404s.
+// A SYNTHESIS, not a copy: a `create_instance` step followed by the TAIL of the
+// live `set-ontology` composite (grounding 170d1f56) — re-anchor
+// `exo__Asset_isDefinedBy`, then `service_call repairFolder`. That live
+// composite carries no create step; it relocates the click target. Joining the
+// two is what produces the shape the ticket is about — a path recorded at
+// creation time that a later step invalidates.
 const GT_SERVICE_CALL = "9bf9fc99-ac37-4e51-b9f5-bd920099947c";
 const MOVE_COMP_CMD_UID = "bbbb000d-0000-0000-0000-00000000000d";
 const MOVE_COMP_GROUNDING_UID = "bbbb000e-0000-0000-0000-00000000000e";
