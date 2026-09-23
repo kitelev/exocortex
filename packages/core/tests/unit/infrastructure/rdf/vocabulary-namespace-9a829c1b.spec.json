@@ -1,6 +1,6 @@
 {
   "_doc": "Revert-verify mutants for ticket 9a829c1b (RFC-017 tail, branch batch7b/vocabulary-namespace-forprefix). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). The production diff is ONE expression: RDFVocabularyMapper.generateMappedTriple used to resolve the namespace of a `prefix__LocalName` STRING value by enumerating three prefixes in a regex (`/^(ems|exo|exocmd)__(.+)$/` plus a ternary over Namespace.EMS/EXOCMD/EXO); it now calls Namespace.fromPropertyKey → forPrefix, the same data-driven resolver NoteToRDFConverter already applies upstream (isClassReference :1960 / expandClassValue :1986). Guards are enumerated INSIDE that expression per integration-test-revert-verify §A8: the resolver choice itself (M1), the not-a-prefix fallback (M2), and the local-name extraction (M3). ⛤ REACHABILITY, measured not assumed: the single production consumer (NoteToRDFConverter.ts:511) gates the call on `objectNode instanceof IRI`, and a `prefix__LocalName` value — wikilink `[[pmbok__RiskItem]]` or flat `person__Person` alike — is already resolved to a symbolic IRI upstream, so this string branch takes 0 of 2 calls on the production path (instrumented probe against the built dist, PR body). The branch IS exercised by this suite and by external callers of the exported class, which is why every axis drives the public method directly and none of them claims a vault-conversion effect. ⛔ N4 is a CONTROL, not an axis: it pins the `value instanceof IRI` passthrough — the production path — and stays GREEN under every mutant. That is the point: it shows the three mutants perturb only the string branch and leave the path the vault actually uses untouched. A mutant reddening N4 would mean the diff had escaped its own branch. ⛤ ONE conceivable mutation carries no mutant, by arithmetic rather than omission: dropping the leading `value instanceof IRI` check is NOT part of this diff (that branch is pre-existing and unchanged), so mutating it would measure someone else's guard — §A8 enumerates the guards of THIS expression. Expectations were derived axis-by-axis (what does each one assert) and written down BEFORE the run, per §A44.",
-  "tree": "/Users/kitelev/Developer/exocortex-development/worktrees/exocortex-claude1-feat-class-property-resolver",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
     "packages/cli/node_modules",
@@ -9,7 +9,7 @@
     "packages/obsidian-plugin/node_modules"
   ],
   "red_re": "› ([A-Z]\\d+[a-z]?) ",
-  "subject": "/Users/kitelev/Developer/exocortex-development/worktrees/exocortex-claude1-feat-class-property-resolver/packages/core/src/infrastructure/rdf/RDFVocabularyMapper.ts",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/rdf/RDFVocabularyMapper.ts",
   "harness": "cd \"$(dirname {subject})/../../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/infrastructure/rdf/RDFVocabularyMapper.test.ts 2>&1",
   "mutants": {
     "M1_three_prefix_enumeration_restored": {
@@ -28,7 +28,7 @@
       "from": "        ? parsed.namespace.term(parsed.localName)",
       "to": "        ? parsed.namespace.term(value)",
       "expect": ["N1", "N2"],
-      "_note": "Keeps the data-driven namespace but mints the term from the WHOLE value, so `pmbok__RiskItem` becomes `…/pmbok#pmbok__RiskItem`. Reddens both the new-prefix axis and the byte-identity control — the latter is what proves N2 is not decorative: it pins the exact IRI string, not merely 'some IRI'."
+      "_note": "Keeps the data-driven namespace but mints the term from the WHOLE value, so `pmbok__RiskItem` becomes `…/pmbok#pmbok__RiskItem`. Reddens both the new-prefix axis and the byte-identity control — the latter is what proves N2 is not decorative: it pins the exact IRI string, not merely 'some IRI'. \u26a0 Under M3 jest reports 5 failed, not 2: three PRE-EXISTING tests of the RFC-009 describe ('should resolve exocmd__ class references to EXOCMD namespace IRI', 'should resolve exocmd__Precondition to EXOCMD namespace', 'should still resolve ems__ and exo__ prefixes correctly') assert the same exact-IRI property and redden too; red_re does not see them because their titles carry no A<N> key. Measured, not inferred - so '5 failed' is not read as the mutant being wider than its expect list."
     }
   }
 }

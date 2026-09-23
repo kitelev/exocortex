@@ -204,10 +204,14 @@ export class RDFVocabularyMapper {
       //
       // `ems__` / `exo__` / `exocmd__` keep resolving to their canonical
       // singletons byte-for-byte (forPrefix returns the KNOWN_NAMESPACES entry).
-      // Any other well-formed prefix (`pmbok__`, `pn__`, `person__`, …) now
-      // resolves to its ad-hoc `EXOCORTEX_ONTOLOGY_BASE<prefix>#` namespace
-      // rather than falling through to `new IRI(value)`, which THROWS
-      // "Invalid IRI format" on a bare `prefix__LocalName` string.
+      // Every OTHER well-formed prefix now resolves through the same forPrefix
+      // ladder instead of falling through to `new IRI(value)`, which THROWS
+      // "Invalid IRI format" on a bare `prefix__LocalName` string. Which rung it
+      // lands on is forPrefix's business, not this method's: a KNOWN_NAMESPACES
+      // singleton when the prefix is registered — `pmbok__`, `ims__`, `ztlk__`,
+      // and the W3C group (`rdfs__Class` → `http://www.w3.org/2000/01/rdf-schema#Class`,
+      // an IRI that is deliberately NOT exocortex.my-derivable) — otherwise the
+      // ad-hoc `EXOCORTEX_ONTOLOGY_BASE<prefix>#` namespace (`pn__`, `person__`, …).
       //
       // A value that is not `prefix__LocalName` at all (a full IRI, a plain
       // label) still takes the `new IRI(value)` path, unchanged.
