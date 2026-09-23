@@ -165,23 +165,40 @@ const CREATE_SELF_MANAGED_FLAGS: Record<string, string> = {
  *
  * The discriminator is a comma NOT followed by a space, which is the shape a
  * machine-joined list has. A human alias keeps its comma-space (`Иванов, Иван`,
- * `Ltd., Co.`) and is untouched — the same predicate the concepts-index
- * generator settled on after the same data (`build-concepts-index.py`,
- * 2026-09-14).
+ * `Ltd., Co.`) and is untouched.
+ *
+ * ⛤ This is STRICTER than the reader that motivated it, and the difference is
+ * stated rather than glossed. `build-concepts-index.py:is_alias_list` calls a
+ * value a list only when EVERY comma lacks trailing whitespace AND at least two
+ * parts are non-empty; this guard refuses on ANY comma without a following
+ * space. So `a, b,c`, `foo,`, `,` and `a,<TAB>b` are refused here and would NOT
+ * be split there. The direction is the safe one — everything the reader would
+ * cut is refused at write time, never the reverse — and refusing a malformed
+ * `foo,` is desirable on its own. Writer and reader therefore AGREE on the
+ * list-shaped case and this guard is deliberately wider on the malformed edge.
  */
 function assertAliasesAreNotAList(aliases: string[] | undefined): void {
   if (!aliases || aliases.length === 0) return;
   const listLike = aliases.filter((alias) => /,(?! )/.test(alias));
   if (listLike.length === 0) return;
-  const shown = listLike.map((alias) => `"${alias}"`).join(", ");
-  const split = listLike[0]
-    .split(",")
+  const shown = listLike.map((alias) => JSON.stringify(alias)).join(", ");
+  // Split on the SAME predicate the guard matched — splitting on every comma
+  // would suggest cutting `a, b` apart, which the guard itself treats as one
+  // alias. A value whose only comma is trailing (`foo,`) yields nothing to
+  // suggest, so no invocation is printed rather than an empty one.
+  const suggested = listLike[0]
+    .split(/,(?! )/)
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
+  const invocation =
+    suggested.length > 0
+      ? ` Pass each alias as its own argument: --aliases ${suggested
+          .map((part) => (/\s/.test(part) ? JSON.stringify(part) : part))
+          .join(" ")}.`
+      : "";
   throw new Error(
     `--aliases looks like a comma-joined list: ${shown}. ` +
-      `The flag is variadic — pass each alias as its own argument: ` +
-      `--aliases ${split.map((part) => (part.includes(" ") ? `"${part}"` : part)).join(" ")}. ` +
+      `The flag is variadic.${invocation} ` +
       `(A comma FOLLOWED BY A SPACE is treated as part of one alias and is accepted.)`,
   );
 }

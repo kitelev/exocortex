@@ -32,6 +32,7 @@ import * as path from "path";
 import * as os from "os";
 
 const { createCommand } = await import("../../src/commands/create.js");
+const { ExitCodes } = await import("../../src/utils/ExitCodes.js");
 
 const CLASS_UID = "65b58c34-7451-4b89-bea3-483f7c65fe73"; // pass-through (ztlk:Note)
 
@@ -43,12 +44,14 @@ describe("Ticket bb855bb2: cli create --aliases refuses a comma-joined list", ()
   let consoleErrSpy: jest.SpiedFunction<typeof console.error>;
   let stdoutChunks: string[];
   let errChunks: string[];
+  let stderrChunks: string[];
 
   beforeEach(() => {
     vault = fs.mkdtempSync(path.join(os.tmpdir(), "cli-bb855bb2-"));
     fs.mkdirSync(path.join(vault, "01 Inbox"), { recursive: true });
     stdoutChunks = [];
     errChunks = [];
+    stderrChunks = [];
     consoleErrSpy = jest
       .spyOn(console, "error")
       .mockImplementation(((...a: unknown[]) => {
@@ -67,7 +70,10 @@ describe("Ticket bb855bb2: cli create --aliases refuses a comma-joined list", ()
       }) as never);
     stderrSpy = jest
       .spyOn(process.stderr, "write")
-      .mockImplementation((() => true) as never);
+      .mockImplementation(((chunk: string | Uint8Array) => {
+        stderrChunks.push(String(chunk));
+        return true;
+      }) as never);
   });
 
   afterEach(() => {
@@ -123,8 +129,25 @@ describe("Ticket bb855bb2: cli create --aliases refuses a comma-joined list", ()
     // the mistake. It names the offending token and the variadic invocation.
     expect(errors).toContain("Стек,стек,LIFO,stack");
     expect(errors).toContain("--aliases Стек стек LIFO stack");
-    // Refusal means refusal: the asset is not created.
+    // Refusal means refusal: the asset is not created, and the process exits
+    // NON-ZERO — the req says "отказывает с ненулевым кодом", so the code is
+    // part of the contract, not an implementation detail.
     expect(writtenFiles()).toHaveLength(0);
+    expect(exitSpy).toHaveBeenCalledWith(ExitCodes.GENERAL_ERROR);
+  });
+
+  it("@req:db6b7524-8d90-42a5-9791-f21ec7ccd7be Y1b the refusal holds under --dry-run: no preview, no file, non-zero exit", async () => {
+    await run(
+      ["--aliases", "Стек,стек,LIFO,stack", "--dry-run"],
+      "List-shaped aliases, previewed",
+    );
+
+    expect(errChunks.join(" || ")).toContain("comma-joined list");
+    expect(exitSpy).toHaveBeenCalledWith(ExitCodes.GENERAL_ERROR);
+    expect(writtenFiles()).toHaveLength(0);
+    // The guard runs BEFORE the build, so the preview never reaches stderr —
+    // a guard wired only into the real-write branch would print it here.
+    expect(stderrChunks.join("")).not.toContain("--- DRY RUN PREVIEW ---");
   });
 
   it("@req:db6b7524-8d90-42a5-9791-f21ec7ccd7be Y2 aliases passed as separate arguments are each kept", async () => {
