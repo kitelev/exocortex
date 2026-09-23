@@ -147,8 +147,61 @@ interface CreateCommandOptions {
  * behaviour exceed its spec. Tracked as a follow-up on `ems__Bug` 43e41c8f.
  */
 const CREATE_SELF_MANAGED_FLAGS: Record<string, string> = {
-  aliases: "--aliases <a,b>",
+  aliases: "--aliases <a> <b>",
 };
+
+/**
+ * Ticket bb855bb2 — `--aliases` is VARIADIC (`<names...>`), so the caller passes
+ * each alias as its own argument. A single comma-joined token is therefore not a
+ * list: it is ONE alias whose text happens to contain commas, and it was accepted
+ * without a word. That is how eight concept assets ended up carrying an alias
+ * `Стек,стек,LIFO,stack` (dedup pass 73d7304b) — the caller believed it had
+ * written four.
+ *
+ * Refused rather than split, and the choice is not stylistic: the variadic flag
+ * ALREADY offers the correct form, so a silent split would hide a wrong
+ * invocation instead of correcting it — the same reasoning that makes
+ * `--property aliases=…` a refusal rather than a re-route (req 869561bf).
+ *
+ * The discriminator is a comma NOT followed by a space, which is the shape a
+ * machine-joined list has. A human alias keeps its comma-space (`Иванов, Иван`,
+ * `Ltd., Co.`) and is untouched.
+ *
+ * ⛤ This is STRICTER than the reader that motivated it, and the difference is
+ * stated rather than glossed. `build-concepts-index.py:is_alias_list` calls a
+ * value a list only when EVERY comma lacks trailing whitespace AND at least two
+ * parts are non-empty; this guard refuses on ANY comma without a following
+ * space. So `a, b,c`, `foo,`, `,` and `a,<TAB>b` are refused here and would NOT
+ * be split there. The direction is the safe one — everything the reader would
+ * cut is refused at write time, never the reverse — and refusing a malformed
+ * `foo,` is desirable on its own. Writer and reader therefore AGREE on the
+ * list-shaped case and this guard is deliberately wider on the malformed edge.
+ */
+function assertAliasesAreNotAList(aliases: string[] | undefined): void {
+  if (!aliases || aliases.length === 0) return;
+  const listLike = aliases.filter((alias) => /,(?! )/.test(alias));
+  if (listLike.length === 0) return;
+  const shown = listLike.map((alias) => JSON.stringify(alias)).join(", ");
+  // Split on the SAME predicate the guard matched — splitting on every comma
+  // would suggest cutting `a, b` apart, which the guard itself treats as one
+  // alias. A value whose only comma is trailing (`foo,`) yields nothing to
+  // suggest, so no invocation is printed rather than an empty one.
+  const suggested = listLike[0]
+    .split(/,(?! )/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  const invocation =
+    suggested.length > 0
+      ? ` Pass each alias as its own argument: --aliases ${suggested
+          .map((part) => (/\s/.test(part) ? JSON.stringify(part) : part))
+          .join(" ")}.`
+      : "";
+  throw new Error(
+    `--aliases looks like a comma-joined list: ${shown}. ` +
+      `The flag is variadic.${invocation} ` +
+      `(A comma FOLLOWED BY A SPACE is treated as part of one alias and is accepted.)`,
+  );
+}
 
 function parseProperties(
   propertyArgs: string[] | undefined,
@@ -367,6 +420,8 @@ export function createCommand(): Command {
           throw new Error("Label cannot be empty");
         }
         const trimmedLabel = options.label.trim();
+
+        assertAliasesAreNotAList(options.aliases);
 
         // Parse properties from --property flags. Kept mutable so the effort
         // status default can be injected (issue #3849) before `propertyValues`

@@ -1,0 +1,49 @@
+{
+  "_doc": "Revert-verify mutants for ticket bb855bb2 / req db6b7524 (branch batch7b/create-aliases-list-guard). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). The production diff has TWO halves and each has its own mutant: the guard `assertAliasesAreNotAList` (wired at the top of the create action, next to the empty-label check) and the hint in CREATE_SELF_MANAGED_FLAGS, which used to print `--aliases <a,b>` — the very shape the guard now refuses, i.e. the message taught the mistake it exists to prevent. Guards are enumerated per integration-test-revert-verify §A8: the wiring (M1), the DISCRIMINATOR that keeps a human comma-space alias legal (M2), and the hint (M3). ⛤ M2 is the one that makes Y3 non-decorative: a guard reading /,/ instead of /,(?! )/ would still make Y1 pass, so without Y3 the narrow predicate would be unlocked and a later reader could 'simplify' it into rejecting `Иванов, Иван`. ⛔ The guard is STRICTER than the reader that motivated it, and the review made that precise: build-concepts-index.py:is_alias_list calls a value a list only when EVERY comma lacks trailing whitespace AND at least two parts are non-empty, whereas this guard refuses on ANY comma without a following space — so `a, b,c`, `foo,`, `,` and `a,<TAB>b` are refused here and would NOT be split there. The direction is the safe one (everything the reader would cut is refused at write time, never the reverse) and the req records it; the earlier wording «the same predicate» was false and is corrected in the JSDoc, in the req body and here. Expectations were written into this file BEFORE the run (§A44). M4 pins the clause «в том числе с --dry-run»: a guard wired only into the real-write branch leaves the preview path accepting the list, which every axis but Y1b would miss.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/create.ts",
+  "harness": "cd \"$(dirname {subject})/../../../cli\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/create-aliases-list-bb855bb2.integration.test.ts 2>&1",
+  "mutants": {
+    "M1_guard_not_wired": {
+      "from": "        assertAliasesAreNotAList(options.aliases);\n\n",
+      "to": "",
+      "expect": [
+        "Y1",
+        "Y1b"
+      ],
+      "_note": "The pre-fix state: the helper exists but nothing calls it — the §A8 'is the new code WIRED IN' axis. Reddens BOTH refusal axes (plain and --dry-run), which is the honest prediction: unwiring the guard removes the refusal on every path. That is what separates it from M4, which removes it on ONE path and therefore reddens Y1b alone — the pair is what proves the dry-run clause is locked independently. Y2/Y3 stay green (they never depended on a refusal) and Y4 stays green (the hint is a separate half)."
+    },
+    "M2_discriminator_widened_to_any_comma": {
+      "from": "  const listLike = aliases.filter((alias) => /,(?! )/.test(alias));",
+      "to": "  const listLike = aliases.filter((alias) => /,/.test(alias));",
+      "expect": [
+        "Y3"
+      ],
+      "_note": "Widens the guard to ANY comma, so a human alias `Иванов, Иван` is refused too. Y1 stays GREEN under it — which is the point: the narrow predicate is locked only by Y3, and without that axis this mutant would be invisible."
+    },
+    "M3_hint_reverted_to_the_comma_form": {
+      "from": "  aliases: \"--aliases <a> <b>\",",
+      "to": "  aliases: \"--aliases <a,b>\",",
+      "expect": [
+        "Y4"
+      ],
+      "_note": "Restores the hint that printed the comma-joined shape. Reddens only Y4: the guard still refuses that shape at runtime, so the other axes cannot see the message regression — which is exactly why the hint needs an axis of its own."
+    },
+    "M4_guard_skipped_under_dry_run": {
+      "from": "        assertAliasesAreNotAList(options.aliases);",
+      "to": "        if (!options.dryRun) assertAliasesAreNotAList(options.aliases);",
+      "expect": [
+        "Y1b"
+      ],
+      "_note": "Type-preserving one-line wrap. Reddens ONLY Y1b — Y1 runs without --dry-run and still refuses, which is exactly why the dry-run clause needed its own axis: the req promises the refusal «в том числе с --dry-run» and nothing else in the suite could see that half."
+    }
+  }
+}
