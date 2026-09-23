@@ -1268,9 +1268,19 @@ export class GroundingExecutor {
         completedSteps.push(i);
       }
 
+      // Ticket 3ea02b15 (#4211) — re-resolve ONCE, after every step has run. A
+      // later step can MOVE an asset an earlier step created (`property_set` on
+      // `exo__Asset_isDefinedBy` followed by `service_call repairFolder` is the
+      // canonical shape), and the path recorded at creation time then 404s
+      // inside the very same call. req 8eaae6a9 states the contract the caller
+      // reads: "created[0].path resolves to a real file on disk". The path is
+      // derived, the UUID-canon basename is not — so the basename is what the
+      // lookup keys on.
       return {
         success: true,
-        ...(createdPaths.length > 0 ? { createdPaths } : {}),
+        ...(createdPaths.length > 0
+          ? { createdPaths: await this.resolveCreatedPaths(createdPaths) }
+          : {}),
       };
     } catch (error) {
       // Issue #3921 — pass createdPaths so a mid-composite throw after an
@@ -2994,6 +3004,65 @@ export class GroundingExecutor {
       return this.executeComposite(step, targetIRI, filePath, userInput, depth);
     }
     return this.execute(step, targetIRI, filePath, userInput);
+  }
+
+  // -- Private: created-path resolution --
+
+  /**
+   * Ticket 3ea02b15 (#4211) — map each path recorded at creation time to where
+   * the file actually is once the whole composite has run.
+   *
+   * A composite may RELOCATE an asset it created (re-anchor
+   * `exo__Asset_isDefinedBy`, then `service_call repairFolder`), and the path
+   * captured by the create step then points at a file that no longer exists —
+   * `apply --json` surfaced it and the caller 404s inside the same call. The
+   * UUID-canon basename survives the move, so it is the lookup key: the path is
+   * derived, the identity is not.
+   *
+   * Cost: the vault listing is fetched LAZILY and at most once, only when a
+   * recorded path is actually gone. A composite that moves nothing — the
+   * overwhelming majority — performs one `fileExists` per created asset and no
+   * listing at all.
+   *
+   * Fail-safe on ambiguity: when the basename matches more than one file the
+   * recorded path is kept unchanged. Guessing between candidates would be worse
+   * than the stale path, because the caller can still detect a missing file
+   * whereas it cannot detect a confidently wrong one.
+   */
+  private async resolveCreatedPaths(
+    paths: readonly string[],
+  ): Promise<string[]> {
+    const resolved: string[] = [];
+    let vaultListing: string[] | undefined;
+
+    for (const recordedPath of paths) {
+      if (await this.fileReader.fileExists(recordedPath)) {
+        resolved.push(recordedPath);
+        continue;
+      }
+      const basename = recordedPath.slice(recordedPath.lastIndexOf("/") + 1);
+      if (basename.length === 0) {
+        resolved.push(recordedPath);
+        continue;
+      }
+      try {
+        vaultListing ??= await this.fileReader.getMarkdownFiles();
+      } catch {
+        // The listing THREW. Not a hedge against an adapter that lacks the
+        // method — `getMarkdownFiles` is required by `IFileSystemReader`, so no
+        // such implementation exists. Keep the recorded path rather than fail
+        // the composite, which SUCCEEDED: surfacing is not worth losing the run.
+        resolved.push(recordedPath);
+        continue;
+      }
+      const matches = vaultListing.filter(
+        (candidate) =>
+          candidate.slice(candidate.lastIndexOf("/") + 1) === basename,
+      );
+      resolved.push(matches.length === 1 ? matches[0] : recordedPath);
+    }
+
+    return resolved;
   }
 
   // -- Private: Rollback --

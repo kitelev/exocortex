@@ -1,0 +1,34 @@
+{
+  "_doc": "Revert-verify mutants for ticket 3ea02b15 / GitHub #4211 (branch batch7b/composite-created-path-resolve). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). The production diff is ONE call plus the helper it calls: `GroundingExecutor.executeComposite` now maps every path recorded at creation time through `resolveCreatedPaths` AFTER the step loop, because a later step can relocate an asset an earlier step created (`property_set` on exo__Asset_isDefinedBy, then `service_call repairFolder` — the live `set-ontology` composite 170d1f56 has exactly that shape) and the recorded path then 404s inside the same `apply --json` call. Guards are enumerated INSIDE that expression per integration-test-revert-verify §A8: the wiring of the re-resolve (M1), the use of the located match (M2), and the basename lookup key (M3). ⛔ ALL THREE reddening the SAME axis is not a vacuum and not a mis-scoped mutant (§A110): the three guards implement ONE contract clause — «created[].path resolves to a real file on disk», stated verbatim by ACTIVE req 8eaae6a9 line 47 — so any of them removed breaks that clause and nothing else. They are still written separately because they fail for DIFFERENT reasons and a later reader restoring one of them must see which. X2 is the control that keeps X1 from being satisfied by a change that rewrites every path: it pins that an ordinary composite (no move) still reports the creation-time Inbox/ path, and it stays GREEN under every mutant. ⛤ ONE branch deliberately carries no mutant, by arithmetic rather than omission: the ambiguity fail-safe (`matches.length === 1 ? matches[0] : recordedPath`) has no differentiating input the production system can produce — the key is the UUID-canon basename of an asset `create_instance` just minted, so a second file with that basename cannot exist; a mutant there would pin behaviour on an input the corpus cannot contain (§A111 asks whether PROD would produce it — it would not). It is named defensive here so a later reader does not delete it as dead. Step 0 (/feature-sdd): bug-fix / conformance with the ACTIVE req 8eaae6a9 whose Gherkin already promises the clause — the @req coverage is extended, no new requirement is minted. Expectations were written into this file BEFORE the run (§A44).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/GroundingExecutor.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && npm run build -w @kitelev/exocortex-core --prefix ../.. >/dev/null 2>&1; CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/apply-json-created-composite.integration.test.ts 2>&1",
+  "mutants": {
+    "M1_reresolve_not_wired": {
+      "from": "        ...(createdPaths.length > 0\n          ? { createdPaths: await this.resolveCreatedPaths(createdPaths) }\n          : {}),",
+      "to": "        ...(createdPaths.length > 0 ? { createdPaths } : {}),",
+      "expect": ["X1"],
+      "_note": "The pre-fix line verbatim — the helper survives but nothing calls it, which is the §A8 'is the new code WIRED IN' axis rather than 'does the new code work'. Type-preserving: the property type is unchanged. X2 stays green because an unmoved asset's recorded path was already correct."
+    },
+    "M2_located_match_ignored": {
+      "from": "      resolved.push(matches.length === 1 ? matches[0] : recordedPath);",
+      "to": "      resolved.push(recordedPath);",
+      "expect": ["X1"],
+      "_note": "The lookup still runs (and still costs the listing), but its answer is thrown away — the shape a 'defensive' reading of the fail-safe would collapse into. Distinct from M1: here the wiring is intact and the RESULT is dropped, so restoring M1 alone would not fix it."
+    },
+    "M3_lookup_key_is_the_path_not_the_basename": {
+      "from": "          candidate.slice(candidate.lastIndexOf(\"/\") + 1) === basename,",
+      "to": "          candidate === recordedPath,",
+      "expect": ["X1"],
+      "_note": "Keys the lookup on the very path that is already known to be gone, so `matches` is always empty and the stale path is kept. This is the mutant that pins WHY the basename is the key: the path is derived and the UUID-canon identity is not."
+    }
+  }
+}
