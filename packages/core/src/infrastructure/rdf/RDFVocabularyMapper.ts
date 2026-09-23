@@ -196,19 +196,25 @@ export class RDFVocabularyMapper {
     if (value instanceof IRI) {
       objectIRI = value;
     } else {
-      const classMatch = value.match(/^(ems|exo|exocmd)__(.+)$/);
-      if (classMatch) {
-        const [, nsPrefix, className] = classMatch;
-        const namespace =
-          nsPrefix === "ems"
-            ? Namespace.EMS
-            : nsPrefix === "exocmd"
-              ? Namespace.EXOCMD
-              : Namespace.EXO;
-        objectIRI = namespace.term(className);
-      } else {
-        objectIRI = new IRI(value);
-      }
+      // Ticket 9a829c1b (RFC-017 tail). The namespace is resolved by the SAME
+      // data-driven resolver the converter already applies upstream —
+      // `NoteToRDFConverter.isClassReference`/`expandClassValue` both go through
+      // `Namespace.fromPropertyKey` → `Namespace.forPrefix` — instead of a
+      // three-prefix enumeration that had to be edited for every vocabulary.
+      //
+      // `ems__` / `exo__` / `exocmd__` keep resolving to their canonical
+      // singletons byte-for-byte (forPrefix returns the KNOWN_NAMESPACES entry).
+      // Any other well-formed prefix (`pmbok__`, `pn__`, `person__`, …) now
+      // resolves to its ad-hoc `EXOCORTEX_ONTOLOGY_BASE<prefix>#` namespace
+      // rather than falling through to `new IRI(value)`, which THROWS
+      // "Invalid IRI format" on a bare `prefix__LocalName` string.
+      //
+      // A value that is not `prefix__LocalName` at all (a full IRI, a plain
+      // label) still takes the `new IRI(value)` path, unchanged.
+      const parsed = Namespace.fromPropertyKey(value);
+      objectIRI = parsed
+        ? parsed.namespace.term(parsed.localName)
+        : new IRI(value);
     }
 
     return new Triple(subject, rdfPredicate, objectIRI);
