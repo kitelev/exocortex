@@ -48,6 +48,9 @@ const effort = (path: string, instanceClass: string) => ({
   },
 });
 
+/** TBox UID of `ems__Project` — the UID-canon form of the class ref. */
+const EMS_PROJECT_UID = "7db5eeff-718a-49b0-8d2b-39b084a356e3";
+
 const TASK = effort("task.md", "[[ems__Task]]");
 const ACTION_SYMBOLIC = effort("action-symbolic.md", "[[ems__Action]]");
 const ACTION_UID = effort("action-uid.md", `[[${EMS_ACTION_UID}]]`);
@@ -57,10 +60,11 @@ const EFFORTS = [TASK, ACTION_SYMBOLIC, ACTION_UID];
 const renderedPaths = async (
   ctx: DailyTasksRendererTestContext,
   options?: { excludeActions?: boolean },
+  efforts: ReadonlyArray<{ file: TFile; metadata: Record<string, unknown> }> = EFFORTS,
 ): Promise<string[]> => {
   const byPath = new Map<string, Record<string, unknown>>([
     [dailyNoteFile.path, dailyNoteMetadata],
-    ...EFFORTS.map(
+    ...efforts.map(
       (e) => [e.file.path, e.metadata] as [string, Record<string, unknown>],
     ),
   ]);
@@ -71,7 +75,7 @@ const renderedPaths = async (
   ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
     "[[pn__DailyNote]]",
   );
-  ctx.mockVaultAdapter.getAllFiles.mockReturnValue(EFFORTS.map((e) => e.file));
+  ctx.mockVaultAdapter.getAllFiles.mockReturnValue(efforts.map((e) => e.file));
 
   await ctx.renderer.render(
     createMockElement(),
@@ -126,5 +130,33 @@ describe("DailyTasksRenderer — excludeActions (@req:f56eef78-61d8-4d12-ac28-88
   it("E4: excludeActions:false is not the same as true — both Actions survive", async () => {
     const paths = await renderedPaths(ctx, { excludeActions: false });
     expect(paths).toHaveLength(3);
+  });
+
+  /**
+   * Issue #4330 — the Project skip must be dual-form too. The table's set is
+   * «the day's efforts EXCEPT Project», and a symbolic-substring-only test
+   * misses the UID-canon refs the vault actually carries: measured on
+   * vault-my, 191 of 208 `ems__Project` assets are written `[[<uid>]]`, so the
+   * skip was inert for 92% of them and Projects showed up as ordinary tasks.
+   */
+  describe("Project skip is dual-form (#4330)", () => {
+    const PROJECT_SYMBOLIC = effort("project-symbolic.md", "[[ems__Project]]");
+    const PROJECT_UID = effort("project-uid.md", `[[${EMS_PROJECT_UID}]]`);
+    const WITH_PROJECTS = [TASK, PROJECT_SYMBOLIC, PROJECT_UID];
+
+    it("P1: a UID-canon `[[<uid>]]` Project never reaches the table", async () => {
+      const paths = await renderedPaths(ctx, undefined, WITH_PROJECTS);
+      expect(paths).not.toContain(PROJECT_UID.file.path);
+    });
+
+    it("P2: a symbolic `[[ems__Project]]` Project never reaches the table", async () => {
+      const paths = await renderedPaths(ctx, undefined, WITH_PROJECTS);
+      expect(paths).not.toContain(PROJECT_SYMBOLIC.file.path);
+    });
+
+    it("P3: only the Projects are removed — the plain task still renders", async () => {
+      const paths = await renderedPaths(ctx, undefined, WITH_PROJECTS);
+      expect(paths).toEqual([TASK.file.path]);
+    });
   });
 });

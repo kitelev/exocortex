@@ -7,6 +7,7 @@ import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
 import { ExocortexSettings } from '@plugin/domain/settings/ExocortexSettings';
 import { ActionButtonsGroup } from '@plugin/presentation/components/ActionButtonsGroup';
 import { IVaultAdapter, MetadataExtractor, INotificationService } from "@kitelev/exocortex-core";
+import { resolveDailyEffortVisibility } from "@kitelev/exocortex-core";
 import { FolderRepairService } from "@kitelev/exocortex-core";
 import { CommandResolver, PreconditionEvaluator, GroundingExecutor } from "@kitelev/exocortex-core";
 import type { LayoutSelector, ITripleStore, LazyAssetGraphLoader } from "@kitelev/exocortex-core";
@@ -412,7 +413,7 @@ export class UniversalLayoutRenderer {
         layout !== null && this.settings.enableExoLayoutRenderer;
       const claimedDailyPartitions =
         layoutActive && layout !== null
-          ? this.layoutClaimedDailyPartitions(layout)
+          ? this.layoutClaimedDailyPartitions(layout, currentFile)
           : new Set<string>();
       // The legacy table's own set is «the day's efforts EXCEPT Project», i.e.
       // exactly `tasks ∪ actions`. A `tasks` block claims the bulk of it, so the
@@ -531,10 +532,19 @@ export class UniversalLayoutRenderer {
    */
   private layoutClaimedDailyPartitions(
     layout: import("@kitelev/exocortex-core").Layout,
+    file: TFile,
   ): ReadonlySet<string> {
     const claimed = new Set<string>();
     const snapshot = this.exoLayoutRepository?.getSnapshot();
     if (snapshot === undefined) return claimed;
+    // ⛔ A partition counts as claimed only if its block will ACTUALLY render.
+    // `ExoLayoutRenderer` skips a block resolved as not-visible entirely (no
+    // DOM, no React render) — so a gate that ignores visibility hands the
+    // partition to a block that draws nothing while the legacy table steps
+    // aside, and the day's efforts appear NOWHERE. Same helper, same
+    // frontmatter source as the renderer, so the two sides cannot disagree.
+    const noteFrontmatter = (this.app.metadataCache.getFileCache(file)
+      ?.frontmatter ?? null) as Record<string, unknown> | null;
     for (const rawRef of layout.blocks) {
       const normalized = WikiLinkHelpers.normalize(rawRef);
       if (!normalized) continue;
@@ -542,6 +552,15 @@ export class UniversalLayoutRenderer {
         snapshot.blocksByUid.get(normalized) ??
         snapshot.blocksByLabel.get(normalized);
       if (block !== undefined && block.kind === "daily-efforts-by-class") {
+        if (
+          !resolveDailyEffortVisibility(
+            block.partition,
+            noteFrontmatter,
+            block.visible,
+          )
+        ) {
+          continue;
+        }
         claimed.add(block.partition);
       }
     }

@@ -11,6 +11,7 @@ import {
 import {
   AssetClass,
   EMS_ACTION_CLASS_UID,
+  EMS_PROJECT_CLASS_UID,
   IVaultAdapter,
   IFile,
   classListMatches,
@@ -216,11 +217,18 @@ export class DailyTasksRenderer {
         const instanceClassArray = Array.isArray(instanceClass)
           ? instanceClass
           : [instanceClass];
-        const isProject = instanceClassArray.some((c: string) =>
-          String(c).includes(AssetClass.PROJECT),
-        );
-
-        if (isProject) {
+        // Same dual-form predicate the Layout block uses — `exo__Instance_class`
+        // is written UID-canon (`[[<uid>]]`) by `exocortex-cli`, and a
+        // symbolic-substring test misses those refs. Measured on vault-my:
+        // 191 of 208 `ems__Project` assets carry the UID form, so the
+        // symbolic-only check skipped almost nothing it was written to skip.
+        if (
+          classListMatches(
+            instanceClassArray.map((c: unknown) => String(c)),
+            AssetClass.PROJECT,
+            EMS_PROJECT_CLASS_UID,
+          )
+        ) {
           continue;
         }
 

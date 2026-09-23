@@ -105,6 +105,11 @@ function snapshotWith(blocks: LayoutBlock[]) {
   return { layouts: [], blocks, blocksByUid: byUid, blocksByLabel: byLabel };
 }
 
+const dailyNoteFile = {
+  path: "2026-06-28.md",
+  basename: "2026-06-28",
+} as unknown as import("obsidian").TFile;
+
 describe("UniversalLayoutRenderer — daily-efforts suppression (req a38ac95b h)", () => {
   let mockApp: any;
   let mockSettings: ExocortexSettings;
@@ -198,10 +203,16 @@ describe("UniversalLayoutRenderer — daily-efforts suppression (req a38ac95b h)
   test("layoutClaimedDailyPartitions decision (unit)", () => {
     const { renderer } = buildRenderer(dailyLayout(["t"]), [dailyBlock("t")]);
     expect([
-      ...(renderer as any).layoutClaimedDailyPartitions(dailyLayout(["t"])),
+      ...(renderer as any).layoutClaimedDailyPartitions(
+        dailyLayout(["t"]),
+        dailyNoteFile,
+      ),
     ]).toEqual(["tasks"]);
     expect([
-      ...(renderer as any).layoutClaimedDailyPartitions(dailyLayout(["b"])),
+      ...(renderer as any).layoutClaimedDailyPartitions(
+        dailyLayout(["b"]),
+        dailyNoteFile,
+      ),
     ]).toEqual([]);
   });
 
@@ -233,6 +244,44 @@ describe("UniversalLayoutRenderer — daily-efforts suppression (req a38ac95b h)
   // `excludeActions` for a file whose Layout never claimed that partition —
   // silently dropping that day's own Actions. Found by review round 3, which
   // proved the desync by execution; C1 is the permanent lock.
+
+  // ── issue #4329: a partition counts as claimed only if its block will
+  // ACTUALLY render. `ExoLayoutRenderer` skips a block resolved as not-visible
+  // entirely, so a gate blind to visibility hands the partition to a block
+  // that draws nothing while the legacy table steps aside — and the day's
+  // efforts appear NOWHERE. Both sides now ask `resolveDailyEffortVisibility`.
+
+  function hideInFrontmatter(key: string): void {
+    mockApp.metadataCache.getFileCache = jest.fn().mockReturnValue({
+      frontmatter: { exo__Instance_class: ["[[pn__DailyNote]]"], [key]: false },
+    });
+  }
+
+  test("V1: a tasks block HIDDEN by the note keeps the legacy table running", async () => {
+    const { renderer, tasksSpy } = buildRenderer(
+      dailyLayout(["t"]),
+      [dailyBlock("t", "tasks")],
+    );
+    hideInFrontmatter("pn__DailyNote_showTasks");
+    const el = enhance(document.createElement("div"));
+    await renderer.render("", el, {} as never);
+
+    // Without this, the block renders nothing and the table is suppressed =>
+    // the day's tasks are visible nowhere.
+    expect(tasksSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("V2: an actions block HIDDEN by the note stops the table from dropping Actions", async () => {
+    const { renderer, tasksSpy } = buildRenderer(
+      dailyLayout(["a"]),
+      [dailyBlock("a", "actions")],
+    );
+    hideInFrontmatter("pn__DailyNote_showActions");
+    const el = enhance(document.createElement("div"));
+    await renderer.render("", el, {} as never);
+
+    expect(tasksSpy.mock.calls[0]?.[4]).toEqual({ excludeActions: false });
+  });
 
   test("@req:f56eef78-61d8-4d12-ac28-886aecefd633 C1: a render that never commits leaves the partition cache untouched", async () => {
     const { renderer } = buildRenderer(
@@ -308,14 +357,44 @@ describe("UniversalLayoutRenderer — daily-efforts suppression (req a38ac95b h)
   });
 
   test("@req:f56eef78-61d8-4d12-ac28-886aecefd633 every partition is claimed under its own name", () => {
+    // Since #4329 the gate also asks whether the block will RENDER, so the
+    // note here shows every partition explicitly — otherwise `projects` would
+    // fall through to its built-in default, which is HIDDEN (VL#3). The axis
+    // is about the partition NAME, so the visibility axis below owns that.
+    mockApp.metadataCache.getFileCache = jest.fn().mockReturnValue({
+      frontmatter: {
+        exo__Instance_class: ["[[pn__DailyNote]]"],
+        pn__DailyNote_showActions: true,
+        pn__DailyNote_showTasks: true,
+        pn__DailyNote_showProjects: true,
+        pn__DailyNote_showClosed: true,
+      },
+    });
     const partitions = ["actions", "tasks", "projects", "closed"] as const;
     for (const partition of partitions) {
       const { renderer } = buildRenderer(dailyLayout(["p"]), [
         dailyBlock("p", partition),
       ]);
       expect([
-        ...(renderer as any).layoutClaimedDailyPartitions(dailyLayout(["p"])),
+        ...(renderer as any).layoutClaimedDailyPartitions(
+          dailyLayout(["p"]),
+          dailyNoteFile,
+        ),
       ]).toEqual([partition]);
     }
+  });
+
+  test("V3: a partition HIDDEN by its built-in default is not claimed (projects, VL#3)", () => {
+    const { renderer } = buildRenderer(dailyLayout(["p"]), [
+      dailyBlock("p", "projects"),
+    ]);
+    // No override in the note => `projects` falls through to the built-in
+    // HIDDEN default, so the block draws nothing and must claim nothing.
+    expect([
+      ...(renderer as any).layoutClaimedDailyPartitions(
+        dailyLayout(["p"]),
+        dailyNoteFile,
+      ),
+    ]).toEqual([]);
   });
 });
