@@ -333,4 +333,74 @@ describe("RDFVocabularyMapper", () => {
       expect(mapper.hasMappingFor("exo__Asset_label")).toBe(false);
     });
   });
+  /**
+   * Ticket 9a829c1b (RFC-017 tail) — the namespace behind a `prefix__LocalName`
+   * string value is resolved by `Namespace.fromPropertyKey` → `forPrefix`, the
+   * same data-driven resolver `NoteToRDFConverter` applies upstream, instead of
+   * a hardcoded `(ems|exo|exocmd)` enumeration.
+   *
+   * ⛤ Reachability, measured rather than assumed (see the PR body): the single
+   * production consumer — `NoteToRDFConverter` — gates the call on
+   * `objectNode instanceof IRI`, and the value is already resolved to a symbolic
+   * IRI upstream, so this string branch is exercised by this suite and by
+   * external callers of the exported class, NOT by the vault-conversion path.
+   * The axes below therefore drive the public method directly.
+   */
+  describe("namespace resolution for string class values (ticket 9a829c1b)", () => {
+    const subjectIRI = new IRI("https://exocortex.my/ontology/test/asset-9a829c1b");
+
+    it("N1 a prefix OUTSIDE the former (ems|exo|exocmd) trio resolves to its symbolic IRI", () => {
+      const triple = mapper.generateMappedTriple(
+        subjectIRI,
+        "exo__Instance_class",
+        "pmbok__RiskItem",
+      );
+
+      expect(triple).not.toBeNull();
+      expect((triple!.object as IRI).value).toBe(
+        "https://exocortex.my/ontology/pmbok#RiskItem",
+      );
+    });
+
+    it("N2 the three formerly-enumerated prefixes resolve byte-identically", () => {
+      const cases: Array<[string, string]> = [
+        ["ems__Task", "https://exocortex.my/ontology/ems#Task"],
+        ["exo__Asset", "https://exocortex.my/ontology/exo#Asset"],
+        ["exocmd__Command", "https://exocortex.my/ontology/exocmd#Command"],
+      ];
+
+      for (const [value, expected] of cases) {
+        const triple = mapper.generateMappedTriple(
+          subjectIRI,
+          "exo__Instance_class",
+          value,
+        );
+        expect((triple!.object as IRI).value).toBe(expected);
+      }
+    });
+
+    it("N3 a value that is not prefix__LocalName still takes the raw-IRI path", () => {
+      const triple = mapper.generateMappedTriple(
+        subjectIRI,
+        "exo__Asset_isDefinedBy",
+        "https://exocortex.my/ontology/pmbok/",
+      );
+
+      expect((triple!.object as IRI).value).toBe(
+        "https://exocortex.my/ontology/pmbok/",
+      );
+    });
+
+    it("N4 an IRI value is passed through untouched (control — the production path)", () => {
+      const valueIRI = new IRI("https://exocortex.my/ontology/pn#DailyNote");
+
+      const triple = mapper.generateMappedTriple(
+        subjectIRI,
+        "exo__Class_superClass",
+        valueIRI,
+      );
+
+      expect((triple!.object as IRI).value).toBe(valueIRI.value);
+    });
+  });
 });

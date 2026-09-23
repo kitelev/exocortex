@@ -196,19 +196,29 @@ export class RDFVocabularyMapper {
     if (value instanceof IRI) {
       objectIRI = value;
     } else {
-      const classMatch = value.match(/^(ems|exo|exocmd)__(.+)$/);
-      if (classMatch) {
-        const [, nsPrefix, className] = classMatch;
-        const namespace =
-          nsPrefix === "ems"
-            ? Namespace.EMS
-            : nsPrefix === "exocmd"
-              ? Namespace.EXOCMD
-              : Namespace.EXO;
-        objectIRI = namespace.term(className);
-      } else {
-        objectIRI = new IRI(value);
-      }
+      // Ticket 9a829c1b (RFC-017 tail). The namespace is resolved by the SAME
+      // data-driven resolver the converter already applies upstream —
+      // `NoteToRDFConverter.isClassReference`/`expandClassValue` both go through
+      // `Namespace.fromPropertyKey` → `Namespace.forPrefix` — instead of a
+      // three-prefix enumeration that had to be edited for every vocabulary.
+      //
+      // `ems__` / `exo__` / `exocmd__` keep resolving to their canonical
+      // singletons byte-for-byte (forPrefix returns the KNOWN_NAMESPACES entry).
+      // Every OTHER well-formed prefix now resolves through the same forPrefix
+      // ladder instead of falling through to `new IRI(value)`, which THROWS
+      // "Invalid IRI format" on a bare `prefix__LocalName` string. Which rung it
+      // lands on is forPrefix's business, not this method's: a KNOWN_NAMESPACES
+      // singleton when the prefix is registered — `pmbok__`, `ims__`, `ztlk__`,
+      // and the W3C group (`rdfs__Class` → `http://www.w3.org/2000/01/rdf-schema#Class`,
+      // an IRI that is deliberately NOT exocortex.my-derivable) — otherwise the
+      // ad-hoc `EXOCORTEX_ONTOLOGY_BASE<prefix>#` namespace (`pn__`, `person__`, …).
+      //
+      // A value that is not `prefix__LocalName` at all (a full IRI, a plain
+      // label) still takes the `new IRI(value)` path, unchanged.
+      const parsed = Namespace.fromPropertyKey(value);
+      objectIRI = parsed
+        ? parsed.namespace.term(parsed.localName)
+        : new IRI(value);
     }
 
     return new Triple(subject, rdfPredicate, objectIRI);
