@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { ObsidianLauncher } from "../utils/obsidian-launcher";
 import * as path from "path";
 
@@ -259,78 +259,233 @@ test.describe("Vault Commands Smoke Tests", () => {
     }, { timeout: 15000 }).toContain("Doing");
   });
 
-  // ⛔ RENAMED by ticket afb25c43, and the old name is recorded rather than
-  // quietly dropped: it read `should load property editor schemas from resolver`
-  // while the body never called the schema provider — it reads the active file's
-  // frontmatter and asserts success/hasPlugin/instanceClass/hasMetadata, so it
-  // was green with the provider working, broken, or absent. The name was what a
-  // reader grepped to answer "is the property editor smoke-covered?", so it
-  // asserted a guarantee the body does not carry
-  // (decision-surface-must-derive-from-mechanism).
-  //
-  // ⛤ Why renamed instead of made to call the provider (the ORCH decision rule
-  // of this batch): BOTH halves of the "variant 1" cost are real on this tree,
-  // measured 2026-09-22 — (1) `getPropertySchemaForClass` is a MODULE function
-  // of PropertySchemas.ts and is not exposed on the plugin object (the e2e
-  // bridge reaches only `plugin.<service>` members; `git grep 'window as any'`
-  // over plugin src = 0), and the declared-property resolver is installed by
-  // PropertyEditorModal.initSchemaResolver, i.e. it exists only while that modal
-  // is open; (2) the e2e test-vault carries ZERO `exo__Property_domain`
-  // definitions (0 files, against a live canary of 95 files mentioning
-  // ems__Task), so the provider would honestly return the 4-entry FALLBACK and
-  // an "asserts the composition" axis would be vacuous until the vault is
-  // seeded with a TBox. Both are separate units of work; follow-up ticket
-  // raised under bbac67ce.
-  test("should parse the active file's frontmatter and expose it through the loaded plugin", async () => {
+  /**
+   * req 9e19f141 — Layer-3 smoke: the property editor's schema provider is fed
+   * by the DECLARED-property resolver (`createTripleStoreClassPropertyResolver`,
+   * req 07509cf9), not by the four-entry `FALLBACK_PROPERTIES`.
+   *
+   * ⛤ This test REPLACES the body ticket afb25c43 renamed. The old name read
+   * `should load property editor schemas from resolver` while the body only read
+   * the active file's frontmatter and asserted success/hasPlugin/instanceClass/
+   * hasMetadata — green with the provider working, broken, or ABSENT. The name
+   * was what a reader grepped to answer "is the property editor smoke-covered?",
+   * so it asserted a guarantee the body did not carry
+   * (decision-surface-must-derive-from-mechanism). The rename made the name
+   * honest; this body makes the guarantee real.
+   *
+   * ⛤ Driven through the USER path (`exocortex:edit-properties` → modal → DOM),
+   * NOT through a bridge on the plugin object: `getPropertySchemaForClass` is a
+   * MODULE function of `PropertySchemas.ts`, and the resolver is installed by
+   * `PropertyEditorModal.initSchemaResolver()` — it exists only while that modal
+   * is open. Exposing it on the plugin would be an `src` change made for a test.
+   *
+   * ⛤ The vault carries a TBox seed under `03 Knowledge/tbox/`: six
+   * `exo__Property` definitions whose `exo__Property_domain` is `[[ems__Task]]`.
+   * Without it the provider would honestly return the fallback and every
+   * assertion here would be vacuous — measured 2026-09-22 on this tree, the
+   * vault held ZERO `exo__Property_domain` files against a canary of 95 files
+   * mentioning `ems__Task`. The seed's domains are FLATTENED onto `ems__Task`
+   * (live TBox declares them across the Task → Effort → Asset chain): the vault
+   * has no class assets for that chain, and seeding it would widen the blast
+   * radius for every other spec sharing this vault. Two ranges are `xsd:` even
+   * though the live chain declares zero datatype ranges — they are what makes
+   * the range→field-type mapping OBSERVABLE as a field kind rather than only as
+   * a picker option.
+   *
+   * ⛤ The composition is read from TWO surfaces because that is what a human
+   * sees: an object-range property (`assetRef` → `wikilink`) is NOT rendered as
+   * a field once the Relations section is active — `PropertyEditorForm` filters
+   * `type === "wikilink"` out of the editable fields and
+   * `PropertyEditorModal.buildRelationsDeps` turns exactly those keys into the
+   * create-row predicate options.
+   *
+   * DISCRIMINATOR — why this cannot be green on the fallback: the fallback
+   * yields TWO editable fields (`exo__Asset_label` text + `exo__Asset_archived`
+   * boolean, the other two entries being read-only) and ZERO wikilink keys, so
+   * `predicateOptions` is empty and the `relation-create` block is not rendered
+   * at all. Neither the `timestamp`/`number` field kinds nor any predicate
+   * option can appear without the provider.
+   */
+  const SEEDED_FIELD_KEYS = [
+    "exo__Asset_label",
+    "ems__Effort_plannedStartTimestamp",
+    "ems__Effort_votes",
+  ];
+  const SEEDED_PREDICATE_KEYS = [
+    "ems__Effort_area",
+    "ems__Effort_status",
+    "ems__Task_size",
+  ];
+
+  interface EditorComposition {
+    fields: { key: string; kind: string }[];
+    options: string[];
+  }
+
+  /**
+   * Open the property editor through the command palette entry and read the
+   * composition the user sees. Re-openable on purpose: the schema is resolved in
+   * a `useEffect` against the live triple store, so an open that lands while the
+   * store is still filling answers from the fallback. The caller polls.
+   */
+  async function openEditorAndReadComposition(
+    window: Page,
+  ): Promise<EditorComposition> {
+    // Close whatever is open, then force a full re-index so this open resolves
+    // against the most complete store the metadataCache can back (the same
+    // discipline `waitForCreateCommandsResolvable` uses in the eka-gui suite).
+    await window.keyboard.press("Escape");
+    await window.evaluate(async () => {
+      const plugin = (window as any).app?.plugins?.plugins?.exocortex;
+      try {
+        await plugin?.sparql?.refresh?.();
+      } catch {
+        /* transient mid-refresh — the caller polls */
+      }
+      plugin?.lazyAssetGraphLoader?.clearAll?.();
+      (window as any).app.commands.executeCommandById(
+        "exocortex:edit-properties",
+      );
+    });
+
+    await window
+      .locator(".property-editor-modal .property-editor-field")
+      .first()
+      .waitFor({ state: "visible", timeout: 20000 });
+
+    return window.evaluate(() => {
+      const root = document.querySelector(".property-editor-modal");
+      if (!root) return { fields: [], options: [] };
+      const fields = Array.from(
+        root.querySelectorAll(".property-editor-field"),
+      ).map((el) => ({
+        key: (el.querySelector(".property-editor-label")?.textContent ?? "")
+          .replace("*", "")
+          .trim(),
+        kind: /property-editor-([a-z]+)-field/.exec(el.className)?.[1] ?? "?",
+      }));
+      const options = Array.from(
+        root.querySelectorAll(
+          '[data-testid="relation-predicate-select"] option',
+        ),
+      ).map((o) => o.getAttribute("value") ?? "");
+      return { fields, options };
+    });
+  }
+
+  test("should feed the property editor from the DECLARED-property provider, not the fallback @req:9e19f141-13f5-451c-abb8-34e24ff0e9d3", async () => {
+    // Re-opening the modal against a still-filling store is the expected path on
+    // a cold container, so this test budgets for several attempts.
+    test.setTimeout(180000);
+
     await launcher.openFile("Tasks/dynamic-cmd-test-without-ts.md");
     const window = await launcher.getWindow();
 
     await launcher.waitForModalsToClose(10000);
     await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
-    // Verify that the property editor can resolve schemas for ems__Task class
-    const result = await window.evaluate(async () => {
-      const app = (window as any).app;
-      const plugin = app?.plugins?.plugins?.exocortex;
+    // CANARY — the seed must be discoverable at all. A zero here would make
+    // every assertion below a statement about an empty vault, not about the
+    // provider.
+    await expect
+      .poll(
+        async () =>
+          window.evaluate(() => {
+            const app = (window as any).app;
+            return app.vault
+              .getMarkdownFiles()
+              .filter((f: any) => {
+                const fm = app.metadataCache.getFileCache(f)?.frontmatter;
+                return fm?.["exo__Property_domain"] !== undefined;
+              }).length;
+          }),
+        {
+          timeout: 60000,
+          message: "TBox seed (exo__Property_domain) not visible in metadataCache",
+        },
+      )
+      .toBeGreaterThanOrEqual(
+        SEEDED_FIELD_KEYS.length + SEEDED_PREDICATE_KEYS.length,
+      );
 
-      if (!plugin) {
-        return { success: false, error: "Plugin not loaded" };
-      }
+    let composition: EditorComposition = { fields: [], options: [] };
+    const seeded = [...SEEDED_FIELD_KEYS, ...SEEDED_PREDICATE_KEYS];
 
-      const activeFile = app.workspace.getActiveFile();
-      if (!activeFile) {
-        return { success: false, error: "No active file" };
-      }
+    await expect
+      .poll(
+        async () => {
+          // An open that lands before the modal renders throws out of
+          // `waitFor`. Playwright's poll does NOT catch a throw from the
+          // generator, so one such attempt would abort the whole 150s poll
+          // instead of retrying — report "nothing matched" and let it retry.
+          try {
+            composition = await openEditorAndReadComposition(window);
+          } catch {
+            composition = { fields: [], options: [] };
+            return seeded.length;
+          }
+          const seen = new Set<string>([
+            ...composition.fields.map((f) => f.key),
+            ...composition.options,
+          ]);
+          const missing = seeded.filter((k) => !seen.has(k)).length;
+          // ⛤ The keys alone are a WEAKER gate than the assertions below, and
+          // the gap is a real window rather than a theoretical one: the form
+          // starts on `getPropertySchemaForClassSync` (the fallback) and, until
+          // `buildRelationsDeps` resolves, renders the wikilink properties as
+          // FIELDS. An open caught in that window shows all six keys with an
+          // EMPTY picker — `missing` is 0, the poll exits, and the picker
+          // assertion reds on a perfectly working provider. Waiting for the
+          // picker too makes the poll gate on the same shape it asserts.
+          return missing + (composition.options.length === 0 ? 1 : 0);
+        },
+        {
+          timeout: 150000,
+          intervals: [2000, 3000, 5000, 5000, 10000, 10000, 15000, 15000],
+          message:
+            "the property editor never showed the declared properties with a populated relations picker (it stayed on FALLBACK_PROPERTIES)",
+        },
+      )
+      .toBe(0);
 
-      const metadata = app.metadataCache.getFileCache(activeFile);
-      const frontmatter = metadata?.frontmatter;
-      const instanceClass = frontmatter?.exo__Instance_class;
+    const fieldKeys = composition.fields.map((f) => f.key);
+    const fieldKinds = composition.fields.map((f) => f.kind);
+    const rendered = `fields=${JSON.stringify(composition.fields)} options=${JSON.stringify(composition.options)}`;
 
-      // Extract class name from wikilink format
-      let className: string | undefined;
-      if (Array.isArray(instanceClass) && instanceClass.length > 0) {
-        className = instanceClass[0]
-          .replace(/["'[\]]/g, "")
-          .trim();
-      } else if (typeof instanceClass === "string") {
-        className = instanceClass
-          .replace(/["'[\]]/g, "")
-          .trim();
-      }
+    // 1. COMPOSITION — at least as many keys as the seed declares. Deliberately
+    //    `>=` and against the SEED, not an absolute count: the number drifts
+    //    with the TBox (integration-test-revert-verify §A53).
+    expect(
+      new Set([...fieldKeys, ...composition.options]).size,
+      `composition must cover the seed. ${rendered}`,
+    ).toBeGreaterThanOrEqual(seeded.length);
 
-      return {
-        success: true,
-        hasPlugin: true,
-        instanceClass: className,
-        hasMetadata: !!frontmatter,
-        uid: frontmatter?.exo__Asset_uid,
-      };
-    });
+    // 2. BY NAME — the scalar keys are fields, the object-range keys are
+    //    predicate options. `exo__Asset_label` is in the fallback too, so the
+    //    discrimination is carried by the other five.
+    for (const key of SEEDED_FIELD_KEYS) {
+      expect(fieldKeys, `field "${key}" must be rendered. ${rendered}`).toContain(key);
+    }
+    for (const key of SEEDED_PREDICATE_KEYS) {
+      expect(
+        composition.options,
+        `relation predicate "${key}" must be offered. ${rendered}`,
+      ).toContain(key);
+    }
 
-    expect(result.success).toBe(true);
-    expect(result.hasPlugin).toBe(true);
-    expect(result.instanceClass).toBe("ems__Task");
-    expect(result.hasMetadata).toBe(true);
+    // 3. FIELD TYPE DERIVED FROM RANGE — `xsd:date` → timestamp, `xsd:integer`
+    //    → number. The fallback renders only text + boolean (its timestamp entry
+    //    is read-only and its boolean is `exo__Asset_archived`), so neither kind
+    //    can appear without the provider.
+    expect(fieldKinds, `a timestamp field must be rendered. ${rendered}`).toContain("timestamp");
+    expect(fieldKinds, `a number field must be rendered. ${rendered}`).toContain("number");
+
+    // 4. RELATIONS PICKER — the create-row block does not render at all when
+    //    `predicateOptions` is empty, which is exactly the fallback's shape.
+    expect(
+      composition.options.length,
+      `the relations predicate picker must be populated. ${rendered}`,
+    ).toBeGreaterThan(0);
   });
 
   test("should verify all status command definition files exist in vault", async () => {

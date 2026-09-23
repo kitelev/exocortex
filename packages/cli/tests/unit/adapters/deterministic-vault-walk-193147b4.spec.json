@@ -1,0 +1,42 @@
+{
+  "_doc": "Revert-verify mutants for ticket 193147b4 (req 265844b7-74db-44e4-98b9-37fe77407bdb). SUBJECT: packages/cli/src/adapters/FileSystemVaultAdapter.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). The diff introduces exactly ONE guard — the entries.sort in walkDirectory — so the mutant set is about the two ways that guard can be wrong rather than about many guards: D1 removes it (the pre-change state) and D2 inverts the comparator (present but disagreeing with the twin). ⛔ Both mutants are TYPE-PRESERVING. The axes stub readdirSync into UNORDERED (neither ascending nor descending) on purpose: on APFS the real filesystem already sorts (measured — files created zz..aa come back aa..zz), so axes reading the real FS would be green with AND without the guard, i.e. vacuous exactly where the defect lives (integration-test-revert-verify §A105). `expect` filled ONLY from a completed driver run.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/adapters/FileSystemVaultAdapter.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js tests/unit/adapters/deterministic-vault-walk-193147b4.test.ts tests/unit/adapters/FileSystemVaultAdapter.test.ts 2>&1",
+  "env_var": "SUT",
+  "red_re": "› (D\\d+[a-z]?) ",
+  "mutants": {
+    "DM1_sort_removed": {
+      "from": "    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));\n\n    for (const entry of entries) {",
+      "to": "    for (const entry of entries) {",
+      "expect": [
+        "D1",
+        "D2",
+        "D3"
+      ],
+      "_note": "The pre-change state: the walk takes readdirSync order as given. It reddens the axes only because they stub the filesystem into an UNORDERED sequence — that is the whole point of the stub, since on APFS the real readdir is already sorted and the axis would be vacuous."
+    },
+    "DM2_comparator_inverted": {
+      "from": "    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));",
+      "to": "    entries.sort((a, b) => (a.name < b.name ? 1 : a.name > b.name ? -1 : 0));",
+      "expect": [
+        "D1",
+        "D2",
+        "D3"
+      ],
+      "_note": "The guard is PRESENT but disagrees with its twin. Mirrors M12_sort_reversed of writer-string-oracle-8185c9dd.validator.spec.json, which does exactly this to PropertyNameValidator.walk — so the pair makes the PARITY addressable from both sides rather than asserted."
+    }
+  },
+  "_coverage": {
+    "_note_scope": "One guard, two failure modes (absent / present-but-wrong). D3 (the Non-goal axis: this order is NOT NodeFsAdapter's full-path order) reddens under BOTH mutants for a named reason rather than by accident: neither the stub's own order nor its inversion starts with `a/b.md`, which is what D3 pins. Measured, not predicted — the sets above come from the driver's printed lists (§A44/§A54).",
+    "_note_shared_set": "DM1 and DM2 redden the SAME axis set, and that is ONE guard with two failure modes — not a vacuum. ⛤ The stub is deliberately UNORDERED rather than reversed: under a reversed stub the two mutants emit BYTE-IDENTICAL output (a reversed input already IS descending order), so the sets would have coincided for an arithmetic reason (§A110). Unordered, the two produce different sequences and still redden the same axes, which is what a single-guard diff looks like."
+  }
+}
