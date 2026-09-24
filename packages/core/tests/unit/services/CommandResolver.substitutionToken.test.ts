@@ -264,6 +264,8 @@ const TOKEN_TARGET_FOLDER_UID = "33333333-3333-4333-8333-333333333333";
 const TOKEN_UNKNOWN_UID       = "44444444-4444-4444-8444-444444444444";
 const TOKEN_TODAY_START_UID   = "66666666-6666-4666-8666-666666666666";
 const TOKEN_NOW_TIMESTAMP_UID = "77777777-7777-4777-8777-777777777777";
+// req c0122d7f — `$createdInstance` (the asset an earlier composite step created).
+const TOKEN_CREATED_INSTANCE_UID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 // Deliberately never seeded — models the cold-start race (value asset absent).
 // MUST be valid UUID-v4 shape, otherwise `looksLikeUUID` short-circuits into
 // the legacy-symbolic branch and the test would exercise the wrong fallback.
@@ -479,6 +481,38 @@ describe("CommandResolver — RFC v2 Phase 3a SubstitutionToken dispatch", () =>
     expect(cmd!.grounding.propertyDefault![0].value).toBe(
       `__SUBSTITUTE__targetFolder__${TOKEN_TARGET_FOLDER_UID}__`,
     );
+    expect(logger.warnings).toHaveLength(0);
+  });
+
+  it("A5 encodes a `createdInstance` SubstitutionToken as an execute-time marker — NOT the wikilink fallback an un-whitelisted resolver-id would produce @req:c0122d7f-1c48-4bc7-b0b8-02dc109b16c4", async () => {
+    await addSubstitutionToken(store, {
+      uid: TOKEN_CREATED_INSTANCE_UID,
+      label: "$createdInstance",
+      resolverId: "createdInstance",
+    });
+    await addPropertyDefault(store, {
+      uid: PD_UID,
+      propertyRefUid: PROP_UID,
+      valueRefUid: TOKEN_CREATED_INSTANCE_UID,
+    });
+    await addGrounding(store, {
+      uid: GROUNDING_UID,
+      label: "Grounding with $createdInstance PD",
+      propertyDefaultRefs: [PD_UID],
+    });
+    await addCommand(store, COMMAND_UID, GROUNDING_UID);
+
+    const cmd = await resolver.loadCommand(COMMAND_UID);
+
+    expect(cmd!.grounding.propertyDefault).toHaveLength(1);
+    expect(cmd!.grounding.propertyDefault![0].value).toBe(
+      `__SUBSTITUTE__createdInstance__${TOKEN_CREATED_INSTANCE_UID}__`,
+    );
+    // Not the `"[[<token-uid>]]"` shape the unknown-resolver path emits, and no
+    // "unknown resolver-id" warning — the whitelist entry is what separates the
+    // two, and this locks it (the `tomorrow` regression of req 915b20b2 was
+    // exactly a resolver implemented but never whitelisted).
+    expect(cmd!.grounding.propertyDefault![0].value).not.toContain("[[");
     expect(logger.warnings).toHaveLength(0);
   });
 

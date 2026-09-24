@@ -43,6 +43,22 @@ export interface ResolverContext {
   readonly targetRefFm?: Record<string, Record<string, unknown> | null>;
   /** UID-canon class ref baked into the active Grounding (already resolved by executor). */
   readonly groundingTargetClassUid?: string;
+  /**
+   * req c0122d7f — vault-relative path of the asset created by an EARLIER step
+   * of the enclosing composite (the executor's `lastCreatedPath`), threaded
+   * down so a later step can substitute that asset as a property VALUE.
+   *
+   * Distinct from `targetFilePath`, which stays the composite's click-target:
+   * `$target` keeps resolving to the source asset (req b00acde4), and the
+   * just-created asset is not yet in the triple store, so the resolver works
+   * off the PATH rather than a graph lookup.
+   *
+   * Undefined when no create_instance step has run yet — the `createdInstance`
+   * resolver then yields `null`, and {@link ResolverFn}'s documented
+   * "skip this PropertyDefault entry" contract leaves the property ABSENT
+   * rather than silently substituting the click-target.
+   */
+  readonly createdInstancePath?: string;
 }
 
 /**
