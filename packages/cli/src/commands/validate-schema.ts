@@ -159,7 +159,7 @@ export function qualifyFocusNodePath(
   focusNode: string,
   vaultPaths: string[],
 ): string {
-  const prefix = "obsidian://vault/";
+  const prefix = OBSIDIAN_VAULT_SCHEME;
   let relPath = focusNode;
   if (focusNode.startsWith(prefix)) {
     relPath = decodeURIComponent(focusNode.substring(prefix.length));
@@ -982,7 +982,7 @@ export function filterReportToStagedFocusNodes(
   report: ValidationReport,
   stagedRelPaths: ReadonlySet<string>,
 ): ValidationReport {
-  const prefix = "obsidian://vault/";
+  const prefix = OBSIDIAN_VAULT_SCHEME;
   const violations = report.violations.filter((v) => {
     if (!v.focusNode.startsWith(prefix)) return false;
     let relPath: string;
@@ -1059,12 +1059,12 @@ function emitEmptyStagedShapesResult(
  * 417). Reading the structured `actualValue` removes that bucket by
  * construction — three class buckets here, not four.
  */
-const WARNING_REASON_ABSENT =
-  "target not present in this vault (cross-vault / unmounted assetspace)";
-const WARNING_REASON_UNTYPED =
-  "target resolved in this vault, but carries no resolvable type";
+const WARNING_REASON_NO_PATH =
+  "class target IRI has no path segment under obsidian://vault/";
+const WARNING_REASON_WITH_PATH =
+  "class target IRI has a path segment under obsidian://vault/";
 const WARNING_REASON_SYMBOLIC =
-  "symbolic term IRI (class/property) with no asset emitting it";
+  "class target IRI is not under obsidian://vault/ (symbolic term IRI)";
 const WARNING_REASON_COLLISION =
   "term-IRI collision (one IRI emitted by several assets)";
 const WARNING_REASON_UNKNOWN_PROPERTY =
@@ -1073,30 +1073,36 @@ const WARNING_REASON_UNCLASSIFIABLE =
   "class constraint with no target recorded (nothing to classify by)";
 
 /**
- * Does this target IRI name a file the wikilink RESOLVED to in THIS vault?
+ * Does the target IRI carry a path segment under the vault scheme?
  *
- * ⛔ Derived from the two IRI-producing functions, not from a filesystem probe:
- * a resolved wikilink goes through `NoteToRDFConverter.notePathToIRI(file.path)`
- * and keeps the file's directory, while an UNRESOLVED one goes through
- * `synthesizeWikilinkTargetIRI(`${linkpath}.md`)` — a single segment, and its
- * own docblock says that path "is NOT a file in this vault".
+ * ⛔ This is ALL the breakdown claims, and the narrowness is deliberate. An
+ * earlier redaction labelled the two forms "target not present in this vault"
+ * and "target resolved in this vault, but carries no resolvable type". Both were
+ * signatures the mechanism does not support, and review disproved the second by
+ * EXECUTION: `constraint: "class"` has TWO origins at the emitter
+ * (`ShaclLiteValidator`, `severity: unresolvableRef ? 'sh:Warning' :
+ * shape.severity`) — an unresolvable reference, AND a target whose class DOES
+ * resolve but does not satisfy the range, when the shape itself declared
+ * `exo__Property_severity: sh:Warning`. The second carries a PATH-BEARING
+ * `actualValue`, so the old label asserted "no resolvable type" about a target
+ * whose type had resolved. Measured on a fixture, not argued: message
+ * `sh:class violation: <obsidian://vault/data/<uid>.md> does not conform to
+ * expected class …`, severity `sh:Warning`.
  *
- * ⚠ Known edge, stated rather than hidden: a target at the VAULT ROOT resolves
- * to a single-segment IRI too and is therefore counted as absent. An earlier
- * draft tried to close it with "is the target a subject of the loaded graph",
- * and a fixture disproved that oracle: a file with no `exo__Instance_class` is
- * dropped by the vault loader and contributes ZERO triples, so a target that
- * plainly resolved (`obsidian://vault/data/<uid>.md`) was reported as absent.
- * That probe answers "did the file emit triples", which is a DIFFERENT question
- * (ticket `7a84b9f0`), so it is not used here. In the canonical vaults every
- * asset lives under `assetspaces/…`, so the root edge has no live carrier.
+ * ⛤ Declared limits, so they are a stated boundary rather than a lie:
+ *   - the two `class` origins are NOT distinguished here (a public `Violation`
+ *     discriminator belongs in core, with its own requirement);
+ *   - a target at the VAULT ROOT also has no path segment, so it lands in the
+ *     no-path bucket even though the wikilink resolved.
+ * Both are named in req `f28051a9`. The breakdown reports the FORM; it never
+ * claims resolution, presence, or type status.
  */
-function targetResolvedInThisVault(target: string): boolean {
+function targetHasPathSegment(target: string): boolean {
   return target.slice(OBSIDIAN_VAULT_SCHEME.length).includes("/");
 }
 
 /** One reason label for one warning. Pure; total over a set always equals its size. */
-export function classifyWarningReason(warning: Violation): string {
+function classifyWarningReason(warning: Violation): string {
   switch (warning.constraint) {
     case "term-iri-collision":
       return WARNING_REASON_COLLISION;
@@ -1116,9 +1122,9 @@ export function classifyWarningReason(warning: Violation): string {
       // instead of silently inflating one of the real reasons.
       if (target === undefined || target === "") return WARNING_REASON_UNCLASSIFIABLE;
       if (!target.startsWith(OBSIDIAN_VAULT_SCHEME)) return WARNING_REASON_SYMBOLIC;
-      return targetResolvedInThisVault(target)
-        ? WARNING_REASON_UNTYPED
-        : WARNING_REASON_ABSENT;
+      return targetHasPathSegment(target)
+        ? WARNING_REASON_WITH_PATH
+        : WARNING_REASON_NO_PATH;
     }
     default:
       // `minCount` / `maxCount` / `datatype` reach this function only when a
@@ -1136,7 +1142,7 @@ export function classifyWarningReason(warning: Violation): string {
  * the printed block is byte-stable for a given vault (an unordered map would
  * make every axis on the output a future flake).
  */
-export function summarizeWarningReasons(
+function summarizeWarningReasons(
   warnings: readonly Violation[],
 ): Array<{ reason: string; count: number }> {
   const counts = new Map<string, number>();
@@ -1146,7 +1152,11 @@ export function summarizeWarningReasons(
   }
   return [...counts.entries()]
     .map(([reason, count]) => ({ reason, count }))
-    .sort((a, b) => (b.count - a.count) || a.reason.localeCompare(b.reason));
+    // ⛔ Code points, not `localeCompare`: that compares under the host's ICU
+    // collation, which is environment-dependent and MAY return 0 for strings
+    // that differ — reintroducing the very tie-to-insertion-order
+    // nondeterminism this comparator exists to remove.
+    .sort((a, b) => (b.count - a.count) || (a.reason < b.reason ? -1 : a.reason > b.reason ? 1 : 0));
 }
 
 /**

@@ -34,13 +34,24 @@ const { runShapesModeAction } = await import(
 );
 
 const BREAKDOWN_HEADER = "Breakdown by reason";
-const REASON_ABSENT = "target not present in this vault";
-const REASON_ABSENT_FULL =
-  "target not present in this vault (cross-vault / unmounted assetspace)";
+const REASON_NO_PATH_FULL = "class target IRI has no path segment under obsidian://vault/";
+const REASON_WITH_PATH_FULL = "class target IRI has a path segment under obsidian://vault/";
 const REASON_SYMBOLIC_FULL =
-  "symbolic term IRI (class/property) with no asset emitting it";
-const REASON_UNTYPED = "target resolved in this vault, but carries no resolvable type";
-const REASON_SYMBOLIC = "symbolic term IRI";
+  "class target IRI is not under obsidian://vault/ (symbolic term IRI)";
+const REASON_NO_PATH = REASON_NO_PATH_FULL;
+const REASON_WITH_PATH = REASON_WITH_PATH_FULL;
+const REASON_SYMBOLIC = REASON_SYMBOLIC_FULL;
+/**
+ * ⛔ Strings review disproved BY EXECUTION — they must never come back. The old
+ * labels claimed resolution and type status; `constraint: "class"` has two
+ * origins at the emitter and the second one resolves its target's type, so the
+ * "no resolvable type" wording was false for a real, fixture-reachable input
+ * (WB12). Asserting their ABSENCE is what keeps the claim from creeping back.
+ */
+const RETRACTED_CLAIMS = [
+  "target not present in this vault",
+  "carries no resolvable type",
+];
 const REASON_COLLISION_BUCKET = "term-IRI collision (one IRI emitted by several assets)";
 /** The detail block owned by req 00e8079e — must survive untouched. */
 const COLLISION_DETAIL = "term-IRI collision(s) — one IRI emitted by several assets";
@@ -186,7 +197,7 @@ describe("e3bac7b5: validate schema text output names the reasons behind the war
     process.exitCode = undefined;
   });
 
-  it("WB1: an ABSENT target (pathless synthesised IRI) is named as not present in this vault", async () => {
+  it("@req:f28051a9-4107-497f-ba72-68267496558d WB1: an ABSENT target (pathless synthesised IRI) is named as not present in this vault", async () => {
     writeRelatesShape(tmpDir);
     writeRelatingSource(tmpDir, "11110000-0000-4000-8000-000000000001", `[[${ABSENT_UUID}]]`);
 
@@ -194,12 +205,12 @@ describe("e3bac7b5: validate schema text output names the reasons behind the war
     const out = printed(logSpy);
 
     expect(out).toContain(`${BREAKDOWN_HEADER} (1 total):`);
-    expect(out).toContain(REASON_ABSENT);
-    expect(out).not.toContain(REASON_UNTYPED);
+    expect(out).toContain(REASON_NO_PATH);
+    expect(out).not.toContain(REASON_WITH_PATH);
     expect(process.exitCode).toBeUndefined();
   });
 
-  it("WB2: a target that RESOLVED here but carries no type is distinguished from an absent one", async () => {
+  it("@req:f28051a9-4107-497f-ba72-68267496558d WB2: a target that RESOLVED here but carries no type is distinguished from an absent one", async () => {
     writeRelatesShape(tmpDir);
     // The target file EXISTS and the wikilink RESOLVES to it, so actualValue keeps
     // its directory — measured: `obsidian://vault/data/<uid>.md`. It has no
@@ -214,11 +225,11 @@ describe("e3bac7b5: validate schema text output names the reasons behind the war
     const out = printed(logSpy);
 
     expect(out).toContain(`${BREAKDOWN_HEADER} (1 total):`);
-    expect(out).toContain(REASON_UNTYPED);
-    expect(out).not.toContain(REASON_ABSENT);
+    expect(out).toContain(REASON_WITH_PATH);
+    expect(out).not.toContain(REASON_NO_PATH);
   });
 
-  it("WB3: a SYMBOLIC term IRI target is distinguished from both file cases", async () => {
+  it("@req:f28051a9-4107-497f-ba72-68267496558d WB3: a SYMBOLIC term IRI target is distinguished from both file cases", async () => {
     writeRelatesShape(tmpDir);
     // `[[ems__Effort_votes]]` → expandClassValue → https://exocortex.my/ontology/ems#Effort_votes.
     // This is the live shape of all 4 non-obsidian warnings measured on vault-exodev.
@@ -233,11 +244,11 @@ describe("e3bac7b5: validate schema text output names the reasons behind the war
 
     expect(out).toContain(`${BREAKDOWN_HEADER} (1 total):`);
     expect(out).toContain(REASON_SYMBOLIC);
-    expect(out).not.toContain(REASON_ABSENT);
-    expect(out).not.toContain(REASON_UNTYPED);
+    expect(out).not.toContain(REASON_NO_PATH);
+    expect(out).not.toContain(REASON_WITH_PATH);
   });
 
-  it("WB4: the breakdown is TOTAL — printed counts sum to the printed total and to warningCount", async () => {
+  it("@req:f28051a9-4107-497f-ba72-68267496558d WB4: the breakdown is TOTAL — printed counts sum to the printed total and to warningCount", async () => {
     writeRelatesShape(tmpDir);
     // A NON-class warning must be inside the total too: a breakdown that only
     // walked `class` results would still add up on a class-only fixture, so the
@@ -269,7 +280,8 @@ describe("e3bac7b5: validate schema text output names the reasons behind the war
       if (!m) break;
       counts.push(Number(m[1].trim()));
     }
-    expect(counts.length).toBeGreaterThanOrEqual(4);
+    // Exactly four reasons: absent · resolved-untyped · symbolic · minCount.
+    expect(counts.length).toBe(4);
     expect(counts.reduce((a, b) => a + b, 0)).toBe(total);
 
     // Same vault, json branch: the aggregate the breakdown must add up to.
@@ -278,7 +290,7 @@ describe("e3bac7b5: validate schema text output names the reasons behind the war
     expect(lastJson(logSpy).data.warningCount).toBe(total);
   });
 
-  it("WB5: a vault with ZERO warnings prints no breakdown at all", async () => {
+  it("@req:f28051a9-4107-497f-ba72-68267496558d WB5: a vault with ZERO warnings prints no breakdown at all", async () => {
     writeRelatesShape(tmpDir);
     // A relating pair where BOTH sides are typed exo__Asset → conforms, no warnings.
     const target = "77770000-0000-4000-8000-000000000001";
@@ -297,7 +309,7 @@ describe("e3bac7b5: validate schema text output names the reasons behind the war
     expect(out).not.toContain(BREAKDOWN_HEADER);
   });
 
-  it("WB6: --format json is untouched — no breakdown text, full warnings list still shipped", async () => {
+  it("@req:f28051a9-4107-497f-ba72-68267496558d WB6: --format json is untouched — no breakdown text, full warnings list still shipped", async () => {
     writeRelatesShape(tmpDir);
     writeRelatingSource(tmpDir, "11110000-0000-4000-8000-000000000008", `[[${ABSENT_UUID}]]`);
 
@@ -311,7 +323,7 @@ describe("e3bac7b5: validate schema text output names the reasons behind the war
     expect(json.data.warnings[0].actualValue).toContain(ABSENT_UUID);
   });
 
-  it("WB7: --format earl is untouched — no breakdown text", async () => {
+  it("@req:f28051a9-4107-497f-ba72-68267496558d WB7: --format earl is untouched — no breakdown text", async () => {
     writeRelatesShape(tmpDir);
     writeRelatingSource(tmpDir, "11110000-0000-4000-8000-000000000009", `[[${ABSENT_UUID}]]`);
 
@@ -322,7 +334,7 @@ describe("e3bac7b5: validate schema text output names the reasons behind the war
     expect(out).toContain("sh:Warning");
   });
 
-  it("WB8: the term-IRI collision detail block of req 00e8079e still prints, and gets its own bucket", async () => {
+  it("@req:f28051a9-4107-497f-ba72-68267496558d WB8: the term-IRI collision detail block of req 00e8079e still prints, and gets its own bucket", async () => {
     writeRelatesShape(tmpDir);
     // Two assets whose label parses as <prefix>__<LocalName> → one term IRI, two emitters.
     writeAsset(
@@ -344,45 +356,59 @@ describe("e3bac7b5: validate schema text output names the reasons behind the war
 
     expect(out).toContain(BREAKDOWN_HEADER);
     expect(out).toContain(REASON_COLLISION_BUCKET);
-    expect(out).toContain(REASON_ABSENT);
+    expect(out).toContain(REASON_NO_PATH);
     // The pre-existing detail block, unchanged and still after the breakdown.
     expect(out).toContain(COLLISION_DETAIL);
     expect(out.indexOf(BREAKDOWN_HEADER)).toBeLessThan(out.indexOf(COLLISION_DETAIL));
   });
 
-  it("WB9: lines are ordered count-descending and the counts are right-aligned", async () => {
+  it("@req:f28051a9-4107-497f-ba72-68267496558d WB9: lines are ordered count-descending and the counts are right-aligned", async () => {
     writeRelatesShape(tmpDir);
-    // Ten absent targets and one symbolic → widths 2 and 1, so alignment is observable.
+    // ⛔ TEN symbolic and ONE no-path, deliberately in this proportion: the
+    // count order (symbolic first, 10 > 1) is the OPPOSITE of the code-point
+    // order of the two labels ("class target IRI has no path…" < "class target
+    // IRI is not under…"). The first draft had it the other way round — ten
+    // no-path and one symbolic — and there both orders AGREED, so the mutant
+    // that drops the count term printed the same thing and this axis could not
+    // see it. That was a defect of the FIXTURE, not of the axis
+    // (integration-test-revert-verify §A111).
     for (let i = 0; i < 10; i++) {
       writeRelatingSource(
         tmpDir,
-        `22220000-0000-4000-8000-00000000000${i}`,
-        `[[9999${i}999-9999-4999-8999-999999999999]]`,
+        `2222000${i}-0000-4000-8000-000000000001`,
+        "[[ems__Effort_votes]]",
       );
     }
-    writeRelatingSource(
-      tmpDir,
-      "33330000-0000-4000-8000-000000000001",
-      "[[ems__Effort_votes]]",
-    );
+    writeRelatingSource(tmpDir, "33330000-0000-4000-8000-000000000001", `[[${ABSENT_UUID}]]`);
 
     await runShapesModeAction({ vault: tmpDir, format: "text" });
-    const out = printed(logSpy);
-    const lines = out.split("\n");
+    const lines = printed(logSpy).split("\n");
     const start = lines.findIndex((l) => l.includes(BREAKDOWN_HEADER));
-    const absentAt = lines.findIndex((l) => l.includes(REASON_ABSENT));
     const symbolicAt = lines.findIndex((l) => l.includes(REASON_SYMBOLIC));
+    const noPathAt = lines.findIndex((l) => l.includes(REASON_NO_PATH));
 
-    expect(start).toBeGreaterThanOrEqual(0);
-    expect(absentAt).toBeGreaterThan(start);
-    expect(symbolicAt).toBeGreaterThan(absentAt); // 10 before 1
+    // ⛤ Reading the line back rather than bounding the index: it pins WHAT was
+    // found, not merely that the search resolved.
+    //
+    // ⛔ The reason is NOT that a `>= 0` bound would assert nothing — it would.
+    // `findIndex` returns exactly two classes of value, -1 when absent and an
+    // index from zero when present, so a lower bound of zero DISCRIMINATES them
+    // and is contentful; only a comparison against -1 would be identically true.
+    // The reason is that `scripts/check-test-antipatterns.sh` is a TEXTUAL
+    // ratchet (its pattern is the literal assertion form) and cannot tell a
+    // legitimate index check from coverage filler. So this form is chosen to
+    // express the same property more precisely while not matching that pattern —
+    // ⛔ never to "fix" an assertion that was already sound.
+    expect(lines[start] ?? "").toContain(BREAKDOWN_HEADER);
+    expect(symbolicAt).toBeGreaterThan(start);
+    expect(noPathAt).toBeGreaterThan(symbolicAt); // 10 before 1
     // Byte-exact lines: the two-digit count sets the column width, so the
     // one-digit count carries a pad space and both end in the same column.
-    expect(lines[absentAt]).toBe(`     10  ${REASON_ABSENT_FULL}`);
-    expect(lines[symbolicAt]).toBe(`      1  ${REASON_SYMBOLIC_FULL}`);
+    expect(lines[symbolicAt]).toBe(`     10  ${REASON_SYMBOLIC_FULL}`);
+    expect(lines[noPathAt]).toBe(`      1  ${REASON_NO_PATH_FULL}`);
   });
 
-  it("WB10: a minCount warning (an emitter with NO actualValue) buckets by constraint, not as a class reason", async () => {
+  it("@req:f28051a9-4107-497f-ba72-68267496558d WB10: a minCount warning (an emitter with NO actualValue) buckets by constraint, not as a class reason", async () => {
     writeWarnSeverityMinCountShape(tmpDir);
     writeRelatesShape(tmpDir);
     // exo__Setting missing its required key → minCount at sh:Warning severity.
@@ -400,31 +426,101 @@ describe("e3bac7b5: validate schema text output names the reasons behind the war
     expect(out).toContain("minCount constraint (shape-declared warning severity)");
     // ⛔ The whole point: an emitter with no target must NOT be folded into a
     // class reason. Keying the breakdown on `actualValue` would put it in one.
-    expect(out).not.toContain(REASON_ABSENT);
-    expect(out).not.toContain(REASON_UNTYPED);
+    expect(out).not.toContain(REASON_NO_PATH);
+    expect(out).not.toContain(REASON_WITH_PATH);
     expect(out).not.toContain(REASON_SYMBOLIC);
     expect(out).not.toContain("no target recorded");
   });
 
-  it("WB11: equal counts are ordered by reason text, not by the order warnings arrive", async () => {
+  it("@req:f28051a9-4107-497f-ba72-68267496558d WB11: equal counts order by reason code points, not by the order warnings arrive", async () => {
     writeRelatesShape(tmpDir);
-    // One absent and one symbolic → counts tie at 1 each. The validator sorts its
-    // results by focusNode, so the ABSENT one arrives FIRST (uid 44… < uid 55…);
-    // ASCII order of the reasons is the opposite ("symbolic …" < "target not …").
-    // Without the reason tie-break the printed order would follow arrival.
-    writeRelatingSource(tmpDir, "44440000-0000-4000-8000-000000000001", `[[${ABSENT_UUID}]]`);
+    // One no-path and one symbolic → counts tie at 1 each. The validator sorts its
+    // results by focusNode, so the SYMBOLIC one arrives FIRST (uid 3333… < 4444…),
+    // while code-point order of the reasons puts the no-path one first
+    // ("…has no path…" < "…is not under…"). Without the reason tie-break the
+    // printed order would follow arrival — the two orders are deliberately
+    // OPPOSITE here, which is what makes the mutant on the tie-break visible.
     writeRelatingSource(
       tmpDir,
-      "55551111-0000-4000-8000-000000000001",
+      "33330000-0000-4000-8000-000000000001",
       "[[ems__Effort_votes]]",
     );
+    writeRelatingSource(tmpDir, "44440000-0000-4000-8000-000000000001", `[[${ABSENT_UUID}]]`);
 
     await runShapesModeAction({ vault: tmpDir, format: "text" });
     const lines = printed(logSpy).split("\n");
+    const noPathAt = lines.findIndex((l) => l.includes(REASON_NO_PATH));
     const symbolicAt = lines.findIndex((l) => l.includes(REASON_SYMBOLIC));
-    const absentAt = lines.findIndex((l) => l.includes(REASON_ABSENT));
 
-    expect(symbolicAt).toBeGreaterThanOrEqual(0);
-    expect(absentAt).toBeGreaterThan(symbolicAt);
+    expect(lines[noPathAt] ?? "").toContain(REASON_NO_PATH);
+    expect(symbolicAt).toBeGreaterThan(noPathAt);
+  });
+
+  it("@req:f28051a9-4107-497f-ba72-68267496558d WB12: a class warning whose target type DOES resolve (range mismatch, shape-declared warning severity) is reported by IRI form, never as a type claim", async () => {
+    // ⛔ The input that disproved the earlier labels BY EXECUTION. `constraint:
+    // "class"` has two origins at the emitter — `severity: unresolvableRef ?
+    // 'sh:Warning' : shape.severity` — and this is the second: the target IS typed
+    // exo__Asset, the shape's range is exo__Setting, so the class does not conform
+    // while resolving perfectly, and the shape declares sh:Warning severity.
+    // Measured shape of the result: constraint "class", severity "sh:Warning",
+    // actualValue `obsidian://vault/data/<uid>.md`, message "sh:class violation: …
+    // does not conform to expected class …".
+    const shapesDir = path.join(tmpDir, "shapes");
+    fs.mkdirSync(shapesDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(shapesDir, "exo__Asset_relates.md"),
+      `---
+exo__Asset_isDefinedBy: "[[!exo]]"
+exo__Asset_uid: 0000cccc-0000-0000-0000-00000000a001
+exo__Asset_createdAt: 2025-01-01T00:00:00
+exo__Instance_class:
+  - "[[exo__ObjectProperty]]"
+exo__Asset_label: exo__Asset_relates
+exo__Property_domain:
+  - "[[exo__Asset]]"
+exo__Property_range:
+  - "[[exo__Setting]]"
+exo__Property_severity: sh:Warning
+aliases:
+  - exo__Asset_relates
+---
+Range is exo__Setting and severity is WARNING: a resolvable non-conforming target warns.
+`,
+    );
+    const target = "aaaa1111-0000-4000-8000-000000000001";
+    writeAsset(
+      tmpDir,
+      "data",
+      target,
+      `exo__Instance_class:\n  - "[[exo__Asset]]"\nexo__Asset_label: Resolvable but not a Setting\n`,
+    );
+    writeRelatingSource(tmpDir, "bbbb2222-0000-4000-8000-000000000001", `[[${target}]]`);
+
+    await runShapesModeAction({ vault: tmpDir, format: "text" });
+    const out = printed(logSpy);
+
+    expect(out).toContain(`${BREAKDOWN_HEADER} (1 total):`);
+    expect(out).toContain(REASON_WITH_PATH);
+    // ⛔ The whole point: the output must not claim anything about resolution or
+    // type status, because here the type DID resolve.
+    for (const retracted of RETRACTED_CLAIMS) {
+      expect(out).not.toContain(retracted);
+    }
+  });
+
+  it("@req:f28051a9-4107-497f-ba72-68267496558d WB13: no retracted claim about resolution or type status appears on a mixed-reason vault", async () => {
+    writeRelatesShape(tmpDir);
+    writeAsset(tmpDir, "data", UNTYPED_UUID, `exo__Asset_label: No Instance_class here\n`);
+    writeRelatingSource(tmpDir, "11110000-0000-4000-8000-00000000000b", `[[${ABSENT_UUID}]]`);
+    writeRelatingSource(tmpDir, "11110000-0000-4000-8000-00000000000c", `[[${UNTYPED_UUID}]]`);
+    writeRelatingSource(tmpDir, "11110000-0000-4000-8000-00000000000d", "[[ems__Effort_votes]]");
+
+    await runShapesModeAction({ vault: tmpDir, format: "text" });
+    const out = printed(logSpy);
+
+    expect(out).toContain(BREAKDOWN_HEADER);
+    for (const retracted of RETRACTED_CLAIMS) {
+      expect(out).not.toContain(retracted);
+    }
   });
 });
