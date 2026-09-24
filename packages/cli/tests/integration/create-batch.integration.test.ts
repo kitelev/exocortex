@@ -1109,4 +1109,26 @@ describe("req 1848dff9: `cli create-batch` — many assets, one invocation", () 
     expect(r.exit).toEqual([0]);
     expect(fs.existsSync(path.join(vault, r.out![0].path))).toBe(true);
   });
+
+  it("B17: a self-anchored item is refused with a message naming itself, not a sibling @req:1848dff9-bb2e-43a9-95e7-d917d6cef552", async () => {
+    // A namespace ontology anchors on its own uid (CR-1). Its file does not
+    // exist yet either, so it is refused like a sibling anchor — but the
+    // message must not send the caller looking for "item[0]" elsewhere.
+    const before = countMd(vault);
+    const selfUid = "adad0000-0000-4000-8000-000000000001";
+    const r = await runBatch([
+      {
+        class: "concept__Concept",
+        label: "Self-anchored",
+        uid: selfUid,
+        properties: { exo__Asset_isDefinedBy: `[[${selfUid}]]` },
+      },
+    ]);
+    expect(r.exit).toEqual([2]);
+    expect(countMd(vault)).toBe(before);
+    expect(r.stderr).toContain(
+      `item[0] "Self-anchored": exo__Asset_isDefinedBy names [[${selfUid}]], this item's own uid`,
+    );
+    expect(r.stderr).not.toContain("which item[0] of this same batch creates");
+  });
 });

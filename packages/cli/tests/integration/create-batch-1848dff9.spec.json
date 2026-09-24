@@ -27,7 +27,7 @@
     "M3_all_or_nothing_reduced_to_best_effort": {
       "from": "        if (failures.length > 0) {\n          reportFailures(failures, total);",
       "to": "        if (failures.length > 0 && planned.length === 0) {\n          reportFailures(failures, total);",
-      "expect": ["B3", "B4b", "B5b", "B5c", "B5d", "B11"],
+      "expect": ["B3", "B4b", "B5b", "B5c", "B5d", "B11", "B17"],
       "_note": "Writes the valid items of a batch that has invalid ones: every axis whose batch mixes valid and refused items reddens (B5d and B11 joined in review round 1)."
     },
     "M4_only_the_first_failure_reported": {
@@ -87,7 +87,7 @@
     "M14_in_batch_anchor_not_refused": {
       "from": "        failures.push(...checkAnchorsExist(items, pendingIndex));",
       "to": "        failures.push(...checkAnchorsExist(items, new Map<string, number>()));",
-      "expect": ["B11"],
+      "expect": ["B11", "B17"],
       "_note": "Review round 1 HIGH: without the check the anchor passes wikilink validation (it is a pending uid), the range guard and co-location fail open, and the item lands in 01 Inbox with nothing checked. Round 2: B11 also carries the BARE-uid form, which a wikilink-only matcher missed; the check now uses the range guard's own parser (extractAssetReference)."
     },
     "M15_frontmatter_uid_ignored": {
@@ -133,6 +133,18 @@
       "to": "      throw error;",
       "expect": ["B16"],
       "_note": "Review round 2 LOW: a reader closing the pipe early turned a finished batch into exit 1 with an uncaught EPIPE."
+    },
+    "M23_self_anchor_named_as_a_sibling": {
+      "from": "          creator === item.index",
+      "to": "          false",
+      "expect": ["B17"],
+      "_note": "Review round 3 LOW: a self-anchored item (namespace ontology anchored on its own uid) was told 'which item[k] of this same batch creates' with k = itself."
+    },
+    "M24_stdio_guard_not_installed": {
+      "from": "      guardStdioAgainstClosedReader();",
+      "to": "      void 0;",
+      "expect": ["B16"],
+      "_note": "Review round 3 LOW: the guard was installed only inside finish(), so an EPIPE on an early stderr warning (2>&1 | head) was still uncaught; it is now the action's first statement, and this mutant locks that the listener is ours (not one the jest worker happens to register)."
     }
   }
 }

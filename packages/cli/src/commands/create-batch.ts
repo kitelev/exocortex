@@ -421,13 +421,20 @@ function checkAnchorsExist(
       const target = extractAssetReference(flag.slice(eq + 1))?.toLowerCase();
       const creator = target ? pendingIndex.get(target) : undefined;
       if (creator === undefined) continue;
+      // A self-anchored item (a namespace ontology whose isDefinedBy is its own
+      // uid) is refused for the same reason, but "which item[k] creates" would
+      // name the item itself and send the caller looking for a sibling.
+      const why =
+        "an anchor must already exist on disk (the range guard and co-location read its file)";
       failures.push({
         index: item.index,
         label: item.label,
         message:
-          `${IS_DEFINED_BY_KEY} names [[${target}]], which item[${creator}] of this same batch creates — ` +
-          `an anchor must already exist on disk (the range guard and co-location read its file); ` +
-          `create the ontology first, in its own run`,
+          creator === item.index
+            ? `${IS_DEFINED_BY_KEY} names [[${target}]], this item's own uid — ` +
+              `a self-anchored asset cannot be created by create-batch: ${why}`
+            : `${IS_DEFINED_BY_KEY} names [[${target}]], which item[${creator}] of this same batch creates — ` +
+              `${why}; create the ontology first, in its own run`,
       });
     }
   }
@@ -472,7 +479,8 @@ async function readAllStdin(): Promise<string> {
  * an 'error' event, which with no listener is an uncaught exception: exit 1
  * after every file was already written. The batch's outcome is decided by then,
  * so EPIPE on stdio is ignored and the exit code keeps saying what the batch
- * did. Any other stdio error still surfaces. Installed once per process.
+ * did. Any other stdio error still surfaces. Installed once per process, as the
+ * action's first statement.
  */
 let stdioGuarded = false;
 function guardStdioAgainstClosedReader(): void {
@@ -495,7 +503,6 @@ function guardStdioAgainstClosedReader(): void {
  * callback fires only after every earlier write on the same stream.
  */
 async function finish(code: number): Promise<void> {
-  guardStdioAgainstClosedReader();
   await Promise.all(
     [process.stdout, process.stderr].map(
       (stream) =>
@@ -547,6 +554,9 @@ export function createBatchCommand(): Command {
       "Accepted for symmetry with the apply subcommands (create-batch is non-interactive; no-op)",
     )
     .action(async (file: string, options: CreateBatchOptions) => {
+      // First statement: planning writes warnings to stderr long before
+      // finish(), and `2>&1 | head` closes that pipe too.
+      guardStdioAgainstClosedReader();
       try {
         const vaultPath = resolve(options.vault);
         if (!existsSync(vaultPath)) {
