@@ -255,7 +255,7 @@ for the position being matched (see the examples below).
   indexed under the `exo:Asset_<key>` predicate, so
   `?s exo:Asset_aliases "TS"` matches in SPARQL.
 - **IRI canonicalization for cross-vault loads** (`IRICanonicalizer`,
-  Issue #3286) — in a multi-vault load (`--also` federation) the same logical
+  Issue #3286) — in a multi-vault load the same logical
   UID can surface as a full-path IRI
   (`obsidian://vault/assetspaces/<sub>/<uuid>.md`, emitted by the owning
   vault) and as a "synth-A" IRI (`obsidian://vault/<uuid>.md`, synthesized by

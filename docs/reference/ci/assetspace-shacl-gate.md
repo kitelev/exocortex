@@ -38,8 +38,11 @@ shapes apply and cross-repo references resolve.
         ├─ exocortex resolve-deps --registry … --self <owner/repo>   ──►  dep clone URLs
         │      (transitive dependsOn closure, #3511 core primitive)
         ├─ git clone <each dep>                              (materialise dependent TBox)
-        ├─ validate schema --shapes-mode --vault . --also <dep> …    ──►  exit 0/1
-        └─ audit ontology-imports --vault .
+        ├─ MERGE self + deps into ONE vault dir                      (single graph, #3523)
+        ├─ validate schema --shapes-mode --vault <merged>            ──►  exit 0/1  (BLOCKING)
+        ├─ audit ontology-imports --vault .                          (advisory, never blocks)
+        ├─ audit ontology-membership --vault .                       (blocking unless warn_only)
+        └─ command smoke (OPT-IN: command_smoke: true)               (behavioural, real apply)
 ```
 
 ### CLI: `exocortex resolve-deps` (this issue's CLI deliverable)
@@ -101,6 +104,29 @@ Inputs:
 | `registry_url`            | `https://github.com/kitelev/exoas-registry` | central registry                                            |
 | `cli_version`             | `latest`                                    | `@kitelev/exocortex-cli` spec (must include `resolve-deps`) |
 | `registry_token` (secret) | —                                           | optional PAT for cloning the registry + private deps        |
+| `command_smoke`           | `false`                                     | opt-in behavioural smoke of a homoiconic command (step 5)   |
+| `command_smoke_cli`       | `create-action`                             | `cliName` the smoke applies to an `ems__Task` fixture       |
+| `command_smoke_sources`   | —                                           | extra clone URLs merged into the smoke vault on top of the `dependsOn` closure |
+
+### Gate steps (what actually runs, in order)
+
+1. **resolve-deps** — transitive `dependsOn` closure from the registry, then clone each dep.
+2. **MERGE + `validate schema --shapes-mode`** — deps are unified into ONE vault root before
+   validating (issue #3523). ⛔ The earlier form passed each dep as a separate `--also` vault;
+   that flag was **hard-removed** from the CLI (`f431a2f9`), and the merge is what removes the
+   cross-vault IRI-form mismatch — measured then: `exoas-exocmd` = 0 standalone, **30** with
+   `--also`, 0 merged. **This is the sole blocking SHACL gate.**
+3. **`audit ontology-imports`** — cross-ontology closure / SCC. **Advisory by design**: its exit
+   code is `tee`'s, so it never blocks regardless of `warn_only`.
+4. **`audit ontology-membership`** — `exo__Ontology_admits` allow-list conformance (req
+   `c23f6f50`): every member of an ontology declaring `_admits` must carry an admitted
+   `exo__Instance_class` (subsumption-aware). Fail-open — ontologies without `_admits` are
+   skipped and skip-accounted. **Blocks unless `warn_only`.**
+5. **command smoke** (opt-in) — behavioural check that a homoiconic command still WRITES what its
+   inheritance rules promise: seeds an `ems__Task` fixture, runs `apply <command_smoke_cli>` for
+   real (⛔ not `--dry-run` — it prints no frontmatter), asserts the created asset carries
+   `ems__Effort_parent` pointing at the fixture, then re-runs SHACL to prove the write introduced
+   no new violation. **Blocks unless `warn_only`.**
 
 Caller (`.github/workflows/ci.yml` in an AssetSpace repo):
 
@@ -124,7 +150,7 @@ The rollout is **per-repo opt-in to blocking**, staged by gate-green:
 ### Stage 0 — infrastructure (this issue)
 
 1. Ship `resolve-deps` in `@kitelev/exocortex-cli` (exocortex PR → release).
-2. Upgrade `exoas-ci/assetspace-ci.yml` to resolve deps + `--also` + blocking-capable
+2. Upgrade `exoas-ci/assetspace-ci.yml` to resolve deps + MERGE them into one vault + blocking-capable
    (pin `cli_version` to the #3513 release). All 44 callers keep `warn_only: true`
    → they now get **accurate** warnings (deps resolved) with zero blocking risk.
 
@@ -184,8 +210,9 @@ exocortex resolve-deps --registry registry --self kitelev/exoas-exo
 # 2. GREEN on clean content
 git clone --depth 1 https://github.com/kitelev/exoas-exo
 git clone --depth 1 https://github.com/kitelev/exoas-w3c-aggregated
-exocortex validate schema --shapes-mode --vault exoas-exo --also exoas-w3c-aggregated
-#   → ✅ conforms, exit 0   (26 cross-repo-ref warnings, non-blocking)
+mkdir -p merged && cp -R exoas-exo/. merged/ && cp -R exoas-w3c-aggregated/. merged/
+exocortex validate schema --shapes-mode --vault merged
+#   → ✅ conforms, exit 0   (cross-repo refs resolve inside the merged graph)
 
 # 3. RED on injected violation (exo__Setting is Single-cardinality)
 cat > exoas-exo/exo/zzz-violation.md <<'EOF'
@@ -196,7 +223,8 @@ exo__Instance_class: ["[[88b938af-1a55-451c-b3cc-2f03e5115fcf]]"]
 exo__Setting_key: ["key-one", "key-two"]   # 2 values on a Single-cardinality property
 ---
 EOF
-exocortex validate schema --shapes-mode --vault exoas-exo --also exoas-w3c-aggregated
+cp -R exoas-exo/. merged/
+exocortex validate schema --shapes-mode --vault merged
 #   → ❌ sh:maxCount violation, exit 1
 
 # 4. revert → GREEN again
