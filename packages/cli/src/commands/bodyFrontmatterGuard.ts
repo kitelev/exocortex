@@ -11,18 +11,33 @@
  * whose file was extracted together with the frontmatter (the classic
  * `sed -n '/^---$/,$p'` slice, which starts at the FIRST `---`).
  *
- * ⛔ The discriminator is NOT "the body starts with a `---` block". Measured over
- * the three canonical vaults (51,740 assets with frontmatter, 2026-09-24), that
- * naive predicate refuses **31 live assets** — every one an `exo__Template`,
- * whose body IS a frontmatter skeleton by design (`exo__Asset_uid:
- * $randomUUIDv4`). Refusing those would break the template layer wholesale.
+ * ⛔ The discriminator is NOT "the body starts with a `---` block". That naive
+ * predicate refuses **31 live assets** — every one an `exo__Template`, whose
+ * body IS a frontmatter skeleton by design (`exo__Asset_uid: $randomUUIDv4`).
+ * Refusing those would break the template layer wholesale.
  *
  * What separates a COPY from a template is the VALUE: a copy carries the
  * system-generated identity of a real asset — a well-formed UUID in
  * `exo__Asset_uid` or a real ISO timestamp in `exo__Asset_createdAt` — while a
  * template carries a placeholder (`$randomUUIDv4`, `$nowTimestamp`, empty).
- * That narrow predicate refuses **0 of 51,740** live assets, and still refuses
- * the hub-before fixture that motivated the ticket.
+ * That narrow predicate refuses **0 of 52,086** live bodies and still refuses
+ * the real pre-fix hub text `[three canonical vaults, assets with frontmatter,
+ * 2026-09-24 ~10:50 +05]`. ⚠ The corpus is live (52,079 → 52,086 within one
+ * hour), so the count carries its moment, not just its scope.
+ *
+ * ## Deliberate boundaries (measured, not overlooked)
+ *
+ * - **An unterminated leading block is REFUSED.** A body that opens a
+ *   frontmatter-like block and never closes it runs to EOF, so a real uid far
+ *   below still counts as "inside the leading block". Live bodies of that shape:
+ *   **0**; the requirement says nothing about it; and the fail-loud direction is
+ *   the safe one for a writer-side guard (a rejected write is recoverable, a
+ *   silently doubled frontmatter block is not).
+ * - **A uid line in SINGLE quotes, or with a trailing comment, is NOT caught.**
+ *   `REAL_UID_RE` accepts the bare and double-quoted forms — the ones every
+ *   writer in this repo emits. Live bodies carrying a single-quoted uid inside a
+ *   leading block: **0**. Widening the pattern would trade a measured zero for
+ *   more surface, so the narrow form ships and the gap is named here instead.
  */
 
 /** `exo__Asset_uid: <well-formed uuid>` — the identity only a real asset has. */
@@ -33,8 +48,18 @@ const REAL_UID_RE =
 const REAL_CREATED_AT_RE =
   /^exo__Asset_createdAt\s*:\s*"?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)"?\s*$/;
 
-/** A YAML mapping key (`key:` / `prefix__Key:`) — what makes a `---` a frontmatter fence. */
-const YAML_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*(?:__[A-Za-z0-9_]+)*\s*:(?:\s|$)/;
+/**
+ * A YAML mapping key (`key:` / `prefix__Key:`) — what makes a `---` a frontmatter fence.
+ *
+ * ⛔ The `__` separator gets NO group of its own. Spelling it out as
+ * `[A-Za-z0-9_]*(?:__[A-Za-z0-9_]+)*` reads more explicitly and is
+ * EXPONENTIAL: both parts accept `_`, so `A__0__0__…` has many equivalent
+ * splits and the engine tries them all (CodeQL js/redos #318; measured on
+ * `"A" + "__0".repeat(26) + "!"` — 1799 ms against 0 ms here). The character
+ * class already covers `__`, so the two forms accept exactly the same strings
+ * (verified over 12 live and edge shapes, 0 divergences).
+ */
+const YAML_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*\s*:(?:\s|$)/;
 
 /** A bare frontmatter head pasted without its `---` fence. */
 const ASSET_HEAD_RE = /^(?:exo__Asset_uid|exo__Asset_createdAt)\s*:(?:\s|$)/;

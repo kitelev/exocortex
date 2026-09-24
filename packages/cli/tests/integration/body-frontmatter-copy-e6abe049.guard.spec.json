@@ -1,6 +1,6 @@
 {
   "_doc": "Revert-verify mutants for ticket e6abe049 / req dbb19e9a — the GUARD half (packages/cli/src/commands/bodyFrontmatterGuard.ts). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). The production diff has THREE files and the driver mutates ONE subject, so it is split into three specs (integration-test-revert-verify §A117): this one owns the predicate, the two *-wiring.spec.json own each call site. Expectations were written BEFORE the run (§A44). ⛤ The axes Q1/Q1b/Q2 drive the VERBATIM pre-fix hub text recovered from exoas-exodev@169e6846 — so a mutant that widens or narrows the predicate is judged against the real incident, not a synthetic approximation.",
-  "tree": "/Users/kitelev/Developer/exocortex-development/worktrees/exocortex-claude1-feat-class-property-resolver",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
     "packages/cli/node_modules",
@@ -9,32 +9,54 @@
     "packages/obsidian-plugin/node_modules"
   ],
   "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?)[: ]",
-  "subject": "/Users/kitelev/Developer/exocortex-development/worktrees/exocortex-claude1-feat-class-property-resolver/packages/cli/src/commands/bodyFrontmatterGuard.ts",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/bodyFrontmatterGuard.ts",
   "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/body-frontmatter-copy-e6abe049.integration.test.ts 2>&1",
   "mutants": {
     "M3_guard_never_detects": {
       "from": "  const offending = detectFrontmatterCopy(body);",
       "to": "  const offending: string | undefined = undefined;",
-      "expect": ["Q1", "Q1b", "Q2", "Q6"],
-      "_note": "Type-preserving: the predicate still exists and compiles, the refusal never fires. Reddens every refusal axis of BOTH commands — that is the honest prediction, since both call the same helper. The acceptance axes (Q3/Q3b/Q4/Q5/Q7) stay green: they never depended on a refusal."
+      "expect": [
+        "Q1",
+        "Q1b",
+        "Q2",
+        "Q6",
+        "Q9",
+        "Q10"
+      ],
+      "_note": "Type-preserving: the predicate still exists and compiles, the refusal never fires. Reddens every refusal axis of BOTH commands — that is the honest prediction, since both call the same helper. The acceptance axes (Q3/Q3b/Q4/Q5/Q7) stay green: they never depended on a refusal. ⛤ The dry-run axes (Q9/Q10) joined this set when they were added: removing the wiring or emptying the predicate kills the refusal on EVERY path, dry-run included — which is why M8 is still needed to separate 'not wired at all' from 'wired, but skipped under --dry-run'."
     },
     "M4_discriminator_widened_to_any_leading_block": {
       "from": "    if (REAL_UID_RE.test(line) || REAL_CREATED_AT_RE.test(line)) {",
       "to": "    if (line.trim() !== \"\") {",
-      "expect": ["Q3", "Q3b"],
+      "expect": [
+        "Q3",
+        "Q3b"
+      ],
       "_note": "Drops the real-uid / real-ISO discriminator, i.e. refuses ANY body that leads with a frontmatter-like block — the naive predicate the corpus measurement rejected (31 live exo__Template assets). Q1/Q1b/Q2/Q6 stay GREEN under it, which is exactly why Q3/Q3b exist: without them the narrow predicate is unlocked and a later reader could 'simplify' it into breaking the template layer."
     },
     "M5_leading_block_not_cut_at_its_own_fence": {
       "from": "    if (lines[k].replace(/\\r$/, \"\").trim() === \"---\") {",
       "to": "    if (lines[k].replace(/\\r$/, \"\").trim() === \"\\u0000---\") {",
-      "expect": ["Q3b"],
+      "expect": [
+        "Q3b"
+      ],
       "_note": "The leading block then runs to the end of the body, so a real ISO timestamp QUOTED in prose below the block is read as part of it. Reddens only Q3b — the axis whose whole point is that a retro note about this very incident stays writable. Q3 (same template without the quote) stays green, which proves the two are not duplicates."
     },
     "M6_dash_line_treated_as_a_fence_without_a_yaml_key": {
       "from": "    if (j < 0 || !YAML_KEY_RE.test(lines[j].replace(/\\r$/, \"\"))) {",
       "to": "    if (j < 0) {",
-      "expect": ["Q5"],
+      "expect": [
+        "Q5"
+      ],
       "_note": "A `---` thematic break then opens a block, so prose quoting a real uid between two breaks is refused. Reddens only Q5. This is the mutant that makes Q5 non-decorative: every other axis either has no leading `---` or carries a YAML key right after it."
+    },
+    "M7_yaml_key_pattern_reverted_to_the_exponential_form": {
+      "from": "const YAML_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*\\s*:(?:\\s|$)/;",
+      "to": "const YAML_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*(?:__[A-Za-z0-9_]+)*\\s*:(?:\\s|$)/;",
+      "expect": [
+        "Q8"
+      ],
+      "_note": "Restores the pre-fix pattern CodeQL flagged (js/redos #318). Reddens ONLY Q8 — and that is STRUCTURAL, not an accident of the fixture: the two forms accept EXACTLY the same set of strings (the character class already covers `__`; verified over 12 live and edge shapes, 0 divergences), so ANY behavioural axis is blind to the difference BY CONSTRUCTION. Time is the only observable that separates them, which is why Q8 is a time-bound rather than an assertion about the verdict. Measured: 1799 ms against 0 ms on `\"A\" + \"__0\".repeat(26) + \"!\"`. ⛔ The same class was checked on the file's other three patterns (REAL_UID_RE, REAL_CREATED_AT_RE, ASSET_HEAD_RE) by execution, not by reading: worst case 0.46 ms on adversarial inputs up to 60k chars — none carries a nested quantifier over overlapping classes."
     }
   }
 }

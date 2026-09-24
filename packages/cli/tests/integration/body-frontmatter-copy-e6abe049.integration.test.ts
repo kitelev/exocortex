@@ -15,12 +15,13 @@
  * `exo__Asset_createdAt` — the two keys the guard keys on. Building the axis on
  * invented text would have left both facts unverified.
  *
- * ⛔ The discriminator is NOT "the body starts with a frontmatter block".
- * Measured across the three canonical vaults (52,079 assets with frontmatter,
- * 2026-09-24) that naive predicate refuses 31 LIVE assets — every one an
- * `exo__Template` whose body IS a frontmatter skeleton by design. Q3/Q3b pin
- * exactly those: a placeholder uid/createdAt stays legal. The shipped predicate
- * refuses 0 of 52,079 while still refusing the real hub text.
+ * ⛔ The discriminator is NOT "the body starts with a frontmatter block". The
+ * shipped predicate refuses **0 of 52,086** live bodies while still refusing the
+ * real hub text `[three canonical vaults, assets with frontmatter, 2026-09-24
+ * ~10:50 +05]`; the naive one refuses **31** — every one an `exo__Template`
+ * whose body IS a frontmatter skeleton by design. Q3/Q3b pin exactly those: a
+ * placeholder uid/createdAt stays legal. ⚠ The corpus is live (52,079 → 52,086
+ * within one hour), so the count carries its moment, not just its scope.
  *
  * Drives the REAL `setBodyCommand()` / `createCommand()` via `parseAsync`
  * against a temp vault (commander → the guard → on-disk bytes).
@@ -108,6 +109,7 @@ describe("Ticket e6abe049: a body carrying a frontmatter COPY is refused fail-lo
   let errorSpy: ReturnType<typeof jest.spyOn>;
   let stdoutChunks: string[];
   let errChunks: string[];
+  let stderrChunks: string[];
   let exitCodes: number[];
 
   const taskPath = `${TASKS_DIR}/${TASK_UID}.md`;
@@ -128,6 +130,7 @@ describe("Ticket e6abe049: a body carrying a frontmatter COPY is refused fail-lo
 
     stdoutChunks = [];
     errChunks = [];
+    stderrChunks = [];
     exitCodes = [];
     exitSpy = jest.spyOn(process, "exit").mockImplementation(((code?: number) => {
       exitCodes.push(code ?? 0);
@@ -141,7 +144,10 @@ describe("Ticket e6abe049: a body carrying a frontmatter COPY is refused fail-lo
       }) as never);
     stderrSpy = jest
       .spyOn(process.stderr, "write")
-      .mockImplementation((() => true) as never);
+      .mockImplementation(((chunk: unknown) => {
+        stderrChunks.push(String(chunk));
+        return true;
+      }) as never);
     logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
     errorSpy = jest
       .spyOn(console, "error")
@@ -195,7 +201,37 @@ describe("Ticket e6abe049: a body carrying a frontmatter COPY is refused fail-lo
       { from: "user" },
     );
     expect(errChunks.join("\n")).toMatch(GUARD_MSG);
+    expect(exitCodes).not.toContain(0);
     expect(fs.readFileSync(taskAbs()).equals(before)).toBe(true);
+  });
+
+  it("Q9: set-body --dry-run refuses the copy BEFORE the preview — no preview is printed and the file is untouched @req:dbb19e9a-5425-4ccf-94b5-048681359bfb", async () => {
+    // The guard must sit before BOTH the write and the dry-run branch. Without
+    // this axis a guard wired only into the real-write path still passes Q1/Q1b
+    // (they run without --dry-run), so the ordering would be unlocked — the
+    // review proved it with a mutant that wrapped the call in `if (!dryRun)`
+    // and reddened NOTHING.
+    const before = fs.readFileSync(taskAbs());
+    await runSetBodyFile(REAL_HUB_COPY, ["--skip-wikilink-validation", "--dry-run"]);
+    expect(errChunks.join("\n")).toMatch(GUARD_MSG);
+    expect(exitCodes).not.toContain(0);
+    expect(stderrChunks.join("")).not.toContain("DRY RUN PREVIEW");
+    expect(fs.readFileSync(taskAbs()).equals(before)).toBe(true);
+  });
+
+  it("Q10: create --dry-run refuses the copy BEFORE the preview — no preview, no file @req:dbb19e9a-5425-4ccf-94b5-048681359bfb", async () => {
+    const bodyFile = path.join(vault, "copy-dry.md");
+    fs.writeFileSync(bodyFile, REAL_HUB_COPY, "utf-8");
+    const inbox = path.join(vault, "01 Inbox");
+    const before = fs.readdirSync(inbox).length;
+    await createCommand().parseAsync(
+      ["--class", CLASS_UID, "--label", "Dry note", "--vault", vault, "--body-file", bodyFile, "--dry-run"],
+      { from: "user" },
+    );
+    expect(errChunks.join("\n")).toMatch(GUARD_MSG);
+    expect(exitCodes).not.toContain(0);
+    expect(stderrChunks.join("")).not.toContain("DRY RUN PREVIEW");
+    expect(fs.readdirSync(inbox).length).toBe(before);
   });
 
   it("Q3: a live exo__Template body (placeholder uid/createdAt) is ACCEPTED — 31 such assets exist @req:dbb19e9a-5425-4ccf-94b5-048681359bfb", async () => {
@@ -224,6 +260,30 @@ describe("Ticket e6abe049: a body carrying a frontmatter COPY is refused fail-lo
     expect(errChunks.join("\n")).not.toMatch(GUARD_MSG);
     expect(exitCodes).toContain(0);
     expect(fs.readFileSync(taskAbs(), "utf-8")).toContain("Вывод: копию сняли.");
+  });
+
+  it("Q8: a key-shaped line built to blow up a backtracking matcher is handled in linear time (CodeQL js/redos #318) @req:dbb19e9a-5425-4ccf-94b5-048681359bfb", async () => {
+    // ⛔ THIS IS A SECURITY TIME-BOUND, NOT A MICRO-BENCHMARK — do not tighten
+    // the threshold. It separates LINEAR from EXPONENTIAL, and the gap is three
+    // orders of magnitude: measured 1799 ms on the pre-fix pattern against
+    // 0 ms on the shipped one, so 500 ms sits far from both. Tightening it
+    // towards the observed 0 ms converts a stable guard into a CI flake under
+    // parallel-worker contention (perf-tests-dont-hard-gate-ci; the same trap
+    // as pinning a fixture to a measured maximum).
+    //
+    // The body leads with `---` so the YAML-key check runs on the next line.
+    // `A__0__0…` has exponentially many equivalent splits for a pattern whose
+    // character class and whose `__` group both accept `_`, and the trailing
+    // `!` (no colon) forces every split to be tried.
+    //
+    // Monotonic clock: a wall-clock read can jump backwards (NTP step) and
+    // report a negative or absurd elapsed time on an otherwise healthy run.
+    const evil = `---\nA${"__0".repeat(26)}!\n`;
+    const started = process.hrtime.bigint();
+    await runSetBodyFile(evil, ["--skip-wikilink-validation"]);
+    const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+    expect(elapsedMs).toBeLessThan(500);
+    expect(exitCodes).toContain(0);
   });
 
   it("Q6: create --body-file refuses the same copy and creates NOTHING @req:dbb19e9a-5425-4ccf-94b5-048681359bfb", async () => {
