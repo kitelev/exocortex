@@ -207,16 +207,68 @@ export async function runQuarantineResolve(
 
   // Find the spec whose open-conflict set holds this path (the path the user
   // copied from `list`). `--repo` disambiguates the rare cross-repo collision.
+  // ⛔ Review of #4342, MEDIUM-1: with NO mounted AssetSpace the conflict set is
+  // empty for a reason that has nothing to do with conflicts, and "no open
+  // conflicts" would be a quantifier over the empty set — formally true, and it
+  // tells the reader the opposite cause. `runQuarantineList` already guards this
+  // (`specs.length === 0` → "No materialized AssetSpaces …"); the same sentence
+  // is used here for parity. `resolve` RETURNS 1 where `list` returns 0: for
+  // `list` an empty vault is a complete answer, for `resolve` it is a refusal.
+  if (specs.length === 0) {
+    out("No materialized AssetSpaces with a GitHub source found in this vault.");
+    return 1;
+  }
+
   const conflicts = await resolver.listOpenConflicts(specs);
-  const matches = conflicts.filter(
-    (c) =>
-      c.path === conflictPath &&
-      (opts.repo === undefined || c.repoKey === opts.repo),
-  );
+  const repoFilter = opts.repo;
+  const byPath = conflicts.filter((c) => c.path === conflictPath);
+  const matches =
+    repoFilter === undefined ? byPath : byPath.filter((c) => c.repoKey === repoFilter);
   if (matches.length === 0) {
-    out(
-      `No open conflict for "${conflictPath}"${opts.repo ? ` in ${opts.repo}` : ""} — run \`exosync quarantine list\` to see the current set.`,
-    );
+    // Ticket 21123711 / #4226 — the refusal names the ARGUMENT that did not
+    // match, not a claim about state. The filter above is CONJUNCTIVE (path AND
+    // repoKey), so three different inputs used to collapse into one sentence —
+    // "No open conflict for …, run `exosync quarantine list`" — which was
+    // measurably false for two of them: `list` shows the conflict both before
+    // and after. `conflicts` is already in hand one line up, so distinguishing
+    // the three costs nothing (decision-surface-must-derive-from-mechanism §A9:
+    // a pointer to `list` here was a signature, not a mechanism).
+    //
+    // ⛤ Form mirrors the `matches.length > 1` branch below, which already
+    // enumerates `  --repo <repoKey>`; parity by citation, not by analogy.
+    if (conflicts.length === 0) {
+      // The ONLY input for which a statement about the conflict set is true.
+      out(`No open conflicts in any mounted assetspace — nothing to resolve.`);
+    } else if (repoFilter !== undefined && byPath.length > 0) {
+      // The path IS open; the `--repo` filter is what excluded it. Naming the
+      // VALUE passed is the point of this branch — review MEDIUM/LOW-2: the
+      // sentence being replaced did print it, and dropping it here would be a
+      // regression in the very branch that is about that value.
+      out(
+        `"${conflictPath}" is an open conflict, but not in "${repoFilter}" — a repoKey carries ` +
+          `the sync branch (owner/repo#branch). It conflicts in:`,
+      );
+      for (const c of byPath) out(`  --repo ${c.repoKey}`);
+    } else {
+      // The path matched nothing. ⛤ When `--repo` was given, enumerate only that
+      // repo's conflicts (review LOW-1: listing another repo's paths invites the
+      // caller to copy one and earn a second refusal for the same mistake);
+      // otherwise print the `repoKey  path` pair, mirroring `quarantine list`,
+      // because two repos can hold the SAME repo-relative path and bare paths
+      // would print as two identical lines.
+      const candidates =
+        repoFilter === undefined
+          ? conflicts
+          : conflicts.filter((c) => c.repoKey === repoFilter);
+      out(
+        `"${conflictPath}" is not among the ${candidates.length} open conflict(s)` +
+          (repoFilter === undefined ? "" : ` in "${repoFilter}"`) +
+          ` — the path is repo-relative, exactly as \`exosync quarantine list\` prints it:`,
+      );
+      for (const c of candidates) {
+        out(repoFilter === undefined ? `  ${c.repoKey}  ${c.path}` : `  ${c.path}`);
+      }
+    }
     return 1;
   }
   if (matches.length > 1) {
@@ -241,6 +293,18 @@ export async function runQuarantineResolve(
   if (result.discardedLocalBackupPath !== undefined) {
     out(
       `  ↳ your discarded local version is preserved at ${spec.localPath}/${result.discardedLocalBackupPath}`,
+    );
+    // Ticket 21123711 — the backup STAYS. req `e85487a7` (Active) guarantees it
+    // "ALWAYS backs up the discarded local version to a SIBLING
+    // .conflict.local.txt", so the word `sibling` pins the LOCATION: neither
+    // deleting it nor moving it out of the assetspace is available here. What was
+    // missing is the two facts a reader needs to act — that it never leaves this
+    // device, and when it is safe to remove. An explicit opt-in removal is a
+    // question about whose risk it is, and lives in ticket 10150529.
+    out(
+      `     it stays on this device only — '.conflict.' paths are excluded from BOTH sync ` +
+        `predicates, so the backup never reaches the remote. Delete it yourself once you have ` +
+        `checked you do not need the discarded version.`,
     );
   }
   return 0;
