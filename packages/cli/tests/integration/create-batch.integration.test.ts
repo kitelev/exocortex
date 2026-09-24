@@ -211,6 +211,12 @@ function normalise(content: string, uid: string): string {
 }
 
 describe("req 1848dff9: `cli create-batch` — many assets, one invocation", () => {
+  // Integration axes that drive the real command several times each (B2 runs
+  // twelve) exceed jest's 5 s default under a loaded, parallel CI run — and a
+  // test abandoned by its timeout keeps running and writes its JSON into the
+  // NEXT test's stdout mocks, so one slow axis turns into two failures.
+  jest.setTimeout(30_000);
+
   let vault: string;
   let scratch: string;
   let exitSpy: ReturnType<typeof jest.spyOn>;
@@ -993,22 +999,30 @@ describe("req 1848dff9: `cli create-batch` — many assets, one invocation", () 
     const run = createBatchCommand().parseAsync([file, "--vault", vault], {
       from: "user",
     });
-    for (let i = 0; i < 5000 && held.length < 2; i += 1) {
-      await new Promise((tick) => setImmediate(tick));
+    // Wait for the FACT (both flush callbacks held), by the clock — a fixed
+    // number of event-loop turns passed locally and ran out on a slower CI
+    // runner before planning had finished (integration-test-revert-verify §A26).
+    const deadline = Date.now() + 20_000;
+    while (held.length < 2 && Date.now() < deadline) {
+      await new Promise((tick) => setTimeout(tick, 5));
     }
-    // The JSON is out, the flush callbacks are pending — and nothing exited.
-    expect(stdoutChunks.join("")).toContain('"label":"Flushed"');
-    expect(held.length).toBeGreaterThanOrEqual(2);
-    expect(exitCodes).toEqual([]);
-
-    for (const release of held.splice(0)) release();
-    await run;
+    try {
+      // The JSON is out, the flush callbacks are pending — and nothing exited.
+      expect(stdoutChunks.join("")).toContain('"label":"Flushed"');
+      expect(held.length).toBeGreaterThanOrEqual(2);
+      expect(exitCodes).toEqual([]);
+    } finally {
+      // Always let the run finish HERE: a run left pending would write its JSON
+      // into the next test's stdout mocks.
+      for (const release of held.splice(0)) release();
+      await run;
+    }
     expect(exitCodes).toEqual([0]);
-  });
+  }, 30_000);
 
   it("B14: null for an optional key means absent; a UTF-8 BOM before the document is accepted @req:1848dff9-bb2e-43a9-95e7-d917d6cef552", async () => {
     const r = await runBatch(
-      "﻿" +
+      "\uFEFF" +
         JSON.stringify([
           {
             class: TASK_CLASS_UID,
