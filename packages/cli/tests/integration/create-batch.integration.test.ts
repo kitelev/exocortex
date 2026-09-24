@@ -31,6 +31,7 @@
  *   B13  the command exits only after stdout and stderr have been flushed
  *   B14  null for an optional key means "absent"; a UTF-8 BOM is accepted
  *   B15  a diagnostic printed once also names the other items that raised it
+ *   B16  a reader that closes the pipe early (EPIPE) does not change the exit code
  *
  * B6 observes service INSTANCES through prototype spies (the `this` of each
  * call) and the underlying reads through `NodeFsAdapter.prototype` — never a
@@ -66,6 +67,9 @@ const { PropertyNameValidator } =
 const { EffortStatusResolver } =
   await import("../../src/services/EffortStatusResolver.js");
 const { ShapeLoader } = await import("@kitelev/exocortex-core");
+// The fs-extra object the adapters read directories through — spied in B6d to
+// count real directory reads, not calls to any one method.
+const { default: fsExtra } = await import("fs-extra");
 
 const EFFORT_CLASS_UID = "086f71fa-dd30-4284-90cf-e609f2a6c461";
 const TASK_CLASS_UID = "1b20a8f0-d745-4e93-91db-4531b3df120e";
@@ -873,13 +877,13 @@ describe("req 1848dff9: `cli create-batch` — many assets, one invocation", () 
         label: `Linker ${i}`,
         properties: { exo__Asset_relates: `[[${fillerUid(i)}]]` },
       }));
+    // Counted as DIRECTORY READS, the fact that costs time — not as calls to a
+    // method: a count of the base walk method stays 0 whether the index is
+    // built once or rebuilt per uid (review round 2: that axis was vacuous).
     const measure = async (
       n: number,
-    ): Promise<{ walks: number; lookups: number }> => {
-      const walks = jest.spyOn(
-        NodeFsAdapter.prototype,
-        "findFileByUidFilename",
-      );
+    ): Promise<{ readdirs: number; lookups: number }> => {
+      const readdirs = jest.spyOn(fsExtra, "readdir");
       const lookups = jest.spyOn(
         PlanningFsAdapter.prototype,
         "findFileByUidFilename",
@@ -887,19 +891,20 @@ describe("req 1848dff9: `cli create-batch` — many assets, one invocation", () 
       const r = await runBatch(linking(n), ["--dry-run"]);
       expect(r.exit).toEqual([0]);
       const result = {
-        walks: walks.mock.calls.length,
+        readdirs: readdirs.mock.calls.length,
         lookups: lookups.mock.calls.length,
       };
-      walks.mockRestore();
+      readdirs.mockRestore();
       lookups.mockRestore();
       return result;
     };
     const small = await measure(2);
     const large = await measure(20);
-    // Non-vacuity: every item's link really was looked up …
+    // Non-vacuity: every item's link really was looked up, and a walk ran …
     expect(large.lookups).toBeGreaterThanOrEqual(20);
-    // … and a new target does not cost a new directory walk.
-    expect(large.walks).toBe(small.walks);
+    expect(small.readdirs).toBeGreaterThan(0);
+    // … and a new target does not cost a new walk.
+    expect(large.readdirs).toBe(small.readdirs);
   });
 
   it("B9b: `-` with a terminal on stdin is refused instead of waiting forever @req:1848dff9-bb2e-43a9-95e7-d917d6cef552", async () => {
@@ -929,11 +934,21 @@ describe("req 1848dff9: `cli create-batch` — many assets, one invocation", () 
         label: "Anchored on a sibling",
         properties: { exo__Asset_isDefinedBy: `[[${anchorUid}]]` },
       },
+      {
+        // The BARE form: the range guard resolves it as well (review round 2
+        // found a wikilink-only matcher letting it through into 01 Inbox).
+        class: TASK_CLASS_UID,
+        label: "Bare anchor",
+        properties: { exo__Asset_isDefinedBy: anchorUid },
+      },
     ]);
     expect(r.exit).toEqual([2]);
     expect(countMd(vault)).toBe(before);
     expect(r.stderr).toContain(
       `item[1] "Anchored on a sibling": exo__Asset_isDefinedBy names [[${anchorUid}]], which item[0] of this same batch creates`,
+    );
+    expect(r.stderr).toContain(
+      `item[2] "Bare anchor": exo__Asset_isDefinedBy names [[${anchorUid}]], which item[0] of this same batch creates`,
     );
   });
 
@@ -1063,5 +1078,35 @@ describe("req 1848dff9: `cli create-batch` — many assets, one invocation", () 
     expect(r.stderr).toContain(
       "also applies to 2 more item(s): [item 1] [item 2]",
     );
+  });
+
+  it("B16: a reader that closes the pipe early (EPIPE) does not change the exit code @req:1848dff9-bb2e-43a9-95e7-d917d6cef552", async () => {
+    // `| head -c 100`: the write fails with EPIPE — reported to the callback AND
+    // emitted as 'error'. Unhandled, that event is an uncaught exception (exit
+    // 1 after every file was written); the batch's outcome must stand.
+    const epipe = Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
+    jest.spyOn(process.stdout, "write").mockImplementation(((
+      chunk: unknown,
+      encodingOrCallback?: unknown,
+      callback?: unknown,
+    ) => {
+      stdoutChunks.push(String(chunk));
+      const done =
+        typeof encodingOrCallback === "function"
+          ? encodingOrCallback
+          : callback;
+      if (typeof done === "function") {
+        process.nextTick(() => {
+          (done as (error: Error) => void)(epipe);
+          process.stdout.emit("error", epipe);
+        });
+      }
+      return true;
+    }) as never);
+
+    const r = await runBatch([{ class: TASK_CLASS_UID, label: "Reader gone" }]);
+    await new Promise((tick) => setImmediate(tick));
+    expect(r.exit).toEqual([0]);
+    expect(fs.existsSync(path.join(vault, r.out![0].path))).toBe(true);
   });
 });

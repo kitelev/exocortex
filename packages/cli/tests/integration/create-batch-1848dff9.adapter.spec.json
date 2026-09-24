@@ -27,7 +27,13 @@
       "from": "    return this.memo(this.byUidFilename, uidLower, async () => {",
       "to": "    return this.memo(this.byUidFilename, uidLower, async () => {\n      if (uidLower.length > 0) return super.findFileByUidFilename(uid);",
       "expect": ["B6d"],
-      "_note": "Review round 1 HIGH-3(b): memoising per uid still walks the vault once per DISTINCT uid; the index walks it once."
+      "_note": "Review round 1 HIGH-3(b): memoising per uid still walks the vault once per DISTINCT uid; the index walks it once. B6d counts directory reads (fs-extra readdir) since round 2."
+    },
+    "A4_filename_index_rebuilt_per_uid": {
+      "from": "    this.markdownNames ??= (async () => {",
+      "to": "    this.markdownNames = (async () => {",
+      "expect": ["B6d"],
+      "_note": "Review round 2 MEDIUM: B6d used to count calls of the base walk METHOD, which stays 0 however often the index is rebuilt; it now counts fs-extra readdir calls."
     }
   }
 }

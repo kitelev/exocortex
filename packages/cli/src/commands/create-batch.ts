@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { resolve } from "path";
 import { existsSync, readFileSync } from "fs";
 import {
+  extractAssetReference,
   GenericAssetCreationService,
   liveClock,
   liveUidGenerator,
@@ -414,22 +415,20 @@ function checkAnchorsExist(
     for (const flag of item.options.property ?? []) {
       const eq = flag.indexOf("=");
       if (flag.slice(0, eq).trim() !== IS_DEFINED_BY_KEY) continue;
-      for (const match of flag
-        .slice(eq + 1)
-        .matchAll(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g)) {
-        const target = match[1].trim().toLowerCase();
-        const creator = pendingIndex.get(target);
-        if (creator !== undefined) {
-          failures.push({
-            index: item.index,
-            label: item.label,
-            message:
-              `${IS_DEFINED_BY_KEY} names [[${target}]], which item[${creator}] of this same batch creates — ` +
-              `an anchor must already exist on disk (the range guard and co-location read its file); ` +
-              `create the ontology first, in its own run`,
-          });
-        }
-      }
+      // The range guard's own parser (`[[uid]]`, `[[uid|alias]]`, quoted, AND
+      // a bare `uid`): a matcher of our own would recognise a subset of the
+      // forms the guard resolves, and the rest would slip past both.
+      const target = extractAssetReference(flag.slice(eq + 1))?.toLowerCase();
+      const creator = target ? pendingIndex.get(target) : undefined;
+      if (creator === undefined) continue;
+      failures.push({
+        index: item.index,
+        label: item.label,
+        message:
+          `${IS_DEFINED_BY_KEY} names [[${target}]], which item[${creator}] of this same batch creates — ` +
+          `an anchor must already exist on disk (the range guard and co-location read its file); ` +
+          `create the ontology first, in its own run`,
+      });
     }
   }
   return failures;
@@ -468,6 +467,25 @@ async function readAllStdin(): Promise<string> {
 }
 
 /**
+ * A reader that closes its end early (`| head -c 100`) makes the next write to
+ * that stream fail with EPIPE — reported to the write's callback AND emitted as
+ * an 'error' event, which with no listener is an uncaught exception: exit 1
+ * after every file was already written. The batch's outcome is decided by then,
+ * so EPIPE on stdio is ignored and the exit code keeps saying what the batch
+ * did. Any other stdio error still surfaces. Installed once per process.
+ */
+let stdioGuarded = false;
+function guardStdioAgainstClosedReader(): void {
+  if (stdioGuarded) return;
+  stdioGuarded = true;
+  for (const stream of [process.stdout, process.stderr]) {
+    stream.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code !== "EPIPE") throw error;
+    });
+  }
+}
+
+/**
  * Exit only after everything written to stdout and stderr has been handed to
  * the OS. A pipe is asynchronous on macOS: `process.exit` right after a large
  * write drops whatever did not fit the pipe buffer — measured 2026-09-25 on a
@@ -477,6 +495,7 @@ async function readAllStdin(): Promise<string> {
  * callback fires only after every earlier write on the same stream.
  */
 async function finish(code: number): Promise<void> {
+  guardStdioAgainstClosedReader();
   await Promise.all(
     [process.stdout, process.stderr].map(
       (stream) =>

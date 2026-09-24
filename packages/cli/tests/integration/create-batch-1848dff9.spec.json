@@ -15,7 +15,7 @@
     "M1_context_built_per_item": {
       "from": "            const { config, label } = await planCreate(\n              item.options,\n              ctx,\n              item.body,\n            );",
       "to": "            const { config, label } = await planCreate(\n              item.options,\n              new CreateContext(vaultPath, {\n                fsAdapter: new PlanningFsAdapter(vaultPath),\n                warn,\n                pendingUids,\n              }),\n              item.body,\n            );",
-      "expect": ["B6a", "B6b", "B6c"],
+      "expect": ["B6a", "B6b", "B6c", "B6d"],
       "_note": "The loop-in-one-process that the requirement rules out: every item gets fresh services and a fresh read memo, so every scan runs per item."
     },
     "M2_batch_uids_not_handed_to_wikilink_validation": {
@@ -33,7 +33,7 @@
     "M4_only_the_first_failure_reported": {
       "from": "          reportFailures(failures, total);",
       "to": "          reportFailures(failures.slice(0, 1), total);",
-      "expect": ["B3"]
+      "expect": ["B3", "B11"]
     },
     "M5_caller_uid_checks_removed": {
       "from": "        failures.push(...(await checkCallerUids(items, fsAdapter)));",
@@ -88,7 +88,7 @@
       "from": "        failures.push(...checkAnchorsExist(items, pendingIndex));",
       "to": "        failures.push(...checkAnchorsExist(items, new Map<string, number>()));",
       "expect": ["B11"],
-      "_note": "Review round 1 HIGH: without the check the anchor passes wikilink validation (it is a pending uid), the range guard and co-location fail open, and the item lands in 01 Inbox with nothing checked."
+      "_note": "Review round 1 HIGH: without the check the anchor passes wikilink validation (it is a pending uid), the range guard and co-location fail open, and the item lands in 01 Inbox with nothing checked. Round 2: B11 also carries the BARE-uid form, which a wikilink-only matcher missed; the check now uses the range guard's own parser (extractAssetReference)."
     },
     "M15_frontmatter_uid_ignored": {
       "from": "      if (normalised) onDisk.add(normalised);",
@@ -127,6 +127,12 @@
       "from": "          if (raisedBy.length < 2) continue;",
       "to": "          if (raisedBy.length < 2 || raisedBy.length > 0) continue;",
       "expect": ["B15"]
+    },
+    "M22_epipe_on_stdio_rethrown": {
+      "from": "      if (error.code !== \"EPIPE\") throw error;",
+      "to": "      throw error;",
+      "expect": ["B16"],
+      "_note": "Review round 2 LOW: a reader closing the pipe early turned a finished batch into exit 1 with an uncaught EPIPE."
     }
   }
 }
