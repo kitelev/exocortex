@@ -1,0 +1,43 @@
+{
+  "_doc": "Revert-verify mutants for req 1848dff9 — CreateContext, the services a batch shares. Each mutant turns one lazy member into a per-access build (or defeats one memo); B6a watches instance identity, B6c the per-item metadata lookups on the memo layer.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?)[: ]",
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/create-batch.integration.test.ts 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/create.ts",
+  "mutants": {
+    "X1_class_resolver_built_per_access": {
+      "from": "    this.classResolverInstance ??= new ClassResolverService(this.fsAdapter);",
+      "to": "    this.classResolverInstance = new ClassResolverService(this.fsAdapter);",
+      "expect": ["B6a", "B6c"],
+      "_note": "Measured, not predicted: a per-access resolver rebuilds its class index — a full pass over the memo layer — for every item, which B6c counts. The first prediction ([B6a]) was derived from the mutant's topic, not from what B6c measures (integration-test-revert-verify §A44)."
+    },
+    "X2_property_name_validator_built_per_access": {
+      "from": "    this.propertyNameValidatorInstance ??= new PropertyNameValidator(",
+      "to": "    this.propertyNameValidatorInstance = new PropertyNameValidator(",
+      "expect": ["B6a"]
+    },
+    "X3_status_resolver_built_per_access": {
+      "from": "    this.statusResolverInstance ??= new EffortStatusResolver(this.fsAdapter);",
+      "to": "    this.statusResolverInstance = new EffortStatusResolver(this.fsAdapter);",
+      "expect": ["B6a"]
+    },
+    "X4_shape_registry_loaded_per_call": {
+      "from": "    this.shapeRegistryLoad ??= ShapeLoader.loadFromVaultFS(this.vaultPath).catch(",
+      "to": "    this.shapeRegistryLoad = ShapeLoader.loadFromVaultFS(this.vaultPath).catch(",
+      "expect": ["B6a"]
+    },
+    "X5_neighbour_scan_memo_bypassed": {
+      "from": "    let scan = this.neighbourScans.get(key);",
+      "to": "    let scan = this.neighbourScans.get(`${key}\\u0000${Math.random()}`);",
+      "expect": ["B6c"],
+      "_note": "B6c only: the adapter memo still absorbs the disk reads (B6b stays green), but each item pays another pass over the memo layer — the cost the per-(class, anchor) memo exists to remove."
+    }
+  }
+}

@@ -28,6 +28,7 @@ import {
   coLocationFolderFromPath,
   scanClassNeighbours,
   pickCanonicalHome,
+  type ClassNeighbourScan,
 } from "../executors/folderRepairHelpers.js";
 import type { CacheManager } from "../cache/CacheManager.js";
 import { assertNoFrontmatterCopy } from "./bodyFrontmatterGuard.js";
@@ -71,7 +72,7 @@ const EFFORT_STATUS_KEY = "ems__Effort_status";
 /**
  * Options parsed from CLI flags for the create command.
  */
-interface CreateCommandOptions {
+export interface CreateCommandOptions {
   vault: string;
   class: string;
   label: string;
@@ -343,6 +344,476 @@ function readStdin(timeoutMs: number): Promise<string> {
 }
 
 /**
+ * Body text handed to {@link planCreate} instead of reading `--body` /
+ * `--body-file` / stdin. `create-batch` passes each item's body this way,
+ * tagged `"file"` so it is taken verbatim (no `\n` escape expansion).
+ */
+export interface ResolvedBody {
+  text: string;
+  source: "file" | "stdin" | "inline";
+}
+
+/** What {@link planCreate} decided — the exact config the build/write uses. */
+export interface PlannedCreate {
+  config: GenericAssetCreationConfig;
+  /** The trimmed label, echoed back in the command's JSON output. */
+  label: string;
+}
+
+export interface CreateContextOptions {
+  /**
+   * The filesystem adapter every lookup goes through. Default: a plain
+   * {@link NodeFsAdapter}, which is what `create` has always used.
+   * `create-batch` passes a {@link PlanningFsAdapter} that memoises reads.
+   */
+  fsAdapter?: NodeFsAdapter;
+  /** Diagnostics sink. Default: `process.stderr.write` — `create` unchanged. */
+  warn?: (text: string) => void;
+  /**
+   * UIDs of the assets the same batch is about to write; a UUID wikilink to one
+   * of them passes validation. Empty for `create`.
+   */
+  pendingUids?: ReadonlySet<string>;
+}
+
+/**
+ * The services one `create` run uses — shared, for `create-batch`, by every
+ * item of the run (req 1848dff9-bb2e-43a9-95e7-d917d6cef552).
+ *
+ * Each member is built on FIRST USE, at the point in {@link planCreate} where
+ * `create` has always built it, so a single `create` constructs the same
+ * objects in the same order as before this class existed. What a batch gains
+ * is that the second item finds them built: the class index, the TBox property
+ * walk and the shape load run once per invocation instead of once per item.
+ * Those are the vault-wide scans a `create` pays for — every vault file read 4
+ * times, measured 2026-09-25 on vault-exodev (34,935 files, 17-23 s per create).
+ */
+export class CreateContext {
+  readonly vaultPath: string;
+  readonly warn: (text: string) => void;
+  private readonly options: CreateContextOptions;
+  private fsAdapterInstance?: NodeFsAdapter;
+  private classResolverInstance?: ClassResolverService;
+  private wikilinkValidatorInstance?: WikilinkValidator;
+  private propertyNameValidatorInstance?: PropertyNameValidator;
+  private statusResolverInstance?: EffortStatusResolver;
+  private shapeRegistryLoad?: Promise<ShapeRegistry>;
+  private readonly neighbourScans = new Map<string, Promise<ClassNeighbourScan>>();
+
+  constructor(vaultPath: string, options: CreateContextOptions = {}) {
+    this.vaultPath = vaultPath;
+    this.options = options;
+    this.warn =
+      options.warn ??
+      ((text: string): void => {
+        process.stderr.write(text);
+      });
+  }
+
+  get fsAdapter(): NodeFsAdapter {
+    this.fsAdapterInstance ??=
+      this.options.fsAdapter ?? new NodeFsAdapter(this.vaultPath);
+    return this.fsAdapterInstance;
+  }
+
+  get classResolver(): ClassResolverService {
+    this.classResolverInstance ??= new ClassResolverService(this.fsAdapter);
+    return this.classResolverInstance;
+  }
+
+  get wikilinkValidator(): WikilinkValidator {
+    this.wikilinkValidatorInstance ??= new WikilinkValidator(this.fsAdapter, {
+      pendingUids: this.options.pendingUids,
+    });
+    return this.wikilinkValidatorInstance;
+  }
+
+  get propertyNameValidator(): PropertyNameValidator {
+    this.propertyNameValidatorInstance ??= new PropertyNameValidator(
+      this.vaultPath,
+      { warn: (msg) => this.warn(`⚠ ${msg}\n`) },
+    );
+    return this.propertyNameValidatorInstance;
+  }
+
+  get statusResolver(): EffortStatusResolver {
+    this.statusResolverInstance ??= new EffortStatusResolver(this.fsAdapter);
+    return this.statusResolverInstance;
+  }
+
+  /**
+   * SHACL-lite shape registry for cardinality-aware serialization (issues
+   * #3099, #3179), loaded once. A load failure is non-fatal: an EMPTY registry
+   * (not undefined) keeps the core on the cardinality-aware formatter, so
+   * `create` stays byte-identical to its prior behaviour.
+   */
+  shapeRegistry(): Promise<ShapeRegistry> {
+    this.shapeRegistryLoad ??= ShapeLoader.loadFromVaultFS(this.vaultPath).catch(
+      () => new ShapeRegistry(),
+    );
+    return this.shapeRegistryLoad;
+  }
+
+  /**
+   * {@link scanClassNeighbours}, memoised per (class, anchor): every item of a
+   * batch that shares both would otherwise re-scan the whole vault. The result
+   * is read-only to its consumers (`pickCanonicalHome` and the fail-open
+   * diagnostic only read it), so sharing it is safe.
+   */
+  scanClassNeighbours(
+    classUid: string,
+    classLabel: string,
+    isDefinedBy: unknown,
+  ): Promise<ClassNeighbourScan> {
+    const key = JSON.stringify([classUid, classLabel, isDefinedBy ?? null]);
+    let scan = this.neighbourScans.get(key);
+    if (!scan) {
+      scan = scanClassNeighbours(this.fsAdapter, classUid, classLabel, isDefinedBy);
+      this.neighbourScans.set(key, scan);
+    }
+    return scan;
+  }
+}
+
+/**
+ * Everything `create` decides BEFORE it writes — as ONE function that both
+ * `create` and `create-batch` call (req 1848dff9-bb2e-43a9-95e7-d917d6cef552):
+ * the label / alias / property-key / body guards, class resolution, the
+ * effort-status default and its conflicts, declared-range typing, wikilink
+ * validation, the isDefinedBy range guard and co-location.
+ *
+ * It writes nothing; the caller builds, validates, previews or writes the
+ * returned config. That is what lets a batch plan every item before its first
+ * write — and why the two commands cannot drift apart: there is no second copy
+ * of any of these rules. Errors are thrown exactly as `create` always threw
+ * them; `create` hands them to `ErrorHandler`, `create-batch` collects them.
+ */
+export async function planCreate(
+  options: CreateCommandOptions,
+  ctx: CreateContext,
+  bodyOverride?: ResolvedBody,
+): Promise<PlannedCreate> {
+  const vaultPath = ctx.vaultPath;
+
+  // Label validation (core is intentionally lenient — it simply omits
+  // the label when blank; `cli create` requires a non-empty label).
+  if (!options.label || options.label.trim().length === 0) {
+    throw new Error("Label cannot be empty");
+  }
+  const trimmedLabel = options.label.trim();
+
+  assertAliasesAreNotAList(options.aliases);
+
+  // Parse properties from --property flags. Kept mutable so the effort
+  // status default can be injected (issue #3849) before `propertyValues`
+  // is finalised below.
+  const properties = parseProperties(options.property);
+
+  // Validate property NAMES against the mounted TBox (RFC 430e84f1, P1).
+  // `create` already rejects a dangling wikilink VALUE (WikilinkValidator);
+  // this closes the twin fail-silent hole on the KEY — a `--property` key
+  // whose name does not exist in the mounted TBox is rejected fail-loud
+  // with a fuzzy suggestion + a machine-readable `{ unknown, suggestions }`
+  // structured error, so an LLM agent's typo (`ems__Effort_parentEffort`)
+  // cannot silently land a DEAD property. There is deliberately NO skip
+  // flag — the guarantee has no bot-accessible escape-hatch (must-have #6);
+  // validation is fail-open when NO property definitions are mounted
+  // (degenerate/partial profile). Validates the raw USER keys only (the
+  // CLI injects its own well-known keys downstream).
+  const propertyNameValidator = ctx.propertyNameValidator;
+  // The RAW USER keys — deliberately NOT the full set this command ends up
+  // writing. The key check judges only what the caller typed; the CLI's own
+  // well-known keys are injected downstream and validating them here would
+  // be wrong.
+  const userPropertyKeys = Object.keys(properties);
+  await propertyNameValidator.validate(userPropertyKeys);
+
+  // Resolve body content. `\n` escapes are expanded ONLY for the inline
+  // `--body "a\nb"` form — that is exactly what issue #2288 asked for ("Given
+  // --body \"Line1\\n\\nLine2\"), because a single shell argument cannot carry a
+  // real newline.
+  //
+  // ⛔ NOT for --body-file or stdin: those already carry real newlines, so a
+  // backslash-n in them is authored text (a regex, a Windows path) and expanding
+  // it silently corrupts the document.
+  // `create-batch` hands the item's body in directly (verbatim, like
+  // --body-file); `create` reads it from --body / --body-file / stdin.
+  const resolvedBody = bodyOverride ?? (await resolveBody(options));
+  let body = resolvedBody?.text;
+  if (body !== undefined && resolvedBody?.source === "inline") {
+    body = body.replace(/\\n/g, "\n");
+  }
+
+  // REFUSE a body that leads with a COPY of a frontmatter block (ticket
+  // e6abe049). `create` BUILDS the frontmatter from --class/--property, so
+  // a body carrying one would be written as text below it — the asset would
+  // be born with two blocks. Applies to all three body sources; a template
+  // body (placeholder uid/createdAt) is accepted, see the guard's docblock.
+  if (body !== undefined) {
+    assertNoFrontmatterCopy(body, "create");
+  }
+
+  // CLI-side resolution + validation services (Node filesystem), held by the
+  // context so a batch builds each of them — and its vault index — once.
+  const fsAdapter = ctx.fsAdapter;
+  const classResolver = ctx.classResolver;
+  const wikilinkValidator = ctx.wikilinkValidator;
+
+  // Resolve class short name → UUID (UID pass-through if already a UUID).
+  const classUid = await classResolver.resolve(vaultPath, options.class);
+
+  // Effort status default (issue #3849): a status-bearing class
+  // (ems__Effort or a subclass, detected by walking exo__Class_superClass
+  // to ems__Effort — no hardcoded class list) gets a default
+  // ems__Effort_status of Backlog on create, the status a Write-template
+  // gives for free, so a fresh Task/Project skips the two-step
+  // `set-draft-status → move-to-backlog` chain. A non-status-bearing
+  // class never gets a status. An explicit `--property
+  // ems__Effort_status=...` always wins (and conflicts with --status).
+  //
+  // `--no-status` (issue #3928) is the explicit opt-out: for a
+  // status-bearing class it SUPPRESSES the default injection so a
+  // recurring/template prototype is created without a status (matching
+  // its status-less siblings) — a no-op for a non-status-bearing class
+  // (none was injected anyway). Commander pairs `--no-status` with the
+  // `status` key → `options.status === false`; `--status <name>` → a
+  // string; neither → undefined.
+  const statusResolver = ctx.statusResolver;
+  const noStatus = options.status === false;
+  const statusName =
+    typeof options.status === "string" ? options.status : undefined;
+  const explicitStatus = EFFORT_STATUS_KEY in properties;
+  if (noStatus && explicitStatus) {
+    throw new Error(
+      `Cannot pass both --no-status and --property ${EFFORT_STATUS_KEY}=... (ambiguous — cannot both suppress and set the status). Use one.`,
+    );
+  }
+  if (statusName && explicitStatus) {
+    throw new Error(
+      `Cannot pass both --status and --property ${EFFORT_STATUS_KEY}=... (ambiguous). Use one.`,
+    );
+  }
+  if (!explicitStatus && !noStatus) {
+    const statusBearing = await statusResolver.isStatusBearing(classUid);
+    if (statusName) {
+      if (!statusBearing) {
+        throw new Error(
+          `--status only applies to status-bearing classes (ems__Effort subclasses); '${options.class}' is not one.`,
+        );
+      }
+      const statusUid = await statusResolver.resolveStatusUid(statusName);
+      if (!statusUid) {
+        throw new Error(
+          `Unknown status '${statusName}' — no matching ems__EffortStatus<Name> enum asset found in the vault.`,
+        );
+      }
+      properties[EFFORT_STATUS_KEY] = `[[${statusUid}]]`;
+    } else if (statusBearing) {
+      // Default Backlog — fail-open: if the enum can't be resolved
+      // (degenerate vault without the ems status enums mounted) keep the
+      // historical no-status behaviour rather than failing the create.
+      const backlogUid =
+        await statusResolver.resolveStatusUid(DEFAULT_STATUS_NAME);
+      if (backlogUid) {
+        properties[EFFORT_STATUS_KEY] = `[[${backlogUid}]]`;
+      } else {
+        ctx.warn(
+          `⚠ status-bearing class but no ${DEFAULT_STATUS_NAME} status enum found in the vault — created without ems__Effort_status.\n`,
+        );
+      }
+    }
+  }
+
+  // Finalise propertyValues AFTER any status injection so the injected
+  // status is wikilink-validated and co-location still reads isDefinedBy.
+  const propertyValues =
+    Object.keys(properties).length > 0 ? properties : undefined;
+
+  // Ticket 2227d660: the one-pass TBox scan also yields each def's declared
+  // `exo__Property_range`; handed to the core service so every scalar is
+  // typed by its declaration (a canonical negative under `xsd:integer`
+  // stays bare, a number under `xsd:string` is quoted). Empty when no
+  // property TBox is mounted → shape-based typing as before.
+  //
+  // Ticket 3fc34b92: naming the addressed properties also scopes the
+  // duplicate-range diagnostic to them — a conflicting twin of some OTHER
+  // property in the mounted TBox is not this command's business. The set is
+  // taken HERE, from the FINAL state of `properties`, because "addressed"
+  // means "actually written" and the CLI injects its own keys above
+  // (`ems__Effort_status`, explicit or the default Backlog). Reading the
+  // final state rather than listing the known injections is what keeps the
+  // next injection covered by construction. ⛔ NOT `userPropertyKeys`:
+  // that set is the key check's, and the two concepts differ exactly by
+  // what the CLI adds for the caller.
+  const writtenProperties = Object.keys(properties);
+  const declaredRanges =
+    await propertyNameValidator.declaredRanges(writtenProperties);
+
+  // Validate property wikilinks (unless skipped).
+  if (propertyValues && !options.skipWikilinkValidation) {
+    await wikilinkValidator.validatePropertyValues(propertyValues);
+  }
+
+  // Co-location placement (RFC 0b7a2fad CR-1, issue #3520): when
+  // `exo__Asset_isDefinedBy` resolves to an on-disk ontology file, place
+  // the new asset in that ontology's folder — the same resolver used by
+  // `apply repair-folder` / `audit co-location`. Fail-open to the inbox
+  // default when isDefinedBy is missing / `!`-prefixed / unresolvable.
+  let folderPath = DEFAULT_INBOX_FOLDER;
+  const isDefinedByRaw = propertyValues?.["exo__Asset_isDefinedBy"];
+  // isDefinedBy is cardinality-1; if a user degenerate-passes it more than
+  // once (→ array), co-locate by the first reference.
+  const isDefinedBy = Array.isArray(isDefinedByRaw)
+    ? isDefinedByRaw[0]
+    : isDefinedByRaw;
+
+  // RANGE guard (ticket d8c3c86b): the resolver below only asks WHERE the
+  // target lives; nothing asked WHAT it is, so a prototype passed as the
+  // anchor was accepted and wrote an sh:class violation. Placed here — before
+  // the build, before --dry-run and before the write — so the refusal is the
+  // same on every path; the resolution it needs is the one co-location is
+  // about to do anyway.
+  const isDefinedByCheck = await assertIsDefinedByIsOntology(
+    isDefinedByRaw,
+    fsAdapter,
+    "",
+    "create",
+  );
+  if (isDefinedBy) {
+    // ⛤ REUSE the guard's resolution instead of resolving the same anchor a
+    // second time. `findReferencedFile`'s last resort globs the vault and
+    // parses every file's frontmatter uncached, so the second pass costs
+    // about as much as the first (measured ~1.0x, and ~3.4 s on a 40,977-asset
+    // vault) — that is the difference between "this guard is free because
+    // create already resolves the anchor" being a CLAIM and being TRUE by
+    // construction. Co-location takes the first value, as it always has.
+    const coLocatedFolder = coLocationFolderFromPath(
+      isDefinedByCheck.targetPaths[0] ?? null,
+    );
+    // Truthy → a resolved subfolder. The empty string "" (root-level
+    // ontology, dirname → ".") is intentionally falsy here, so a brand
+    // new asset is kept in the inbox rather than written to the vault
+    // root — a degenerate case that does not occur under CR-1 (ontologies
+    // live under assetspaces/<ns>/).
+    if (coLocatedFolder) {
+      folderPath = coLocatedFolder;
+    }
+  }
+
+  // Priority 2 (issue #3934): when isDefinedBy did NOT resolve a folder
+  // (bang-anchor `[[!kitelev]]` / `[[!aiKnow]]`, empty, or unresolvable —
+  // folderPath is still the inbox default), co-locate the new asset next
+  // to existing sibling instances that share BOTH the SAME class AND the
+  // SAME isDefinedBy anchor, deriving the folder from where those siblings
+  // already live. Data-driven neighbour co-location (no hardcoded
+  // class→folder map): the product obeys the co-location invariant itself
+  // instead of requiring an explicit `--folder`. Matching on the anchor
+  // too (not class alone) is required because one class can span homes —
+  // e.g. `inbox__ExoAssistantKnowledge` is used for RFCs (`[[!kitelev]]` →
+  // exodev/inbox) AND for ExoAssistant infra knowledge (resolvable
+  // isDefinedBy → exoass); class alone would let the latter outvote the
+  // RFCs. Fail-open to the inbox default when no class+anchor sibling
+  // exists. `options.class` may be a UID or a short-name; it is matched
+  // (alongside the resolved classUid) against each instance's
+  // `exo__Instance_class` wikilink target in any of its forms.
+  if (folderPath === DEFAULT_INBOX_FOLDER) {
+    const scan = await ctx.scanClassNeighbours(
+      classUid,
+      options.class,
+      isDefinedBy,
+    );
+    const neighbourFolder = pickCanonicalHome(scan.sameAnchor);
+    if (neighbourFolder) {
+      folderPath = neighbourFolder;
+    } else {
+      // Fail-open diagnostic (issue 3f8b640f, @req:ec3e7b15-766f-4323-8c58-da7d34fb5fd9):
+      // BOTH priorities declined, so the asset lands in `01 Inbox/` — a
+      // folder that need not even exist and that `audit co-location`
+      // skips by design (an empty isDefinedBy is a documented skip
+      // reason). rc stays 0 and the JSON stays a single stdout document;
+      // the only thing that changes is that the divergence stops being
+      // silent.
+      //
+      // The warning is emitted ONLY when the class demonstrably HAS a
+      // home elsewhere (`anyAnchor` holds a folder other than the inbox
+      // default / vault root). A class with no instances yet, or one
+      // whose instances legitimately live in the inbox, stays silent —
+      // the condition is derived from the same scan that made the
+      // placement decision, not authored beside it.
+      const homes = Array.from(scan.anyAnchor.entries())
+        .filter(
+          ([folder]) => folder !== "" && folder !== DEFAULT_INBOX_FOLDER,
+        )
+        .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+      if (homes.length > 0) {
+        const shown = homes
+          .slice(0, 3)
+          .map(([folder, count]) => `${folder} (${count})`)
+          .join(", ");
+        const more =
+          homes.length > 3 ? `, +${homes.length - 3} more` : "";
+        // `absent` and `empty` are distinguished on purpose: an
+        // `--property exo__Asset_isDefinedBy=` writes the key with an
+        // empty value, so "is absent" would be a false statement about
+        // the asset that is being created.
+        const anchorState =
+          isDefinedBy === undefined || isDefinedBy === null
+            ? "exo__Asset_isDefinedBy is absent"
+            : String(isDefinedBy).length === 0
+              ? "exo__Asset_isDefinedBy is empty"
+              : `exo__Asset_isDefinedBy=${String(isDefinedBy)} resolved no folder and no sibling shares that anchor`;
+        // "would land" rather than "lands": the write happens ~150 lines
+        // below and `--validate` can still refuse it, while `--dry-run`
+        // never writes at all — the placement is decided here, the file
+        // is not.
+        ctx.warn(
+          `⚠ co-location fail-open: this asset would land in \`${DEFAULT_INBOX_FOLDER}/\` — ${anchorState}.\n` +
+            `  Existing homes of class ${options.class}: ${shown}${more}.\n` +
+            `  Set exo__Asset_isDefinedBy to the anchor used by the intended home ` +
+            `(a \`!\`-prefixed anchor needs --skip-wikilink-validation).\n`,
+        );
+      }
+    }
+  }
+
+  // Load SHACL-lite shape registry from vault for cardinality-aware
+  // property serialization (issues #3099, #3179). Failure here is
+  // non-fatal — fall back to an EMPTY registry (not undefined) so the
+  // core still takes the cardinality-aware formatter and `cli create`
+  // stays byte-identical to its prior behaviour (scalar default per
+  // #3179) even when shapes cannot be loaded.
+  // The context loads it once per invocation and applies that fallback.
+  const shapeRegistry = await ctx.shapeRegistry();
+
+  // Delegate the domain logic (frontmatter assembly, UID-canon class
+  // ref, cardinality, timestamp, body) to the shared core service.
+  // `cli create` opts into the domain fields the plugin/apply omit:
+  //  - classRefForm 'uuid' → `[[<uuid>]]` strip-canon
+  //  - createdBy defaults to ExoAssistant when `--created-by` is omitted
+  //    (issue #3849 — the default is CLI-scoped; the core applies no
+  //    implicit default, so plugin/apply stay byte-identical)
+  //  - folder = co-located ontology folder (or `01 Inbox` fail-open),
+  //    aliases, timezone (Asia/Almaty default), body
+  //  - shapeRegistry → cardinality-aware property emission
+  const config: GenericAssetCreationConfig = {
+    className: options.class,
+    classRefForm: "uuid",
+    classUid,
+    label: trimmedLabel,
+    aliases: options.aliases,
+    folderPath,
+    createdBy: options.createdBy || DEFAULT_CREATED_BY_UID,
+    timezone: options.timezone || DEFAULT_TIMEZONE,
+    body,
+    propertyValues,
+    shapeRegistry,
+    declaredRanges,
+  };
+
+  return { config, label: trimmedLabel };
+}
+
+/**
  * Creates the 'create' subcommand for universal asset creation.
  *
  * @returns Commander Command instance configured for asset creation
@@ -416,310 +887,15 @@ export function createCommand(): Command {
         }
         registerOrderSpecFromVault(vaultPath);
 
-        // Label validation (core is intentionally lenient — it simply omits
-        // the label when blank; `cli create` requires a non-empty label).
-        if (!options.label || options.label.trim().length === 0) {
-          throw new Error("Label cannot be empty");
-        }
-        const trimmedLabel = options.label.trim();
-
-        assertAliasesAreNotAList(options.aliases);
-
-        // Parse properties from --property flags. Kept mutable so the effort
-        // status default can be injected (issue #3849) before `propertyValues`
-        // is finalised below.
-        const properties = parseProperties(options.property);
-
-        // Validate property NAMES against the mounted TBox (RFC 430e84f1, P1).
-        // `create` already rejects a dangling wikilink VALUE (WikilinkValidator);
-        // this closes the twin fail-silent hole on the KEY — a `--property` key
-        // whose name does not exist in the mounted TBox is rejected fail-loud
-        // with a fuzzy suggestion + a machine-readable `{ unknown, suggestions }`
-        // structured error, so an LLM agent's typo (`ems__Effort_parentEffort`)
-        // cannot silently land a DEAD property. There is deliberately NO skip
-        // flag — the guarantee has no bot-accessible escape-hatch (must-have #6);
-        // validation is fail-open when NO property definitions are mounted
-        // (degenerate/partial profile). Validates the raw USER keys only (the
-        // CLI injects its own well-known keys downstream).
-        const propertyNameValidator = new PropertyNameValidator(vaultPath, {
-          warn: (msg) => process.stderr.write(`⚠ ${msg}\n`),
-        });
-        // The RAW USER keys — deliberately NOT the full set this command ends up
-        // writing. The key check judges only what the caller typed; the CLI's own
-        // well-known keys are injected downstream and validating them here would
-        // be wrong.
-        const userPropertyKeys = Object.keys(properties);
-        await propertyNameValidator.validate(userPropertyKeys);
-
-        // Resolve body content. `\n` escapes are expanded ONLY for the inline
-        // `--body "a\nb"` form — that is exactly what issue #2288 asked for ("Given
-        // --body \"Line1\\n\\nLine2\"), because a single shell argument cannot carry a
-        // real newline.
-        //
-        // ⛔ NOT for --body-file or stdin: those already carry real newlines, so a
-        // backslash-n in them is authored text (a regex, a Windows path) and expanding
-        // it silently corrupts the document.
-        const resolvedBody = await resolveBody(options);
-        let body = resolvedBody?.text;
-        if (body !== undefined && resolvedBody?.source === "inline") {
-          body = body.replace(/\\n/g, "\n");
-        }
-
-        // REFUSE a body that leads with a COPY of a frontmatter block (ticket
-        // e6abe049). `create` BUILDS the frontmatter from --class/--property, so
-        // a body carrying one would be written as text below it — the asset would
-        // be born with two blocks. Applies to all three body sources; a template
-        // body (placeholder uid/createdAt) is accepted, see the guard's docblock.
-        if (body !== undefined) {
-          assertNoFrontmatterCopy(body, "create");
-        }
-
-        // CLI-side resolution + validation services (Node filesystem).
-        const fsAdapter = new NodeFsAdapter(vaultPath);
-        const classResolver = new ClassResolverService(fsAdapter);
-        const wikilinkValidator = new WikilinkValidator(fsAdapter);
-
-        // Resolve class short name → UUID (UID pass-through if already a UUID).
-        const classUid = await classResolver.resolve(vaultPath, options.class);
-
-        // Effort status default (issue #3849): a status-bearing class
-        // (ems__Effort or a subclass, detected by walking exo__Class_superClass
-        // to ems__Effort — no hardcoded class list) gets a default
-        // ems__Effort_status of Backlog on create, the status a Write-template
-        // gives for free, so a fresh Task/Project skips the two-step
-        // `set-draft-status → move-to-backlog` chain. A non-status-bearing
-        // class never gets a status. An explicit `--property
-        // ems__Effort_status=...` always wins (and conflicts with --status).
-        //
-        // `--no-status` (issue #3928) is the explicit opt-out: for a
-        // status-bearing class it SUPPRESSES the default injection so a
-        // recurring/template prototype is created without a status (matching
-        // its status-less siblings) — a no-op for a non-status-bearing class
-        // (none was injected anyway). Commander pairs `--no-status` with the
-        // `status` key → `options.status === false`; `--status <name>` → a
-        // string; neither → undefined.
-        const statusResolver = new EffortStatusResolver(fsAdapter);
-        const noStatus = options.status === false;
-        const statusName =
-          typeof options.status === "string" ? options.status : undefined;
-        const explicitStatus = EFFORT_STATUS_KEY in properties;
-        if (noStatus && explicitStatus) {
-          throw new Error(
-            `Cannot pass both --no-status and --property ${EFFORT_STATUS_KEY}=... (ambiguous — cannot both suppress and set the status). Use one.`,
-          );
-        }
-        if (statusName && explicitStatus) {
-          throw new Error(
-            `Cannot pass both --status and --property ${EFFORT_STATUS_KEY}=... (ambiguous). Use one.`,
-          );
-        }
-        if (!explicitStatus && !noStatus) {
-          const statusBearing = await statusResolver.isStatusBearing(classUid);
-          if (statusName) {
-            if (!statusBearing) {
-              throw new Error(
-                `--status only applies to status-bearing classes (ems__Effort subclasses); '${options.class}' is not one.`,
-              );
-            }
-            const statusUid = await statusResolver.resolveStatusUid(statusName);
-            if (!statusUid) {
-              throw new Error(
-                `Unknown status '${statusName}' — no matching ems__EffortStatus<Name> enum asset found in the vault.`,
-              );
-            }
-            properties[EFFORT_STATUS_KEY] = `[[${statusUid}]]`;
-          } else if (statusBearing) {
-            // Default Backlog — fail-open: if the enum can't be resolved
-            // (degenerate vault without the ems status enums mounted) keep the
-            // historical no-status behaviour rather than failing the create.
-            const backlogUid =
-              await statusResolver.resolveStatusUid(DEFAULT_STATUS_NAME);
-            if (backlogUid) {
-              properties[EFFORT_STATUS_KEY] = `[[${backlogUid}]]`;
-            } else {
-              process.stderr.write(
-                `⚠ status-bearing class but no ${DEFAULT_STATUS_NAME} status enum found in the vault — created without ems__Effort_status.\n`,
-              );
-            }
-          }
-        }
-
-        // Finalise propertyValues AFTER any status injection so the injected
-        // status is wikilink-validated and co-location still reads isDefinedBy.
-        const propertyValues =
-          Object.keys(properties).length > 0 ? properties : undefined;
-
-        // Ticket 2227d660: the one-pass TBox scan also yields each def's declared
-        // `exo__Property_range`; handed to the core service so every scalar is
-        // typed by its declaration (a canonical negative under `xsd:integer`
-        // stays bare, a number under `xsd:string` is quoted). Empty when no
-        // property TBox is mounted → shape-based typing as before.
-        //
-        // Ticket 3fc34b92: naming the addressed properties also scopes the
-        // duplicate-range diagnostic to them — a conflicting twin of some OTHER
-        // property in the mounted TBox is not this command's business. The set is
-        // taken HERE, from the FINAL state of `properties`, because "addressed"
-        // means "actually written" and the CLI injects its own keys above
-        // (`ems__Effort_status`, explicit or the default Backlog). Reading the
-        // final state rather than listing the known injections is what keeps the
-        // next injection covered by construction. ⛔ NOT `userPropertyKeys`:
-        // that set is the key check's, and the two concepts differ exactly by
-        // what the CLI adds for the caller.
-        const writtenProperties = Object.keys(properties);
-        const declaredRanges =
-          await propertyNameValidator.declaredRanges(writtenProperties);
-
-        // Validate property wikilinks (unless skipped).
-        if (propertyValues && !options.skipWikilinkValidation) {
-          await wikilinkValidator.validatePropertyValues(propertyValues);
-        }
-
-        // Co-location placement (RFC 0b7a2fad CR-1, issue #3520): when
-        // `exo__Asset_isDefinedBy` resolves to an on-disk ontology file, place
-        // the new asset in that ontology's folder — the same resolver used by
-        // `apply repair-folder` / `audit co-location`. Fail-open to the inbox
-        // default when isDefinedBy is missing / `!`-prefixed / unresolvable.
-        let folderPath = DEFAULT_INBOX_FOLDER;
-        const isDefinedByRaw = propertyValues?.["exo__Asset_isDefinedBy"];
-        // isDefinedBy is cardinality-1; if a user degenerate-passes it more than
-        // once (→ array), co-locate by the first reference.
-        const isDefinedBy = Array.isArray(isDefinedByRaw)
-          ? isDefinedByRaw[0]
-          : isDefinedByRaw;
-
-        // RANGE guard (ticket d8c3c86b): the resolver below only asks WHERE the
-        // target lives; nothing asked WHAT it is, so a prototype passed as the
-        // anchor was accepted and wrote an sh:class violation. Placed here — before
-        // the build, before --dry-run and before the write — so the refusal is the
-        // same on every path; the resolution it needs is the one co-location is
-        // about to do anyway.
-        const isDefinedByCheck = await assertIsDefinedByIsOntology(
-          isDefinedByRaw,
-          fsAdapter,
-          "",
-          "create",
+        // The decision half of create — every guard, every resolution and the
+        // co-location that yield the config — is `planCreate`: the SAME
+        // function `create-batch` runs for each of its items.
+        const { config, label: trimmedLabel } = await planCreate(
+          options,
+          new CreateContext(vaultPath),
         );
-        if (isDefinedBy) {
-          // ⛤ REUSE the guard's resolution instead of resolving the same anchor a
-          // second time. `findReferencedFile`'s last resort globs the vault and
-          // parses every file's frontmatter uncached, so the second pass costs
-          // about as much as the first (measured ~1.0x, and ~3.4 s on a 40,977-asset
-          // vault) — that is the difference between "this guard is free because
-          // create already resolves the anchor" being a CLAIM and being TRUE by
-          // construction. Co-location takes the first value, as it always has.
-          const coLocatedFolder = coLocationFolderFromPath(
-            isDefinedByCheck.targetPaths[0] ?? null,
-          );
-          // Truthy → a resolved subfolder. The empty string "" (root-level
-          // ontology, dirname → ".") is intentionally falsy here, so a brand
-          // new asset is kept in the inbox rather than written to the vault
-          // root — a degenerate case that does not occur under CR-1 (ontologies
-          // live under assetspaces/<ns>/).
-          if (coLocatedFolder) {
-            folderPath = coLocatedFolder;
-          }
-        }
 
-        // Priority 2 (issue #3934): when isDefinedBy did NOT resolve a folder
-        // (bang-anchor `[[!kitelev]]` / `[[!aiKnow]]`, empty, or unresolvable —
-        // folderPath is still the inbox default), co-locate the new asset next
-        // to existing sibling instances that share BOTH the SAME class AND the
-        // SAME isDefinedBy anchor, deriving the folder from where those siblings
-        // already live. Data-driven neighbour co-location (no hardcoded
-        // class→folder map): the product obeys the co-location invariant itself
-        // instead of requiring an explicit `--folder`. Matching on the anchor
-        // too (not class alone) is required because one class can span homes —
-        // e.g. `inbox__ExoAssistantKnowledge` is used for RFCs (`[[!kitelev]]` →
-        // exodev/inbox) AND for ExoAssistant infra knowledge (resolvable
-        // isDefinedBy → exoass); class alone would let the latter outvote the
-        // RFCs. Fail-open to the inbox default when no class+anchor sibling
-        // exists. `options.class` may be a UID or a short-name; it is matched
-        // (alongside the resolved classUid) against each instance's
-        // `exo__Instance_class` wikilink target in any of its forms.
-        if (folderPath === DEFAULT_INBOX_FOLDER) {
-          const scan = await scanClassNeighbours(
-            fsAdapter,
-            classUid,
-            options.class,
-            isDefinedBy,
-          );
-          const neighbourFolder = pickCanonicalHome(scan.sameAnchor);
-          if (neighbourFolder) {
-            folderPath = neighbourFolder;
-          } else {
-            // Fail-open diagnostic (issue 3f8b640f, @req:ec3e7b15-766f-4323-8c58-da7d34fb5fd9):
-            // BOTH priorities declined, so the asset lands in `01 Inbox/` — a
-            // folder that need not even exist and that `audit co-location`
-            // skips by design (an empty isDefinedBy is a documented skip
-            // reason). rc stays 0 and the JSON stays a single stdout document;
-            // the only thing that changes is that the divergence stops being
-            // silent.
-            //
-            // The warning is emitted ONLY when the class demonstrably HAS a
-            // home elsewhere (`anyAnchor` holds a folder other than the inbox
-            // default / vault root). A class with no instances yet, or one
-            // whose instances legitimately live in the inbox, stays silent —
-            // the condition is derived from the same scan that made the
-            // placement decision, not authored beside it.
-            const homes = Array.from(scan.anyAnchor.entries())
-              .filter(
-                ([folder]) => folder !== "" && folder !== DEFAULT_INBOX_FOLDER,
-              )
-              .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
-            if (homes.length > 0) {
-              const shown = homes
-                .slice(0, 3)
-                .map(([folder, count]) => `${folder} (${count})`)
-                .join(", ");
-              const more =
-                homes.length > 3 ? `, +${homes.length - 3} more` : "";
-              // `absent` and `empty` are distinguished on purpose: an
-              // `--property exo__Asset_isDefinedBy=` writes the key with an
-              // empty value, so "is absent" would be a false statement about
-              // the asset that is being created.
-              const anchorState =
-                isDefinedBy === undefined || isDefinedBy === null
-                  ? "exo__Asset_isDefinedBy is absent"
-                  : String(isDefinedBy).length === 0
-                    ? "exo__Asset_isDefinedBy is empty"
-                    : `exo__Asset_isDefinedBy=${String(isDefinedBy)} resolved no folder and no sibling shares that anchor`;
-              // "would land" rather than "lands": the write happens ~150 lines
-              // below and `--validate` can still refuse it, while `--dry-run`
-              // never writes at all — the placement is decided here, the file
-              // is not.
-              process.stderr.write(
-                `⚠ co-location fail-open: this asset would land in \`${DEFAULT_INBOX_FOLDER}/\` — ${anchorState}.\n` +
-                  `  Existing homes of class ${options.class}: ${shown}${more}.\n` +
-                  `  Set exo__Asset_isDefinedBy to the anchor used by the intended home ` +
-                  `(a \`!\`-prefixed anchor needs --skip-wikilink-validation).\n`,
-              );
-            }
-          }
-        }
-
-        // Load SHACL-lite shape registry from vault for cardinality-aware
-        // property serialization (issues #3099, #3179). Failure here is
-        // non-fatal — fall back to an EMPTY registry (not undefined) so the
-        // core still takes the cardinality-aware formatter and `cli create`
-        // stays byte-identical to its prior behaviour (scalar default per
-        // #3179) even when shapes cannot be loaded.
-        let shapeRegistry: ShapeRegistry;
-        try {
-          shapeRegistry = await ShapeLoader.loadFromVaultFS(vaultPath);
-        } catch {
-          shapeRegistry = new ShapeRegistry();
-        }
-
-        // Delegate the domain logic (frontmatter assembly, UID-canon class
-        // ref, cardinality, timestamp, body) to the shared core service.
-        // `cli create` opts into the domain fields the plugin/apply omit:
-        //  - classRefForm 'uuid' → `[[<uuid>]]` strip-canon
-        //  - createdBy defaults to ExoAssistant when `--created-by` is omitted
-        //    (issue #3849 — the default is CLI-scoped; the core applies no
-        //    implicit default, so plugin/apply stay byte-identical)
-        //  - folder = co-located ontology folder (or `01 Inbox` fail-open),
-        //    aliases, timezone (Asia/Almaty default), body
-        //  - shapeRegistry → cardinality-aware property emission
+        // The write half: build, optionally validate, then preview or write.
         const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
         const creationService = new GenericAssetCreationService(vaultAdapter);
 
@@ -749,20 +925,6 @@ export function createCommand(): Command {
           process.stderr.write(`${line}\n`);
         };
 
-        const config: GenericAssetCreationConfig = {
-          className: options.class,
-          classRefForm: "uuid",
-          classUid,
-          label: trimmedLabel,
-          aliases: options.aliases,
-          folderPath,
-          createdBy: options.createdBy || DEFAULT_CREATED_BY_UID,
-          timezone: options.timezone || DEFAULT_TIMEZONE,
-          body,
-          propertyValues,
-          shapeRegistry,
-          declaredRanges,
-        };
 
         // Opt-in SHACL-lite conformance gate (project 38800c80 W3) — the last
         // hook-gap of the CLI creation path. A CLI `create` runs through Bash,

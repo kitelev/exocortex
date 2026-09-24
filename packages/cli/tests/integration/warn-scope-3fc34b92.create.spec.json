@@ -14,13 +14,13 @@
   "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --verbose tests/integration/warn-scope-3fc34b92.integration.test.ts tests/integration/create.range-typing.integration.test.ts 2>&1",
   "mutants": {
     "MC1_create_does_not_name_the_addressed_properties": {
-      "from": "          await propertyNameValidator.declaredRanges(writtenProperties);",
-      "to": "          await propertyNameValidator.declaredRanges();",
+      "from": "    await propertyNameValidator.declaredRanges(writtenProperties);",
+      "to": "    await propertyNameValidator.declaredRanges();",
       "expect": ["W7", "N6", "N10"]
     },
     "MC2_diagnostic_takes_the_EARLY_snapshot_missing_the_injected_status": {
-      "from": "        const writtenProperties = Object.keys(properties);",
-      "to": "        const writtenProperties = userPropertyKeys;",
+      "from": "  const writtenProperties = Object.keys(properties);",
+      "to": "  const writtenProperties = userPropertyKeys;",
       "expect": ["N10"]
     }
   }
