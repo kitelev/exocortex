@@ -1,0 +1,26 @@
+{
+  "_doc": "Product-effect half of the revert-verify for requirement a2c868e9 (ticket c3de23a8): the merged rule list reaching a real GroundingExecutor run. M1 (the lost-rule defect) must redden G1+G2; M2/M3 (the duplicate defect) must stay GREEN here — `applyInheritanceRuleStep` skips a property already written, so a duplicated entry has no observable outcome. An empty `expect` is therefore the MEASUREMENT that D2 is list-level only, not a missing axis (§A118: the third honest diagnosis). ⛔ `red_re` anchors on the `● <suite> › <title>` failure header, NOT on the bare `[Xn]` key: jest echoes the SOURCE LINE of a neighbouring `it(...)` in the diff context, so a key-only pattern would report a green axis as red (§A44 — the citation is not a verdict). ⛤ MEASURED 2026-09-25 and then REMOVED from this spec on purpose: M2_splice_guard_removed and M3_used_marker_removed were run against this harness and reddened NOTHING (control 0, both mutants 0). That is the product-level proof that the duplicate defect D2 is list-only — `applyInheritanceRuleStep` skips a property already written. They are KEPT in the companion unit spec, where they redden U2 and U1+U2+U3 respectively. Keeping a never-reddening mutant here would pin this spec at rc=2 forever, turning a legitimate measurement into a permanently red gate.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› @req:\\S+ \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/UniversalDefaultTemplateResolver.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/dynamic-commands/create-action-parent.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_grounding_map_last_wins": {
+      "_note": "Rebuilds the grounding map LAST-WINS (the pre-fix shape), type-preserving: the map stays Map<string, Rule[]>, each name just keeps a single-element bucket. This is defect D1 — a grounding's earlier conditional rule is dropped before any logic runs. Predicted: U1 on the unit harness, G1+G2 on the effect harness.",
+      "from": "    if (bucket) bucket.push(g);\n    else groundingByName.set(g.targetPropertyName, [g]);",
+      "to": "    groundingByName.set(g.targetPropertyName, [g]);",
+      "expect": [
+        "G1",
+        "G2"
+      ]
+    }
+  }
+}

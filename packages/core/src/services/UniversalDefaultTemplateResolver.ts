@@ -87,23 +87,53 @@ export function mergePropertyDefaults(
 
 /**
  * Merge Universal InheritanceRules with Grounding-local entries.
- * Same semantics as {@link mergePropertyDefaults} but keyed by
- * `targetPropertyName`. Priority sort happens downstream in the executor.
+ *
+ * NOT the same semantics as {@link mergePropertyDefaults}, despite the shape
+ * similarity. A `PropertyDefaultResolved` carries only `{propertyName, value}`,
+ * so two entries for one property are a genuine conflict and deduplicating by
+ * name is correct there. An `InheritanceRuleResolved` additionally carries
+ * `targetClassCondition` / `targetClassExclusion`, so several rules for the
+ * SAME `targetPropertyName` are NOT a conflict - they are distinct conditional
+ * rules, each evaluated against the target's classes downstream. Hence:
+ *
+ * - Grounding rules are NEVER deduplicated against each other: a grounding may
+ *   declare a Project-conditioned AND a Task-conditioned rule for
+ *   `ems__Effort_parent` and both survive. Keying them by name (the former
+ *   behaviour) silently dropped every rule but the last one.
+ * - The Universal override stays keyed by property NAME: a grounding declaring
+ *   ANY rule for a property shadows EVERY universal rule for that property.
+ *   This is load-bearing production behaviour - six groundings declare their
+ *   own `ems__Effort_parent` rule (43731bae, condition ems__Project) while the
+ *   Universal template declares two (01f570c9 Project + 65acce2f Task). Keying
+ *   the override by the (name, condition) PAIR instead would un-shadow the Task
+ *   rule for all six and introduce the Create-Task-to-Task parent binding that
+ *   req 2821fdf0 section 7 explicitly rules out.
+ * - The shadowing grounding rules are spliced in ONCE, at the position of the
+ *   first universal rule they shadow. A second universal rule for the same
+ *   property must not re-emit them (that produced a duplicate entry).
+ *
+ * Priority sort happens downstream in the executor.
  */
 export function mergeInheritanceRules(
   universal: ReadonlyArray<InheritanceRuleResolved>,
   grounding: ReadonlyArray<InheritanceRuleResolved>,
 ): InheritanceRuleResolved[] {
-  const groundingByName = new Map<string, InheritanceRuleResolved>();
-  for (const g of grounding) groundingByName.set(g.targetPropertyName, g);
+  const groundingByName = new Map<string, InheritanceRuleResolved[]>();
+  for (const g of grounding) {
+    const bucket = groundingByName.get(g.targetPropertyName);
+    if (bucket) bucket.push(g);
+    else groundingByName.set(g.targetPropertyName, [g]);
+  }
 
   const out: InheritanceRuleResolved[] = [];
   const usedFromGrounding = new Set<string>();
   for (const u of universal) {
     const override = groundingByName.get(u.targetPropertyName);
     if (override) {
-      out.push(override);
-      usedFromGrounding.add(override.targetPropertyName);
+      if (!usedFromGrounding.has(u.targetPropertyName)) {
+        out.push(...override);
+        usedFromGrounding.add(u.targetPropertyName);
+      }
     } else {
       out.push(u);
     }
