@@ -43,6 +43,22 @@ export interface ResolverContext {
   readonly targetRefFm?: Record<string, Record<string, unknown> | null>;
   /** UID-canon class ref baked into the active Grounding (already resolved by executor). */
   readonly groundingTargetClassUid?: string;
+  /**
+   * req c0122d7f — vault-relative path of the asset created by an EARLIER step
+   * of the enclosing composite (the executor's `lastCreatedPath`), threaded
+   * down so a later step can substitute that asset as a property VALUE.
+   *
+   * Distinct from `targetFilePath`, which stays the composite's click-target:
+   * `$target` keeps resolving to the source asset (req b00acde4), and the
+   * just-created asset is not yet in the triple store, so the resolver works
+   * off the PATH rather than a graph lookup.
+   *
+   * Undefined when no create_instance step has run yet — the `createdInstance`
+   * resolver then yields `null`, and {@link ResolverFn}'s documented
+   * "skip this PropertyDefault entry" contract leaves the property ABSENT
+   * rather than silently substituting the click-target.
+   */
+  readonly createdInstancePath?: string;
 }
 
 /**
@@ -68,6 +84,15 @@ const _resolvers = new Map<string, ResolverFn>();
  * as before this feature (zero regression). See {@link isResolverModifierAware}.
  */
 const _modifierAware = new Set<string>();
+
+/**
+ * req c0122d7f — UUID-canon basename test, mirroring
+ * `GroundingExecutor.UUID_BASENAME_RE` (a private static the registry cannot
+ * reach). Same duplication rationale as the `targetFolder` handler below, which
+ * re-implements the executor's folder split for the same reason.
+ */
+const UUID_BASENAME_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Register a resolver. Idempotent overwrite — last registration wins. Tests
@@ -397,6 +422,24 @@ export function installDefaultResolvers(): void {
     const normalized = ctx.targetFilePath.replace(/^\/+/, "");
     const slashIdx = normalized.lastIndexOf("/");
     return slashIdx >= 0 ? normalized.slice(0, slashIdx) : "";
+  });
+  // req c0122d7f — `createdInstance` is context-dependent in exactly the same
+  // way, so it is registered here for the SAME symmetry reason: the
+  // PARAMETERISED marker branch in GroundingExecutor runs BEFORE the executor's
+  // special cases and goes straight to this registry. Without an entry a
+  // parameterised `$createdInstance` token would warn and leave the RAW MARKER
+  // in the created asset's frontmatter.
+  //
+  // ⛔ Falls back to `null`, not `""` like its two neighbours: `null` is the
+  // documented "skip this PropertyDefault entry" signal, and skipping is this
+  // token's specified behaviour when nothing has been created (an empty string
+  // would write an empty property instead).
+  registerResolver("createdInstance", (ctx) => {
+    const path = ctx.createdInstancePath;
+    if (!path) return null;
+    const bare = path.replace(/\.md$/i, "").replace(/^\/+/, "");
+    const basename = bare.split("/").pop() ?? bare;
+    return `"[[${UUID_BASENAME_RE.test(basename) ? basename : bare}]]"`;
   });
 
   // -- RFC 727572d2 Phase A2 new vocabulary --

@@ -126,6 +126,13 @@ const KNOWN_SUBSTITUTION_RESOLVER_IDS: ReadonlySet<string> = new Set([
   "targetRefProperty",
   "labelAsArray",
   "groundingTargetClass",
+  // req c0122d7f — `createdInstance`: the asset an EARLIER step of the same
+  // composite created, substituted as a property VALUE (the counterpart of
+  // exocmd__Grounding_targetsCreatedInstance, which redirects a step's
+  // TARGET — req b00acde4). Resolved at execute time by GroundingExecutor,
+  // which threads the created path into ResolverContext; whitelisted here so a
+  // vault SubstitutionToken emits the marker instead of the wikilink fallback.
+  "createdInstance",
   // T1 "Create Instance" homoiconic button (project bbe40f8c): host page IS
   // the class definition, so the new instance's exo__Instance_class points at
   // the host's own UID (resolved from targetFilePath basename at exec time).

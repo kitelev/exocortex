@@ -1,0 +1,25 @@
+{
+ "_doc": "Revert-verify mutant for requirement c0122d7f — REGISTRY side. The parameterised-marker branch of GroundingExecutor runs BEFORE the executor's special cases and resolves straight from this registry, so the entry here is what stops a parameterised token from writing its own raw marker into frontmatter (the symmetry the file's own comment declares for `target`/`targetFolder`). Run from the repo root after replacing the path placeholders: python3 ~/.claude/bin/mutant-driver.py <this file>. Axis names are A<N>, matching the test titles.",
+ "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+ "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/SubstitutionResolverRegistry.ts",
+ "symlink_node_modules": [
+  "node_modules",
+  "packages/cli/node_modules",
+  "packages/core/node_modules",
+  "packages/test-utils/node_modules",
+  "packages/obsidian-plugin/node_modules",
+  "packages/req-audit/node_modules"
+ ],
+ "harness": "cd \"$(dirname {subject})/../../../..\" && node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/services/GroundingExecutor.createdInstanceToken.test.ts packages/core/tests/unit/services/CommandResolver.substitutionToken.test.ts --verbose 2>&1",
+ "red_re": "›\\s+(A\\d+[a-z]?)\\s",
+ "_note_control_axes": "КОНТРОЛЬНЫЕ ОСИ БЕЗ МУТАНТА — ЭТО ИХ ПРОДУКТ, А НЕ ДЫРА (§A118). A2b и A4 не краснеют ни у одного мутанта этого набора НАМЕРЕННО: их предмет — не гвард req c0122d7f, а (A2b) ЖИВОСТЬ ФИКСТУРЫ PropertyDefault-пути, то есть доказательство, что отсутствие свойства в A2 есть `null` резолвера, а не мёртвый путь записи; и (A4) РАЗЛИЧЕНИЕ ПОНЯТИЙ значение-против-цели, то есть что шаг пишет свой новый файл, а не в созданный ранее. Мутант на них потребовал бы ломать ЧУЖОЙ механизм (ветку `target` / таргетинг шага), который этот PR не трогает. ⛔ Не городить мутанта на контрольную ось: её зелень при мутациях предмета и есть её вердикт.",
+ "mutants": {
+  "M11_registry_entry": {
+   "from": "  registerResolver(\"createdInstance\", (ctx) => {",
+   "to": "  registerResolver(\"createdInstanceXX\", (ctx) => {",
+   "expect": [
+    "A9"
+   ]
+  }
+ }
+}

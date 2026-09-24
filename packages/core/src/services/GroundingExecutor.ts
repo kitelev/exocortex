@@ -575,6 +575,12 @@ export class GroundingExecutor {
    * @param targetIRI - IRI of the target asset
    * @param targetFilePath - File path of the target asset in the vault
    * @param userInput - Optional user input for service_call groundings
+   * @param createdInstancePath - req c0122d7f. Vault-relative path of an asset
+   *   created by an EARLIER step of an enclosing composite, made available to
+   *   the `createdInstance` substitution token. Only the composite executor
+   *   passes it; the two external call sites (CommandExecutionFlow, CLI
+   *   `apply`) invoke a top-level grounding where nothing has been created yet
+   *   and correctly leave it undefined.
    * @returns ExecutionResult indicating success or failure
    */
   async execute(
@@ -582,6 +588,7 @@ export class GroundingExecutor {
     targetIRI: string,
     targetFilePath: string,
     userInput?: UserInput,
+    createdInstancePath?: string,
   ): Promise<ExecutionResult> {
     try {
       switch (grounding.type) {
@@ -614,6 +621,7 @@ export class GroundingExecutor {
             targetFilePath,
             userInput,
             0,
+            createdInstancePath,
           );
 
         case GroundingType.SERVICE_CALL:
@@ -630,6 +638,7 @@ export class GroundingExecutor {
             targetIRI,
             targetFilePath,
             userInput,
+            createdInstancePath,
           );
 
         case GroundingType.PROPERTY_APPEND:
@@ -665,6 +674,7 @@ export class GroundingExecutor {
             targetIRI,
             targetFilePath,
             userInput,
+            createdInstancePath,
           );
 
         case GroundingType.BODY_TEMPLATE:
@@ -1177,6 +1187,12 @@ export class GroundingExecutor {
     filePath: string,
     userInput: UserInput | undefined,
     depth: number,
+    /**
+     * req c0122d7f — the enclosing composite's most-recently-created asset, so
+     * a NESTED composite can substitute an asset its PARENT created. Undefined
+     * at the top level (nothing has been created yet).
+     */
+    inheritedCreatedPath?: string,
   ): Promise<ExecutionResult> {
     if (depth >= MAX_COMPOSITE_DEPTH) {
       return {
@@ -1217,6 +1233,17 @@ export class GroundingExecutor {
     // exactly as before — a zero-regression addition. `targetIRI` is
     // intentionally NOT re-pointed: `$target` still resolves to the source
     // asset (link-back), and the just-created asset is not yet in the store.
+    // ⛔ NOT seeded from `inheritedCreatedPath` — this variable feeds TWO
+    // channels, and only one of them is ours:
+    //   • TARGET channel (pre-existing, req b00acde4): `stepPath` below sends a
+    //     `body_template` / `targetsCreatedInstance` step INTO this file.
+    //   • VALUE channel (req c0122d7f): the `createdInstance` substitution.
+    // Seeding it would silently re-point the TARGET channel inside a NESTED
+    // composite — a step that used to write to the click-target (the parent's
+    // creation being invisible to it) would start writing into the parent's
+    // asset. That is a behaviour change to an already-shipped feature this PR
+    // promises not to touch, so the inheritance is applied at the VALUE
+    // hand-off only (see `executeStep` call below).
     let lastCreatedPath: string | undefined;
 
     // Issue #3918 — every asset written to disk by a create_instance step (and
@@ -1240,6 +1267,16 @@ export class GroundingExecutor {
           stepPath,
           userInput,
           depth + 1,
+          // req c0122d7f — what an EARLIER step created, passed as a VALUE
+          // source. Orthogonal to `stepPath` above, which is the step's TARGET:
+          // a create_instance step writes a NEW file (stepPath = click-target)
+          // while substituting the previously-created asset into one of its
+          // properties.
+          //
+          // The parent's creation is inherited HERE and only here: this
+          // argument reaches ResolverContext, never `stepPath`. Own creation
+          // wins over the parent's once this composite has created something.
+          lastCreatedPath ?? inheritedCreatedPath,
         );
         if (!result.success) {
           // Rollback completed steps: restore the click-target source content
@@ -1751,6 +1788,8 @@ export class GroundingExecutor {
     targetIRI: string,
     targetFilePath: string,
     userInput?: UserInput,
+    /** req c0122d7f — see {@link execute}'s `createdInstancePath`. */
+    createdInstancePath?: string,
   ): Promise<ExecutionResult> {
     if (!grounding.targetFolder) {
       return { success: false, error: "create_instance requires targetFolder" };
@@ -1832,6 +1871,7 @@ export class GroundingExecutor {
       targetFm: targetFm ?? undefined,
       targetRefFm,
       groundingTargetClassUid,
+      createdInstancePath,
     };
     if (grounding.propertyDefault && grounding.propertyDefault.length > 0) {
       this.applyPropertyDefaultStep(properties, grounding.propertyDefault, ctx);
@@ -2761,6 +2801,21 @@ export class GroundingExecutor {
       );
       return `"[[${bare}]]"`;
     }
+    // req c0122d7f — `createdInstance`: the asset an EARLIER step of the
+    // enclosing composite created, as a property VALUE. Same special-case
+    // rationale as `target` above: it needs the private strip-canon helper, so
+    // it lives here rather than in the registry.
+    //
+    // Returning `null` (not "" and not the marker) when nothing has been
+    // created is load-bearing: `applyPropertyDefaultStep` treats null as
+    // "skip this entry", so the property stays ABSENT instead of silently
+    // receiving the click-target.
+    if (resolverId === "createdInstance") {
+      const createdPath = ctx.createdInstancePath ?? "";
+      if (!createdPath) return null;
+      const bare = GroundingExecutor.extractBacklinkTarget("", createdPath);
+      return `"[[${bare}]]"`;
+    }
     if (resolverId === "targetFolder") {
       const targetFilePath = ctx.targetFilePath ?? "";
       if (!targetFilePath) return "";
@@ -2998,12 +3053,27 @@ export class GroundingExecutor {
     filePath: string,
     userInput: UserInput | undefined,
     depth: number,
+    /** req c0122d7f — see {@link executeComposite}'s `inheritedCreatedPath`. */
+    createdInstancePath?: string,
   ): Promise<ExecutionResult> {
     // For composite steps, use recursive execute with depth tracking
     if (step.type === GroundingType.COMPOSITE) {
-      return this.executeComposite(step, targetIRI, filePath, userInput, depth);
+      return this.executeComposite(
+        step,
+        targetIRI,
+        filePath,
+        userInput,
+        depth,
+        createdInstancePath,
+      );
     }
-    return this.execute(step, targetIRI, filePath, userInput);
+    return this.execute(
+      step,
+      targetIRI,
+      filePath,
+      userInput,
+      createdInstancePath,
+    );
   }
 
   // -- Private: created-path resolution --
@@ -3181,6 +3251,24 @@ export class GroundingExecutor {
     // targetFrontmatter is not supplied (e.g. legacy property_set call sites),
     // any `$target.<prop>` token throws — fail-loud, never silently emits a
     // half-substituted literal.
+    // req c0122d7f — `$createdInstance` is NOT part of this vocabulary. It is
+    // resolved by `resolveSubstitutionMarker` from its `__SUBSTITUTE__` marker
+    // form, which only the PropertyDefault path of a `create_instance` step
+    // produces. A `property_set` writing `targetValueSubstitution:
+    // "$createdInstance"` therefore reaches here unresolved — and before this
+    // guard it was written out as a LITERAL, silently.
+    //
+    // Fail loud instead, in the same shape as the `$target.<prop>` guard below:
+    // the token is new with this req (0 occurrences on the base revision), so no
+    // existing grounding can be broken by refusing it.
+    if (/\$createdInstance\b/.test(value)) {
+      throw new Error(
+        `$createdInstance is not supported here (asset IRI: ${targetIRI}). ` +
+          `The token resolves only in a create_instance step's PropertyDefault ` +
+          `(exocmd__PropertyDefault → exocmd__SubstitutionToken with resolver ` +
+          `'createdInstance'), where the composite executor supplies the created path.`,
+      );
+    }
     let result = value.replace(/\$target\.([A-Za-z_][\w]*)/g, (_, prop) => {
       if (!targetFrontmatter) {
         throw new Error(
@@ -3661,6 +3749,8 @@ export class GroundingExecutor {
     targetIRI: string,
     filePath: string,
     userInput?: UserInput,
+    /** req c0122d7f — see {@link execute}'s `createdInstancePath`. */
+    createdInstancePath?: string,
   ): Promise<ExecutionResult> {
     if (!this.workflowResolver) {
       return {
@@ -3803,7 +3893,17 @@ export class GroundingExecutor {
           error: `workflow_transition: postAction grounding UID "${actionUid}" could not be loaded (asset missing or invalid Grounding shape).`,
         };
       }
-      const actionResult = await this.execute(action, targetIRI, filePath, userInput);
+      const actionResult = await this.execute(
+        action,
+        targetIRI,
+        filePath,
+        userInput,
+        // req c0122d7f — FIFTH signature on the thread. A postAction of a
+        // workflow_transition inside a composite must see what an earlier step
+        // created, exactly like a direct step does; without this it would
+        // silently skip the PropertyDefault entry.
+        createdInstancePath,
+      );
       if (!actionResult.success) {
         return {
           success: false,
