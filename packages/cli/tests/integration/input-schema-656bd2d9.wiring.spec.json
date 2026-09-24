@@ -14,7 +14,7 @@
   "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/apply-input-schema-preflight.integration.test.ts --verbose 2>&1",
   "mutants": {
     "M20_preflight_not_wired": {
-      "_note": "The pre-flight exists and is correct, and `apply` never asks it — a half-landed feature. The refusals disappear and, with them, the disk effect the axes assert. Predicted B1 B2 B4.",
+      "_note": "The pre-flight exists and is correct, and `apply` never asks it — a half-landed feature. The refusals disappear and, with them, the disk effect the axes assert. Predicted B1 B2 B4 (round 2: B6 is a control — it asserts the ACCEPTANCE path and must stay green).",
       "from": "  const schemaViolation = findInputSchemaViolation(command.grounding, userInput);\n  if (schemaViolation !== null) {\n    console.error(\n      `❌ \"${command.name}\" cannot run on \"${vaultRelative}\": ${schemaViolation}`,\n    );\n    return failed;\n  }\n",
       "to": "",
       "expect": [
@@ -24,7 +24,7 @@
       ]
     },
     "M21_preflight_reachable_only_on_dry_run": {
-      "_note": "The call site moves INSIDE the dry-run branch: the preview refuses, the real run does not. This is the false-green shape of Issue #4298 reproduced on the schema axis — a call copied from a red dry-run would still execute, and a `--yes` call would still create the Untitled asset. It is why the production call site sits ABOVE the dry-run early return rather than being duplicated into both. Predicted B1 B2 B4.",
+      "_note": "The call site moves INSIDE the dry-run branch: the preview refuses, the real run does not. This is the false-green shape of Issue #4298 reproduced on the schema axis — a call copied from a red dry-run would still execute, and a `--yes` call would still create the Untitled asset. It is why the production call site sits ABOVE the dry-run early return rather than being duplicated into both. Predicted B1 B2 B4 (round 2: B6 is a control — it asserts the ACCEPTANCE path and must stay green).",
       "from": "  const schemaViolation = findInputSchemaViolation(command.grounding, userInput);\n  if (schemaViolation !== null) {\n",
       "to": "  const schemaViolation = options.dryRun\n    ? findInputSchemaViolation(command.grounding, userInput)\n    : null;\n  if (schemaViolation !== null) {\n",
       "expect": [

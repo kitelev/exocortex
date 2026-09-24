@@ -35,6 +35,10 @@ export type {
   CommandBindingDefinition,
   PropertyDefaultResolved,
   InheritanceRuleResolved,
+  // req 656bd2d9 — the projected inputSchema field shape, exported so the
+  // plugin form layer and any pre-flight caller share ONE declaration instead
+  // of each restating it (review LOW-2).
+  InputSchemaField,
 } from "./domain/models/CommandDefinition";
 export {
   isCommandFrontmatter,
@@ -133,7 +137,6 @@ export {
   // value-template check above (different source, different gate), and shared
   // verbatim by `apply`'s dry-run and executing paths so both verdicts agree.
   findInputSchemaViolation,
-  unknownInputKeyError,
   missingRequiredInputError,
   type ExecutionResult,
   type UserInput,

@@ -124,7 +124,7 @@ npx @kitelev/exocortex-cli apply <cmd> [path] [options]
 | `--vault <path>`       | cwd     | Path to Obsidian vault                                                                                                                         |
 | `--dry-run`            | off     | Evaluate precondition and preview; do not write                                                                                                |
 | `--yes`                | off     | Skip destructive-command confirmation                                                                                                          |
-| `--input <json>`       | —       | JSON object forwarded to the grounding as `userInput`; validated against the command's declared `exocmd__Grounding_inputSchema` (see below)    |
+| `--input <json>`       | —       | JSON object forwarded to the grounding as `userInput`; its declared REQUIRED keys are checked before the grounding runs (see below)            |
 | `--seed <uuid>`        | —       | Deterministic UID seed for test/replay                                                                                                         |
 | `--frozen-clock <iso>` | —       | Freeze clock to an ISO timestamp for test/replay                                                                                               |
 | `--json`               | off     | Emit a machine-readable `{command,target,created:[…]}` envelope                                                                                |
@@ -134,14 +134,17 @@ npx @kitelev/exocortex-cli apply <cmd> [path] [options]
 **Behavior:**
 
 - The precondition is evaluated per target; a non-passing ASK aborts before the grounding runs.
-- When the command's grounding declares an `exocmd__Grounding_inputSchema`, `--input` is checked
-  against it **before anything runs**, on the dry-run and the executing path alike (req `656bd2d9`):
-  a key the schema does not declare is refused by name with the accepted keys listed, and a
-  required key is refused by name when nothing declared supplies it (the schema's own
-  `defaultValue`, a `propertyDefault` / `inheritanceRule` anywhere in the grounding tree, or — for
-  the engine-reserved `label` — a `labelTemplate` / `omitLabel`). `label`, `body` and `plannedDate`
-  are engine inputs and are never treated as undeclared. A grounding that declares no schema is
-  not checked at all.
+- When the command's grounding declares an `exocmd__Grounding_inputSchema`, a REQUIRED key it
+  declares is checked **after the command resolves and its precondition passes, but before the
+  grounding runs** — on the dry-run and the executing path alike (req `656bd2d9`). The refusal
+  names the key, and fires only when nothing declared supplies it: the schema's own non-blank
+  `defaultValue`, a `propertyDefault` / `inheritanceRule` / `serviceCallPayload` /
+  `Grounding_isDefinedBy` anywhere in the grounding tree, or — for the engine-reserved `label` —
+  a `labelTemplate` / `omitLabel`. A grounding that declares no schema is not checked at all.
+- ⛤ A key the schema does NOT declare is **accepted**, by design: passing an extra property key
+  through `--input` is a supported way to populate the asset a `create_instance` grounding builds
+  (`--input '{"label":"…","ems__Effort_blocker":"[[uid]]"}'`). Only `label`, `body` and
+  `plannedDate` are consumed by the engine itself rather than written as properties.
 - Commands marked `exocmd__Command_destructive: true` refuse to run without `--dry-run` or `--yes`.
 - Multi-target runs (stdin) use continue-on-error semantics and print a `N/M` summary; the exit code is `5` if any target failed.
 - `--use-cache` (#4264): the triple store comes from `<vault>/.exocortex/cache/triples.json`

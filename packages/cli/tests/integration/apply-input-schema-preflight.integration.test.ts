@@ -181,7 +181,7 @@ describe("req 656bd2d9 — apply enforces the declared inputSchema (ticket eb9d6
     expect(inboxFiles()).toHaveLength(0);
   });
 
-  it("B2 @req:656bd2d9-458d-4b81-8ec3-49318b134e40 refuses the ticket's own call — an undeclared key — AND writes no orphan property", async () => {
+  it("B2 @req:656bd2d9-458d-4b81-8ec3-49318b134e40 refuses the ticket's own call — via the required clause — AND writes no orphan property", async () => {
     expect(inboxFiles()).toHaveLength(0); // input built
 
     const code = await runApply(SCHEMA_CMD_UID, [
@@ -191,13 +191,37 @@ describe("req 656bd2d9 — apply enforces the declared inputSchema (ticket eb9d6
     ]);
 
     expect(code).not.toBe(0);
-    expect(stderr()).toMatch(
-      /"value" is not declared by this command's input schema/,
-    );
-    expect(stderr()).toMatch(/accepted: "label"/);
+    // `value` itself is carried through as a property (that is a supported
+    // workflow — see B6). What stops the degraded asset is the MISSING `label`.
+    expect(stderr()).toMatch(/required input "label" was not provided/);
     // THE EFFECT: before this requirement an asset appeared here carrying
     // `value: "Fix the parser"` as a frontmatter property and label "Untitled".
     expect(inboxFiles()).toHaveLength(0);
+  });
+
+  it("B6 @req:656bd2d9-458d-4b81-8ec3-49318b134e40 ACCEPTS an extra property key alongside the declared one and writes it to the created asset", async () => {
+    // The founder's live task-capture flow (executive-assistant skill §5.2):
+    // extra properties travel through --input directly, and `create-task`'s
+    // grounding declares only `label`. The first round of this requirement
+    // refused exactly this call; this axis is why it cannot happen again.
+    const code = await runApply(SCHEMA_CMD_UID, [
+      "--yes",
+      "--input",
+      JSON.stringify({
+        label: "Fix the parser",
+        ems__Effort_blocker: "[[blocker-uid]]",
+      }),
+    ]);
+
+    expect(code).toBe(0);
+    const files = inboxFiles();
+    expect(files).toHaveLength(1);
+    const written = fs.readFileSync(
+      path.join(vault.inboxDir, files[0]),
+      "utf-8",
+    );
+    expect(written).toMatch(/exo__Asset_label: .*Fix the parser/);
+    expect(written).toMatch(/ems__Effort_blocker:/);
   });
 
   it("B3 @req:656bd2d9-458d-4b81-8ec3-49318b134e40 still creates the asset when the declared key IS supplied", async () => {

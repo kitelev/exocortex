@@ -27,7 +27,6 @@
  */
 import {
   findInputSchemaViolation,
-  unknownInputKeyError,
   missingRequiredInputError,
 } from "../../../src/services/GroundingExecutor";
 import { GroundingType } from "../../../src/domain/constants/GroundingType";
@@ -78,15 +77,25 @@ describe("findInputSchemaViolation — req 656bd2d9", () => {
     expect(findInputSchemaViolation(g, { label: "Fix the parser" })).toBeNull();
   });
 
-  it("A3 @req:656bd2d9-458d-4b81-8ec3-49318b134e40 refuses a key the schema does not declare, naming it AND the accepted keys", () => {
+  it("A3 @req:656bd2d9-458d-4b81-8ec3-49318b134e40 ACCEPTS a property key the schema does not declare — the supported extra-property workflow", () => {
+    // ⛔ The first round of this requirement refused an undeclared key. That was
+    // a regression of a live, documented workflow: the `executive-assistant`
+    // skill §5.2 states "Доп. property проходят через `--input` напрямую (любой
+    // ключ кроме `label` → frontmatter): `ems__Effort_blocker`,
+    // `ems__Effort_priority`" and ships a `create-task` call carrying
+    // `ems__Effort_blocker`, while that command's grounding declares only
+    // `label`. 95 / 17 / 50 assets carry the property in vault-exodev / vault-my
+    // / vault-tbank (canaries 1749 / 717 / 1061), so the refusal would have hit
+    // the founder's task capture on every use.
     const g = makeGrounding({ inputSchema: CREATE_TASK_SCHEMA });
 
-    // The exact call from the ticket: the caller passed the label under the
-    // wrong key, and today that text lands in the frontmatter as `value:`.
-    const verdict = findInputSchemaViolation(g, { value: "Fix the parser" });
-    expect(verdict).toBe(unknownInputKeyError("value", ["label"]));
-    expect(verdict).toContain(`"value"`);
-    expect(verdict).toContain(`accepted: "label"`);
+    expect(
+      findInputSchemaViolation(g, {
+        label: "Fix the parser",
+        ems__Effort_blocker: "[[some-uid]]",
+        ems__Effort_priority: "high",
+      }),
+    ).toBeNull();
   });
 
   it("A4 @req:656bd2d9-458d-4b81-8ec3-49318b134e40 stays SILENT for a grounding that declares no schema at all", () => {
@@ -203,7 +212,7 @@ describe("findInputSchemaViolation — req 656bd2d9", () => {
     expect(findInputSchemaViolation(g, {})).toBeNull();
   });
 
-  it("A12 @req:656bd2d9-458d-4b81-8ec3-49318b134e40 never treats the engine-reserved inputs as unknown", () => {
+  it("A12 @req:656bd2d9-458d-4b81-8ec3-49318b134e40 accepts the engine-reserved inputs alongside the declared key", () => {
     // `label` / `body` / `plannedDate` are consumed BY NAME by
     // executeCreateInstance and `continue` before the frontmatter write, so
     // they are engine inputs, not property keys — even when the schema is
@@ -250,14 +259,108 @@ describe("findInputSchemaViolation — req 656bd2d9", () => {
     );
   });
 
-  it("A15 @req:656bd2d9-458d-4b81-8ec3-49318b134e40 reports the UNDECLARED key first when a call violates both clauses", () => {
-    // The ticket's own call is exactly this: `--input '{"value":"…"}'` is both
-    // an undeclared key and a missing required `label`. Naming the undeclared
-    // key first is what tells the caller WHY the required one looks missing.
+  it("A15 @req:656bd2d9-458d-4b81-8ec3-49318b134e40 still refuses the ticket's own call — via the REQUIRED clause, not an undeclared-key one", () => {
+    // `apply create-task <project> --yes --input '{"value":"…"}'` — the call
+    // from ticket eb9d6d2c. `value` is simply carried through as a property;
+    // what stops the Untitled asset is that no `label` was supplied and
+    // create-task declares no defaultValue / labelTemplate / omitLabel.
     const g = makeGrounding({ inputSchema: CREATE_TASK_SCHEMA });
     expect(findInputSchemaViolation(g, { value: "Fix the parser" })).toBe(
-      unknownInputKeyError("value", ["label"]),
+      missingRequiredInputError("label"),
     );
+  });
+
+  it("A17 @req:656bd2d9-458d-4b81-8ec3-49318b134e40 applies to a NON-create_instance grounding too — the contract is the command's, not the type's", () => {
+    // Review MEDIUM-3: every other fixture here rides makeGrounding's
+    // CREATE_INSTANCE default, so the clause's SCOPE was locked by nothing. A
+    // declared inputSchema is the command author's contract however the
+    // grounding spends the value — property_set reads it through a template,
+    // service_call hands it to a service.
+    const pset = makeGrounding({
+      type: GroundingType.PROPERTY_SET,
+      targetProperty: "ems__Effort_parent",
+      inputSchema: [field("parent", { required: true })],
+    });
+    expect(findInputSchemaViolation(pset, {})).toBe(
+      missingRequiredInputError("parent"),
+    );
+    expect(findInputSchemaViolation(pset, { parent: "uid" })).toBeNull();
+
+    const svc = makeGrounding({
+      type: GroundingType.SERVICE_CALL,
+      inputSchema: [field("value", { required: true })],
+    });
+    expect(findInputSchemaViolation(svc, {})).toBe(
+      missingRequiredInputError("value"),
+    );
+  });
+
+  it("A18 @req:656bd2d9-458d-4b81-8ec3-49318b134e40 collects declared FIELDS over the tree, not just off the root", () => {
+    // Review MEDIUM-2: sources were walked transitively while the declared
+    // fields were read off the root only — an asymmetry that silently skipped
+    // the contract of a composite declaring its schema on a step.
+    const composite = makeGrounding({
+      type: GroundingType.COMPOSITE,
+      steps: [
+        makeGrounding({
+          id: "step-with-schema",
+          inputSchema: [field("parent", { required: true })],
+        }),
+      ],
+    });
+    expect(findInputSchemaViolation(composite, {})).toBe(
+      missingRequiredInputError("parent"),
+    );
+    expect(findInputSchemaViolation(composite, { parent: "uid" })).toBeNull();
+  });
+
+  it("A19 @req:656bd2d9-458d-4b81-8ec3-49318b134e40 counts serviceCallPayload and a standalone isDefinedBy as declared sources", () => {
+    // Review MEDIUM-1: `executeServiceCall` merges the payload's keys into
+    // userInput as defaults and injects `isDefinedBy` the same way, so a
+    // required key they carry IS supplied by the time the service runs. Listing
+    // them makes the enumerated source set match the executor rather than most
+    // of it. 0 live groundings declare such a key as required today.
+    const payload = makeGrounding({
+      type: GroundingType.SERVICE_CALL,
+      inputSchema: [field("property", { required: true })],
+      serviceCallPayload: '{"property":"ems__Effort_plannedStartTimestamp"}',
+    });
+    expect(findInputSchemaViolation(payload, {})).toBeNull();
+
+    const anchored = makeGrounding({
+      type: GroundingType.SERVICE_CALL,
+      inputSchema: [field("isDefinedBy", { required: true })],
+      isDefinedBy: "[[some-anchor-uid]]",
+    });
+    expect(findInputSchemaViolation(anchored, {})).toBeNull();
+
+    // A payload that does not parse supplies nothing — guessing there would
+    // refuse a call on the strength of a malformed field we do not own.
+    const broken = makeGrounding({
+      type: GroundingType.SERVICE_CALL,
+      inputSchema: [field("property", { required: true })],
+      serviceCallPayload: "{not json",
+    });
+    expect(findInputSchemaViolation(broken, {})).toBe(
+      missingRequiredInputError("property"),
+    );
+  });
+
+  it("A20 @req:656bd2d9-458d-4b81-8ec3-49318b134e40 does NOT accept a BLANK defaultValue as a source", () => {
+    // Review LOW-1: `isSupplied` treats a blank string as absent, so a blank
+    // defaultValue excusing the same key was an asymmetry — it prefills nothing
+    // and the call still lands on the degraded fallback.
+    const blank = makeGrounding({
+      inputSchema: [field("label", { required: true, defaultValue: "   " })],
+    });
+    expect(findInputSchemaViolation(blank, {})).toBe(
+      missingRequiredInputError("label"),
+    );
+
+    const real = makeGrounding({
+      inputSchema: [field("label", { required: true, defaultValue: "Task" })],
+    });
+    expect(findInputSchemaViolation(real, {})).toBeNull();
   });
 
   it("A16 @req:656bd2d9-458d-4b81-8ec3-49318b134e40 ignores a non-required declared key that is absent", () => {
