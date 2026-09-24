@@ -11,6 +11,7 @@ import {
   UPDATED_AT_KEY,
   stampTimestamp,
 } from "./propertyMutationShared.js";
+import { assertNoFrontmatterCopy } from "./bodyFrontmatterGuard.js";
 
 interface SetBodyOptions {
   vault: string;
@@ -186,6 +187,14 @@ export function setBodyCommand(): Command {
         if (resolved?.source === "inline") {
           newBody = newBody.replace(/\\n/g, "\n");
         }
+
+        // REFUSE a body that leads with a COPY of a frontmatter block (ticket
+        // e6abe049): set-body preserves the file's OWN frontmatter, so such a
+        // body would be stored as text and leave the asset carrying two blocks —
+        // exactly how the program hub 31c2bdee acquired a stale 16-line duplicate.
+        // Applies to ALL three sources (--body-file / --body / stdin): the
+        // mistake is in the CONTENT, not in how it was delivered.
+        assertNoFrontmatterCopy(newBody, "set-body");
 
         // Validate wikilinks in the NEW body (the CLI/Bash write bypasses the
         // PreToolUse validate-wikilinks hook — validate here like create /

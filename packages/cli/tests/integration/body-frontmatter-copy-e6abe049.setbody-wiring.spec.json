@@ -1,0 +1,35 @@
+{
+  "_doc": "Revert-verify mutant for ticket e6abe049 / req dbb19e9a — the set-body WIRING half. Separate spec because the driver mutates ONE subject and the diff spans three files (integration-test-revert-verify §A117); the predicate itself is owned by *.guard.spec.json. This is the §Step-4 'is the new code WIRED IN' axis: the helper can be perfect and still never run. Expectation written BEFORE the run.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?)[: ]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/set-body.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/body-frontmatter-copy-e6abe049.integration.test.ts 2>&1",
+  "mutants": {
+    "M1_guard_not_wired_into_set_body": {
+      "from": "        assertNoFrontmatterCopy(newBody, \"set-body\");\n\n",
+      "to": "",
+      "expect": [
+        "Q1",
+        "Q1b",
+        "Q2",
+        "Q9"
+      ],
+      "_note": "The pre-fix state of set-body: the helper exists, nothing calls it. Reddens all three set-body refusal axes and leaves Q6 (create) GREEN — the pair with the create-wiring spec is what proves each call site is locked INDEPENDENTLY. ⛤ Q1 would still see the command fail under this mutant (the hub body carries wikilinks absent from the temp vault, so the validator refuses it), which is why Q1 asserts the guard's MESSAGE and Q1b repeats it with --skip-wikilink-validation: without that, Q1 alone would be vacuous. ⛤ The dry-run axes (Q9/Q10) joined this set when they were added: removing the wiring or emptying the predicate kills the refusal on EVERY path, dry-run included — which is why M8 is still needed to separate 'not wired at all' from 'wired, but skipped under --dry-run'."
+    },
+    "M8_guard_skipped_under_dry_run": {
+      "from": "        assertNoFrontmatterCopy(newBody, \"set-body\");",
+      "to": "        if (!options.dryRun) assertNoFrontmatterCopy(newBody, \"set-body\");",
+      "expect": [
+        "Q9"
+      ],
+      "_note": "Wraps the call in `if (!options.dryRun)` — the shape the review used to prove the ORDER was unlocked: on the shipped code the guard sits before BOTH the dry-run branch and the write, yet before Q9/Q10 existed this mutant reddened NOTHING (Q1/Q1b/Q2/Q6 all run without --dry-run). ⚠ Q1 DOES fail under a related mutant that moves the guard past the wikilink validator, but for a DIFFERENT reason (the message becomes the validator's), so it locks 'guard before the link check', not 'guard before dry-run'. Reddens exactly the new dry-run axis of this command."
+    }
+  }
+}
