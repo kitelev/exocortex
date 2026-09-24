@@ -114,10 +114,27 @@ export async function resolveCoLocationFolder(
   }
 
   const ontologyPath = await findReferencedFile(fsAdapter, reference, "");
+  return coLocationFolderFromPath(ontologyPath);
+}
+
+/**
+ * The co-location folder for an ALREADY-RESOLVED ontology path — the tail half of
+ * {@link resolveCoLocationFolder}, split out so a caller that has already paid for
+ * the resolution does not pay for it twice.
+ *
+ * ⛤ Why it is exported: `findReferencedFile`'s last resort scans every markdown
+ * file in the vault and parses its frontmatter, so a second resolution of the SAME
+ * reference is not free — measured at roughly the cost of the first (~1.0x). The
+ * isDefinedBy range guard resolves the anchor to read its class; `cli create` then
+ * needs the same anchor's folder, and feeds the guard's result in here instead of
+ * resolving again.
+ */
+export function coLocationFolderFromPath(
+  ontologyPath: string | null,
+): string | null {
   if (!ontologyPath) {
     return null;
   }
-
   const dir = path.dirname(ontologyPath);
   return dir === "." ? "" : dir;
 }

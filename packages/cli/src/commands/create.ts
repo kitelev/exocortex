@@ -25,12 +25,13 @@ import {
 } from "../utils/errors/index.js";
 import { registerOrderSpecFromVault } from "../services/registerOrderSpec.js";
 import {
-  resolveCoLocationFolder,
+  coLocationFolderFromPath,
   scanClassNeighbours,
   pickCanonicalHome,
 } from "../executors/folderRepairHelpers.js";
 import type { CacheManager } from "../cache/CacheManager.js";
 import { assertNoFrontmatterCopy } from "./bodyFrontmatterGuard.js";
+import { assertIsDefinedByIsOntology } from "./isDefinedByRangeGuard.js";
 
 /**
  * Fallback folder for new assets whose `exo__Asset_isDefinedBy` cannot be
@@ -585,10 +586,29 @@ export function createCommand(): Command {
         const isDefinedBy = Array.isArray(isDefinedByRaw)
           ? isDefinedByRaw[0]
           : isDefinedByRaw;
+
+        // RANGE guard (ticket d8c3c86b): the resolver below only asks WHERE the
+        // target lives; nothing asked WHAT it is, so a prototype passed as the
+        // anchor was accepted and wrote an sh:class violation. Placed here — before
+        // the build, before --dry-run and before the write — so the refusal is the
+        // same on every path; the resolution it needs is the one co-location is
+        // about to do anyway.
+        const isDefinedByCheck = await assertIsDefinedByIsOntology(
+          isDefinedByRaw,
+          fsAdapter,
+          "",
+          "create",
+        );
         if (isDefinedBy) {
-          const coLocatedFolder = await resolveCoLocationFolder(
-            fsAdapter,
-            isDefinedBy,
+          // ⛤ REUSE the guard's resolution instead of resolving the same anchor a
+          // second time. `findReferencedFile`'s last resort globs the vault and
+          // parses every file's frontmatter uncached, so the second pass costs
+          // about as much as the first (measured ~1.0x, and ~3.4 s on a 40,977-asset
+          // vault) — that is the difference between "this guard is free because
+          // create already resolves the anchor" being a CLAIM and being TRUE by
+          // construction. Co-location takes the first value, as it always has.
+          const coLocatedFolder = coLocationFolderFromPath(
+            isDefinedByCheck.targetPaths[0] ?? null,
           );
           // Truthy → a resolved subfolder. The empty string "" (root-level
           // ontology, dirname → ".") is intentionally falsy here, so a brand
