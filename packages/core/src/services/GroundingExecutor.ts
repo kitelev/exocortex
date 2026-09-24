@@ -8,6 +8,7 @@ import { liveUidGenerator } from "./IUidGenerator";
 import type {
   GroundingDefinition,
   InheritanceRuleResolved,
+  InputSchemaField,
   PropertyDefaultResolved,
 } from "../domain/models/CommandDefinition";
 import { GroundingType } from "../domain/constants/GroundingType";
@@ -252,6 +253,198 @@ export function findMissingInput(
   };
 
   return visit(grounding);
+}
+
+/**
+ * req 656bd2d9 — the `--input` key whose sources are `labelTemplate` /
+ * `omitLabel` rather than a property writer.
+ *
+ * Read off the mechanism: {@link GroundingExecutor.executeCreateInstance}
+ * `continue`s on `label` (and on `body` / `plannedDate`) before its
+ * `properties[key] = value` write, so it is an engine input rather than a
+ * property key. Only `label` needs a name here — the pre-flight does not judge
+ * whether a key is "known", because passing an arbitrary PROPERTY key through
+ * `--input` is a supported way to populate the created asset (see
+ * {@link findInputSchemaViolation}).
+ */
+const ENGINE_RESERVED_LABEL_KEY = "label";
+
+/** The ONE wording for a schema-required missing-key refusal (req 656bd2d9). */
+export function missingRequiredInputError(key: string): string {
+  return `input_schema: required input "${key}" was not provided and no declared source supplies it (--input '{"${key}":...}' required)`;
+}
+
+/**
+ * req 656bd2d9 — pre-flight a call against the command's OWN declared input
+ * contract (`exocmd__Grounding_inputSchema`), WITHOUT executing it.
+ *
+ * Refuses exactly one thing: **a required key that no declared source supplies.**
+ * Fail-open by construction — the refusal fires only when the key is absent or
+ * blank AND the schema field declares no `defaultValue` AND no node of the
+ * grounding TREE declares something that supplies it. Measured 2026-09-24 over
+ * the 35 schema-carrying groundings of the three canonical vaults, five live
+ * commands would be falsely refused without that last clause.
+ *
+ * ⛔ It deliberately does NOT refuse a key the schema does not declare, and that
+ * restraint is load-bearing rather than an omission. Passing an arbitrary
+ * PROPERTY key through `--input` is a supported, documented workflow: the
+ * `executive-assistant` skill §5.2 states it verbatim ("Доп. property проходят
+ * через `--input` напрямую (любой ключ кроме `label` → frontmatter):
+ * `ems__Effort_blocker`, `ems__Effort_priority`") and ships a call carrying
+ * `ems__Effort_blocker`, while `create-task`'s grounding declares only `label`.
+ * An undeclared-key refusal therefore breaks the founder's live task-capture
+ * flow — 95 / 17 / 50 assets carry `ems__Effort_blocker` in vault-exodev /
+ * vault-my / vault-tbank (canaries 1749 / 717 / 1061). The ticket's own bad call
+ * (`--input '{"value":"…"}'`) is still refused, by the required clause: it
+ * supplies no `label`, and `create-task` declares no `defaultValue`,
+ * `labelTemplate` or `omitLabel`.
+ *
+ * ⛔ Independent of {@link findMissingInput} and its deliberate `PROPERTY_SET`
+ * type-gate: that one inspects a *value template* (and is gated because a
+ * non-`property_set` grounding may carry a stray `targetValue*` the executor
+ * ignores), this one inspects the *declared schema*. Keeping them separate is
+ * why the axis locking that gate stays green with no edit.
+ *
+ * Applies to every grounding type, because a declared `inputSchema` is the
+ * command author's contract regardless of how the grounding spends the value —
+ * `property_set` reads it through a template, `create_instance` writes it as a
+ * property, `service_call` hands it to a service. All three are broken by a
+ * missing required input, in their own way.
+ *
+ * Both the declared FIELDS and the sources are collected over the whole tree:
+ * a composite may carry the schema on any node, and it runs over the
+ * ALREADY-RESOLVED definition, so a step living in a different assetspace than
+ * its composite (2 of the 3 steps of the live `bab33aac` do) is reached through
+ * the resolver's wikilink resolution, not through file adjacency.
+ *
+ * @returns the refusal message, or `null` when the call satisfies the contract.
+ */
+export function findInputSchemaViolation(
+  grounding: GroundingDefinition,
+  userInput?: UserInput,
+): string | null {
+  // Collect declared fields over the TREE, symmetrically with the source walk
+  // below: taking them from the root only would silently skip the contract of a
+  // composite that declares its schema on a step. First declaration of a name
+  // wins, matching the resolution order a caller reads top-down.
+  const fields: InputSchemaField[] = [];
+  const seenField = new Set<string>();
+  const collect = (g: GroundingDefinition): void => {
+    for (const f of g.inputSchema ?? []) {
+      if (seenField.has(f.name)) continue;
+      seenField.add(f.name);
+      fields.push(f);
+    }
+    for (const step of g.steps ?? []) collect(step);
+  };
+  collect(grounding);
+
+  // No declared schema anywhere → no declared contract → nothing to enforce.
+  if (fields.length === 0) return null;
+
+  const provided = (userInput ?? {}) as Record<string, unknown>;
+
+  // Blank counts as absent: a `--input '{"label":"  "}'` would otherwise satisfy
+  // the contract and still land on the "Untitled" fallback, which is the exact
+  // degradation this requirement removes.
+  const isSupplied = (v: unknown): boolean =>
+    v !== undefined &&
+    v !== null &&
+    !(typeof v === "string" && v.trim().length === 0);
+
+  /**
+   * Does ANY node of the grounding tree declare something that supplies `key`?
+   *
+   * For the engine-reserved `label` the sources are `labelTemplate` and
+   * `omitLabel` — NOT a `propertyDefault` on `exo__Asset_label`: the Universal
+   * Default Template's entry for it substitutes `$userInputLabel`, i.e. it
+   * forwards the very input we are checking for and supplies nothing of its own.
+   *
+   * `serviceCallPayload` and a standalone `Grounding_isDefinedBy` are sources
+   * too, and for a mechanical reason rather than for completeness' sake:
+   * `executeServiceCall` merges the payload's keys into `userInput` as defaults
+   * and injects `isDefinedBy` the same way, so a required key they carry IS
+   * supplied by the time the service runs. 4 groundings in `exoas-exocmd` carry
+   * a payload today, none of them declaring that key as required — i.e. this
+   * arm currently fires for nobody, and is here so the enumerated source list
+   * matches the executor instead of merely most of it.
+   *
+   * ⛤ The `key !== "label"` conjunct is DEFENSIVE, and measured as such rather
+   * than assumed: `canonicalYamlKey("label")` is `"label"` while
+   * `canonicalYamlKey("exo__Asset_label")` is `"exo__Asset_label"` (the
+   * unprefixing whitelist covers `aliases`, not `label`), so the two never
+   * compare equal and removing the conjunct changes no outcome a resolved
+   * grounding can produce — `resolvePropertyDefaults` names a default by its
+   * property asset's label, which is the prefixed form. It is kept because that
+   * non-equality is a property of a DIFFERENT module, and this file should not
+   * silently depend on it; the mutant spec records the empty red set instead of
+   * pretending the conjunct is load-bearing.
+   *
+   * ⛤ That dependency is already watched, so the conjunct is not a permanently
+   * sleeping guard: `UNPREFIXED_ASSET_FIELDS` is `{draft, pinned, aliases}` and
+   * adding to it reddens existing axes elsewhere
+   * (`packages/cli/tests/integration/canonical-key-single-source.integration.test.ts`,
+   * and `packages/cli/tests/unit/commands/create.test.ts` says it outright:
+   * "add a fifth entry to `UNPREFIXED_ASSET_FIELDS` and the copy diverges").
+   * Whoever adds `label` there will be told by those tests; THIS comment tells
+   * them what changes here when they do — the conjunct stops being defensive and
+   * starts carrying the refusal.
+   */
+  const hasDeclaredSource = (key: string): boolean => {
+    const canonical = canonicalYamlKey(key);
+    const isLabel = key === ENGINE_RESERVED_LABEL_KEY;
+    const payloadSupplies = (g: GroundingDefinition): boolean => {
+      if (g.serviceCallPayload === undefined) return false;
+      try {
+        const parsed: unknown = JSON.parse(g.serviceCallPayload);
+        return (
+          typeof parsed === "object" &&
+          parsed !== null &&
+          !Array.isArray(parsed) &&
+          Object.prototype.hasOwnProperty.call(parsed, key)
+        );
+      } catch {
+        // A payload that does not parse supplies nothing; the executor logs its
+        // own error for it, and guessing here would refuse a call on the
+        // strength of a malformed field we do not own.
+        return false;
+      }
+    };
+    const visit = (g: GroundingDefinition): boolean => {
+      if (isLabel && (g.labelTemplate !== undefined || g.omitLabel)) return true;
+      if (
+        !isLabel &&
+        (g.propertyDefault ?? []).some(
+          (pd) => canonicalYamlKey(pd.propertyName) === canonical,
+        )
+      )
+        return true;
+      if (
+        !isLabel &&
+        (g.inheritanceRule ?? []).some(
+          (ir) => canonicalYamlKey(ir.targetPropertyName) === canonical,
+        )
+      )
+        return true;
+      if (key === "isDefinedBy" && g.isDefinedBy !== undefined) return true;
+      if (payloadSupplies(g)) return true;
+      return (g.steps ?? []).some(visit);
+    };
+    return visit(grounding);
+  };
+
+  for (const field of fields) {
+    if (field.required !== true) continue;
+    if (isSupplied(provided[field.name])) continue;
+    // Symmetric with `isSupplied`: a blank `defaultValue` prefills nothing, so
+    // treating it as a source would excuse a required key that still ends up
+    // empty — the asymmetry a reviewer caught on the first round.
+    if (isSupplied(field.defaultValue)) continue;
+    if (hasDeclaredSource(field.name)) continue;
+    return missingRequiredInputError(field.name);
+  }
+
+  return null;
 }
 
 /**

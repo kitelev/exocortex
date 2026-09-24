@@ -35,6 +35,10 @@ export type {
   CommandBindingDefinition,
   PropertyDefaultResolved,
   InheritanceRuleResolved,
+  // req 656bd2d9 — the projected inputSchema field shape, exported so the
+  // plugin form layer and any pre-flight caller share ONE declaration instead
+  // of each restating it (review LOW-2).
+  InputSchemaField,
 } from "./domain/models/CommandDefinition";
 export {
   isCommandFrontmatter,
@@ -128,6 +132,12 @@ export {
   // actually use (PR #4299 review, LOW-1).
   missingInputError,
   findMissingInput,
+  // req 656bd2d9 — the SECOND, independent pre-flight: the command's own
+  // declared `exocmd__Grounding_inputSchema` contract. Separate from the
+  // value-template check above (different source, different gate), and shared
+  // verbatim by `apply`'s dry-run and executing paths so both verdicts agree.
+  findInputSchemaViolation,
+  missingRequiredInputError,
   type ExecutionResult,
   type UserInput,
   type IGroundingService,

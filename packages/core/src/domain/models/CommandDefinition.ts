@@ -441,6 +441,40 @@ export interface GroundingDefinition {
    * (xsd:boolean — `true`/`false`; absent → the `"Untitled"` fallback).
    */
   readonly omitLabel?: boolean;
+
+  /**
+   * req 656bd2d9 — the command's declared input contract, projected by
+   * {@link CommandResolver} from the `exocmd__Grounding_inputSchema` JSON
+   * Schema literal into one descriptor per declared property.
+   *
+   * Previously written onto the grounding through a cast because the field was
+   * undeclared here; the plugin form layer and `apply`'s pre-flight both read
+   * it, so it is part of the contract and is now typed.
+   */
+  readonly inputSchema?: readonly InputSchemaField[];
+}
+
+/**
+ * req 656bd2d9 — one field of a grounding's declared input contract.
+ *
+ * Produced by {@link CommandResolver} from `exocmd__Grounding_inputSchema`:
+ * `name` is the JSON-Schema property key, `required` mirrors membership in the
+ * schema's `required` array, and `defaultValue` carries a static prefill when
+ * the schema declares one (`default` / `defaultValue`).
+ */
+export interface InputSchemaField {
+  /** The `--input` key this field declares. */
+  readonly name: string;
+  /** Form field type (`text` / `assetRef` / `date` / …) — not read by the pre-flight. */
+  readonly type?: unknown;
+  /** Human title for the form — not read by the pre-flight. */
+  readonly label?: unknown;
+  /** True when the schema's `required` array lists {@link name}. */
+  readonly required?: boolean;
+  /** Static prefill declared by the schema; its presence means the key has a source. */
+  readonly defaultValue?: string;
+  /** Reference-picker class filter — not read by the pre-flight. */
+  readonly targetClassUid?: string;
 }
 
 /**
