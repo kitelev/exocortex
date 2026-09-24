@@ -1,0 +1,25 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?)[: ]",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/isdefinedby-range-d8c3c86b.integration.test.ts 2>&1",
+  "_doc": "Revert-verify mutant for ticket d8c3c86b / req b2f31fcb — the SET-PROPERTY wiring half. Sibling of *.guard.spec.json and *.create-wiring.spec.json (§A117). Expectation written BEFORE the run.",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/set-property.ts",
+  "mutants": {
+    "N2_guard_not_wired_into_set_property": {
+      "from": "        if (property === ISDEFINEDBY_KEY) {\n          await assertIsDefinedByIsOntology(\n            value,\n            new NodeFsAdapter(vaultPath),\n            vaultRelative,\n            \"set-property\",\n          );\n        }\n\n",
+      "to": "",
+      "expect": [
+        "V4",
+        "V9"
+      ],
+      "_note": "Reddens BOTH doors of set-property (--property/--value and --input) and leaves create's axes green. The pair V4/V9 is what shows the guard sits where both doors land, rather than on one of them."
+    }
+  }
+}

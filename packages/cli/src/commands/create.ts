@@ -31,6 +31,7 @@ import {
 } from "../executors/folderRepairHelpers.js";
 import type { CacheManager } from "../cache/CacheManager.js";
 import { assertNoFrontmatterCopy } from "./bodyFrontmatterGuard.js";
+import { assertIsDefinedByIsOntology } from "./isDefinedByRangeGuard.js";
 
 /**
  * Fallback folder for new assets whose `exo__Asset_isDefinedBy` cannot be
@@ -585,6 +586,14 @@ export function createCommand(): Command {
         const isDefinedBy = Array.isArray(isDefinedByRaw)
           ? isDefinedByRaw[0]
           : isDefinedByRaw;
+
+        // RANGE guard (ticket d8c3c86b): the resolver below only asks WHERE the
+        // target lives; nothing asked WHAT it is, so a prototype passed as the
+        // anchor was accepted and wrote an sh:class violation. Placed here — before
+        // the build, before --dry-run and before the write — so the refusal is the
+        // same on every path; the resolution it needs is the one co-location is
+        // about to do anyway.
+        await assertIsDefinedByIsOntology(isDefinedByRaw, fsAdapter, "", "create");
         if (isDefinedBy) {
           const coLocatedFolder = await resolveCoLocationFolder(
             fsAdapter,

@@ -15,6 +15,7 @@ import {
   InvalidArgumentsError,
 } from "../utils/errors/index.js";
 import { resolveCoLocationFolder } from "../executors/folderRepairHelpers.js";
+import { assertIsDefinedByIsOntology } from "./isDefinedByRangeGuard.js";
 import {
   DEFAULT_TIMEZONE,
   UPDATED_AT_KEY,
@@ -376,6 +377,19 @@ export function setPropertyCommand(): Command {
               await validator.validateValue(v);
             }
           }
+        }
+
+        // RANGE guard for exo__Asset_isDefinedBy (ticket d8c3c86b). Placed after
+        // the wikilink check (a dangling reference keeps ITS message) and before
+        // any write, so a repoint onto a non-ontology is refused on every path —
+        // `--property/--value` and `--input` alike, since both land here.
+        if (property === ISDEFINEDBY_KEY) {
+          await assertIsDefinedByIsOntology(
+            value,
+            new NodeFsAdapter(vaultPath),
+            vaultRelative,
+            "set-property",
+          );
         }
 
         // Apply the property, then bump exo__Asset_updatedAt — ONLY when the

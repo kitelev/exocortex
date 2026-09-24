@@ -1,0 +1,33 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?)[: ]",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/isdefinedby-range-d8c3c86b.integration.test.ts 2>&1",
+  "_doc": "Revert-verify mutants for ticket d8c3c86b / req b2f31fcb — the CREATE wiring half. Sibling of *.guard.spec.json and *.setproperty-wiring.spec.json (§A117). Expectations written BEFORE the run.",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/create.ts",
+  "mutants": {
+    "N1_guard_not_wired_into_create": {
+      "from": "        await assertIsDefinedByIsOntology(isDefinedByRaw, fsAdapter, \"\", \"create\");\n",
+      "to": "",
+      "expect": [
+        "V1",
+        "V3"
+      ],
+      "_note": "The pre-fix state of create: the helper exists, nothing calls it. Reddens create's two refusal axes and leaves set-property's (V4/V9) green — the pair with the set-property spec is what proves each call site is locked independently."
+    },
+    "N4_guard_skipped_under_dry_run": {
+      "from": "        await assertIsDefinedByIsOntology(isDefinedByRaw, fsAdapter, \"\", \"create\");",
+      "to": "        if (!options.dryRun) await assertIsDefinedByIsOntology(isDefinedByRaw, fsAdapter, \"\", \"create\");",
+      "expect": [
+        "V3"
+      ],
+      "_note": "Type-preserving one-line wrap — the shape that made the T6 guard's ordering unlocked until an axis existed for it. Reddens ONLY V3: V1 runs without --dry-run and still refuses, which is precisely why the dry-run clause needs its own axis."
+    }
+  }
+}

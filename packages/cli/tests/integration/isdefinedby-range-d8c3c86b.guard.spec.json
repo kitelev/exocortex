@@ -1,0 +1,44 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?)[: ]",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/isdefinedby-range-d8c3c86b.integration.test.ts 2>&1",
+  "_doc": "Revert-verify mutants for ticket d8c3c86b / req b2f31fcb — the GUARD half (packages/cli/src/commands/isDefinedByRangeGuard.ts). Set `tree` and `subject` to YOUR checkout (both absolute) before running: python3 -I ~/.claude/bin/mutant-driver.py <this file>. The diff spans three files and the driver mutates ONE subject, so it is split into three specs (§A117). Expectations written BEFORE the run. ⛔ No mutant targets the `!`-prefix early exit: it carries no behaviour (a `!`-anchor never resolves — files named `!*.md` across the three canonical vaults: 0), so removing it changes only the cost of the lookup, and an axis for it could not fail. That is the §A118 discriminator answered honestly rather than an oversight.",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/isDefinedByRangeGuard.ts",
+  "mutants": {
+    "N3_guard_never_refuses": {
+      "from": "  const classRefs = asRefList(meta[\"exo__Instance_class\"]);\n  if (classRefs.length === 0) {",
+      "to": "  const classRefs: string[] = [];\n  if (classRefs.length === 0) {",
+      "expect": [
+        "V1",
+        "V3",
+        "V4",
+        "V9"
+      ],
+      "_note": "Type-preserving: the resolution still runs, the verdict is never reached. Reddens every refusal axis of BOTH commands (they share the helper); the acceptance axes stay green because they never depended on a refusal."
+    },
+    "N5_subsumption_reduced_to_equality": {
+      "from": "      next.push(...asRefList(meta[\"exo__Class_superClass\"]));",
+      "to": "      next.push();",
+      "expect": [
+        "V5",
+        "V8"
+      ],
+      "_note": "Stops the superClass walk, so only a DIRECT instance of exo__Ontology is accepted. Reddens the two axes that ride a subclass anchor — V8 (create) and V5 (set-property repoint). V1/V4 stay green: the prototype is refused either way, which is exactly why subsumption needs axes of its own."
+    },
+    "N7_unresolvable_no_longer_fails_open": {
+      "from": "  const targetPath = await findReferencedFile(fsAdapter, reference, sourceFilePath);\n  if (!targetPath) {\n    return; // unresolvable or cross-vault — fail-open, same contract\n  }\n  let meta: Record<string, unknown>;\n  try {\n    meta = await fsAdapter.getFileMetadata(targetPath);\n  } catch {\n    return; // unreadable target — fail-open rather than block on an I/O hiccup\n  }",
+      "to": "  const targetPath = await findReferencedFile(fsAdapter, reference, sourceFilePath);\n  const meta: Record<string, unknown> = await fsAdapter.getFileMetadata(\n    targetPath as string,\n  );",
+      "expect": [
+        "V7"
+      ],
+      "_note": "Removes BOTH fail-open layers for an unresolvable reference at once — and that is the point. The first attempt mutated only the `if (!targetPath)` return and reddened NOTHING, because the try/catch below produces the SAME outcome: the two layers are DUPLICATE COVER, not one guard and one accident. Naming that is the §A118 discriminator answered: neither layer is dead (each alone keeps the legal form legal), so both stay and the mutant has to take both to show the fail-open exists by construction rather than by luck. Reddens only V7 — V6 exits earlier on the `!` prefix."
+    }
+  }
+}
