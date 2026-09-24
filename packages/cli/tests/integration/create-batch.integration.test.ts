@@ -22,8 +22,15 @@
  *   B6c  per-item metadata lookups stay far below one vault pass
  *   B7   --dry-run writes nothing, reports the mapping, previews every item
  *   B8   malformed input is refused by name (4 shapes)
- *   B9   stdin (`-`) is read as the input document
+ *   B9   stdin (`-`) is read as the input document; B9b a terminal is refused
  *   B10  --created-by is the default for items that set no createdBy
+ *   B5d  a uid carried by a label-named asset's frontmatter is refused too
+ *   B6d  links to many DISTINCT existing assets do not walk the vault per link
+ *   B11  an isDefinedBy anchor created by the same batch is refused
+ *   B12  an I/O failure while writing: exit 5, the written items named
+ *   B13  the command exits only after stdout and stderr have been flushed
+ *   B14  null for an optional key means "absent"; a UTF-8 BOM is accepted
+ *   B15  a diagnostic printed once also names the other items that raised it
  *
  * B6 observes service INSTANCES through prototype spies (the `this` of each
  * call) and the underlying reads through `NodeFsAdapter.prototype` — never a
@@ -151,6 +158,8 @@ function buildVault(vault: string): void {
     "exo__Asset_relates",
     "ems__Effort_parent",
     "ems__Effort_status",
+    "ems__Effort_estimate",
+    "ems__Effort_flagged",
   ]) {
     n += 1;
     write(vault, PROPS_DIR, `0000000${n}-0000-4000-8000-00000000000${n}`, {
@@ -226,18 +235,24 @@ describe("req 1848dff9: `cli create-batch` — many assets, one invocation", () 
       exitCodes.push(code ?? 0);
       return undefined as never;
     }) as never);
-    stdoutSpy = jest.spyOn(process.stdout, "write").mockImplementation(((
-      chunk: unknown,
-    ) => {
-      stdoutChunks.push(String(chunk));
-      return true;
-    }) as never);
-    stderrSpy = jest.spyOn(process.stderr, "write").mockImplementation(((
-      chunk: unknown,
-    ) => {
-      stderrChunks.push(String(chunk));
-      return true;
-    }) as never);
+    // Like a real stream, a write's callback fires once the chunk is flushed —
+    // create-batch waits for it before exiting (B13).
+    const writeTo = (sink: string[]) =>
+      ((chunk: unknown, encodingOrCallback?: unknown, callback?: unknown) => {
+        sink.push(String(chunk));
+        const done =
+          typeof encodingOrCallback === "function"
+            ? encodingOrCallback
+            : callback;
+        if (typeof done === "function") (done as () => void)();
+        return true;
+      }) as never;
+    stdoutSpy = jest
+      .spyOn(process.stdout, "write")
+      .mockImplementation(writeTo(stdoutChunks));
+    stderrSpy = jest
+      .spyOn(process.stderr, "write")
+      .mockImplementation(writeTo(stderrChunks));
     logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
     // ErrorHandler reports through console.error — collected with stderr.
     errorSpy = jest.spyOn(console, "error").mockImplementation(((
@@ -420,6 +435,24 @@ describe("req 1848dff9: `cli create-batch` — many assets, one invocation", () 
         name: "no anchor → neighbour home",
         item: { class: "concept__Concept", label: "Neighbour concept" },
         flags: ["--class", "concept__Concept", "--label", "Neighbour concept"],
+      },
+      {
+        name: "number and boolean values ⇔ their text as a flag",
+        item: {
+          class: TASK_CLASS_UID,
+          label: "Typed values",
+          properties: { ems__Effort_estimate: 5, ems__Effort_flagged: true },
+        },
+        flags: [
+          "--class",
+          TASK_CLASS_UID,
+          "--label",
+          "Typed values",
+          "--property",
+          "ems__Effort_estimate=5",
+          "--property",
+          "ems__Effort_flagged=true",
+        ],
       },
     ];
 
@@ -745,6 +778,17 @@ describe("req 1848dff9: `cli create-batch` — many assets, one invocation", () 
         [{ class: TASK_CLASS_UID, label: "Typo key", propeties: {} }],
         'unknown key(s) "propeties"',
       ],
+      [[{ class: TASK_CLASS_UID }], 'item[0] "": "label" is required'],
+      [
+        [
+          {
+            class: TASK_CLASS_UID,
+            label: "Big id",
+            properties: { ems__Effort_estimate: 12345678901234567890 },
+          },
+        ],
+        "beyond the exactly representable integers — pass it as a string",
+      ],
     ];
     for (const [items, message] of shapes) {
       const r = await runBatch(items);
@@ -794,6 +838,216 @@ describe("req 1848dff9: `cli create-batch` — many assets, one invocation", () 
     );
     expect(read(r.out![1].path)).toContain(
       `exo__Asset_createdBy: "[[${ownCreator}]]"`,
+    );
+  });
+
+  it("B5d: a uid carried by a label-named asset's frontmatter is refused too @req:1848dff9-bb2e-43a9-95e7-d917d6cef552", async () => {
+    // pn__DailyNote / period__Week are named by date, not by uid — the uid lives
+    // in the frontmatter only, and wikilink validation already treats that
+    // asset as the uid's owner.
+    const uid = "ffff0000-0000-4000-8000-000000000001";
+    fs.mkdirSync(path.join(vault, "daily"), { recursive: true });
+    fs.writeFileSync(
+      path.join(vault, "daily", "2026-09-25.md"),
+      md({ exo__Asset_uid: uid, exo__Asset_label: "2026-09-25" }),
+    );
+    const before = countMd(vault);
+    const r = await runBatch([{ class: TASK_CLASS_UID, label: "Clash", uid }]);
+    expect(r.exit).toEqual([2]);
+    expect(countMd(vault)).toBe(before);
+    expect(r.stderr).toContain(
+      `item[0] "Clash": uid ${uid} already names an asset in the vault`,
+    );
+  });
+
+  it("B6d: links to many DISTINCT existing assets do not walk the vault once per link @req:1848dff9-bb2e-43a9-95e7-d917d6cef552", async () => {
+    const linking = (n: number): Record<string, unknown>[] =>
+      Array.from({ length: n }, (_, i) => ({
+        class: TASK_CLASS_UID,
+        label: `Linker ${i}`,
+        properties: { exo__Asset_relates: `[[${fillerUid(i)}]]` },
+      }));
+    const measure = async (
+      n: number,
+    ): Promise<{ walks: number; lookups: number }> => {
+      const walks = jest.spyOn(
+        NodeFsAdapter.prototype,
+        "findFileByUidFilename",
+      );
+      const lookups = jest.spyOn(
+        PlanningFsAdapter.prototype,
+        "findFileByUidFilename",
+      );
+      const r = await runBatch(linking(n), ["--dry-run"]);
+      expect(r.exit).toEqual([0]);
+      const result = {
+        walks: walks.mock.calls.length,
+        lookups: lookups.mock.calls.length,
+      };
+      walks.mockRestore();
+      lookups.mockRestore();
+      return result;
+    };
+    const small = await measure(2);
+    const large = await measure(20);
+    // Non-vacuity: every item's link really was looked up …
+    expect(large.lookups).toBeGreaterThanOrEqual(20);
+    // … and a new target does not cost a new directory walk.
+    expect(large.walks).toBe(small.walks);
+  });
+
+  it("B9b: `-` with a terminal on stdin is refused instead of waiting forever @req:1848dff9-bb2e-43a9-95e7-d917d6cef552", async () => {
+    const realStdin = Object.getOwnPropertyDescriptor(process, "stdin")!;
+    const tty = Object.assign(Readable.from([]), { isTTY: true });
+    Object.defineProperty(process, "stdin", { configurable: true, value: tty });
+    try {
+      reset();
+      await createBatchCommand().parseAsync(["-", "--vault", vault], {
+        from: "user",
+      });
+    } finally {
+      Object.defineProperty(process, "stdin", realStdin);
+    }
+    const r = collect();
+    expect(r.exit).toEqual([2]);
+    expect(r.stderr).toContain("stdin is a terminal");
+  });
+
+  it("B11: an isDefinedBy anchor that another item of the same batch creates is refused @req:1848dff9-bb2e-43a9-95e7-d917d6cef552", async () => {
+    const before = countMd(vault);
+    const anchorUid = "abab0000-0000-4000-8000-000000000001";
+    const r = await runBatch([
+      { class: "concept__Concept", label: "Not an ontology", uid: anchorUid },
+      {
+        class: TASK_CLASS_UID,
+        label: "Anchored on a sibling",
+        properties: { exo__Asset_isDefinedBy: `[[${anchorUid}]]` },
+      },
+    ]);
+    expect(r.exit).toEqual([2]);
+    expect(countMd(vault)).toBe(before);
+    expect(r.stderr).toContain(
+      `item[1] "Anchored on a sibling": exo__Asset_isDefinedBy names [[${anchorUid}]], which item[0] of this same batch creates`,
+    );
+  });
+
+  it("B12: an I/O failure while writing stops the rest, names what was written, exit 5 @req:1848dff9-bb2e-43a9-95e7-d917d6cef552", async () => {
+    const first = "acac0000-0000-4000-8000-000000000001";
+    const second = "acac0000-0000-4000-8000-000000000002";
+    // A DIRECTORY at the second item's path: invisible to every markdown scan
+    // (so planning passes), fatal to the write.
+    fs.mkdirSync(path.join(vault, ONTOLOGY_DIR, `${second}.md`), {
+      recursive: true,
+    });
+    const anchored = { exo__Asset_isDefinedBy: `[[${ONTOLOGY_UID}]]` };
+    const r = await runBatch([
+      {
+        class: TASK_CLASS_UID,
+        label: "Written",
+        uid: first,
+        properties: anchored,
+      },
+      {
+        class: TASK_CLASS_UID,
+        label: "Blocked",
+        uid: second,
+        properties: anchored,
+      },
+    ]);
+    expect(r.exit).toEqual([5]);
+    expect(r.out).toBeNull();
+    expect(fs.existsSync(path.join(vault, ONTOLOGY_DIR, `${first}.md`))).toBe(
+      true,
+    );
+    expect(r.stderr).toContain('writing item[1] "Blocked" failed');
+    expect(r.stderr).toContain(
+      "1 of 2 item(s) were written before the failure",
+    );
+    expect(r.stderr).toContain(`${ONTOLOGY_DIR}/${first}.md`);
+  });
+
+  it("B13: the command exits only after stdout and stderr have been flushed @req:1848dff9-bb2e-43a9-95e7-d917d6cef552", async () => {
+    // A pipe is asynchronous on macOS: exiting right after a large write drops
+    // what did not fit the pipe buffer. Hold every write callback and prove the
+    // exit waits for them.
+    const held: (() => void)[] = [];
+    const hold = (sink: string[]) =>
+      ((chunk: unknown, encodingOrCallback?: unknown, callback?: unknown) => {
+        sink.push(String(chunk));
+        const done =
+          typeof encodingOrCallback === "function"
+            ? encodingOrCallback
+            : callback;
+        if (typeof done === "function") held.push(done as () => void);
+        return true;
+      }) as never;
+    jest.spyOn(process.stdout, "write").mockImplementation(hold(stdoutChunks));
+    jest.spyOn(process.stderr, "write").mockImplementation(hold(stderrChunks));
+
+    const file = path.join(scratch, "flush.json");
+    fs.writeFileSync(
+      file,
+      JSON.stringify([{ class: TASK_CLASS_UID, label: "Flushed" }]),
+    );
+    reset();
+    const run = createBatchCommand().parseAsync([file, "--vault", vault], {
+      from: "user",
+    });
+    for (let i = 0; i < 5000 && held.length < 2; i += 1) {
+      await new Promise((tick) => setImmediate(tick));
+    }
+    // The JSON is out, the flush callbacks are pending — and nothing exited.
+    expect(stdoutChunks.join("")).toContain('"label":"Flushed"');
+    expect(held.length).toBeGreaterThanOrEqual(2);
+    expect(exitCodes).toEqual([]);
+
+    for (const release of held.splice(0)) release();
+    await run;
+    expect(exitCodes).toEqual([0]);
+  });
+
+  it("B14: null for an optional key means absent; a UTF-8 BOM before the document is accepted @req:1848dff9-bb2e-43a9-95e7-d917d6cef552", async () => {
+    const r = await runBatch(
+      "﻿" +
+        JSON.stringify([
+          {
+            class: TASK_CLASS_UID,
+            label: "From Python",
+            uid: null,
+            aliases: null,
+            properties: null,
+            body: null,
+            status: null,
+            createdBy: null,
+          },
+        ]),
+    );
+    expect(r.exit).toEqual([0]);
+    const written = read(r.out![0].path);
+    expect(written).toContain("From Python");
+    expect(written).toContain(`ems__Effort_status: "[[${BACKLOG_UID}]]"`);
+  });
+
+  it("B15: a diagnostic is printed once and names the other items that raised it @req:1848dff9-bb2e-43a9-95e7-d917d6cef552", async () => {
+    // Anchorless-in-effect (`!`-anchor) concepts with homes elsewhere: every
+    // one raises the same co-location fail-open note.
+    const homeless = (i: number): Record<string, unknown> => ({
+      class: "concept__Concept",
+      label: `Homeless ${i}`,
+      properties: { exo__Asset_isDefinedBy: "[[!nowhere]]" },
+    });
+    const r = await runBatch(
+      [homeless(0), homeless(1), homeless(2)],
+      ["--dry-run", "--skip-wikilink-validation"],
+    );
+    expect(r.exit).toEqual([0]);
+    // Printed once (the summary line only quotes it, unprefixed).
+    expect(
+      r.stderr.match(/^\[item \d+\] ⚠ co-location fail-open/gm),
+    ).toHaveLength(1);
+    expect(r.stderr).toContain("[item 0] ⚠ co-location fail-open");
+    expect(r.stderr).toContain(
+      "also applies to 2 more item(s): [item 1] [item 2]",
     );
   });
 });

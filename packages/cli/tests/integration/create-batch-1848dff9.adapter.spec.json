@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for req 1848dff9 — the read memo of the planning phase. The memo bypass keeps the method shape (a key that never repeats), so the private maps stay read and nothing but the memoisation changes. ⛔ Not locked, by design and named here: the structuredClone on getFileMetadata and forget() on the mutating methods are DEFENSIVE — no current collaborator mutates a metadata object and planning never writes, so no input produces a different outcome without them (§A35/§A118: kept as protection against a future consumer, not claimed as tested).",
+  "_doc": "Revert-verify mutants for req 1848dff9 — the read memo of the planning phase. The memo bypass keeps the method shape (a key that never repeats), so the private maps stay read and nothing but the memoisation changes. ⛔ Not locked, by design and named here: the structuredClone on getFileMetadata and forget() on the mutating methods, and not memoising a failed load, are DEFENSIVE — no current collaborator mutates a metadata object and planning never writes, so no input produces a different outcome without them (§A35/§A118: kept as protection against a future consumer, not claimed as tested).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -22,6 +22,12 @@
       "to": "    const files = await this.memo(this.listings, `${rootPath ?? \"\"}\\u0000${Math.random()}`, () =>",
       "expect": ["B6b"],
       "_note": "Needs DISTINCT neighbour-scan keys to redden: with one shared (class, anchor) key the per-key scan memo requests the listing once anyway. B6b's items therefore each carry their own `!`-anchor (first run with a shared key: 0 red — the axis had no distinguishing input, §A105)."
+    },
+    "A3_uid_filename_index_replaced_by_a_walk_per_uid": {
+      "from": "    return this.memo(this.byUidFilename, uidLower, async () => {",
+      "to": "    return this.memo(this.byUidFilename, uidLower, async () => {\n      if (uidLower.length > 0) return super.findFileByUidFilename(uid);",
+      "expect": ["B6d"],
+      "_note": "Review round 1 HIGH-3(b): memoising per uid still walks the vault once per DISTINCT uid; the index walks it once."
     }
   }
 }

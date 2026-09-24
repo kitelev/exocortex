@@ -16,7 +16,6 @@ import { registerOrderSpecFromVault } from "../services/registerOrderSpec.js";
 import {
   CreateContext,
   planCreate,
-  readStdin,
   type CreateCommandOptions,
   type ResolvedBody,
 } from "./create.js";
@@ -37,8 +36,21 @@ import {
  * runs — so an item gets exactly the guarantees and refusals of `create`.
  *
  * All-or-nothing: every item is planned and built before the first write; one
- * failing item means nothing is written and EVERY failure is reported.
+ * failing item means nothing is written and EVERY failing item is reported.
  */
+
+/** Optional item keys — `null` for any of them means "absent" (Python `None`). */
+const OPTIONAL_ITEM_KEYS = [
+  "uid",
+  "aliases",
+  "properties",
+  "body",
+  "status",
+  "createdBy",
+] as const;
+
+/** The anchor key `create`'s co-location and range guard read (literal key). */
+const IS_DEFINED_BY_KEY = "exo__Asset_isDefinedBy";
 
 /** Keys an item may carry — each maps onto one `create` flag. */
 const ITEM_KEYS = [
@@ -132,7 +144,10 @@ function toBatchItem(
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
     fail(`item must be a JSON object, got ${describeValue(raw)}`);
   }
-  const item = raw as Record<string, unknown>;
+  const item: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
+  for (const key of OPTIONAL_ITEM_KEYS) {
+    if (item[key] === null) delete item[key];
+  }
 
   const unknownKeys = Object.keys(item).filter(
     (key) => !(ITEM_KEYS as readonly string[]).includes(key),
@@ -212,6 +227,19 @@ function toBatchItem(
               `use a string, number, boolean, or an array of them`,
           );
         }
+        // A JSON number is a double: an integer beyond 2^53 has already lost
+        // digits by the time it is parsed (12345678901234567890 arrives as
+        // …7000), and writing it would silently corrupt an id. Refused; the
+        // exact text travels as a string.
+        if (
+          typeof v === "number" &&
+          !Number.isSafeInteger(v) &&
+          Number.isInteger(v)
+        ) {
+          fail(
+            `property ${JSON.stringify(key)} has the number ${String(v)}, beyond the exactly representable integers — pass it as a string`,
+          );
+        }
         property.push(`${key}=${String(v)}`);
       }
     }
@@ -271,7 +299,8 @@ function parseItems(
 ): { items: BatchItem[]; failures: ItemFailure[] } {
   let doc: unknown;
   try {
-    doc = JSON.parse(text);
+    // A UTF-8 BOM (Windows editors) is not part of the document.
+    doc = JSON.parse(text.replace(/^\uFEFF/, ""));
   } catch (error) {
     throw new BatchInputError(
       `input is not valid JSON: ${(error as Error).message}`,
@@ -306,10 +335,13 @@ function parseItems(
 /**
  * Caller-supplied uids must be able to become the new assets' identities:
  * unique within the batch and not the uid of an asset already in the vault —
- * so re-running the same file is refused instead of creating duplicates.
- * "In the vault" is judged by filename (`<uid>.md`, as UID-canon names every
- * asset), from the planning adapter's memoised listing: one vault walk for the
- * whole batch rather than one per uid.
+ * so re-running a file whose items carry uids is refused instead of creating
+ * duplicates. "In the vault" means either a file named after the uid (UID-canon)
+ * OR an asset whose frontmatter `exo__Asset_uid` is that uid — the label-named
+ * assets (`pn__DailyNote`, `period__Week`) carry a uid their filename does not
+ * show, and wikilink validation already treats them as the uid's owner. One
+ * pass over the planning adapter's memoised listing and metadata for the whole
+ * batch, not one walk per uid.
  */
 async function checkCallerUids(
   items: BatchItem[],
@@ -325,6 +357,21 @@ async function checkCallerUids(
     const base = file.slice(file.lastIndexOf("/") + 1);
     const match = UID_NAMED_FILE.exec(base);
     if (match) onDisk.add(match[1].toLowerCase());
+    let metadata: Record<string, unknown>;
+    try {
+      metadata = await fsAdapter.getFileMetadata(file);
+    } catch {
+      continue; // unreadable — its filename (above) is all there is to go on
+    }
+    const raw = metadata["exo__Asset_uid"];
+    for (const value of Array.isArray(raw) ? raw : [raw]) {
+      // The normalisation NodeFsAdapter.findFileByUID matches with.
+      const normalised = String(value ?? "")
+        .replace(/["'[\]]/g, "")
+        .trim()
+        .toLowerCase();
+      if (normalised) onDisk.add(normalised);
+    }
   }
 
   for (const item of withUid) {
@@ -350,6 +397,44 @@ async function checkCallerUids(
   return failures;
 }
 
+/**
+ * An `exo__Asset_isDefinedBy` anchor must already exist on disk. The range
+ * guard (anchor must be an exo__Ontology) and co-location both READ the anchor
+ * file; an anchor that is another item of the same batch has no file yet, so
+ * both would fail open and the item would land in `01 Inbox/` with nothing
+ * checked — while `create` refuses the very same reference. Refused up front,
+ * naming the item that creates the anchor.
+ */
+function checkAnchorsExist(
+  items: BatchItem[],
+  pendingIndex: Map<string, number>,
+): ItemFailure[] {
+  const failures: ItemFailure[] = [];
+  for (const item of items) {
+    for (const flag of item.options.property ?? []) {
+      const eq = flag.indexOf("=");
+      if (flag.slice(0, eq).trim() !== IS_DEFINED_BY_KEY) continue;
+      for (const match of flag
+        .slice(eq + 1)
+        .matchAll(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g)) {
+        const target = match[1].trim().toLowerCase();
+        const creator = pendingIndex.get(target);
+        if (creator !== undefined) {
+          failures.push({
+            index: item.index,
+            label: item.label,
+            message:
+              `${IS_DEFINED_BY_KEY} names [[${target}]], which item[${creator}] of this same batch creates — ` +
+              `an anchor must already exist on disk (the range guard and co-location read its file); ` +
+              `create the ontology first, in its own run`,
+          });
+        }
+      }
+    }
+  }
+  return failures;
+}
+
 function reportFailures(failures: ItemFailure[], total: number): void {
   const sorted = [...failures].sort((a, b) => a.index - b.index);
   for (const failure of sorted) {
@@ -361,6 +446,46 @@ function reportFailures(failures: ItemFailure[], total: number): void {
   process.stderr.write(
     `❌ create-batch: ${failing} of ${total} item(s) failed validation — nothing was written\n`,
   );
+}
+
+/**
+ * Read the whole of stdin. No total timeout (unlike `create --body -`): a
+ * generator may legitimately take minutes to emit thousands of items, and a
+ * clock cut would truncate the document mid-stream. A terminal on stdin is
+ * refused instead of waiting forever for input that is not coming.
+ */
+async function readAllStdin(): Promise<string> {
+  if (process.stdin.isTTY) {
+    throw new BatchInputError(
+      "'-' reads the items from stdin, but stdin is a terminal — pipe the JSON array in, or pass a file",
+    );
+  }
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+  }
+  return Buffer.concat(chunks).toString("utf-8");
+}
+
+/**
+ * Exit only after everything written to stdout and stderr has been handed to
+ * the OS. A pipe is asynchronous on macOS: `process.exit` right after a large
+ * write drops whatever did not fit the pipe buffer — measured 2026-09-25 on a
+ * 2,000-item dry run: 328,892 bytes into a file, 65,536 through `| wc -c`. The
+ * caller then gets unparseable JSON, and an agent that reads that as a failed
+ * run and retries creates every uid-less item a second time. An empty write's
+ * callback fires only after every earlier write on the same stream.
+ */
+async function finish(code: number): Promise<void> {
+  await Promise.all(
+    [process.stdout, process.stderr].map(
+      (stream) =>
+        new Promise<void>((flushed) => {
+          stream.write("", () => flushed());
+        }),
+    ),
+  );
+  process.exit(code);
 }
 
 /**
@@ -411,7 +536,7 @@ export function createBatchCommand(): Command {
 
         let text: string;
         if (file === "-") {
-          text = await readStdin(30_000);
+          text = await readAllStdin();
         } else {
           if (!existsSync(file)) {
             throw new BatchInputError(`input file not found: ${file}`);
@@ -429,14 +554,22 @@ export function createBatchCommand(): Command {
         registerOrderSpecFromVault(vaultPath);
 
         // Diagnostics: prefixed with the item that raised them, each distinct
-        // message once — 6,500 items of one class would otherwise repeat the
-        // same co-location note 6,500 times.
-        let currentItem = "";
-        const seenWarnings = new Set<string>();
+        // message printed once — 6,500 items of one class would otherwise
+        // repeat the same co-location note 6,500 times — and followed, after
+        // planning, by which other items raised it too.
+        let currentIndex = -1;
+        const warnedBy = new Map<string, number[]>();
         const warn = (text: string): void => {
-          if (seenWarnings.has(text)) return;
-          seenWarnings.add(text);
-          process.stderr.write(`${currentItem}${text}`);
+          const raisedBy = warnedBy.get(text);
+          if (raisedBy) {
+            if (raisedBy[raisedBy.length - 1] !== currentIndex) {
+              raisedBy.push(currentIndex);
+            }
+            return;
+          }
+          warnedBy.set(text, [currentIndex]);
+          const prefix = currentIndex >= 0 ? `[item ${currentIndex}] ` : "";
+          process.stderr.write(`${prefix}${text}`);
         };
 
         const pendingUids = new Set(
@@ -450,14 +583,21 @@ export function createBatchCommand(): Command {
         });
 
         failures.push(...(await checkCallerUids(items, fsAdapter)));
+        const pendingIndex = new Map(
+          items.flatMap((item) =>
+            item.uid ? [[item.uid, item.index] as [string, number]] : [],
+          ),
+        );
+        failures.push(...checkAnchorsExist(items, pendingIndex));
 
         // Phase 1 — plan and build every item; nothing touches the disk.
         const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
-        // Every item is planned, including one already refused for its uid:
-        // the report lists all of an item's problems, not the first found.
+        // Every item is planned, including one already refused for its uid or
+        // anchor, so the report carries each item's first planning failure
+        // next to those.
         const planned: PlannedItem[] = [];
         for (const item of items) {
-          currentItem = `[item ${item.index}] `;
+          currentIndex = item.index;
           try {
             const { config, label } = await planCreate(
               item.options,
@@ -489,11 +629,23 @@ export function createBatchCommand(): Command {
             });
           }
         }
-        currentItem = "";
+        currentIndex = -1;
+        for (const [text, raisedBy] of warnedBy) {
+          if (raisedBy.length < 2) continue;
+          const others = raisedBy.slice(1);
+          const shown = others
+            .slice(0, 5)
+            .map((i) => `[item ${i}]`)
+            .join(" ");
+          const more = others.length > 5 ? ` +${others.length - 5} more` : "";
+          process.stderr.write(
+            `  … the diagnostic above (${text.split("\n")[0].slice(0, 60)}…) also applies to ${others.length} more item(s): ${shown}${more}\n`,
+          );
+        }
 
         if (failures.length > 0) {
           reportFailures(failures, total);
-          process.exit(ExitCodes.INVALID_ARGUMENTS);
+          await finish(ExitCodes.INVALID_ARGUMENTS);
           return;
         }
 
@@ -512,7 +664,7 @@ export function createBatchCommand(): Command {
               })),
             ) + "\n",
           );
-          process.exit(0);
+          await finish(0);
           return;
         }
 
@@ -538,17 +690,17 @@ export function createBatchCommand(): Command {
                 `   ${output.length} of ${planned.length} item(s) were written before the failure:\n` +
                 output.map((written) => `   - ${written.path}\n`).join(""),
             );
-            process.exit(ExitCodes.OPERATION_FAILED);
+            await finish(ExitCodes.OPERATION_FAILED);
             return;
           }
         }
 
         process.stdout.write(JSON.stringify(output) + "\n");
-        process.exit(0);
+        await finish(0);
       } catch (error) {
         if (error instanceof BatchInputError) {
           process.stderr.write(`❌ create-batch: ${error.message}\n`);
-          process.exit(ExitCodes.INVALID_ARGUMENTS);
+          await finish(ExitCodes.INVALID_ARGUMENTS);
           return;
         }
         ErrorHandler.handle(error as Error);

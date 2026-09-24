@@ -309,7 +309,7 @@ async function resolveBody(
  * @param timeoutMs - Timeout in milliseconds (default: 30s)
  * @returns Content read from stdin
  */
-export function readStdin(timeoutMs: number): Promise<string> {
+function readStdin(timeoutMs: number): Promise<string> {
   return new Promise((resolvePromise, reject) => {
     const chunks: Buffer[] = [];
 

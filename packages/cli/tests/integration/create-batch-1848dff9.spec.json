@@ -27,8 +27,8 @@
     "M3_all_or_nothing_reduced_to_best_effort": {
       "from": "        if (failures.length > 0) {\n          reportFailures(failures, total);",
       "to": "        if (failures.length > 0 && planned.length === 0) {\n          reportFailures(failures, total);",
-      "expect": ["B3", "B4b", "B5b", "B5c"],
-      "_note": "Writes the valid items of a batch that has invalid ones."
+      "expect": ["B3", "B4b", "B5b", "B5c", "B5d", "B11"],
+      "_note": "Writes the valid items of a batch that has invalid ones: every axis whose batch mixes valid and refused items reddens (B5d and B11 joined in review round 1)."
     },
     "M4_only_the_first_failure_reported": {
       "from": "          reportFailures(failures, total);",
@@ -38,8 +38,8 @@
     "M5_caller_uid_checks_removed": {
       "from": "        failures.push(...(await checkCallerUids(items, fsAdapter)));",
       "to": "        failures.push(...(await checkCallerUids([], fsAdapter)));",
-      "expect": ["B5b", "B5c"],
-      "_note": "B5a stays green: a malformed uid is refused by the item-shape check, not by checkCallerUids."
+      "expect": ["B5b", "B5c", "B5d"],
+      "_note": "B5a stays green: a malformed uid is refused by the item-shape check, not by checkCallerUids. B5d (frontmatter uid) is refused inside the same function."
     },
     "M6_body_expanded_like_inline": {
       "from": "    body = { text: item.body as string, source: \"file\" };",
@@ -65,7 +65,8 @@
     "M10_stdin_marker_not_recognised": {
       "from": "        if (file === \"-\") {",
       "to": "        if (file === \"--stdin\") {",
-      "expect": ["B9"]
+      "expect": ["B9", "B9b"],
+      "_note": "B9b reddens too: `-` is then read as a file name and refused as not found, so the terminal refusal's own message never appears."
     },
     "M11_dry_run_writes": {
       "from": "        if (options.dryRun) {",
@@ -82,6 +83,50 @@
       "from": "  if (doc.length === 0) {",
       "to": "  if (doc.length < 0) {",
       "expect": ["B8"]
+    },
+    "M14_in_batch_anchor_not_refused": {
+      "from": "        failures.push(...checkAnchorsExist(items, pendingIndex));",
+      "to": "        failures.push(...checkAnchorsExist(items, new Map<string, number>()));",
+      "expect": ["B11"],
+      "_note": "Review round 1 HIGH: without the check the anchor passes wikilink validation (it is a pending uid), the range guard and co-location fail open, and the item lands in 01 Inbox with nothing checked."
+    },
+    "M15_frontmatter_uid_ignored": {
+      "from": "      if (normalised) onDisk.add(normalised);",
+      "to": "      if (normalised && normalised.length < 0) onDisk.add(normalised);",
+      "expect": ["B5d"],
+      "_note": "Review round 1 HIGH: the filename-only check let a caller uid equal a label-named asset's frontmatter uid."
+    },
+    "M16_exit_without_flushing": {
+      "from": "          stream.write(\"\", () => flushed());",
+      "to": "          flushed();",
+      "expect": ["B13"],
+      "_note": "Review round 1 CRITICAL: process.exit right after a large write drops what did not fit a macOS pipe buffer (328,892 bytes to a file, 65,536 through | wc -c)."
+    },
+    "M17_unsafe_integer_accepted": {
+      "from": "          !Number.isSafeInteger(v) &&\n          Number.isInteger(v)\n        ) {",
+      "to": "          !Number.isSafeInteger(v) &&\n          Number.isInteger(v) &&\n          key.length < 0\n        ) {",
+      "expect": ["B8"]
+    },
+    "M18_terminal_stdin_not_refused": {
+      "from": "  if (process.stdin.isTTY) {",
+      "to": "  if (process.stdin.isTTY && process.stdin.isTTY !== true) {",
+      "expect": ["B9b"],
+      "_note": "B9b asserts the refusal's own message: without it an empty terminal read still ends in exit 2 (not valid JSON), so a bare exit-code axis would stay green."
+    },
+    "M19_null_not_treated_as_absent": {
+      "from": "    if (item[key] === null) delete item[key];",
+      "to": "    if (item[key] === null && key.length < 0) delete item[key];",
+      "expect": ["B14"]
+    },
+    "M20_bom_not_stripped": {
+      "from": "    doc = JSON.parse(text.replace(/^\\uFEFF/, \"\"));",
+      "to": "    doc = JSON.parse(text);",
+      "expect": ["B14"]
+    },
+    "M21_repeat_summary_dropped": {
+      "from": "          if (raisedBy.length < 2) continue;",
+      "to": "          if (raisedBy.length < 2 || raisedBy.length > 0) continue;",
+      "expect": ["B15"]
     }
   }
 }

@@ -1,3 +1,5 @@
+import fs from "fs-extra";
+import path from "path";
 import { NodeFsAdapter } from "./NodeFsAdapter.js";
 
 /**
@@ -20,6 +22,15 @@ import { NodeFsAdapter } from "./NodeFsAdapter.js";
  * Semantics are the base class's: every override memoises the INHERITED
  * implementation per argument rather than re-implementing it, so a lookup
  * answers exactly what `NodeFsAdapter` would have answered the first time.
+ * The one exception is {@link findFileByUidFilename}: memoising per uid would
+ * still walk the vault once per DISTINCT uid — a batch linking to 6,500
+ * different existing assets would walk it 6,500 times — so it walks once,
+ * keeps every markdown filename in the base walk's order, and answers each uid
+ * with the base walk's own predicate over that list.
+ *
+ * A failed load is not memoised: the next caller retries it, as it would have
+ * with `NodeFsAdapter`, instead of a one-off I/O hiccup pinning a file as
+ * unreadable for the whole batch.
  *
  * ⛤ Unlike {@link CachingNodeFsAdapter} (which indexes once and serves UID /
  * existence lookups from that index), this covers every read method `create`'s
@@ -28,12 +39,19 @@ import { NodeFsAdapter } from "./NodeFsAdapter.js";
  * the per-item cost independent of the vault size.
  */
 export class PlanningFsAdapter extends NodeFsAdapter {
+  private readonly root: string;
+  private markdownNames?: Promise<{ lower: string; rel: string }[]>;
   private readonly listings = new Map<string, Promise<string[]>>();
   private readonly metadata = new Map<string, Promise<Record<string, any>>>();
   private readonly existence = new Map<string, Promise<boolean>>();
   private readonly byUidFilename = new Map<string, Promise<string | null>>();
   private readonly byLinkpath = new Map<string, Promise<string | null>>();
   private readonly byMetadataQuery = new Map<string, Promise<string[]>>();
+
+  constructor(rootPath: string) {
+    super(rootPath);
+    this.root = rootPath;
+  }
 
   private memo<T>(
     store: Map<string, Promise<T>>,
@@ -42,8 +60,12 @@ export class PlanningFsAdapter extends NodeFsAdapter {
   ): Promise<T> {
     let pending = store.get(key);
     if (!pending) {
-      pending = load();
-      store.set(key, pending);
+      const loading = load();
+      pending = loading;
+      store.set(key, loading);
+      loading.catch(() => {
+        if (store.get(key) === loading) store.delete(key);
+      });
     }
     return pending;
   }
@@ -77,9 +99,57 @@ export class PlanningFsAdapter extends NodeFsAdapter {
   }
 
   override findFileByUidFilename(uid: string): Promise<string | null> {
-    return this.memo(this.byUidFilename, uid.toLowerCase(), () =>
-      super.findFileByUidFilename(uid),
-    );
+    const uidLower = uid.toLowerCase();
+    return this.memo(this.byUidFilename, uidLower, async () => {
+      // The base walk's predicate, applied to the base walk's order: the first
+      // `<uid>.md` / `<uid> …` / `<uid>-…` markdown file, depth-first.
+      for (const { lower, rel } of await this.walkMarkdownNames()) {
+        if (
+          lower.startsWith(uidLower + ".md") ||
+          lower.startsWith(uidLower + " ") ||
+          lower.startsWith(uidLower + "-")
+        ) {
+          return rel;
+        }
+      }
+      return null;
+    });
+  }
+
+  /**
+   * Every markdown file, in the order {@link NodeFsAdapter.findFileByUidFilename}
+   * visits them: `readdir` order, depth-first, hidden directories and
+   * `node_modules` skipped. Walked once per planning phase.
+   */
+  private walkMarkdownNames(): Promise<{ lower: string; rel: string }[]> {
+    this.markdownNames ??= (async () => {
+      const names: { lower: string; rel: string }[] = [];
+      const walk = async (dir: string): Promise<void> => {
+        let entries;
+        try {
+          entries = await fs.readdir(dir, { withFileTypes: true });
+        } catch {
+          return;
+        }
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            if (entry.name.startsWith(".") || entry.name === "node_modules") {
+              continue;
+            }
+            await walk(fullPath);
+          } else if (entry.isFile() && entry.name.endsWith(".md")) {
+            names.push({
+              lower: entry.name.toLowerCase(),
+              rel: path.relative(this.root, fullPath),
+            });
+          }
+        }
+      };
+      await walk(this.root);
+      return names;
+    })();
+    return this.markdownNames;
   }
 
   override findFileByLinkpath(target: string): Promise<string | null> {
@@ -101,6 +171,7 @@ export class PlanningFsAdapter extends NodeFsAdapter {
 
   /** Drop every memo — a write makes all of them potentially stale. */
   private forget(): void {
+    this.markdownNames = undefined;
     this.listings.clear();
     this.metadata.clear();
     this.existence.clear();

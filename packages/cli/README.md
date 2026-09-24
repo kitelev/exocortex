@@ -410,31 +410,32 @@ generate-items | npx @kitelev/exocortex-cli create-batch - --vault ~/vault --dry
 ]
 ```
 
-| Item key     | `create` equivalent | Notes                                                                                             |
-| ------------ | ------------------- | ------------------------------------------------------------------------------------------------- |
-| `class`      | `--class`           | **Required.** Short name or UUID                                                                  |
-| `label`      | `--label`           | **Required**                                                                                      |
-| `uid`        | —                   | Optional caller-chosen identity (canonical lower-case UUID); omitted → generated                  |
-| `aliases`    | `--aliases`         | Array of strings                                                                                  |
-| `properties` | `--property k=v`    | Object; a string / number / boolean value is one flag, an array is the key repeated (multi-value) |
-| `body`       | `--body-file`       | Taken verbatim — no `\n` escape expansion                                                         |
-| `status`     | `--status <name>`   | `false` ⇔ `--no-status`                                                                           |
-| `createdBy`  | `--created-by`      | Falls back to the batch-wide `--created-by`, then to the `create` default                         |
+| Item key     | `create` equivalent | Notes                                                                                                                                                                                                                         |
+| ------------ | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `class`      | `--class`           | **Required.** Short name or UUID                                                                                                                                                                                              |
+| `label`      | `--label`           | **Required**                                                                                                                                                                                                                  |
+| `uid`        | —                   | Optional caller-chosen identity (canonical lower-case UUID); omitted → generated anew each run                                                                                                                                |
+| `aliases`    | `--aliases`         | Array of strings                                                                                                                                                                                                              |
+| `properties` | `--property k=v`    | Object; a string / number / boolean value is one flag, an array is the key repeated (multi-value). A number is written as JavaScript prints it (`1.0` → `1`); an integer beyond 2^53 is refused — pass exact text as a string |
+| `body`       | `--body-file`       | Taken verbatim — no `\n` escape expansion                                                                                                                                                                                     |
+| `status`     | `--status <name>`   | `false` ⇔ `--no-status`                                                                                                                                                                                                       |
+| `createdBy`  | `--created-by`      | Falls back to the batch-wide `--created-by`, then to the `create` default                                                                                                                                                     |
 
-| Option                       | Default       | Description                                                                          |
-| ---------------------------- | ------------- | ------------------------------------------------------------------------------------ |
-| `<file>`                     | **required**  | The JSON file, or `-` for stdin                                                      |
-| `--vault <path>`             | cwd           | Path to Obsidian vault                                                               |
-| `--dry-run`                  | off           | Plan and validate every item, preview each one's exact bytes (stderr), write nothing |
-| `--created-by <uuid>`        | —             | Creator for items that set no `createdBy`                                            |
-| `--timezone <tz>`            | `Asia/Almaty` | Timezone for timestamps                                                              |
-| `--skip-wikilink-validation` | off           | Skip wikilink existence validation                                                   |
-| `--yes`                      | —             | Accepted for symmetry (no-op)                                                        |
+| Option                       | Default       | Description                                                                             |
+| ---------------------------- | ------------- | --------------------------------------------------------------------------------------- |
+| `<file>`                     | **required**  | The JSON file, or `-` for stdin (read to the end, no time limit; a terminal is refused) |
+| `--vault <path>`             | cwd           | Path to Obsidian vault                                                                  |
+| `--dry-run`                  | off           | Plan and validate every item, preview each one's exact bytes (stderr), write nothing    |
+| `--created-by <uuid>`        | —             | Creator for items that set no `createdBy`                                               |
+| `--timezone <tz>`            | `Asia/Almaty` | Timezone for timestamps                                                                 |
+| `--skip-wikilink-validation` | off           | Skip wikilink existence validation                                                      |
+| `--yes`                      | —             | Accepted for symmetry (no-op)                                                           |
 
-- **All-or-nothing.** Every item is planned and validated before the first write. If any item fails, **nothing** is written, stderr lists every failing item (`✗ item[<index>] "<label>": <reason>`) and the exit code is `2`. The filesystem is not transactional: an I/O error during the write phase stops the remaining writes, names the items already written and exits `5`.
-- **Links inside the batch.** Give the target item a `uid` and link to it as `[[<uid>]]`; wikilink validation treats the batch's uids as existing. A `uid` that is malformed, repeated in the batch, or already names a file in the vault is refused — so running the same file twice is refused instead of creating duplicates.
-- **Output.** On success stdout is one JSON array `[{uuid, path, label}]` in input order. Diagnostics are prefixed with the item that raised them and printed once.
-- **Not in v1:** `--validate`, `--use-cache`, `--write-through` (run `validate schema --shapes-mode` after the batch); an ontology created in the same batch cannot anchor its instances' co-location; existing assets are never updated.
+- **All-or-nothing.** Every item is planned and validated before the first write. If any item fails, **nothing** is written, stderr lists every failing item (`✗ item[<index>] "<label>": <reason>` — an item's shape problems, its uid / anchor problems and its first planning failure) and the exit code is `2`. Messages from `create`'s own guards name the equivalent `create` flag. The filesystem is not transactional: an I/O error during the write phase stops the remaining writes, names the items already written and exits `5`.
+- **Links inside the batch.** Give the target item a `uid` and link to it as `[[<uid>]]` (UUID form — a label-form link needs the target on disk); wikilink validation treats the batch's uids as existing. A `uid` that is malformed, repeated in the batch, or already the uid of an asset in the vault (by filename or by `exo__Asset_uid`) is refused — so re-running a file whose items carry `uid`s is refused instead of duplicating. ⚠ Items **without** `uid` get a fresh identity every run: re-running such a file creates them again.
+- **Anchors must exist.** An `exo__Asset_isDefinedBy` that names another item of the same batch is refused — the range guard and co-location read the anchor's file. Create the ontology first, in its own run.
+- **Output.** On success stdout is one JSON array `[{uuid, path, label}]` in input order, and the command exits only after stdout and stderr have been flushed (safe to pipe). `--dry-run` prints the planned mapping — for items without `uid` the uids are generated for that run. Diagnostics are prefixed with the item that raised them, printed once, and followed by the list of other items that raised them. `null` for an optional key means "absent"; a UTF-8 BOM is ignored.
+- **Not in v1:** `--validate`, `--use-cache`, `--write-through` (run `validate schema --shapes-mode` after the batch); existing assets are never updated.
 
 ### resolve-inline-buttons
 
