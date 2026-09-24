@@ -86,6 +86,15 @@ const _resolvers = new Map<string, ResolverFn>();
 const _modifierAware = new Set<string>();
 
 /**
+ * req c0122d7f — UUID-canon basename test, mirroring
+ * `GroundingExecutor.UUID_BASENAME_RE` (a private static the registry cannot
+ * reach). Same duplication rationale as the `targetFolder` handler below, which
+ * re-implements the executor's folder split for the same reason.
+ */
+const UUID_BASENAME_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
  * Register a resolver. Idempotent overwrite — last registration wins. Tests
  * may inject deterministic resolvers (e.g. fixed UUID, fixed timestamp);
  * production wiring at package init time installs the live implementations.
@@ -413,6 +422,24 @@ export function installDefaultResolvers(): void {
     const normalized = ctx.targetFilePath.replace(/^\/+/, "");
     const slashIdx = normalized.lastIndexOf("/");
     return slashIdx >= 0 ? normalized.slice(0, slashIdx) : "";
+  });
+  // req c0122d7f — `createdInstance` is context-dependent in exactly the same
+  // way, so it is registered here for the SAME symmetry reason: the
+  // PARAMETERISED marker branch in GroundingExecutor runs BEFORE the executor's
+  // special cases and goes straight to this registry. Without an entry a
+  // parameterised `$createdInstance` token would warn and leave the RAW MARKER
+  // in the created asset's frontmatter.
+  //
+  // ⛔ Falls back to `null`, not `""` like its two neighbours: `null` is the
+  // documented "skip this PropertyDefault entry" signal, and skipping is this
+  // token's specified behaviour when nothing has been created (an empty string
+  // would write an empty property instead).
+  registerResolver("createdInstance", (ctx) => {
+    const path = ctx.createdInstancePath;
+    if (!path) return null;
+    const bare = path.replace(/\.md$/i, "").replace(/^\/+/, "");
+    const basename = bare.split("/").pop() ?? bare;
+    return `"[[${UUID_BASENAME_RE.test(basename) ? basename : bare}]]"`;
   });
 
   // -- RFC 727572d2 Phase A2 new vocabulary --

@@ -34,6 +34,7 @@ import {
 } from "../../../src/services/GroundingExecutor";
 import {
   clearResolvers,
+  getResolver,
   installDefaultResolvers,
 } from "../../../src/services/SubstitutionResolverRegistry";
 import { GroundingType } from "../../../src/domain/constants/GroundingType";
@@ -245,6 +246,85 @@ describe("GroundingExecutor — `createdInstance` substitution token (req c0122d
     const [recordPath] = createdIn(files, "/vault/records");
     const [, linkContent] = createdIn(files, "/vault/links");
     expect(linkContent).toContain(`${LINK_PROPERTY}: "[[${bareUid(recordPath)}]]"`);
+  });
+
+  it("A6 the TARGET channel is untouched: a body_template inside a NESTED composite still writes into the click-target, NOT into what the parent created @req:c0122d7f-1c48-4bc7-b0b8-02dc109b16c4", async () => {
+    const { files, reader, writer } = makeFs({
+      [CLICK_TARGET_PATH]: CLICK_TARGET_SEED,
+    });
+    const exec = new GroundingExecutor(reader, writer, new ServiceRegistry());
+
+    // Parent creates asset A; the NESTED composite contains only a
+    // body_template. `body_template` is one of the two step kinds that consume
+    // the TARGET channel (`stepUsesCreatedPath`), and inside the nested
+    // composite nothing has been created — so, exactly as before req c0122d7f,
+    // it must fall back to the click-target. Seeding `lastCreatedPath` from the
+    // parent would silently re-point it at asset A (req b00acde4 regression).
+    const composite = gnd({
+      type: GroundingType.COMPOSITE,
+      steps: [
+        createRecordStep(),
+        gnd({
+          id: "step-nested-body",
+          type: GroundingType.COMPOSITE,
+          steps: [
+            gnd({
+              id: "step-body",
+              type: GroundingType.BODY_TEMPLATE,
+              bodyTemplate: "NESTED BODY MARKER",
+            }),
+          ],
+        }),
+      ],
+    });
+
+    const res = await exec.execute(
+      composite,
+      CLICK_TARGET_IRI,
+      CLICK_TARGET_PATH,
+    );
+    expect(res.success).toBe(true);
+
+    // The body landed in the CLICK-TARGET…
+    expect(files.get(CLICK_TARGET_PATH)).toContain("NESTED BODY MARKER");
+    // …and NOT in the asset the parent created.
+    const [, recordContent] = createdIn(files, "/vault/records");
+    expect(recordContent).not.toContain("NESTED BODY MARKER");
+  });
+
+  it("A9 the resolver is registered in the REGISTRY too — the parameterised marker branch runs before the executor's special cases and goes straight there @req:c0122d7f-1c48-4bc7-b0b8-02dc109b16c4", () => {
+    const fn = getResolver("createdInstance");
+    // Without this entry a PARAMETERISED `$createdInstance` token would warn and
+    // leave the RAW MARKER in the created asset's frontmatter — the same
+    // symmetry `target`/`targetFolder` are registered for.
+    expect(fn).toBeDefined();
+    // Same strip-canon output as the executor's branch…
+    expect(fn!({ createdInstancePath: "/vault/records/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee.md" })).toBe(
+      '"[[aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee]]"',
+    );
+    // …and the same `null` = skip contract when nothing was created (NOT `""`,
+    // which its two neighbours return — an empty string would write an empty
+    // property instead of skipping the entry).
+    expect(fn!({})).toBeNull();
+  });
+
+  it("A7 `$createdInstance` outside its vocabulary fails LOUD instead of being written out as a literal @req:c0122d7f-1c48-4bc7-b0b8-02dc109b16c4", async () => {
+    const { reader, writer } = makeFs({ [CLICK_TARGET_PATH]: CLICK_TARGET_SEED });
+    const exec = new GroundingExecutor(reader, writer, new ServiceRegistry());
+
+    // `substituteVariables` serves the `property_set` value path
+    // (`targetValueSubstitution`), which does NOT know this token: it is
+    // resolved from its `__SUBSTITUTE__` marker form by the composite executor.
+    // Before the guard the dollar-form was emitted verbatim into frontmatter.
+    expect(() =>
+      exec.substituteVariables("$createdInstance", CLICK_TARGET_IRI),
+    ).toThrow(/\$createdInstance is not supported here/);
+
+    // The neighbouring vocabulary is untouched — the guard is not a blanket
+    // "reject every dollar token".
+    expect(exec.substituteVariables("$target", CLICK_TARGET_IRI)).toContain(
+      CLICK_TARGET_IRI,
+    );
   });
 
   it("A4 the created path is a VALUE source only — the substituting step still writes its OWN new file and leaves the click-target untouched @req:c0122d7f-1c48-4bc7-b0b8-02dc109b16c4", async () => {

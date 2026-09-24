@@ -25,7 +25,7 @@ describe("SubstitutionResolverRegistry — RFC 727572d2 Phase A2 vocabulary", ()
     installDefaultResolvers();
   });
 
-  it("registers all 20 expected resolver-ids (4 legacy + 10 new + targetClassSelf + targetRefProperty + 4 date-modifier tokens Веха 5)", () => {
+  it("registers all 21 expected resolver-ids (4 legacy + 10 new + targetClassSelf + targetRefProperty + 4 date-modifier tokens Веха 5 + createdInstance)", () => {
     const ids = getRegisteredResolverIds().sort();
     expect(ids).toEqual(
       [
@@ -51,6 +51,11 @@ describe("SubstitutionResolverRegistry — RFC 727572d2 Phase A2 vocabulary", ()
         "now",
         "tomorrow",
         "yesterday",
+        // req c0122d7f — the asset an earlier composite step created, as a
+        // property VALUE. Registered alongside `target`/`targetFolder` for the
+        // same reason they are: the PARAMETERISED marker branch resolves
+        // straight from this registry, bypassing the executor's special cases.
+        "createdInstance",
       ].sort(),
     );
   });
