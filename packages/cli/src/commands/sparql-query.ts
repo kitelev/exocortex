@@ -394,9 +394,16 @@ export function sparqlQueryCommand(): Command {
         // result document, and `--output json` carries the same facts in meta.
         // BOTH output modes, because stderr is not the result document: in text
         // mode it is the only channel, and under `--output json` it is the only
-        // one the CACHE path can use at all (its meta carries no list — see
-        // below). A `--output json` consumer that ignores stderr loses nothing:
-        // the full parse repeats the same facts in `meta`.
+        // channel the CACHE path has at all.
+        //
+        // ⛔ The two paths are NOT symmetric, and a `--output json` consumer
+        // must not be told otherwise. On the FULL PARSE stderr and `meta`
+        // carry the same facts, so ignoring stderr costs that consumer
+        // nothing. On the CACHE path `meta` carries no list BY CONSTRUCTION —
+        // `loadOrBuild` cannot tell a skipped file from a genuinely empty one
+        // (see `skippedFiles` on LoadVaultTriplesResult), so the count line
+        // exists only here. A machine-readable count for that path is an
+        // extension, not a repair: it needs its own requirement.
         const skippedNotice = skippedFilesNotice(loaded);
         if (skippedNotice !== null) {
           console.error(skippedNotice);

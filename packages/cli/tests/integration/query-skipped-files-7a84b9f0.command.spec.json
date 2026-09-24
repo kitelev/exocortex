@@ -14,13 +14,27 @@
       "_note": "The wiring axis (feature-sdd Step 4 §a/§b): skippedFilesNotice can be perfect and still reach nobody. Type-preserving — the condition keeps its shape, only its truth changes, so no narrowing is lost.",
       "from": "        if (skippedNotice !== null) {\n          console.error(skippedNotice);\n        }",
       "to": "        if (skippedNotice !== null && skippedNotice === undefined) {\n          console.error(skippedNotice);\n        }",
-      "expect": ["S2", "S4", "S5", "S6", "S7", "S8"]
+      "expect": [
+        "S2",
+        "S4",
+        "S5",
+        "S6",
+        "S7",
+        "S8",
+        "S9",
+        "S10"
+      ]
     },
     "M3_select_meta_drops_the_loader_fields": {
       "_note": "The JSON surface alone. Anchored on `itemCount: results.length` because the construct branch is otherwise byte-identical; the SELECT query these axes run takes this branch.",
       "from": "              itemCount: results.length,\n              loadDurationMs: loadDuration,\n              execDurationMs: execDuration,\n              triplesScanned: triples.length,\n              cacheHit,\n              queryResultCacheHit: false,\n              ...loaderMeta,",
       "to": "              itemCount: results.length,\n              loadDurationMs: loadDuration,\n              execDurationMs: execDuration,\n              triplesScanned: triples.length,\n              cacheHit,\n              queryResultCacheHit: false,",
-      "expect": ["S1", "S7", "S8"]
+      "expect": [
+        "S1",
+        "S7",
+        "S8",
+        "S9"
+      ]
     }
   }
 }

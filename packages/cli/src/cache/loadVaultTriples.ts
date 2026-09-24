@@ -212,6 +212,8 @@ export function cacheLoadNotice(loaded: LoadVaultTriplesResult): string {
  * Returns the text without a trailing newline; the caller decides the channel
  * (`query` writes it to stderr, keeping stdout a single document).
  */
+export const SKIPPED_FILES_NOTICE_LIMIT = 10;
+
 export function skippedFilesNotice(loaded: LoadVaultTriplesResult): string | null {
   const skipped = loaded.skippedFiles;
   if (skipped !== undefined) {
@@ -219,19 +221,33 @@ export function skippedFilesNotice(loaded: LoadVaultTriplesResult): string | nul
     const lines = [
       `⚠️  ${skipped.length} file(s) skipped by the vault loader — they contributed no triples:`,
     ];
-    for (const file of skipped) {
+    // Capped, unlike `index`. The citation-parity with sparql-index.ts covers
+    // the LAYOUT, not the channel: `index` prints a terminal report the user
+    // asked for, whereas this runs before EVERY query — an uncapped 1 + 2N
+    // lines makes a dirty vault's `query` unreadable. The remainder line keeps
+    // the same route, so nothing becomes unreachable, only quieter.
+    for (const file of skipped.slice(0, SKIPPED_FILES_NOTICE_LIMIT)) {
       lines.push(`   - ${file.path}`);
       lines.push(`     ${file.reason}`);
+    }
+    const hidden = skipped.length - SKIPPED_FILES_NOTICE_LIMIT;
+    if (hidden > 0) {
+      lines.push(`   … and ${hidden} more — run 'index' to see them all`);
     }
     return lines.join("\n");
   }
 
   if (loaded.zeroTriplePaths.length === 0) return null;
+  // ⛔ Names NO cause. An earlier draft said "skipped by the loader, or
+  // genuinely empty" — a two-member disjunction presented as exhaustive, and
+  // it is not: folder-excluded and FileSpace-excluded files land in
+  // `zeroTriplePaths` too, and they are neither. Adding a third member only
+  // invites a fourth; the honest statement is that the cache does not record
+  // the reason at all, plus the route to a run that does.
   return (
-    `ℹ️  ${loaded.zeroTriplePaths.length} file(s) contributed no triples ` +
-    `(skipped by the loader, or genuinely empty — the triple cache does not ` +
-    `record which); re-run without --use-cache, or run 'index', to see the ` +
-    `per-file reasons`
+    `ℹ️  ${loaded.zeroTriplePaths.length} file(s) contributed no triples; ` +
+    `the triple cache does not record WHY — re-run without --use-cache, or ` +
+    `run 'index', to see the per-file reasons`
   );
 }
 

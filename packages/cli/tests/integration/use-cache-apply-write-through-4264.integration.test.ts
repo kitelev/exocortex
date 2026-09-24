@@ -250,25 +250,25 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create, write-through o
   }
 
   // -------------------------------------------------------------------------
-  it(`A1 ${REQ} without --use-cache none of the three commands touches the cache: CacheManager never loads, no cache file appears, one convertVault per command`, async () => {
+  it(`A1 ${REQ} without --use-cache none of the three commands touches the cache: CacheManager never loads, no cache file appears, one vault conversion per command`, async () => {
     const root = vault();
     const loadSpy = jest.spyOn(CacheManager.prototype, "loadOrBuild");
     const refreshSpy = jest.spyOn(CacheManager.prototype, "refreshAfterWrite");
-    const convertVaultSpy = jest.spyOn(NoteToRDFConverter.prototype, "convertVaultWithValidation");
+    const vaultConversionSpy = jest.spyOn(NoteToRDFConverter.prototype, "convertVaultWithValidation");
 
     const a = await runApply(root, ["move-to-backlog-4264", REL.draftTask, "--json"]);
     expect(a.exitCode).toBeNull();
     expect(preconditionRefused(a)).toBe(false);
     expect(fs.readFileSync(path.join(root, REL.draftTask), "utf-8")).toContain(`[[${STATUS_BACKLOG}]]`);
-    expect(convertVaultSpy).toHaveBeenCalledTimes(1);
+    expect(vaultConversionSpy).toHaveBeenCalledTimes(1);
 
     const r = await runResolve(root, [REL.otherTask, "--json"]);
     expect(r.exitCode).toBeNull();
-    expect(convertVaultSpy).toHaveBeenCalledTimes(2);
+    expect(vaultConversionSpy).toHaveBeenCalledTimes(2);
 
     const c = await runCreate(root, ["--class", TASK_CLASS, "--label", "A1 task", "--validate", "--dry-run"]);
     expect(c.exitCode).toBe(0);
-    expect(convertVaultSpy).toHaveBeenCalledTimes(3);
+    expect(vaultConversionSpy).toHaveBeenCalledTimes(3);
 
     expect(loadSpy).not.toHaveBeenCalled();
     expect(refreshSpy).not.toHaveBeenCalled();
@@ -645,14 +645,14 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create, write-through o
     // (a) no cache on disk: create --use-cache writes the asset, does NOT
     //     build a cache, and does not load anything.
     const loadSpy = jest.spyOn(CacheManager.prototype, "loadOrBuild");
-    const convertVaultSpy = jest.spyOn(NoteToRDFConverter.prototype, "convertVaultWithValidation");
+    const vaultConversionSpy = jest.spyOn(NoteToRDFConverter.prototype, "convertVaultWithValidation");
     const c0 = await runCreate(root, ["--class", TASK_CLASS, "--label", "A8 first", "--use-cache", "--write-through"]);
     expect(c0.exitCode).toBe(0);
     const first = JSON.parse(c0.stdout) as { path: string };
     expect(fs.existsSync(path.join(root, first.path))).toBe(true);
     expect(fs.existsSync(path.join(root, ".exocortex"))).toBe(false);
     expect(loadSpy).not.toHaveBeenCalled();
-    expect(convertVaultSpy).not.toHaveBeenCalled();
+    expect(vaultConversionSpy).not.toHaveBeenCalled();
     expect(writeThroughNotices(c0)).toEqual([
       "💾 triple cache: write-through skipped (no cache to refresh)",
     ]);
@@ -685,16 +685,16 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create, write-through o
       `ems__Effort_status: "[[${STATUS_DRAFT}]]"`,
       'ems__Effort_parent: "[[00000000-dead-4000-8000-000000000000]]"',
     ]);
-    convertVaultSpy.mockClear();
+    vaultConversionSpy.mockClear();
     loadSpy.mockClear();
     const plainVerdict = await new CandidateShaclValidator(root).validateCandidate(candidateRel, candidate);
-    expect(convertVaultSpy).toHaveBeenCalledTimes(1);
+    expect(vaultConversionSpy).toHaveBeenCalledTimes(1);
     const lines: string[] = [];
     const cachedVerdict = await new CandidateShaclValidator(root, {
       useCache: true,
       log: (l) => lines.push(l),
     }).validateCandidate(candidateRel, candidate);
-    expect(convertVaultSpy).toHaveBeenCalledTimes(1); // the cached run did NOT parse the vault
+    expect(vaultConversionSpy).toHaveBeenCalledTimes(1); // the cached run did NOT parse the vault
     expect(loadSpy).toHaveBeenCalledTimes(1);
     expect(lines).toEqual(["⚡ triple cache: hit"]);
     expect(cachedVerdict).toEqual(plainVerdict);

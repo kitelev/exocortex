@@ -94,6 +94,16 @@ describe("query surfaces loader-skipped files (ticket 7a84b9f0)", () => {
     fs.writeFileSync(path.join(vaultDir, "good.md"), GOOD);
   }
 
+  function seedManyOrphans(n: number): void {
+    fs.writeFileSync(path.join(vaultDir, "good.md"), GOOD);
+    for (let i = 1; i <= n; i += 1) {
+      fs.writeFileSync(
+        path.join(vaultDir, `orphan-${String(i).padStart(2, "0")}.md`),
+        `---\nexo__Asset_label: "Orphan ${i}"\nexo__Instance_class: "[[ems__Task]]"\n---\n`,
+      );
+    }
+  }
+
   function seedCleanVault(): void {
     fs.writeFileSync(path.join(vaultDir, "good.md"), GOOD);
   }
@@ -198,7 +208,7 @@ describe("query surfaces loader-skipped files (ticket 7a84b9f0)", () => {
     expect(loaderLines[0]).toContain("1 file(s)");
   }, 60000);
 
-  it("S5 the cache-path line asserts nothing about the reasons — it names BOTH populations and says the cache does not record which @req:81cd5d1f-6466-47c9-99cd-8fe9f9b500a3", async () => {
+  it("S5 the cache-path line names NO cause at all — only that the cache does not record why @req:81cd5d1f-6466-47c9-99cd-8fe9f9b500a3", async () => {
     seedDirtyVault();
     const { stderr } = await runQuery(["--use-cache"]);
 
@@ -206,12 +216,13 @@ describe("query surfaces loader-skipped files (ticket 7a84b9f0)", () => {
       .split("\n")
       .find((l) => l.includes("contributed no triples"));
     expect(line).toBeDefined();
-    // Both populations named …
-    expect(line).toContain("skipped by the loader");
-    expect(line).toContain("genuinely empty");
-    // … and the ambiguity stated outright, so the reader cannot take the count
-    // for a count of invariant violations.
-    expect(line).toContain("does not record which");
+    expect(line).toContain("does not record WHY");
+    // ⛔ No cause may be enumerated. `zeroTriplePaths` also holds
+    // folder-excluded and FileSpace-excluded files, which are neither skipped
+    // by the invariant nor genuinely empty — so any list of causes presented
+    // as the set would be a false claim, and adding members does not fix it.
+    expect(line).not.toContain("genuinely empty");
+    expect(line).not.toContain("skipped by");
   }, 60000);
 
   it("S6 the cache-path line carries a ROUTE to the per-file reasons, not just a number @req:81cd5d1f-6466-47c9-99cd-8fe9f9b500a3", async () => {
@@ -241,6 +252,35 @@ describe("query surfaces loader-skipped files (ticket 7a84b9f0)", () => {
     expect(stderr).toContain("orphan.md");
     expect(stderr).toContain("orphan-2.md");
     expect(stderr.match(/exo__Asset_uid/g) ?? []).toHaveLength(2);
+  }, 60000);
+
+  it("S9 the printed block is CAPPED at ten files, while the JSON meta stays complete @req:81cd5d1f-6466-47c9-99cd-8fe9f9b500a3", async () => {
+    seedManyOrphans(12);
+    const { response, stderr } = await runQuery(["--output", "json"]);
+
+    // The block runs before EVERY query, unlike `index`'s terminal report, so
+    // a dirty vault must not drown the output: ten paths, no more.
+    const pathLines = stderr.split("\n").filter((l) => l.startsWith("   - "));
+    expect(pathLines).toHaveLength(10);
+
+    // The machine-readable surface is NOT capped — a consumer that asked for
+    // JSON asked for the whole answer.
+    expect(response?.meta?.skippedCount).toBe(12);
+    expect(response?.meta?.skippedFiles).toHaveLength(12);
+  }, 60000);
+
+  it("S10 the capped block says how many it withheld and where to see them @req:81cd5d1f-6466-47c9-99cd-8fe9f9b500a3", async () => {
+    seedManyOrphans(12);
+    const { stderr } = await runQuery();
+
+    const remainder = stderr
+      .split("\n")
+      .find((l) => l.includes("more — run"));
+    expect(remainder).toBeDefined();
+    // The count of what was withheld, and the same route the cache line uses —
+    // capping must not make anything unreachable, only quieter.
+    expect(remainder).toContain("2 more");
+    expect(remainder).toContain("index");
   }, 60000);
 
   it("S8 a query served from the RESULT cache claims nothing about skipped files — it never read the vault @req:81cd5d1f-6466-47c9-99cd-8fe9f9b500a3", async () => {
