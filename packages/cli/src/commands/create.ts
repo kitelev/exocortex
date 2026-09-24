@@ -30,6 +30,7 @@ import {
   pickCanonicalHome,
 } from "../executors/folderRepairHelpers.js";
 import type { CacheManager } from "../cache/CacheManager.js";
+import { assertNoFrontmatterCopy } from "./bodyFrontmatterGuard.js";
 
 /**
  * Fallback folder for new assets whose `exo__Asset_isDefinedBy` cannot be
@@ -461,6 +462,15 @@ export function createCommand(): Command {
         let body = resolvedBody?.text;
         if (body !== undefined && resolvedBody?.source === "inline") {
           body = body.replace(/\\n/g, "\n");
+        }
+
+        // REFUSE a body that leads with a COPY of a frontmatter block (ticket
+        // e6abe049). `create` BUILDS the frontmatter from --class/--property, so
+        // a body carrying one would be written as text below it — the asset would
+        // be born with two blocks. Applies to all three body sources; a template
+        // body (placeholder uid/createdAt) is accepted, see the guard's docblock.
+        if (body !== undefined) {
+          assertNoFrontmatterCopy(body, "create");
         }
 
         // CLI-side resolution + validation services (Node filesystem).

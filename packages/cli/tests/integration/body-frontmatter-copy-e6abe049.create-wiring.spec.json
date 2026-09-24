@@ -1,0 +1,22 @@
+{
+  "_doc": "Revert-verify mutant for ticket e6abe049 / req dbb19e9a — the create WIRING half. Sibling of *.setbody-wiring.spec.json; see that file and *.guard.spec.json for why the diff is split across three specs (§A117). Expectation written BEFORE the run.",
+  "tree": "/Users/kitelev/Developer/exocortex-development/worktrees/exocortex-claude1-feat-class-property-resolver",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?)[: ]",
+  "subject": "/Users/kitelev/Developer/exocortex-development/worktrees/exocortex-claude1-feat-class-property-resolver/packages/cli/src/commands/create.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/body-frontmatter-copy-e6abe049.integration.test.ts 2>&1",
+  "mutants": {
+    "M2_guard_not_wired_into_create": {
+      "from": "        if (body !== undefined) {\n          assertNoFrontmatterCopy(body, \"create\");\n        }\n\n",
+      "to": "",
+      "expect": ["Q6"],
+      "_note": "Reddens ONLY Q6 — the set-body axes keep their own call site, so this mutant is what separates the two wirings. Q7 (ordinary body creates fine) stays green under it, which is the control that Q6 fails for the refusal and not because create broke."
+    }
+  }
+}

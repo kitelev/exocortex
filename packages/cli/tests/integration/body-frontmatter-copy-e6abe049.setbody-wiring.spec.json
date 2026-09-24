@@ -1,0 +1,22 @@
+{
+  "_doc": "Revert-verify mutant for ticket e6abe049 / req dbb19e9a — the set-body WIRING half. Separate spec because the driver mutates ONE subject and the diff spans three files (integration-test-revert-verify §A117); the predicate itself is owned by *.guard.spec.json. This is the §Step-4 'is the new code WIRED IN' axis: the helper can be perfect and still never run. Expectation written BEFORE the run.",
+  "tree": "/Users/kitelev/Developer/exocortex-development/worktrees/exocortex-claude1-feat-class-property-resolver",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?)[: ]",
+  "subject": "/Users/kitelev/Developer/exocortex-development/worktrees/exocortex-claude1-feat-class-property-resolver/packages/cli/src/commands/set-body.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/body-frontmatter-copy-e6abe049.integration.test.ts 2>&1",
+  "mutants": {
+    "M1_guard_not_wired_into_set_body": {
+      "from": "        assertNoFrontmatterCopy(newBody, \"set-body\");\n\n",
+      "to": "",
+      "expect": ["Q1", "Q1b", "Q2"],
+      "_note": "The pre-fix state of set-body: the helper exists, nothing calls it. Reddens all three set-body refusal axes and leaves Q6 (create) GREEN — the pair with the create-wiring spec is what proves each call site is locked INDEPENDENTLY. ⛤ Q1 would still see the command fail under this mutant (the hub body carries wikilinks absent from the temp vault, so the validator refuses it), which is why Q1 asserts the guard's MESSAGE and Q1b repeats it with --skip-wikilink-validation: without that, Q1 alone would be vacuous."
+    }
+  }
+}
