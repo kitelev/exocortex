@@ -255,6 +255,166 @@ export function findMissingInput(
 }
 
 /**
+ * req 656bd2d9 — the `--input` keys the ENGINE consumes BY NAME and never
+ * writes as a frontmatter property.
+ *
+ * Read off the mechanism, not off taste: {@link GroundingExecutor.executeCreateInstance}
+ * `continue`s on exactly these three before its `properties[key] = value` write,
+ * so they are engine inputs rather than schema-declared property keys. Every
+ * OTHER key lands in the created asset's frontmatter verbatim, which is why an
+ * undeclared one is refused.
+ */
+const ENGINE_RESERVED_INPUT_KEYS: ReadonlySet<string> = new Set([
+  "label",
+  "body",
+  "plannedDate",
+]);
+
+/** The ONE wording for an undeclared-key refusal (req 656bd2d9). */
+export function unknownInputKeyError(
+  key: string,
+  accepted: readonly string[],
+): string {
+  const list =
+    accepted.length > 0
+      ? accepted.map((k) => `"${k}"`).join(", ")
+      : "(none — the schema declares no properties)";
+  return `input_schema: "${key}" is not declared by this command's input schema (accepted: ${list})`;
+}
+
+/** The ONE wording for a schema-required missing-key refusal (req 656bd2d9). */
+export function missingRequiredInputError(key: string): string {
+  return `input_schema: required input "${key}" was not provided and no declared source supplies it (--input '{"${key}":...}' required)`;
+}
+
+/**
+ * req 656bd2d9 — pre-flight a call against the command's OWN declared input
+ * contract (`exocmd__Grounding_inputSchema`), WITHOUT executing it.
+ *
+ * ⛔ This is a SECOND, independent pre-flight — it does NOT touch
+ * {@link findMissingInput} or its deliberate `PROPERTY_SET` type-gate. The two
+ * read different sources: `findMissingInput` inspects a *value template* (and
+ * is gated because a non-`property_set` grounding may carry a stray
+ * `targetValue*` the executor ignores), while this one inspects the *declared
+ * schema*, which is a contract the command's own author wrote and which no
+ * grounding carries by accident. Keeping them separate is why the existing axis
+ * locking that gate stays green without an edit.
+ *
+ * Two refusals, in this order:
+ *
+ *  1. **An undeclared key** — the schema lists the keys this command accepts,
+ *     and anything else would be written verbatim into the new asset's
+ *     frontmatter (`properties[key] = value`), silently extending its schema
+ *     from user input. Reported first because it usually explains the second:
+ *     the caller DID pass the value, just under the wrong key.
+ *  2. **A required key that no declared source supplies.** Fail-open by
+ *     construction: the refusal fires only when the key is absent AND the
+ *     schema field declares no `defaultValue` AND no node of the grounding TREE
+ *     declares something that writes it. Measured 2026-09-24 over the 35
+ *     schema-carrying groundings of the three canonical vaults, five live
+ *     commands would be falsely refused without that clause.
+ *
+ * The tree walk is transitive and mirrors {@link findMissingInput}'s: a step may
+ * itself be a composite. It runs over the ALREADY-RESOLVED definition, so a step
+ * living in a different assetspace than its composite (2 of the 3 steps of the
+ * live `bab33aac` do) is reached through the resolver's wikilink resolution, not
+ * through file adjacency.
+ *
+ * @returns the refusal message, or `null` when the call satisfies the contract.
+ */
+export function findInputSchemaViolation(
+  grounding: GroundingDefinition,
+  userInput?: UserInput,
+): string | null {
+  const fields = grounding.inputSchema;
+  // No declared schema → no declared contract → nothing to enforce. A grounding
+  // that never described its inputs is left exactly as it behaved before.
+  if (fields === undefined || fields.length === 0) return null;
+
+  const provided = (userInput ?? {}) as Record<string, unknown>;
+  const declared = fields.map((f) => f.name);
+  const declaredSet = new Set(declared);
+
+  for (const key of Object.keys(provided)) {
+    if (declaredSet.has(key)) continue;
+    if (ENGINE_RESERVED_INPUT_KEYS.has(key)) continue;
+    return unknownInputKeyError(key, declared);
+  }
+
+  // Blank counts as absent: a `--input '{"label":"  "}'` would otherwise satisfy
+  // the contract and still land on the "Untitled" fallback, which is the exact
+  // degradation this requirement removes.
+  const isSupplied = (v: unknown): boolean =>
+    v !== undefined &&
+    v !== null &&
+    !(typeof v === "string" && v.trim().length === 0);
+
+  /**
+   * Does ANY node of the grounding tree declare something that writes `key`?
+   *
+   * For the engine-reserved `label` the sources are `labelTemplate` and
+   * `omitLabel` — NOT a `propertyDefault` on `exo__Asset_label`: the Universal
+   * Default Template's entry for it substitutes `$userInputLabel`, i.e. it
+   * forwards the very input we are checking for and supplies nothing of its own.
+   *
+   * ⛤ The `key !== "label"` conjunct is DEFENSIVE, and measured as such rather
+   * than assumed: `canonicalYamlKey("label")` is `"label"` while
+   * `canonicalYamlKey("exo__Asset_label")` is `"exo__Asset_label"` (the
+   * unprefixing whitelist covers `aliases`, not `label`), so the two never
+   * compare equal and removing the conjunct changes no outcome a resolved
+   * grounding can produce — `resolvePropertyDefaults` names a default by its
+   * property asset's label, which is the prefixed form. It is kept because that
+   * non-equality is a property of a DIFFERENT module, and this file should not
+   * silently depend on it; the mutant spec records the empty red set instead of
+   * pretending the conjunct is load-bearing.
+   *
+   * ⛤ That dependency is already watched, so the conjunct is not a permanently
+   * sleeping guard: `UNPREFIXED_ASSET_FIELDS` is `{draft, pinned, aliases}` and
+   * adding to it reddens existing axes elsewhere
+   * (`packages/cli/tests/integration/canonical-key-single-source.integration.test.ts`,
+   * and `packages/cli/tests/unit/commands/create.test.ts` says it outright:
+   * "add a fifth entry to `UNPREFIXED_ASSET_FIELDS` and the copy diverges").
+   * Whoever adds `label` there will be told by those tests; THIS comment tells
+   * them what changes here when they do — the conjunct stops being defensive and
+   * starts carrying the refusal.
+   */
+  const hasDeclaredSource = (key: string): boolean => {
+    const canonical = canonicalYamlKey(key);
+    const visit = (g: GroundingDefinition): boolean => {
+      if (key === "label" && (g.labelTemplate !== undefined || g.omitLabel))
+        return true;
+      if (
+        key !== "label" &&
+        (g.propertyDefault ?? []).some(
+          (pd) => canonicalYamlKey(pd.propertyName) === canonical,
+        )
+      )
+        return true;
+      if (
+        key !== "label" &&
+        (g.inheritanceRule ?? []).some(
+          (ir) => canonicalYamlKey(ir.targetPropertyName) === canonical,
+        )
+      )
+        return true;
+      return (g.steps ?? []).some(visit);
+    };
+    return visit(grounding);
+  };
+
+  for (const field of fields) {
+    if (field.required !== true) continue;
+    if (isSupplied(provided[field.name])) continue;
+    if (field.defaultValue !== undefined && field.defaultValue !== null)
+      continue;
+    if (hasDeclaredSource(field.name)) continue;
+    return missingRequiredInputError(field.name);
+  }
+
+  return null;
+}
+
+/**
  * req 8d27f21d — what `executeServiceCall` remembers about its target across
  * `service.execute`: the bytes before the call and, for a target that is not
  * yet UUID-canon-named, the path rename-to-uid would move it to.

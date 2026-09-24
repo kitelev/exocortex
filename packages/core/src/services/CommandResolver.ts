@@ -42,6 +42,7 @@ import type {
   CommandBindingStyleDefinition,
   PropertyDefaultResolved,
   InheritanceRuleResolved,
+  InputSchemaField,
 } from "../domain/models/CommandDefinition";
 
 /**
@@ -2173,9 +2174,12 @@ export class CommandResolver {
     };
 
     if (inputSchema) {
-      (
-        grounding as GroundingDefinition & { inputSchema: unknown[] }
-      ).inputSchema = inputSchema;
+      // req 656bd2d9 — `inputSchema` is now a declared field of
+      // GroundingDefinition, so the write no longer needs to invent the shape
+      // through a cast. The projection above builds plain records, hence the
+      // single narrowing cast to the declared field type.
+      (grounding as { inputSchema?: readonly InputSchemaField[] }).inputSchema =
+        inputSchema as readonly InputSchemaField[];
     }
 
     return grounding;

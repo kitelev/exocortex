@@ -28,6 +28,7 @@ import {
   registerDefaultHostFunctions,
   findMissingInput,
   missingInputError,
+  findInputSchemaViolation,
   vaultPathToIRI,
   IRI,
   liveClock,
@@ -395,6 +396,24 @@ async function executeOnTarget(
       console.error(`❌ --input: invalid JSON object (${msg})`);
       return failed;
     }
+  }
+
+  // req 656bd2d9 — enforce the command's OWN declared input contract
+  // (`exocmd__Grounding_inputSchema`), for BOTH paths at once: this sits ABOVE
+  // the dry-run early return, so the preview and the real run share not just
+  // the same function but the same call site, and cannot drift by construction.
+  //
+  // Independent of the `findMissingInput` check below, which reads a value
+  // TEMPLATE and is deliberately gated to `property_set`. This one reads the
+  // declared schema, which no grounding carries by accident, and it fires for a
+  // key the schema does not declare (silently written into a created asset's
+  // frontmatter otherwise) or for a required key that nothing declared supplies.
+  const schemaViolation = findInputSchemaViolation(command.grounding, userInput);
+  if (schemaViolation !== null) {
+    console.error(
+      `❌ "${command.name}" cannot run on "${vaultRelative}": ${schemaViolation}`,
+    );
+    return failed;
   }
 
   // Dry-run

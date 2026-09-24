@@ -1,0 +1,23 @@
+{
+  "_doc": "Revert-verify mutant for requirement 656bd2d9-458d-4b81-8ec3-49318b134e40 (ticket eb9d6d2c) on the NEIGHBOUR that this change deliberately did NOT touch: `findMissingInput`'s `PROPERTY_SET` type-gate (Issue #4298). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). ⛔ WHY THIS SPEC EXISTS AT ALL — integration-test-revert-verify §A7: adding a branch beside an existing guard can retire that guard's coverage silently, and the new axes cannot see it because they are about a different source. The obvious-looking fix for this ticket was to add CREATE_INSTANCE to the type-gate; the sibling suite already asserts the OPPOSITE (a non-property_set grounding carrying a stray `targetValue*` must NOT be refused, and its list names CREATE_INSTANCE), so that fix would have reddened it. The requirement therefore introduced an INDEPENDENT function reading the declared schema instead, and this spec is the machine-checked statement that the old gate is still alive: removing it must redden the sibling suite. The sibling file is not edited by this change — its 16 tests pass unmodified, which is the other half of the same proof.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ⛔ (does NOT refuse a NON-property_set)",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/GroundingExecutor.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/services/GroundingExecutor.missingInput.test.ts --verbose 2>&1",
+  "mutants": {
+    "M13_original_type_gate_removed": {
+      "_note": "The gate that keeps `findMissingInput` silent about a non-property_set grounding is dropped — i.e. exactly the tempting one-line 'fix' for this ticket. It must redden the sibling axis that enumerates PROPERTY_APPEND / BODY_TEMPLATE / SERVICE_CALL / PROPERTY_INCREMENT / CREATE_INSTANCE. Type-preserving: the function still returns `string | undefined` from the same branches. Predicted the stray-targetValue axis.",
+      "from": "    if (g.type !== GroundingType.PROPERTY_SET) return undefined;\n",
+      "to": "",
+      "expect": ["does NOT refuse a NON-property_set"]
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "_doc": "Revert-verify mutants for requirement 656bd2d9-458d-4b81-8ec3-49318b134e40 (ticket eb9d6d2c) on the WIRING, not the logic. Companion of packages/core/tests/unit/services/input-schema-656bd2d9.preflight.spec.json (the pre-flight itself) and .neighbour-gate.spec.json (the untouched neighbour). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). ⛔ Why a separate surface: the unit axes hand the GroundingDefinition to `findInputSchemaViolation` directly, so they stay GREEN even when NOTHING in `apply` calls it — the feature would be dead in production under a fully green suite (hook-matcher-vs-declared-surface §A1: a test proves «if called, it works», never «someone calls it»). The two mutants below are the only two shapes that matter: the call is absent (M20), or it is present but reachable on ONE path only (M21) — the latter is the exact defect Issue #4298 fixed for the value-template check, re-entered on this axis. B3 and B5 are the controls: they stay GREEN under both mutants, which is what shows the red sets are addressed at the refusal and not at command execution as a whole (§A37). ⛤ The harness passes `--experimental-vm-modules`: packages/cli is an ESM package (`\"type\": \"module\"`) and its integration suites use top-level `await import(...)`, so without the flag the control run reports BROKEN (a SyntaxError) rather than a verdict — measured, not assumed. ⛔ MEASURED: both mutants produce the SAME red set [B1 B2 B4] (§A110 — an identical set does not by itself prove two conjuncts are locked). They are still distinct, and the distinguishing branch is INSIDE B4: under M20 the dry-run half is green too (`dryCode` is 0, so the axis fails on the dry-run expectation), while under M21 the dry-run half REFUSES and the axis fails on `realCode === dryCode`. That difference is asserted, not argued: B4 checks the code AND the stderr text of both runs.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› (B\\d+) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/apply.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/apply-input-schema-preflight.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "M20_preflight_not_wired": {
+      "_note": "The pre-flight exists and is correct, and `apply` never asks it — a half-landed feature. The refusals disappear and, with them, the disk effect the axes assert. Predicted B1 B2 B4.",
+      "from": "  const schemaViolation = findInputSchemaViolation(command.grounding, userInput);\n  if (schemaViolation !== null) {\n    console.error(\n      `❌ \"${command.name}\" cannot run on \"${vaultRelative}\": ${schemaViolation}`,\n    );\n    return failed;\n  }\n",
+      "to": "",
+      "expect": [
+        "B1",
+        "B2",
+        "B4"
+      ]
+    },
+    "M21_preflight_reachable_only_on_dry_run": {
+      "_note": "The call site moves INSIDE the dry-run branch: the preview refuses, the real run does not. This is the false-green shape of Issue #4298 reproduced on the schema axis — a call copied from a red dry-run would still execute, and a `--yes` call would still create the Untitled asset. It is why the production call site sits ABOVE the dry-run early return rather than being duplicated into both. Predicted B1 B2 B4.",
+      "from": "  const schemaViolation = findInputSchemaViolation(command.grounding, userInput);\n  if (schemaViolation !== null) {\n",
+      "to": "  const schemaViolation = options.dryRun\n    ? findInputSchemaViolation(command.grounding, userInput)\n    : null;\n  if (schemaViolation !== null) {\n",
+      "expect": [
+        "B1",
+        "B2",
+        "B4"
+      ]
+    }
+  }
+}

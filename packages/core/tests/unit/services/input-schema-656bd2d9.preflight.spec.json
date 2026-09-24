@@ -1,0 +1,118 @@
+{
+  "_doc": "Revert-verify mutants for requirement 656bd2d9-458d-4b81-8ec3-49318b134e40 (ticket eb9d6d2c, branch feat/apply-input-schema-preflight) — `findInputSchemaViolation`, the pre-flight that enforces a command's declared `exocmd__Grounding_inputSchema`. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). Guards enumerated per integration-test-revert-verify §A8 from `git diff -U0` of GroundingExecutor.ts: the two refusals (M1 undeclared key, M2 required key), the transitive step walk (M3), each of the four declared SOURCES that make the required refusal fail-open (M4 labelTemplate, M5 omitLabel, M6 the schema's own defaultValue, M7 propertyDefault, M8 inheritanceRule), the engine-reserved key set (M9), the blank-is-absent rule (M10), the `label`-is-not-covered-by-a-propertyDefault boundary (M11) and the no-schema early return (M12). Every `expect` is the MEASURED red set, never the predicted one (§A97 — a BROKEN mutant is the absence of a measurement, not a measurement); the prediction written before the run is quoted verbatim in each `_note`. ⛤ COMPANION SPECS, both load-bearing: `input-schema-656bd2d9.neighbour-gate.spec.json` proves the PRE-EXISTING `findMissingInput` type-gate is still alive after this change (integration-test-revert-verify §A7 — adding a branch must not silently retire the neighbouring guard), and `packages/cli/tests/integration/input-schema-656bd2d9.wiring.spec.json` proves the pre-flight is actually WIRED into `apply` on BOTH paths rather than merely correct in isolation. ⛔ Assetspace crossing carries NO mutant here, and not by oversight: `GroundingDefinition.steps` is typed `readonly GroundingDefinition[]`, i.e. this function receives steps ALREADY RESOLVED by CommandResolver, so no input to it can distinguish a step living in another assetspace from a local one — a mutant would be measuring the resolver, which has its own suites.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› (A\\d+) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/GroundingExecutor.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/services/GroundingExecutor.inputSchema.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_undeclared_key_check_removed": {
+      "_note": "The loop that refuses a key the schema does not declare is gone; an unknown key flows to the frontmatter write again. Predicted A3 A15.",
+      "from": "  for (const key of Object.keys(provided)) {\n    if (declaredSet.has(key)) continue;\n    if (ENGINE_RESERVED_INPUT_KEYS.has(key)) continue;\n    return unknownInputKeyError(key, declared);\n  }\n",
+      "to": "",
+      "expect": [
+        "A15",
+        "A3"
+      ]
+    },
+    "M2_required_check_removed": {
+      "_note": "The required-key refusal is gone; a call with no label degrades to \"Untitled\" exactly as before the requirement. Predicted A1 A13 A14.",
+      "from": "  for (const field of fields) {\n    if (field.required !== true) continue;\n    if (isSupplied(provided[field.name])) continue;\n    if (field.defaultValue !== undefined && field.defaultValue !== null)\n      continue;\n    if (hasDeclaredSource(field.name)) continue;\n    return missingRequiredInputError(field.name);\n  }\n",
+      "to": "",
+      "expect": [
+        "A1",
+        "A13",
+        "A14"
+      ]
+    },
+    "M3_step_walk_removed": {
+      "_note": "The source lookup stops at the top node. This is the shape that would refuse the LIVE composite bab33aac, whose labelTemplate sits on its first step. Predicted A6 A7.",
+      "from": "      return (g.steps ?? []).some(visit);\n",
+      "to": "      return false;\n",
+      "expect": [
+        "A6",
+        "A7"
+      ]
+    },
+    "M4_label_template_not_a_source": {
+      "_note": "labelTemplate stops counting as a declared source — the naive `required`-only check that would refuse 4 live commands outright plus the composite. Predicted A5 A6 A7; MEASURED A5 A6 A7 A9. ⛔ The divergence is mine, not the axis': I predicted from the mutant's THEME (it touches the label source) instead of from what A9 ASSERTS (§A44) — A9's fixture covers its required `label` WITH a labelTemplate so that the axis isolates the schema `defaultValue`, so removing that source reddens it too. The extra red is correct and is kept.",
+      "from": "      if (key === \"label\" && (g.labelTemplate !== undefined || g.omitLabel))\n        return true;\n",
+      "to": "      if (key === \"label\" && g.omitLabel) return true;\n",
+      "expect": [
+        "A5",
+        "A6",
+        "A7",
+        "A9"
+      ]
+    },
+    "M5_omit_label_not_a_source": {
+      "_note": "omitLabel stops counting: a class whose display name is derived at render time would be refused for the label it deliberately omits. Predicted A8.",
+      "from": "      if (key === \"label\" && (g.labelTemplate !== undefined || g.omitLabel))\n        return true;\n",
+      "to": "      if (key === \"label\" && g.labelTemplate !== undefined) return true;\n",
+      "expect": [
+        "A8"
+      ]
+    },
+    "M6_schema_default_ignored": {
+      "_note": "A required field carrying the schema's own defaultValue is refused anyway. Predicted A9.",
+      "from": "    if (field.defaultValue !== undefined && field.defaultValue !== null)\n      continue;\n",
+      "to": "",
+      "expect": [
+        "A9"
+      ]
+    },
+    "M7_property_default_not_a_source": {
+      "_note": "A propertyDefault writing the required property stops excusing it. Predicted A10.",
+      "from": "      if (\n        key !== \"label\" &&\n        (g.propertyDefault ?? []).some(\n          (pd) => canonicalYamlKey(pd.propertyName) === canonical,\n        )\n      )\n        return true;\n",
+      "to": "",
+      "expect": [
+        "A10"
+      ]
+    },
+    "M8_inheritance_rule_not_a_source": {
+      "_note": "An inheritanceRule writing the required property stops excusing it. Predicted A11.",
+      "from": "      if (\n        key !== \"label\" &&\n        (g.inheritanceRule ?? []).some(\n          (ir) => canonicalYamlKey(ir.targetPropertyName) === canonical,\n        )\n      )\n        return true;\n",
+      "to": "",
+      "expect": [
+        "A11"
+      ]
+    },
+    "M9_engine_reserved_set_emptied": {
+      "_note": "`body` / `plannedDate` become undeclared keys, so a legitimate call carrying them is refused. Type-preserving: the Set still exists and is still consulted. Predicted A12.",
+      "from": "const ENGINE_RESERVED_INPUT_KEYS: ReadonlySet<string> = new Set([\n  \"label\",\n  \"body\",\n  \"plannedDate\",\n]);\n",
+      "to": "const ENGINE_RESERVED_INPUT_KEYS: ReadonlySet<string> = new Set<string>([]);\n",
+      "expect": [
+        "A12"
+      ]
+    },
+    "M10_blank_counts_as_supplied": {
+      "_note": "A whitespace-only value satisfies the contract again and the call lands on \"Untitled\" — the degradation the requirement removes, re-entered through the back door. Predicted A13.",
+      "from": "  const isSupplied = (v: unknown): boolean =>\n    v !== undefined &&\n    v !== null &&\n    !(typeof v === \"string\" && v.trim().length === 0);\n",
+      "to": "  const isSupplied = (v: unknown): boolean =>\n    v !== undefined && v !== null;\n",
+      "expect": [
+        "A13"
+      ]
+    },
+    "M11_property_default_may_excuse_label": {
+      "_note": "Drops the `key !== \"label\"` conjunct so a propertyDefault could excuse the required `label` INPUT. Predicted A14; MEASURED **NO reds**, and that is reported rather than hidden (§A35 — a guard whose removal changes no reachable outcome is defensive, not load-bearing; §A55 — name the non-coverage with a number instead of an implied level). WHY it cannot redden, measured not assumed: the source lookup compares `canonicalYamlKey(<schema key>)` with `canonicalYamlKey(<property name>)`, and `canonicalYamlKey(\"label\")` = \"label\" while `canonicalYamlKey(\"exo__Asset_label\")` = \"exo__Asset_label\" (the unprefixing whitelist covers `aliases`, not `label`) — so the two never compare equal with or without the conjunct. A fixture that DID redden it would need a propertyDefault literally named `label`, a form `resolvePropertyDefaults` cannot produce because it names a default by its property asset's label, i.e. the prefixed spelling. The conjunct stays because that non-equality lives in ANOTHER module (NoteToRDFConverter) and this file should not depend on it silently; A14 remains as a behavioural axis — it locks the OUTCOME (a Universal-Default-Template propertyDefault does not excuse the required label input), which is what production relies on. ⛤ The dependency is WATCHED, so the conjunct is not permanently asleep: `UNPREFIXED_ASSET_FIELDS` is {draft, pinned, aliases} and growing it reddens axes that already exist — packages/cli/tests/integration/canonical-key-single-source.integration.test.ts, and packages/cli/tests/unit/commands/create.test.ts states it verbatim (\"add a fifth entry to `UNPREFIXED_ASSET_FIELDS` and the copy diverges\"). Whoever adds `label` there is told by those tests; the ⛤-paragraph at the call site tells them what changes HERE when they do.",
+      "from": "        key !== \"label\" &&\n        (g.propertyDefault ?? []).some(\n          (pd) => canonicalYamlKey(pd.propertyName) === canonical,\n        )",
+      "to": "        (g.propertyDefault ?? []).some(\n          (pd) => canonicalYamlKey(pd.propertyName) === canonical,\n        )",
+      "expect": []
+    },
+    "M12_empty_schema_no_longer_exempt": {
+      "_note": "Only `undefined` short-circuits; a schema that declares zero properties now refuses every key. Type-preserving (the guard still narrows `fields`), unlike deleting the return outright, which would leave `fields.map` on a possibly-undefined value. Predicted A4.",
+      "from": "  if (fields === undefined || fields.length === 0) return null;\n",
+      "to": "  if (fields === undefined) return null;\n",
+      "expect": [
+        "A4"
+      ]
+    }
+  }
+}
