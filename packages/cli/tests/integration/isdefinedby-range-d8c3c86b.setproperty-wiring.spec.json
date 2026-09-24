@@ -17,9 +17,10 @@
       "to": "",
       "expect": [
         "V4",
-        "V9"
+        "V9",
+        "V13"
       ],
-      "_note": "Reddens BOTH doors of set-property (--property/--value and --input) and leaves create's axes green. The pair V4/V9 is what shows the guard sits where both doors land, rather than on one of them."
+      "_note": "Reddens BOTH doors of set-property (--property/--value and --input) and leaves create's axes green. The pair V4/V9 is what shows the guard sits where both doors land, rather than on one of them. ⛤ V13 joined this set with the multi-value fix: the --input ARRAY door is the same call site."
     }
   }
 }

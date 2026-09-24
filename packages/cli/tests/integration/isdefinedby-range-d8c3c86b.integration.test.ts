@@ -253,6 +253,48 @@ describe("Ticket d8c3c86b: isDefinedBy must resolve to an exo__Ontology", () => 
     expect(stdoutChunks.join("")).toContain("uuid");
   });
 
+  it("V10: an asset merely NAMED exo__Ontology is still refused — identity is the uid, not the label @req:b2f31fcb-6cac-41c3-a0c4-40387c4cf57c", async () => {
+    // A label is free text a writer chooses; the class identity is its uid.
+    // Live assets carrying this label today: 3, all the same real class file
+    // mounted once per vault — so the hole is empty, but `create --label
+    // "exo__Ontology"` fills it, which is what this axis pins shut.
+    const impostorClass = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    const impostorAnchor = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
+    writeAsset(impostorClass, `exo__Asset_label: exo__Ontology\n`);
+    writeAsset(
+      impostorAnchor,
+      `exo__Asset_label: $fake\nexo__Instance_class:\n  - "[[${impostorClass}]]"\n`,
+    );
+    const before = inboxCount();
+    await runCreate(`[[${impostorAnchor}]]`);
+    expect(errChunks.join("\n")).toMatch(GUARD_MSG);
+    expect(exitCodes).not.toContain(0);
+    expect(inboxCount()).toBe(before);
+  });
+
+  it("V11: a superClass cycle A→B→A terminates and refuses instead of hanging @req:b2f31fcb-6cac-41c3-a0c4-40387c4cf57c", async () => {
+    // Real vaults carry 0 cycles across 417 classes declaring a superClass, but
+    // the walk must be total on the graph it is GIVEN, not on the graph observed.
+    const classA = "cccccccc-1111-4222-8333-444444444444";
+    const classB = "dddddddd-5555-4666-8777-888888888888";
+    const cyclicAnchor = "eeeeeeee-9999-4aaa-8bbb-cccccccccccc";
+    writeAsset(
+      classA,
+      `exo__Asset_label: test__A\nexo__Class_superClass:\n  - "[[${classB}]]"\n`,
+    );
+    writeAsset(
+      classB,
+      `exo__Asset_label: test__B\nexo__Class_superClass:\n  - "[[${classA}]]"\n`,
+    );
+    writeAsset(
+      cyclicAnchor,
+      `exo__Asset_label: $cyclic\nexo__Instance_class:\n  - "[[${classA}]]"\n`,
+    );
+    await runCreate(`[[${cyclicAnchor}]]`);
+    expect(errChunks.join("\n")).toMatch(GUARD_MSG);
+    expect(exitCodes).not.toContain(0);
+  });
+
   it("V9: the second door — set-property --input — is guarded too @req:b2f31fcb-6cac-41c3-a0c4-40387c4cf57c", async () => {
     const before = fs.readFileSync(targetAbs());
     await setPropertyCommand().parseAsync(
@@ -269,6 +311,65 @@ describe("Ticket d8c3c86b: isDefinedBy must resolve to an exo__Ontology", () => 
       { from: "user" },
     );
     expect(errChunks.join("\n")).toMatch(GUARD_MSG);
+    expect(exitCodes).not.toContain(0);
     expect(fs.readFileSync(targetAbs()).equals(before)).toBe(true);
+  });
+
+  it("V12: create checks EVERY isDefinedBy value — a legal anchor first does not smuggle a prototype second @req:b2f31fcb-6cac-41c3-a0c4-40387c4cf57c", async () => {
+    // isDefinedBy is cardinality-1, but the CLI accepts a repeated --property and
+    // co-location itself takes [0] — so a guard reading only [0] is bypassed
+    // WHOLESALE. The incident was a machine-built call, i.e. the caller most
+    // likely to emit a repeated flag.
+    const before = inboxCount();
+    const dirBefore = fs.readdirSync(path.join(vault, DIR)).length;
+    await createCommand().parseAsync(
+      [
+        "--class", NOTE_CLASS_UID, "--label", "Smuggled", "--vault", vault,
+        "--property", `exo__Asset_isDefinedBy=[[${ANCHOR_UID}]]`,
+        "--property", `exo__Asset_isDefinedBy=[[${PROTOTYPE_UID}]]`,
+      ],
+      { from: "user" },
+    );
+    expect(errChunks.join("\n")).toMatch(GUARD_MSG);
+    expect(errChunks.join("\n")).toContain(PROTOTYPE_UID);
+    expect(exitCodes).not.toContain(0);
+    expect(inboxCount()).toBe(before);
+    expect(fs.readdirSync(path.join(vault, DIR)).length).toBe(dirBefore);
+  });
+
+  it("V13: set-property --input with an ARRAY checks every element too @req:b2f31fcb-6cac-41c3-a0c4-40387c4cf57c", async () => {
+    const before = fs.readFileSync(targetAbs());
+    await setPropertyCommand().parseAsync(
+      [
+        targetRel, "--vault", vault, "--input",
+        JSON.stringify({
+          property: "exo__Asset_isDefinedBy",
+          value: [`[[${ANCHOR_UID}]]`, `[[${PROTOTYPE_UID}]]`],
+        }),
+      ],
+      { from: "user" },
+    );
+    expect(errChunks.join("\n")).toMatch(GUARD_MSG);
+    expect(exitCodes).not.toContain(0);
+    expect(fs.readFileSync(targetAbs()).equals(before)).toBe(true);
+  });
+
+  it("V14: an UNQUOTED (nested-list) class ref on the target is still read — the guard is not weaker than the post-hoc audit @req:b2f31fcb-6cac-41c3-a0c4-40387c4cf57c", async () => {
+    // YAML parses an unquoted `exo__Instance_class` entry as a nested list. A
+    // one-level flatten would read the target as classless and ACCEPT it — the
+    // write-time guard would then be weaker than `audit ontology-membership`,
+    // whose same-named helper descends. Live assets in that shape: 0.
+    const nestedClassAnchor = "f0f0f0f0-1111-4222-8333-999999999999";
+    fs.writeFileSync(
+      path.join(vault, DIR, `${nestedClassAnchor}.md`),
+      `---\nexo__Asset_uid: ${nestedClassAnchor}\nexo__Asset_label: $nested\n` +
+        `exo__Instance_class:\n  - - "[[${PROTOTYPE_CLASS_UID}]]"\n---\nbody\n`,
+      "utf-8",
+    );
+    const before = inboxCount();
+    await runCreate(`[[${nestedClassAnchor}]]`);
+    expect(errChunks.join("\n")).toMatch(GUARD_MSG);
+    expect(exitCodes).not.toContain(0);
+    expect(inboxCount()).toBe(before);
   });
 });

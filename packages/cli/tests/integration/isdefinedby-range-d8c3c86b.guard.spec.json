@@ -19,9 +19,14 @@
         "V1",
         "V3",
         "V4",
-        "V9"
+        "V9",
+        "V10",
+        "V11",
+        "V12",
+        "V13",
+        "V14"
       ],
-      "_note": "Type-preserving: the resolution still runs, the verdict is never reached. Reddens every refusal axis of BOTH commands (they share the helper); the acceptance axes stay green because they never depended on a refusal."
+      "_note": "Type-preserving: the resolution still runs, the verdict is never reached. Reddens every refusal axis of BOTH commands (they share the helper); the acceptance axes stay green because they never depended on a refusal. ⛤ The set grew with the review fixes: V10/V11/V12/V14 also ride the create call site, so removing it (or emptying the predicate) kills the refusal on all of them at once. That is arithmetic, not scope creep — N4/N10/N11 are what separate the individual guarantees."
     },
     "N5_subsumption_reduced_to_equality": {
       "from": "      next.push(...asRefList(meta[\"exo__Class_superClass\"]));",
@@ -33,12 +38,43 @@
       "_note": "Stops the superClass walk, so only a DIRECT instance of exo__Ontology is accepted. Reddens the two axes that ride a subclass anchor — V8 (create) and V5 (set-property repoint). V1/V4 stay green: the prototype is refused either way, which is exactly why subsumption needs axes of its own."
     },
     "N7_unresolvable_no_longer_fails_open": {
-      "from": "  const targetPath = await findReferencedFile(fsAdapter, reference, sourceFilePath);\n  if (!targetPath) {\n    return; // unresolvable or cross-vault — fail-open, same contract\n  }\n  let meta: Record<string, unknown>;\n  try {\n    meta = await fsAdapter.getFileMetadata(targetPath);\n  } catch {\n    return; // unreadable target — fail-open rather than block on an I/O hiccup\n  }",
+      "from": "  const targetPath = await findReferencedFile(fsAdapter, reference, sourceFilePath);\n  if (!targetPath) {\n    return null; // unresolvable or cross-vault — fail-open, same contract\n  }\n  let meta: Record<string, unknown>;\n  try {\n    meta = await fsAdapter.getFileMetadata(targetPath);\n  } catch {\n    return null; // unreadable target — fail-open rather than block on an I/O hiccup\n  }",
       "to": "  const targetPath = await findReferencedFile(fsAdapter, reference, sourceFilePath);\n  const meta: Record<string, unknown> = await fsAdapter.getFileMetadata(\n    targetPath as string,\n  );",
       "expect": [
         "V7"
       ],
       "_note": "Removes BOTH fail-open layers for an unresolvable reference at once — and that is the point. The first attempt mutated only the `if (!targetPath)` return and reddened NOTHING, because the try/catch below produces the SAME outcome: the two layers are DUPLICATE COVER, not one guard and one accident. Naming that is the §A118 discriminator answered: neither layer is dead (each alone keeps the legal form legal), so both stay and the mutant has to take both to show the fail-open exists by construction rather than by luck. Reddens only V7 — V6 exits earlier on the `!` prefix."
+    },
+    "N8_identity_keyed_on_the_label_again": {
+      "from": "      const targetUid = meta[\"exo__Asset_uid\"];\n      if (\n        typeof targetUid === \"string\" &&\n        targetUid.trim().toLowerCase() === ONTOLOGY_CLASS_UID.toLowerCase()\n      ) {",
+      "to": "      const targetUid = meta[\"exo__Asset_label\"];\n      if (\n        typeof targetUid === \"string\" &&\n        targetUid.trim() === \"exo__Ontology\"\n      ) {",
+      "expect": [
+        "V10"
+      ],
+      "_note": "Re-keys the identity check on the LABEL — the review's finding. Reddens only V10: every other axis uses the real class file, whose uid AND label both match, so no axis but V10 can tell the two channels apart. That is what makes V10 non-decorative rather than a second copy of V1."
+    },
+    "N9_cycle_guard_removed": {
+      "from": "      if (seen.has(key)) continue;\n      seen.add(key);",
+      "to": "      seen.add(key);",
+      "expect": [],
+      "_note": "⛔ EMPTY `expect` IS DELIBERATE — it is NOT a forgotten axis and NOT a weak one. Do not delete this mutant and do not attach somebody else's axis to it. MEASURED: removing the visited-set reddens NOTHING, because MAX_SUPERCLASS_DEPTH already stops a cycle, so the walk still terminates and still returns false. The two bounds are DUPLICATE COVER ON THE OUTCOME and differ only in WORK: on an A→B→A cycle the walk without the visited-set runs all 16 levels re-reading the same two class files, and on a diamond hierarchy that re-reading compounds. An axis for that difference would have to assert wall-clock time, i.e. it would be a future CI flake (perf-tests-dont-hard-gate-ci) — so it is consciously NOT written. The visited-set therefore stays with its role named in the code (bounding WORK, not guaranteeing termination), V11 keeps locking what matters (the walk terminates and refuses, whichever bound does it), and this mutant stays as standing evidence: an empty expectation is a claim the driver re-checks on every run."
+    },
+    "N10_only_the_first_value_is_checked": {
+      "from": "  const values = Array.isArray(rawValue) ? rawValue : [rawValue];",
+      "to": "  const values = [Array.isArray(rawValue) ? rawValue[0] : rawValue];",
+      "expect": [
+        "V12",
+        "V13"
+      ],
+      "_note": "Restores the shipped-for-review form that checked only element [0] — the review's blocker. Reddens exactly the two multi-value axes, one per command, and NOTHING else: every single-value axis passes either way, which is precisely why the bypass survived a full green suite. isDefinedBy is cardinality-1, but the CLI accepts a repeated --property and an --input array, and co-location itself reads [0] — so a legal anchor first and the wrong one second walked straight through."
+    },
+    "N11_class_refs_not_flattened_recursively": {
+      "from": "  const visit = (v: unknown): void => {\n    if (Array.isArray(v)) {\n      v.forEach(visit);\n      return;\n    }",
+      "to": "  const visit = (v: unknown): void => {\n    if (Array.isArray(v)) {\n      v.forEach((x) => {\n        const r = extractAssetReference(x);\n        if (typeof r === \"string\" && r.length > 0) out.push(r);\n      });\n      return;\n    }",
+      "expect": [
+        "V14"
+      ],
+      "_note": "Drops one level of descent, i.e. the pre-review form. An UNQUOTED exo__Instance_class parses as a NESTED list, so the target reads as classless and is ACCEPTED — the write-time guard becomes weaker than `audit ontology-membership`, whose same-named helper descends and which this feature argues it complements. Live assets in that shape: 0, so only V14 can see it."
     }
   }
 }
