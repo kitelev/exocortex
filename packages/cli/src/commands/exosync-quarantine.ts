@@ -207,11 +207,23 @@ export async function runQuarantineResolve(
 
   // Find the spec whose open-conflict set holds this path (the path the user
   // copied from `list`). `--repo` disambiguates the rare cross-repo collision.
+  // ⛔ Review of #4342, MEDIUM-1: with NO mounted AssetSpace the conflict set is
+  // empty for a reason that has nothing to do with conflicts, and "no open
+  // conflicts" would be a quantifier over the empty set — formally true, and it
+  // tells the reader the opposite cause. `runQuarantineList` already guards this
+  // (`specs.length === 0` → "No materialized AssetSpaces …"); the same sentence
+  // is used here for parity. `resolve` RETURNS 1 where `list` returns 0: for
+  // `list` an empty vault is a complete answer, for `resolve` it is a refusal.
+  if (specs.length === 0) {
+    out("No materialized AssetSpaces with a GitHub source found in this vault.");
+    return 1;
+  }
+
   const conflicts = await resolver.listOpenConflicts(specs);
+  const repoFilter = opts.repo;
   const byPath = conflicts.filter((c) => c.path === conflictPath);
-  const matches = byPath.filter(
-    (c) => opts.repo === undefined || c.repoKey === opts.repo,
-  );
+  const matches =
+    repoFilter === undefined ? byPath : byPath.filter((c) => c.repoKey === repoFilter);
   if (matches.length === 0) {
     // Ticket 21123711 / #4226 — the refusal names the ARGUMENT that did not
     // match, not a claim about state. The filter above is CONJUNCTIVE (path AND
@@ -225,23 +237,37 @@ export async function runQuarantineResolve(
     // ⛤ Form mirrors the `matches.length > 1` branch below, which already
     // enumerates `  --repo <repoKey>`; parity by citation, not by analogy.
     if (conflicts.length === 0) {
-      // The ONLY input for which a statement about state is true.
+      // The ONLY input for which a statement about the conflict set is true.
       out(`No open conflicts in any mounted assetspace — nothing to resolve.`);
-    } else if (byPath.length === 0) {
+    } else if (repoFilter !== undefined && byPath.length > 0) {
+      // The path IS open; the `--repo` filter is what excluded it. Naming the
+      // VALUE passed is the point of this branch — review MEDIUM/LOW-2: the
+      // sentence being replaced did print it, and dropping it here would be a
+      // regression in the very branch that is about that value.
       out(
-        `"${conflictPath}" is not among the ${conflicts.length} open conflict(s) — the path is ` +
-          `repo-relative, exactly as \`exosync quarantine list\` prints it:`,
-      );
-      for (const c of conflicts) out(`  ${c.path}`);
-    } else {
-      // byPath is non-empty and nothing matched ⇒ the `--repo` filter is what
-      // excluded them. The repoKey carries the sync branch, which is the form
-      // both recorded misses in #4226 got wrong.
-      out(
-        `"${conflictPath}" is an open conflict, but the --repo you passed does not match it — ` +
-          `a repoKey carries the sync branch (owner/repo#branch). It conflicts in:`,
+        `"${conflictPath}" is an open conflict, but not in "${repoFilter}" — a repoKey carries ` +
+          `the sync branch (owner/repo#branch). It conflicts in:`,
       );
       for (const c of byPath) out(`  --repo ${c.repoKey}`);
+    } else {
+      // The path matched nothing. ⛤ When `--repo` was given, enumerate only that
+      // repo's conflicts (review LOW-1: listing another repo's paths invites the
+      // caller to copy one and earn a second refusal for the same mistake);
+      // otherwise print the `repoKey  path` pair, mirroring `quarantine list`,
+      // because two repos can hold the SAME repo-relative path and bare paths
+      // would print as two identical lines.
+      const candidates =
+        repoFilter === undefined
+          ? conflicts
+          : conflicts.filter((c) => c.repoKey === repoFilter);
+      out(
+        `"${conflictPath}" is not among the ${candidates.length} open conflict(s)` +
+          (repoFilter === undefined ? "" : ` in "${repoFilter}"`) +
+          ` — the path is repo-relative, exactly as \`exosync quarantine list\` prints it:`,
+      );
+      for (const c of candidates) {
+        out(repoFilter === undefined ? `  ${c.repoKey}  ${c.path}` : `  ${c.path}`);
+      }
     }
     return 1;
   }

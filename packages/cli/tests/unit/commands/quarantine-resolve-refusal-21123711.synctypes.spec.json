@@ -1,0 +1,31 @@
+{
+ "_doc": "Review MEDIUM-2 of PR #4342. The success path prints that the `.conflict.local.txt` backup is 'excluded from BOTH sync predicates'. That is a claim about two named functions in core, so the axis (Q6) imports the PRODUCTION predicates and asserts both, with a canary that they are not simply false for everything. This spec is what locks it: removing `.conflict.` from ONE predicate must redden Q6. Without it the claim was an identically-green toMatch mirroring the source string — the word BOTH was a counter with no `if` behind it (self-satisfying-metric-weak-verifier §A38). ⛤ cli suites resolve @kitelev/exocortex-core from core SRC (jest moduleNameMapper), so a core mutant reaches the cli axis with no build step. Set `tree` and `subject` to YOUR checkout (committed with a placeholder, §A76). ⛤ The harness resolves the cli package RELATIVE TO {subject} so the driver's copied tree is what runs; a hardcoded absolute path made the driver report 'подмена предмета НЕ доезжает', which is the right refusal — the delivery of the mutation was unverifiable. The subject sits five levels below the tree (packages/core/src/services/sync), not four as for a cli command.",
+ "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+ "symlink_node_modules": [
+  "node_modules",
+  "packages/cli/node_modules",
+  "packages/core/node_modules",
+  "packages/test-utils/node_modules",
+  "packages/obsidian-plugin/node_modules",
+  "packages/req-audit/node_modules"
+ ],
+ "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]+\\d+[a-z]?)[: ]",
+ "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/syncTypes.ts",
+ "harness": "cd \"$(dirname {subject})/../../../../../packages/cli\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-quarantine.test.ts 2>&1",
+ "mutants": {
+  "MS1_conflict_not_excluded_from_isSyncablePath": {
+   "from": "    !path.includes(\".conflict.\")",
+   "to": "    !path.includes(\".conflict-never.\")",
+   "expect": [
+    "Q6"
+   ]
+  },
+  "MS2_conflict_not_excluded_from_isFileSpaceSyncablePath": {
+   "from": "  return !path.includes(\".local.\") && !path.includes(\".conflict.\");",
+   "to": "  return !path.includes(\".local.\") && !path.includes(\".conflict-never.\");",
+   "expect": [
+    "Q6"
+   ]
+  }
+ }
+}

@@ -25,7 +25,11 @@ import {
   mdAsset,
   sha1Hex,
 } from "../../../../core/tests/unit/services/sync/fakeGitHub";
-import { gitBlobSha } from "@kitelev/exocortex-core";
+import {
+  gitBlobSha,
+  isSyncablePath,
+  isFileSpaceSyncablePath,
+} from "@kitelev/exocortex-core";
 import { Command } from "commander";
 import {
   runQuarantineList,
@@ -338,6 +342,58 @@ describe("exosync quarantine resolve", () => {
     }
   });
 
+  it("@req:28cd60a7-d97b-4384-b138-a969faa704ea Q5: with NO mounted AssetSpace the refusal names THAT, not an empty conflict set", async () => {
+    // ⛔ Review MEDIUM-1: an empty conflict set here has nothing to do with
+    // conflicts, and "no open conflicts" is a quantifier over the empty set —
+    // formally true, and it reports the opposite cause. A bare vault with no
+    // AssetSpace declaration is the input.
+    const vault = mkTmp("exosync-q-nospecs-");
+    const lines: string[] = [];
+    try {
+      const code = await runQuarantineResolve(
+        "anything.md",
+        { vault, token: FAKE_PAT, take: "local" },
+        deps(new FakeGitHubRepo({}), lines),
+      );
+      const text = lines.join("\n");
+      expect(code).toBe(1);
+      expect(text).toMatch(/No materialized AssetSpaces with a GitHub source/);
+      expect(text).not.toMatch(/No open conflicts in any mounted assetspace/);
+      expect(text).not.toMatch(/is not among the/);
+    } finally {
+      rmSync(vault, { recursive: true, force: true });
+    }
+  });
+
+  it("@req:28cd60a7-d97b-4384-b138-a969faa704ea Q6: the 'excluded from BOTH sync predicates' claim is locked by the REAL predicates, on an input that isolates the infix", async () => {
+    // ⛔ Review MEDIUM-2: the sentence the command prints is a claim about two
+    // named predicates. Asserting only that the text says so would be identically
+    // green — the test would state that the code prints what the code prints, and
+    // the word BOTH would be a counter with no `if` behind it
+    // (self-satisfying-metric-weak-verifier §A38). These are the PRODUCTION
+    // predicates, imported from core.
+    const backup = `${CONFLICT}.conflict.local.txt`;
+    expect(isSyncablePath(backup)).toBe(false);
+    expect(isFileSpaceSyncablePath(backup)).toBe(false);
+
+    // ⛔ Those two assertions alone do NOT lock the `.conflict.` infix, and the
+    // first draft of this axis stopped there. Measured: the real backup name ends
+    // in `.txt`, so `isSyncablePath` already rejects it on `endsWith(".md")`, and
+    // it also carries `.local.` — each predicate excludes it TWICE. A mutant that
+    // removes `.conflict.` from one predicate therefore changed nothing and the
+    // axis stayed green (§A33: the evidence survives in another conjunct). The
+    // input below isolates the infix the SENTENCE names: `.md` extension, no
+    // `.local.`, so `.conflict.` is the only reason either predicate says no.
+    const conflictOnly = "alpha.conflict.md";
+    expect(isSyncablePath(conflictOnly)).toBe(false);
+    expect(isFileSpaceSyncablePath(conflictOnly)).toBe(false);
+
+    // Canary: the predicates are not simply false for everything — the very path
+    // the backup shadows IS syncable in both modes.
+    expect(isSyncablePath(CONFLICT)).toBe(true);
+    expect(isFileSpaceSyncablePath(CONFLICT)).toBe(true);
+  });
+
   // ── req 28cd60a7 / ticket 21123711: the refusal names the ARGUMENT ─────────
   //
   // The selector is CONJUNCTIVE (path AND repoKey), so three different inputs
@@ -392,6 +448,9 @@ describe("exosync quarantine resolve", () => {
       expect(text).toContain(`  ${CONFLICT}`);
       // ⛔ The retracted sentence: it claimed a STATE the data contradicts.
       expect(text).not.toMatch(/No open conflict for/);
+      // Review NIT-1: outcome (a) must not be reachable here — without this a
+      // mutant turning the `else if` chain into independent `if`s would slip past.
+      expect(text).not.toMatch(/No open conflicts in any mounted assetspace/);
     } finally {
       fx.cleanup();
     }
@@ -412,7 +471,8 @@ describe("exosync quarantine resolve", () => {
       );
       const text = lines.join("\n");
       expect(code).toBe(1);
-      expect(text).toMatch(/--repo you passed does not match/);
+      // Review LOW-2: the branch about the VALUE must name the value.
+      expect(text).toContain(`but not in "${OWNER}/${REPO}"`);
       expect(text).toMatch(/sync branch/);
       expect(text).toContain(`  --repo ${REPO_KEY}`);
       expect(text).not.toMatch(/No open conflict for/);
