@@ -254,7 +254,7 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create, write-through o
     const root = vault();
     const loadSpy = jest.spyOn(CacheManager.prototype, "loadOrBuild");
     const refreshSpy = jest.spyOn(CacheManager.prototype, "refreshAfterWrite");
-    const convertVaultSpy = jest.spyOn(NoteToRDFConverter.prototype, "convertVault");
+    const convertVaultSpy = jest.spyOn(NoteToRDFConverter.prototype, "convertVaultWithValidation");
 
     const a = await runApply(root, ["move-to-backlog-4264", REL.draftTask, "--json"]);
     expect(a.exitCode).toBeNull();
@@ -645,7 +645,7 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create, write-through o
     // (a) no cache on disk: create --use-cache writes the asset, does NOT
     //     build a cache, and does not load anything.
     const loadSpy = jest.spyOn(CacheManager.prototype, "loadOrBuild");
-    const convertVaultSpy = jest.spyOn(NoteToRDFConverter.prototype, "convertVault");
+    const convertVaultSpy = jest.spyOn(NoteToRDFConverter.prototype, "convertVaultWithValidation");
     const c0 = await runCreate(root, ["--class", TASK_CLASS, "--label", "A8 first", "--use-cache", "--write-through"]);
     expect(c0.exitCode).toBe(0);
     const first = JSON.parse(c0.stdout) as { path: string };
@@ -832,7 +832,7 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create, write-through o
     await warmCache(root);
     const before = fs.readFileSync(path.join(root, REL.draftTask), "utf-8");
     const loadSpy = jest.spyOn(CacheManager.prototype, "loadOrBuild");
-    const convertSpy = jest.spyOn(NoteToRDFConverter.prototype, "convertVault");
+    const convertSpy = jest.spyOn(NoteToRDFConverter.prototype, "convertVaultWithValidation");
 
     const r = await runApply(root, ["move-to-backlog-4264", REL.draftTask, "--json", "--write-through"]);
     expect(r.exitCode).toBe(2); // ExitCodes.INVALID_ARGUMENTS
