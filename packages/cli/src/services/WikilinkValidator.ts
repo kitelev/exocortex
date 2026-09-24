@@ -31,7 +31,26 @@ export class WikilinkValidator {
   /** Pattern to extract wikilinks: [[uuid|label]] or [[uuid]] */
   private static readonly WIKILINK_PATTERN = /\[\[([^\]|]+)(?:\|[^\]]*)?]]/g;
 
-  constructor(private readonly fsAdapter: NodeFsAdapter) {}
+  /**
+   * UIDs (lower-cased) of assets that do not exist YET but will be written by
+   * the same invocation — the other items of a `create-batch` run (req
+   * 1848dff9-bb2e-43a9-95e7-d917d6cef552). A UUID wikilink naming one of them
+   * is valid: the batch is all-or-nothing, so the target exists by the time
+   * anything is written. Empty for `create`, which validates exactly as before.
+   *
+   * ⛤ UUID form only. A label-form linkpath resolves through the target's
+   * `exo__Asset_label` / aliases on disk, which a pending asset does not have;
+   * in-batch links are therefore written as `[[<uid>]]`, the form the
+   * caller-supplied `uid` exists for.
+   */
+  private readonly pendingUids: ReadonlySet<string>;
+
+  constructor(
+    private readonly fsAdapter: NodeFsAdapter,
+    options: { pendingUids?: ReadonlySet<string> } = {},
+  ) {
+    this.pendingUids = options.pendingUids ?? new Set();
+  }
 
   /**
    * Validate all wikilinks found in property values.
@@ -122,6 +141,11 @@ export class WikilinkValidator {
       if (!resolved) {
         throw new WikilinkNotFoundError(uuid, label);
       }
+      return;
+    }
+
+    // An asset planned by the same batch: it will exist when anything exists.
+    if (this.pendingUids.has(uuid.toLowerCase())) {
       return;
     }
 

@@ -13,24 +13,15 @@
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/create.ts",
   "mutants": {
     "N1_guard_not_wired_into_create": {
-      "from": "        const isDefinedByCheck = await assertIsDefinedByIsOntology(\n          isDefinedByRaw,\n          fsAdapter,\n          \"\",\n          \"create\",\n        );\n",
-      "to": "        const isDefinedByCheck = { targetPaths: [] as (string | null)[] };\n",
-      "expect": [
-        "V1",
-        "V3",
-        "V10",
-        "V11",
-        "V12",
-        "V14"
-      ],
+      "from": "  const isDefinedByCheck = await assertIsDefinedByIsOntology(\n    isDefinedByRaw,\n    fsAdapter,\n    \"\",\n    \"create\",\n  );\n",
+      "to": "  const isDefinedByCheck = { targetPaths: [] as (string | null)[] };\n",
+      "expect": ["V1", "V3", "V10", "V11", "V12", "V14"],
       "_note": "The pre-fix state of create: the helper exists, nothing calls it. Reddens create's two refusal axes and leaves set-property's (V4/V9) green — the pair with the set-property spec is what proves each call site is locked independently. ⛤ Anchor re-pinned after the review fix: the call is now multi-line and returns the resolutions create reuses, so the mutant substitutes an empty result instead of deleting the line — type-preserving. ⛤ The set grew with the review fixes: V10/V11/V12/V14 also ride the create call site, so removing it (or emptying the predicate) kills the refusal on all of them at once. That is arithmetic, not scope creep — N4/N10/N11 are what separate the individual guarantees."
     },
     "N4_guard_skipped_under_dry_run": {
-      "from": "        const isDefinedByCheck = await assertIsDefinedByIsOntology(\n          isDefinedByRaw,\n          fsAdapter,\n          \"\",\n          \"create\",\n        );",
-      "to": "        const isDefinedByCheck = options.dryRun\n          ? { targetPaths: [] as (string | null)[] }\n          : await assertIsDefinedByIsOntology(\n              isDefinedByRaw,\n              fsAdapter,\n              \"\",\n              \"create\",\n            );",
-      "expect": [
-        "V3"
-      ],
+      "from": "  const isDefinedByCheck = await assertIsDefinedByIsOntology(\n    isDefinedByRaw,\n    fsAdapter,\n    \"\",\n    \"create\",\n  );",
+      "to": "  const isDefinedByCheck = options.dryRun\n    ? { targetPaths: [] as (string | null)[] }\n    : await assertIsDefinedByIsOntology(\n        isDefinedByRaw,\n        fsAdapter,\n        \"\",\n        \"create\",\n      );",
+      "expect": ["V3"],
       "_note": "Type-preserving one-line wrap — the shape that made the T6 guard's ordering unlocked until an axis existed for it. Reddens ONLY V3: V1 runs without --dry-run and still refuses, which is precisely why the dry-run clause needs its own axis."
     }
   }

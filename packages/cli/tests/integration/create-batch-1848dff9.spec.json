@@ -1,0 +1,87 @@
+{
+  "_doc": "Revert-verify mutants for req 1848dff9-bb2e-43a9-95e7-d917d6cef552 (issue #4347, `cli create-batch`), subject = the batch command. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). One mutant per guarantee the command itself carries; the per-item pipeline is create's own planCreate and is locked by create's suites. Expectations written BEFORE the run (§A44).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?)[: ]",
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/create-batch.integration.test.ts 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/create-batch.ts",
+  "mutants": {
+    "M1_context_built_per_item": {
+      "from": "            const { config, label } = await planCreate(\n              item.options,\n              ctx,\n              item.body,\n            );",
+      "to": "            const { config, label } = await planCreate(\n              item.options,\n              new CreateContext(vaultPath, {\n                fsAdapter: new PlanningFsAdapter(vaultPath),\n                warn,\n                pendingUids,\n              }),\n              item.body,\n            );",
+      "expect": ["B6a", "B6b", "B6c"],
+      "_note": "The loop-in-one-process that the requirement rules out: every item gets fresh services and a fresh read memo, so every scan runs per item."
+    },
+    "M2_batch_uids_not_handed_to_wikilink_validation": {
+      "from": "        const ctx = new CreateContext(vaultPath, {\n          fsAdapter,\n          warn,\n          pendingUids,\n        });",
+      "to": "        const ctx = new CreateContext(vaultPath, {\n          fsAdapter,\n          warn,\n          pendingUids: pendingUids.size < 0 ? pendingUids : new Set<string>(),\n        });",
+      "expect": ["B4"],
+      "_note": "Type-preserving: pendingUids stays read, the context gets an empty set. B4b stays green — it is refused either way, which is what makes the pair prove B4 passes BECAUSE of the batch."
+    },
+    "M3_all_or_nothing_reduced_to_best_effort": {
+      "from": "        if (failures.length > 0) {\n          reportFailures(failures, total);",
+      "to": "        if (failures.length > 0 && planned.length === 0) {\n          reportFailures(failures, total);",
+      "expect": ["B3", "B4b", "B5b", "B5c"],
+      "_note": "Writes the valid items of a batch that has invalid ones."
+    },
+    "M4_only_the_first_failure_reported": {
+      "from": "          reportFailures(failures, total);",
+      "to": "          reportFailures(failures.slice(0, 1), total);",
+      "expect": ["B3"]
+    },
+    "M5_caller_uid_checks_removed": {
+      "from": "        failures.push(...(await checkCallerUids(items, fsAdapter)));",
+      "to": "        failures.push(...(await checkCallerUids([], fsAdapter)));",
+      "expect": ["B5b", "B5c"],
+      "_note": "B5a stays green: a malformed uid is refused by the item-shape check, not by checkCallerUids."
+    },
+    "M6_body_expanded_like_inline": {
+      "from": "    body = { text: item.body as string, source: \"file\" };",
+      "to": "    body = { text: item.body as string, source: \"inline\" };",
+      "expect": ["B2"],
+      "_note": "The parity case carries a literal backslash-n; inline expansion turns it into a line break, --body-file does not."
+    },
+    "M7_batch_created_by_default_dropped": {
+      "from": "      createdBy: (item.createdBy as string | undefined) ?? batch.createdBy,",
+      "to": "      createdBy: (item.createdBy as string | undefined) ?? undefined,",
+      "expect": ["B10"]
+    },
+    "M8_multi_value_property_keeps_first_value_only": {
+      "from": "        property.push(`${key}=${String(v)}`);",
+      "to": "        if (values.indexOf(v) === 0) property.push(`${key}=${String(v)}`);",
+      "expect": ["B2"]
+    },
+    "M9_status_false_not_mapped_to_no_status": {
+      "from": "      status = false; // ⇔ --no-status",
+      "to": "      status = undefined; // ⇔ --no-status",
+      "expect": ["B2"]
+    },
+    "M10_stdin_marker_not_recognised": {
+      "from": "        if (file === \"-\") {",
+      "to": "        if (file === \"--stdin\") {",
+      "expect": ["B9"]
+    },
+    "M11_dry_run_writes": {
+      "from": "        if (options.dryRun) {",
+      "to": "        if (options.dryRun && planned.length < 0) {",
+      "expect": ["B7"],
+      "_note": "B6* also run with --dry-run; a write after planning adds no read of an existing file, so they are not expected to redden."
+    },
+    "M12_unknown_item_keys_accepted": {
+      "from": "  if (unknownKeys.length > 0) {",
+      "to": "  if (unknownKeys.length < 0) {",
+      "expect": ["B8"]
+    },
+    "M13_empty_batch_accepted": {
+      "from": "  if (doc.length === 0) {",
+      "to": "  if (doc.length < 0) {",
+      "expect": ["B8"]
+    }
+  }
+}

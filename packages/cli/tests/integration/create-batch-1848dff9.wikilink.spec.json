@@ -1,0 +1,21 @@
+{
+  "_doc": "Revert-verify mutant for req 1848dff9 — the in-batch uid set in wikilink validation.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?)[: ]",
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/create-batch.integration.test.ts 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/services/WikilinkValidator.ts",
+  "mutants": {
+    "W1_pending_uids_ignored": {
+      "from": "    if (this.pendingUids.has(uuid.toLowerCase())) {",
+      "to": "    if (this.pendingUids.has(uuid.toLowerCase()) && uuid.length < 0) {",
+      "expect": ["B4"]
+    }
+  }
+}
