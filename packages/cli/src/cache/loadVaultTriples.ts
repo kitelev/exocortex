@@ -64,6 +64,20 @@ export interface LoadVaultTriplesResult {
    * them, once, to answer identically.
    */
   zeroTriplePaths: string[];
+  /**
+   * #7a84b9f0 — the files the LOADER dropped, each with the reason it gave, as
+   * `convertVaultWithValidation` recorded them (an invariant violation per
+   * issue #2997 Phase 2, or a throw while building the file's triples).
+   *
+   * Present ONLY on the full parse. On the cache path it is `undefined` — NOT
+   * an empty array: `loadOrBuild` can only offer {@link zeroTriplePaths}, which
+   * is derived from "this entry has no triples" and therefore mixes skipped
+   * files with genuinely empty ones (see the note on that field). `undefined`
+   * says "this path cannot tell"; `[]` would say "nothing was dropped", and a
+   * consumer that printed the second on the strength of the first would be
+   * making a claim the cache format does not support.
+   */
+  skippedFiles?: Array<{ path: string; reason: string }>;
 }
 
 /**
@@ -123,11 +137,17 @@ export async function loadVaultTriples(
   // "walked, committed nothing").
   const files = vaultAdapter.getAllFiles();
   const committed = new Map<string, number>();
-  const triples = await converter.convertVault({
+  // #7a84b9f0 — `convertVaultWithValidation` is the call `convertVault` already
+  // delegates to (`return result.triples`), so the triples are byte-identical;
+  // going to it directly is what stops `skippedFiles` from being discarded by
+  // the narrower signature one layer above.
+  const converted = await converter.convertVaultWithValidation({
+    strict: false,
     onFileTriples: (file, own) => {
       committed.set(file.path, own.length);
     },
   });
+  const triples = converted.triples;
   const zeroTriplePaths = files
     .filter((f) => (committed.get(f.path) ?? 0) === 0)
     .map((f) => f.path);
@@ -137,6 +157,7 @@ export async function loadVaultTriples(
     mode: "full-parse",
     explicitCount: triples.length,
     zeroTriplePaths,
+    skippedFiles: converted.skippedFiles,
   };
 }
 
@@ -169,6 +190,65 @@ export function cacheLoadNotice(loaded: LoadVaultTriplesResult): string {
     default:
       return "triple cache: not used (full parse)";
   }
+}
+
+/**
+ * #7a84b9f0 — what a command should tell its user about files the loader
+ * dropped, or `null` when there is nothing to say.
+ *
+ * TWO different sentences, because the two load paths know different things:
+ *
+ * - **full parse** — the loader named exactly the dropped files and why, so the
+ *   block names them, in the shape `index` has printed since #2205
+ *   (`sparql-index.ts`: the `Files skipped` heading, then `- <path>` and the
+ *   reason indented under it). Same information, same layout, one reader.
+ * - **cache** — `loadOrBuild` can only say which entries hold no triples, and
+ *   that set mixes files the loader skipped with files that are genuinely
+ *   empty; the format does not record which is which. So the line states ONLY
+ *   the count it can defend, says both populations aloud, and points at the
+ *   full parse for the reasons. It deliberately does not say "skipped": that
+ *   would be a claim the cache cannot support.
+ *
+ * Returns the text without a trailing newline; the caller decides the channel
+ * (`query` writes it to stderr, keeping stdout a single document).
+ */
+export const SKIPPED_FILES_NOTICE_LIMIT = 10;
+
+export function skippedFilesNotice(loaded: LoadVaultTriplesResult): string | null {
+  const skipped = loaded.skippedFiles;
+  if (skipped !== undefined) {
+    if (skipped.length === 0) return null;
+    const lines = [
+      `⚠️  ${skipped.length} file(s) skipped by the vault loader — they contributed no triples:`,
+    ];
+    // Capped, unlike `index`. The citation-parity with sparql-index.ts covers
+    // the LAYOUT, not the channel: `index` prints a terminal report the user
+    // asked for, whereas this runs before EVERY query — an uncapped 1 + 2N
+    // lines makes a dirty vault's `query` unreadable. The remainder line keeps
+    // the same route, so nothing becomes unreachable, only quieter.
+    for (const file of skipped.slice(0, SKIPPED_FILES_NOTICE_LIMIT)) {
+      lines.push(`   - ${file.path}`);
+      lines.push(`     ${file.reason}`);
+    }
+    const hidden = skipped.length - SKIPPED_FILES_NOTICE_LIMIT;
+    if (hidden > 0) {
+      lines.push(`   … and ${hidden} more — run 'index' to see them all`);
+    }
+    return lines.join("\n");
+  }
+
+  if (loaded.zeroTriplePaths.length === 0) return null;
+  // ⛔ Names NO cause. An earlier draft said "skipped by the loader, or
+  // genuinely empty" — a two-member disjunction presented as exhaustive, and
+  // it is not: folder-excluded and FileSpace-excluded files land in
+  // `zeroTriplePaths` too, and they are neither. Adding a third member only
+  // invites a fourth; the honest statement is that the cache does not record
+  // the reason at all, plus the route to a run that does.
+  return (
+    `ℹ️  ${loaded.zeroTriplePaths.length} file(s) contributed no triples; ` +
+    `the triple cache does not record WHY — re-run without --use-cache, or ` +
+    `run 'index', to see the per-file reasons`
+  );
 }
 
 /** #4264 — a write-through that did not throw, or the reason it could not run. */

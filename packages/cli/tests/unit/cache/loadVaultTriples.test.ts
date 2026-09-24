@@ -49,11 +49,22 @@ describe(`loadVaultTriples / write-through helpers (#4264) ${REQ}`, () => {
   it(`L1 the full-parse path converts through the CALLER's adapter when one is given (no second adapter, no cache manager) ${REQ}`, async () => {
     const adapter = new FileSystemVaultAdapter(vaultPath);
     const seen: unknown[] = [];
+    // #7a84b9f0 — the full parse now calls `convertVaultWithValidation`
+    // directly (the very method `convertVault` delegated to) so that
+    // `skippedFiles` is no longer discarded by the narrower signature. The
+    // guarantee this axis locks is unchanged — ONE conversion, through the
+    // CALLER's adapter — and the spy is now on the method that observes BOTH
+    // entry points, since `convertVault` still routes through it.
     jest
-      .spyOn(NoteToRDFConverter.prototype, "convertVault")
+      .spyOn(NoteToRDFConverter.prototype, "convertVaultWithValidation")
       .mockImplementation(async function (this: NoteToRDFConverter) {
         seen.push((this as unknown as { vault: unknown }).vault);
-        return [];
+        return {
+          triples: [],
+          skippedFiles: [],
+          summary: { total: 0, indexed: 0, skipped: 0 },
+          fileSpaces: { prefixes: [], declarationPaths: [], warnings: [] },
+        };
       });
     const loadSpy = jest.spyOn(CacheManager.prototype, "loadOrBuild");
 

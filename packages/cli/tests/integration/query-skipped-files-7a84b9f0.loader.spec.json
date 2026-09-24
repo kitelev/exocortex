@@ -1,0 +1,95 @@
+{
+  "_doc": "Revert-verify mutants for ticket 7a84b9f0 (req 81cd5d1f-6466-47c9-99cd-8fe9f9b500a3), subject packages/cli/src/cache/loadVaultTriples.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/query-skipped-files-7a84b9f0.loader.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's subject and runs the suite; `expect` names the axes that MUST go red). Two specs, one per subject file, because the driver mutates one file per spec — the sibling is query-skipped-files-7a84b9f0.command.spec.json. Three of these (M5/M6/M7) exist because the cache-path line carries THREE separate claims the orchestrator conditioned the design on — the count, the stated ambiguity, and the route — and one mutant per claim is what keeps any of them from disappearing silently.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/cache/loadVaultTriples.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/query-skipped-files-7a84b9f0.integration.test.ts 2>&1",
+  "red_re": "› ([A-Z]\\d+\\w*) ",
+  "mutants": {
+    "M1_full_parse_drops_skipped_files": {
+      "_note": "The defect itself: the loader measured the skips and then discarded them, exactly as convertVault's signature used to. The cache-path sentence still prints (zeroTriplePaths is non-empty), which is why S2 fails on the PATH being absent rather than on silence.",
+      "from": "    zeroTriplePaths,\n    skippedFiles: converted.skippedFiles,\n  };",
+      "to": "    zeroTriplePaths,\n  };",
+      "expect": [
+        "S1",
+        "S2",
+        "S7",
+        "S8",
+        "S9",
+        "S10"
+      ]
+    },
+    "M4_cache_branch_claims_an_empty_list": {
+      "_note": "`[]` instead of `undefined` on the cache path — the difference between 'this path cannot tell' and 'nothing was dropped'. It silences the count line entirely, because an empty list reads as nothing to report.",
+      "from": "      zeroTriplePaths: cacheResult.zeroTriplePaths,\n    };",
+      "to": "      zeroTriplePaths: cacheResult.zeroTriplePaths,\n      skippedFiles: [],\n    };",
+      "expect": [
+        "S4",
+        "S5",
+        "S6"
+      ]
+    },
+    "M5_cache_line_drops_the_count": {
+      "_note": "Claim 1 of the orchestrator's three conditions: the line states exactly the count it can defend.",
+      "from": "    `ℹ️  ${loaded.zeroTriplePaths.length} file(s) contributed no triples; ` +",
+      "to": "    `ℹ️  some file(s) contributed no triples; ` +",
+      "expect": [
+        "S4"
+      ]
+    },
+    "M6_cache_line_hides_the_ambiguity": {
+      "_note": "Claim 2, in its post-review form: the line must name NO cause. This mutant puts back the two-member disjunction the reviewer rejected (LOW-2) — it reads as exhaustive and is not, since folder-excluded and FileSpace-excluded files land in zeroTriplePaths too.",
+      "from": "    `the triple cache does not record WHY — re-run without --use-cache, or ` +",
+      "to": "    `(skipped by the loader, or genuinely empty) — re-run without --use-cache, or ` +",
+      "expect": [
+        "S5"
+      ]
+    },
+    "M7_cache_line_drops_the_route": {
+      "_note": "Claim 3: a number without a route leaves the reader with no next step. The count and the ambiguity survive this mutant, so only S6 may go red.",
+      "from": "    `the triple cache does not record WHY — re-run without --use-cache, or ` +\n    `run 'index', to see the per-file reasons`",
+      "to": "    `the triple cache does not record WHY`",
+      "expect": [
+        "S6"
+      ]
+    },
+    "M8_full_parse_block_names_only_the_first": {
+      "_note": "Truncation is the quiet failure of a per-file list: one name looks like a complete answer.",
+      "from": "    for (const file of skipped.slice(0, SKIPPED_FILES_NOTICE_LIMIT)) {",
+      "to": "    for (const file of skipped.slice(0, 1)) {",
+      "expect": [
+        "S7",
+        "S9"
+      ]
+    },
+    "M9_full_parse_block_drops_the_reason": {
+      "_note": "A path with no reason is the same muteness moved one step: the reader still has to open NoteToRDFConverter to learn why. The JSON meta keeps the reason, so S1 stays green — the two surfaces are independent.",
+      "from": "      lines.push(`     ${file.reason}`);\n",
+      "to": "",
+      "expect": [
+        "S2",
+        "S7"
+      ]
+    },
+    "M10_cap_removed": {
+      "_note": "LOW-3: without the cap the block prints 1 + 2N lines before EVERY query, which is what makes a dirty vault's output unreadable. The remainder line still prints (the constant is untouched), so only the cap axis may go red.",
+      "from": "    for (const file of skipped.slice(0, SKIPPED_FILES_NOTICE_LIMIT)) {",
+      "to": "    for (const file of skipped) {",
+      "expect": [
+        "S9"
+      ]
+    },
+    "M11_remainder_line_removed": {
+      "_note": "A cap that does not say what it withheld turns truncation into silent data loss — the reader cannot tell ten from ten-of-twelve.",
+      "from": "    const hidden = skipped.length - SKIPPED_FILES_NOTICE_LIMIT;\n    if (hidden > 0) {\n      lines.push(`   … and ${hidden} more — run 'index' to see them all`);\n    }\n",
+      "to": "",
+      "expect": [
+        "S10"
+      ]
+    }
+  }
+}

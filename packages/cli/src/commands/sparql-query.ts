@@ -24,7 +24,7 @@ import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError, InvalidArgumentsError, QueryTimeoutError } from "../utils/errors/index.js";
 import { ResponseBuilder, ErrorCode, type QueryResult, type ConstructResult } from "../responses/index.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
-import { loadVaultTriples } from "../cache/loadVaultTriples.js";
+import { loadVaultTriples, skippedFilesNotice } from "../cache/loadVaultTriples.js";
 import { QueryResultCache } from "../cache/QueryResultCache.js";
 import { computeVaultSignature } from "../cache/vaultSignature.js";
 import { ProgressIndicator } from "../utils/ProgressIndicator.js";
@@ -385,6 +385,37 @@ export function sparqlQueryCommand(): Command {
         triples = loaded.triples;
         cacheHit = loaded.cacheHit;
 
+        // #7a84b9f0 — a file the loader dropped used to leave no trace at all
+        // here: `query` answered "0 results" whether the vault was empty or the
+        // asset the user asked about had been rejected by the #2997 invariant.
+        // The full parse names those files and why; the cache path can only
+        // count entries with no triples, so it says only that (see
+        // `skippedFilesNotice`). STDERR in both output modes: stdout stays a
+        // result document, and `--output json` carries the same facts in meta.
+        // BOTH output modes, because stderr is not the result document: in text
+        // mode it is the only channel, and under `--output json` it is the only
+        // channel the CACHE path has at all.
+        //
+        // ⛔ The two paths are NOT symmetric, and a `--output json` consumer
+        // must not be told otherwise. On the FULL PARSE stderr and `meta`
+        // carry the same facts, so ignoring stderr costs that consumer
+        // nothing. On the CACHE path `meta` carries no list BY CONSTRUCTION —
+        // `loadOrBuild` cannot tell a skipped file from a genuinely empty one
+        // (see `skippedFiles` on LoadVaultTriplesResult), so the count line
+        // exists only here. A machine-readable count for that path is an
+        // extension, not a repair: it needs its own requirement.
+        const skippedNotice = skippedFilesNotice(loaded);
+        if (skippedNotice !== null) {
+          console.error(skippedNotice);
+        }
+        const loaderMeta: Record<string, unknown> =
+          loaded.skippedFiles && loaded.skippedFiles.length > 0
+            ? {
+                skippedCount: loaded.skippedFiles.length,
+                skippedFiles: loaded.skippedFiles,
+              }
+            : {};
+
         if (outputFormat === "text" && cacheHit) {
           console.log(
             loaded.mode === "delta"
@@ -447,6 +478,7 @@ export function sparqlQueryCommand(): Command {
               execDurationMs: execDuration,
               triplesScanned: triples.length,
               cacheHit,
+              ...loaderMeta,
             });
             console.log(JSON.stringify(response, null, 2));
           } else {
@@ -563,6 +595,7 @@ export function sparqlQueryCommand(): Command {
               triplesScanned: triples.length,
               cacheHit,
               queryResultCacheHit: false,
+              ...loaderMeta,
             });
             console.log(JSON.stringify(response, null, 2));
           } else {
@@ -629,6 +662,7 @@ export function sparqlQueryCommand(): Command {
               triplesScanned: triples.length,
               cacheHit,
               queryResultCacheHit: false,
+              ...loaderMeta,
             });
             console.log(JSON.stringify(response, null, 2));
           } else {
