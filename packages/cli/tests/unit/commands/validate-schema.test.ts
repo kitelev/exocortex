@@ -34,6 +34,12 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
       return m ? { namespace: { iri: { value: m[1] } }, localName: m[2] } : null;
     },
   },
+  // Ticket e3bac7b5: validate-schema reads the vault IRI scheme from core
+  // instead of hardcoding a third copy of the literal in this package. These
+  // factories enumerate named exports, so the ESM link needs it here too —
+  // the omission fails LOUDLY ("does not provide an export named
+  // 'OBSIDIAN_VAULT_SCHEME'"), which is how it was caught.
+  OBSIDIAN_VAULT_SCHEME: "obsidian://vault/",
   DomainIRI: class { constructor(public value: string) {} },
   DomainBlankNode: class { constructor(public id: string) {} },
   DomainLiteral: class { constructor(public value: string) {} },
