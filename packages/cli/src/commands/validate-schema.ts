@@ -16,6 +16,7 @@ import {
   DomainIRI,
   DomainLiteral,
   DomainTriple,
+  OBSIDIAN_VAULT_SCHEME,
   type ValidationReport,
   type Violation,
   type ClassHierarchy,
@@ -1024,6 +1025,131 @@ function emitEmptyStagedShapesResult(
 }
 
 /**
+ * Ticket `e3bac7b5` — the DEFAULT (text) surface must name the REASONS behind the
+ * warning count, not just the count.
+ *
+ * Why this exists at all: `sh:Warning` results are printed as ONE aggregate
+ * number, so a count cannot distinguish normal profile isolation (a reference
+ * into an assetspace this vault does not mount) from a real breakage (a mounted
+ * file whose type stopped resolving). The neighbouring audits already own this
+ * shape — `audit ontology-membership` (req `c23f6f50`) and `audit ontology-url`
+ * (req `df6c979e`) both state that skips are "counted by reason" and that the
+ * totals are "always printed so '0 violations' never masks 'nothing was
+ * actually checked'". Inside THIS command the narrow precedent is the term-IRI
+ * collision block below (req `00e8079e`), which names its offenders on the
+ * default surface for exactly one constraint.
+ *
+ * ⛔ The reason is derived from the MECHANISM that produced `actualValue`, not
+ * from the message prose:
+ *
+ *   - NOT under `obsidian://vault/` — the wikilink was a `prefix__LocalName`
+ *     class reference expanded by `NoteToRDFConverter.expandClassValue` into a
+ *     symbolic term IRI; no asset in this vault emits that term as a subject.
+ *   - under the scheme AND a subject of the loaded graph — the wikilink
+ *     RESOLVED to a file here (`notePathToIRI`), so the file is present and it
+ *     is its TYPE that does not resolve (cross-vault class def, missing
+ *     `exo__Instance_class`, dual-IRI).
+ *   - under the scheme and NOT a subject — the IRI was synthesised by
+ *     `NoteToRDFConverter.synthesizeWikilinkTargetIRI`, whose own contract says
+ *     the path "is NOT a file in this vault": a cross-vault / unmounted
+ *     reference.
+ *
+ * ⛤ The ad-hoc 2026-08-08 measurement in the ticket parsed the IRI out of the
+ * message PROSE and therefore had a fourth bucket ("target not extracted", 1 of
+ * 417). Reading the structured `actualValue` removes that bucket by
+ * construction — three class buckets here, not four.
+ */
+const WARNING_REASON_ABSENT =
+  "target not present in this vault (cross-vault / unmounted assetspace)";
+const WARNING_REASON_UNTYPED =
+  "target resolved in this vault, but carries no resolvable type";
+const WARNING_REASON_SYMBOLIC =
+  "symbolic term IRI (class/property) with no asset emitting it";
+const WARNING_REASON_COLLISION =
+  "term-IRI collision (one IRI emitted by several assets)";
+const WARNING_REASON_UNKNOWN_PROPERTY =
+  "unknown property (no registered shape)";
+const WARNING_REASON_UNCLASSIFIABLE =
+  "class constraint with no target recorded (nothing to classify by)";
+
+/**
+ * Does this target IRI name a file the wikilink RESOLVED to in THIS vault?
+ *
+ * ⛔ Derived from the two IRI-producing functions, not from a filesystem probe:
+ * a resolved wikilink goes through `NoteToRDFConverter.notePathToIRI(file.path)`
+ * and keeps the file's directory, while an UNRESOLVED one goes through
+ * `synthesizeWikilinkTargetIRI(`${linkpath}.md`)` — a single segment, and its
+ * own docblock says that path "is NOT a file in this vault".
+ *
+ * ⚠ Known edge, stated rather than hidden: a target at the VAULT ROOT resolves
+ * to a single-segment IRI too and is therefore counted as absent. An earlier
+ * draft tried to close it with "is the target a subject of the loaded graph",
+ * and a fixture disproved that oracle: a file with no `exo__Instance_class` is
+ * dropped by the vault loader and contributes ZERO triples, so a target that
+ * plainly resolved (`obsidian://vault/data/<uid>.md`) was reported as absent.
+ * That probe answers "did the file emit triples", which is a DIFFERENT question
+ * (ticket `7a84b9f0`), so it is not used here. In the canonical vaults every
+ * asset lives under `assetspaces/…`, so the root edge has no live carrier.
+ */
+function targetResolvedInThisVault(target: string): boolean {
+  return target.slice(OBSIDIAN_VAULT_SCHEME.length).includes("/");
+}
+
+/** One reason label for one warning. Pure; total over a set always equals its size. */
+export function classifyWarningReason(warning: Violation): string {
+  switch (warning.constraint) {
+    case "term-iri-collision":
+      return WARNING_REASON_COLLISION;
+    case "unknown-property":
+      return WARNING_REASON_UNKNOWN_PROPERTY;
+    case "class": {
+      const target = warning.actualValue;
+      // ⛔ `actualValue` is what the IRI-form half of the discriminator reads, so
+      // its ABSENCE must produce its own named bucket, never a neighbouring
+      // reason. Folding it into one of the three below would be the
+      // `self-satisfying-metric-weak-verifier` §A29 shape: for an undeclared
+      // feature the honest answer is "nothing to judge by", not a class.
+      // Reachability, measured by READING the emitter rather than assumed:
+      // ShaclLiteValidator's class branch passes `actualValue: obj.value` on
+      // every push, so today no live warning lands here. The bucket exists so
+      // that a future emitter which omits the target is NAMED in the output
+      // instead of silently inflating one of the real reasons.
+      if (target === undefined || target === "") return WARNING_REASON_UNCLASSIFIABLE;
+      if (!target.startsWith(OBSIDIAN_VAULT_SCHEME)) return WARNING_REASON_SYMBOLIC;
+      return targetResolvedInThisVault(target)
+        ? WARNING_REASON_UNTYPED
+        : WARNING_REASON_ABSENT;
+    }
+    default:
+      // `minCount` / `maxCount` / `datatype` reach this function only when a
+      // shape DECLARED `exo__Property_severity: sh:Warning` — the engine itself
+      // gives them `shape.severity`. Three of the five emitters carry no
+      // `actualValue` at all (minCount, maxCount, unknown-property), which is
+      // exactly why this breakdown keys on `constraint` — the one field every
+      // emitter sets — and reads `actualValue` only inside the `class` arm.
+      return `${warning.constraint} constraint (shape-declared warning severity)`;
+  }
+}
+
+/**
+ * Warnings grouped by reason, ordered count-descending then reason-ascending so
+ * the printed block is byte-stable for a given vault (an unordered map would
+ * make every axis on the output a future flake).
+ */
+export function summarizeWarningReasons(
+  warnings: readonly Violation[],
+): Array<{ reason: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const warning of warnings) {
+    const reason = classifyWarningReason(warning);
+    counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => (b.count - a.count) || a.reason.localeCompare(b.reason));
+}
+
+/**
  * Issue #3245: Dependency-injection seam for tests. Production callers omit
  * `deps` and the action uses {@link getStagedMdFiles}. Tests can pass a
  * pre-computed staged list and avoid relying on a real git repository in the
@@ -1142,6 +1268,20 @@ export async function runShapesModeAction(
               : "") +
             ` — these do not affect the exit code.`,
         );
+        // Ticket e3bac7b5 — the breakdown by reason. Printed on the TEXT surface
+        // only: `--format json` already ships `warnings[]` and `--format earl`
+        // ships `dc:description`, so adding it there would duplicate data the
+        // machine reader already has. Placed BEFORE the collision block so the
+        // total-then-detail order reads top-down; the collision block (req
+        // 00e8079e) is untouched.
+        const reasonBreakdown = summarizeWarningReasons(warningResults);
+        const countWidth = Math.max(
+          ...reasonBreakdown.map((entry) => String(entry.count).length),
+        );
+        console.log(`   Breakdown by reason (${warningResults.length} total):`);
+        for (const entry of reasonBreakdown) {
+          console.log(`     ${String(entry.count).padStart(countWidth)}  ${entry.reason}`);
+        }
         // req 00e8079e — name the colliding IRIs here. The point of the check is
         // that the condition was previously INVISIBLE; reporting it only as a few
         // extra units inside a several-hundred-warning aggregate would leave it

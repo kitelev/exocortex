@@ -1,0 +1,109 @@
+{
+ "_doc": "Revert-verify mutants for ticket e3bac7b5 / req f28051a9 (validate schema --shapes-mode names the REASONS behind its warning count on the default text surface). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/validate-schema-warning-breakdown-e3bac7b5.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the spec is committed with a placeholder so a run never mutates a neighbouring session's worktree — integration-test-revert-verify §A76). Guards enumerated from `git diff -U0` (§A8). EVERY axis asserts PRINTED TEXT (§A66): the data behind the breakdown is already collected inside the command and already shipped by --format json / --format earl, so an axis on the internal structure or on either machine branch would pass on the pre-fix code too. TWO guards of the diff carry NO mutant, and the honest reason (§A118) is that neither has an input on which it defends a legal form: (1) `case \"unknown-property\"` — that constraint is emitted only under ValidatorOptions.closedWorldMode, and runShapesValidation never passes options at all (measured by reading it), so no live warning can carry it; (2) `if (target === undefined || target === \"\")` inside the class arm — ShaclLiteValidator's class branch passes `actualValue: obj.value` on every push (:455-465), so the bucket is unreachable today and exists so a future emitter that omits the target is NAMED rather than folded into a real reason.",
+ "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+ "symlink_node_modules": [
+  "node_modules",
+  "packages/cli/node_modules",
+  "packages/core/node_modules",
+  "packages/test-utils/node_modules",
+  "packages/obsidian-plugin/node_modules",
+  "packages/req-audit/node_modules"
+ ],
+ "red_re": "› ([A-Z]+\\d+[a-z]?)[: ]",
+ "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/validate-schema.ts",
+ "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/validate-schema-warning-breakdown-e3bac7b5.integration.test.ts 2>&1",
+ "mutants": {
+  "M1_presence_test_always_false": {
+   "_note": "The IRI-form half of the discriminator: a resolved target keeps its directory, a synthesised one does not.",
+   "from": "  return target.slice(OBSIDIAN_VAULT_SCHEME.length).includes(\"/\");",
+   "to": "  return target.slice(OBSIDIAN_VAULT_SCHEME.length).includes(\"\\u0000/\");",
+   "expect": [
+    "WB2",
+    "WB4"
+   ]
+  },
+  "M2_collision_bucket_mislabelled": {
+   "_note": "The term-iri-collision arm must not fold into another reason (req 00e8079e keeps its own detail block).",
+   "from": "    case \"term-iri-collision\":\n      return WARNING_REASON_COLLISION;",
+   "to": "    case \"term-iri-collision\":\n      return WARNING_REASON_UNKNOWN_PROPERTY;",
+   "expect": [
+    "WB8"
+   ]
+  },
+  "M3_symbolic_bucket_mislabelled": {
+   "_note": "A non-obsidian target is a symbolic term IRI; calling it absent loses the distinction the ticket exists for.",
+   "from": "      if (!target.startsWith(OBSIDIAN_VAULT_SCHEME)) return WARNING_REASON_SYMBOLIC;",
+   "to": "      if (!target.startsWith(OBSIDIAN_VAULT_SCHEME)) return WARNING_REASON_ABSENT;",
+   "expect": [
+    "WB3",
+    "WB4",
+    "WB9",
+    "WB11"
+   ]
+  },
+  "M4_default_arm_returns_a_class_reason": {
+   "_note": "An emitter with no actualValue (minCount) must bucket by constraint, never as a class reason.",
+   "from": "      return `${warning.constraint} constraint (shape-declared warning severity)`;",
+   "to": "      return WARNING_REASON_ABSENT;",
+   "expect": [
+    "WB4",
+    "WB10"
+   ]
+  },
+  "M5_order_not_by_count": {
+   "from": "    .sort((a, b) => (b.count - a.count) || a.reason.localeCompare(b.reason));",
+   "to": "    .sort((a, b) => a.reason.localeCompare(b.reason));",
+   "expect": [
+    "WB9"
+   ]
+  },
+  "M6_tiebreak_dropped": {
+   "_note": "Without the reason tie-break, equal counts follow arrival order — byte-stability of the block is gone.",
+   "from": "    .sort((a, b) => (b.count - a.count) || a.reason.localeCompare(b.reason));",
+   "to": "    .sort((a, b) => b.count - a.count);",
+   "expect": [
+    "WB11"
+   ]
+  },
+  "M7_counts_not_right_aligned": {
+   "from": "          console.log(`     ${String(entry.count).padStart(countWidth)}  ${entry.reason}`);",
+   "to": "          console.log(`     ${String(entry.count)}  ${entry.reason}`);",
+   "expect": [
+    "WB9"
+   ]
+  },
+  "M8_breakdown_never_printed": {
+   "_note": "The EFFECT mutant (§A97): the whole point of the ticket is the printed block.",
+   "from": "        console.log(`   Breakdown by reason (${warningResults.length} total):`);\n        for (const entry of reasonBreakdown) {\n          console.log(`     ${String(entry.count).padStart(countWidth)}  ${entry.reason}`);\n        }",
+   "to": "        void reasonBreakdown;\n        void countWidth;",
+   "expect": [
+    "WB1",
+    "WB2",
+    "WB3",
+    "WB4",
+    "WB8",
+    "WB9",
+    "WB10",
+    "WB11"
+   ]
+  },
+  "M9_printed_outside_the_warning_guard": {
+   "_note": "Placement: the block belongs INSIDE `if (warningResults.length > 0)`, so a clean vault stays silent. The hoisted copy is byte-faithful (padStart + its own width) ON PURPOSE — the first draft printed it unpadded, which reddened WB9 as well and made the mutant read as unaddressed (§A43).",
+   "from": "      if (warningResults.length > 0) {\n        console.log(",
+   "to": "      const hoistedBreakdown = summarizeWarningReasons(warningResults);\n      const hoistedWidth = Math.max(\n        ...hoistedBreakdown.map((entry) => String(entry.count).length),\n      );\n      console.log(`   Breakdown by reason (${warningResults.length} total):`);\n      for (const hoisted of hoistedBreakdown) {\n        console.log(`     ${String(hoisted.count).padStart(hoistedWidth)}  ${hoisted.reason}`);\n      }\n      if (warningResults.length > 0) {\n        console.log(",
+   "expect": [
+    "WB5"
+   ]
+  },
+  "M10_totality_class_results_only": {
+   "_note": "ORCH-required totality guard: a breakdown that walked only `class` results would still add up on a class-only fixture. ⛤ Predicted [WB4, WB10] and measured [WB4, WB8, WB10]: WB8 also asserts that the collision reason appears as its own bucket, so it is a legitimate third consequence, not axis mixing (§A44). Recorded as measured, not as predicted.",
+   "from": "  for (const warning of warnings) {\n    const reason = classifyWarningReason(warning);",
+   "to": "  for (const warning of warnings.filter((w) => w.constraint === \"class\")) {\n    const reason = classifyWarningReason(warning);",
+   "expect": [
+    "WB4",
+    "WB8",
+    "WB10"
+   ]
+  }
+ }
+}
