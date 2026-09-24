@@ -39,5 +39,6 @@
         "U3"
       ]
     }
-  }
+  },
+  "_note_red_re": "`red_re` anchors on the `● <suite> › <title>` failure header rather than the bare `[Xn]` key. jest echoes the SOURCE LINE of a neighbouring `it(...)` inside its diff context, so a key-only pattern reports a GREEN axis as red (same class as integration-test-revert-verify §A104). Measured while building this spec: the first key-only pattern produced 'красных НЕТ' at rc=1 on every mutant."
 }
