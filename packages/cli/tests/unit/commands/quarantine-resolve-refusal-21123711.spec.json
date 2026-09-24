@@ -1,0 +1,86 @@
+{
+ "_doc": "Revert-verify mutants for ticket 21123711 / req 28cd60a7 (the refusal of `exosync quarantine resolve` names the argument that did not match). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/unit/commands/quarantine-resolve-refusal-21123711.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; committed with a placeholder so a run cannot mutate a neighbouring session's worktree — integration-test-revert-verify §A76). Guards enumerated from `git diff -U0` (§A8). ⛤ The axes live in the EXISTING production-shape suite (exosync-quarantine.test.ts) rather than a new file: its fixture builds a real temp vault with an AssetSpace declaration, a hand-seeded device-local watermark with a pinned conflict and the FakeGitHubRepo transport, and duplicating that would be a worse fixture, not a cleaner one (test-fixture-realism). No sibling `<base>-verify` harness exists ON PURPOSE — the subject is TypeScript driven by jest, which the driver runs through `harness` (hook-matcher-vs-declared-surface §A19). ⛔ ONE guard of the diff carries no mutant, and the honest reason (§A118) is that the fixture cannot produce its input: the `matches.length > 1` branch needs the SAME repo-relative path open in TWO assetspaces, and `makeConflictVault` seeds exactly one declaration. That branch is untouched by this diff (0 lines) and is the SOURCE of the enumeration form used here, not a claim being made about it.",
+ "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+ "symlink_node_modules": [
+  "node_modules",
+  "packages/cli/node_modules",
+  "packages/core/node_modules",
+  "packages/test-utils/node_modules",
+  "packages/obsidian-plugin/node_modules",
+  "packages/req-audit/node_modules"
+ ],
+ "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]+\\d+[a-z]?)[: ]",
+ "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-quarantine.ts",
+ "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-quarantine.test.ts 2>&1",
+ "mutants": {
+  "MQ1_old_single_sentence_restored": {
+   "_note": "ORCH-required: the replaced assertion must be an AXIS on the new behaviour, not merely a test that stopped failing. Restoring the retracted one-sentence refusal must redden it. ⛤ The first draft of this mutant reproduced the retracted sentence with its nested backticks around `exosync quarantine list`, which the JSON escaping turned into invalid TypeScript — the driver reported BROKEN, and BROKEN is the ABSENCE of a measurement, not a measurement (§A97). The backticks are dropped; what the mutant restores is the single-sentence SHAPE, which is what the axes judge. ⛤ Predicted [Q2, Q3] and MEASURED [Q1, Q2, Q3]: the mutant also replaces the no-conflicts branch, so Q1's assertion on the new wording fails too — a legitimate third consequence, recorded as measured (§A44), not fitted the other way round.",
+   "from": "    if (conflicts.length === 0) {\n      // The ONLY input for which a statement about state is true.\n      out(`No open conflicts in any mounted assetspace — nothing to resolve.`);",
+   "to": "    if (true as boolean) {\n      out(\n        `No open conflict for \"${conflictPath}\"${opts.repo ? ` in ${opts.repo}` : \"\"} — run exosync quarantine list to see the current set.`,\n      );",
+   "expect": [
+    "Q1",
+    "Q2",
+    "Q3"
+   ]
+  },
+  "MQ2_state_claim_for_every_input": {
+   "_note": "The conjunctive selector collapsed back into one outcome: every input gets the no-conflicts sentence.",
+   "from": "    if (conflicts.length === 0) {",
+   "to": "    if (conflicts.length >= 0) {",
+   "expect": [
+    "Q2",
+    "Q3"
+   ]
+  },
+  "MQ3_path_and_repo_outcomes_swapped": {
+   "_note": "The two argument-specific outcomes must not be interchangeable: each names a DIFFERENT argument.",
+   "from": "    } else if (byPath.length === 0) {",
+   "to": "    } else if (byPath.length > 0) {",
+   "expect": [
+    "Q2",
+    "Q3"
+   ]
+  },
+  "MQ4_open_paths_not_enumerated": {
+   "_note": "Naming the argument without the executable values leaves the caller guessing — the defect #4206 already fixed for `list`.",
+   "from": "      for (const c of conflicts) out(`  ${c.path}`);",
+   "to": "      void conflicts;",
+   "expect": [
+    "Q2"
+   ]
+  },
+  "MQ5_repokeys_not_enumerated": {
+   "from": "      for (const c of byPath) out(`  --repo ${c.repoKey}`);",
+   "to": "      void byPath;",
+   "expect": [
+    "Q3"
+   ]
+  },
+  "MQ6_refusal_exit_code_dropped": {
+   "_note": "A guard has TWO deliveries (§A31): the exit code and the diagnostic. This mutant covers the first — losing it while editing the text is the quiet way to weaken the command.",
+   "from": "      for (const c of byPath) out(`  --repo ${c.repoKey}`);\n    }\n    return 1;",
+   "to": "      for (const c of byPath) out(`  --repo ${c.repoKey}`);\n    }\n    return 0;",
+   "expect": [
+    "Q1",
+    "Q2",
+    "Q3"
+   ]
+  },
+  "MQ7_device_local_note_dropped": {
+   "_note": "Half two of the ticket: the backup is named device-local and deletable. The backup itself is untouched — req e85487a7 pins it.",
+   "from": "    out(\n      `     it stays on this device only — '.conflict.' paths are excluded from BOTH sync ` +",
+   "to": "    if (false as boolean) out(\n      `     it stays on this device only — '.conflict.' paths are excluded from BOTH sync ` +",
+   "expect": [
+    "Q4"
+   ]
+  },
+  "MQ8_backup_no_longer_written": {
+   "_note": "The protection of req e85487a7 must stay predicated: if the preserved-backup line stops printing, Q4 must notice — it asserts the file on disk AND the wording together.",
+   "from": "    out(\n      `  ↳ your discarded local version is preserved at ${spec.localPath}/${result.discardedLocalBackupPath}`,\n    );",
+   "to": "    void spec;",
+   "expect": [
+    "Q4"
+   ]
+  }
+ }
+}

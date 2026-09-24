@@ -208,15 +208,41 @@ export async function runQuarantineResolve(
   // Find the spec whose open-conflict set holds this path (the path the user
   // copied from `list`). `--repo` disambiguates the rare cross-repo collision.
   const conflicts = await resolver.listOpenConflicts(specs);
-  const matches = conflicts.filter(
-    (c) =>
-      c.path === conflictPath &&
-      (opts.repo === undefined || c.repoKey === opts.repo),
+  const byPath = conflicts.filter((c) => c.path === conflictPath);
+  const matches = byPath.filter(
+    (c) => opts.repo === undefined || c.repoKey === opts.repo,
   );
   if (matches.length === 0) {
-    out(
-      `No open conflict for "${conflictPath}"${opts.repo ? ` in ${opts.repo}` : ""} — run \`exosync quarantine list\` to see the current set.`,
-    );
+    // Ticket 21123711 / #4226 — the refusal names the ARGUMENT that did not
+    // match, not a claim about state. The filter above is CONJUNCTIVE (path AND
+    // repoKey), so three different inputs used to collapse into one sentence —
+    // "No open conflict for …, run `exosync quarantine list`" — which was
+    // measurably false for two of them: `list` shows the conflict both before
+    // and after. `conflicts` is already in hand one line up, so distinguishing
+    // the three costs nothing (decision-surface-must-derive-from-mechanism §A9:
+    // a pointer to `list` here was a signature, not a mechanism).
+    //
+    // ⛤ Form mirrors the `matches.length > 1` branch below, which already
+    // enumerates `  --repo <repoKey>`; parity by citation, not by analogy.
+    if (conflicts.length === 0) {
+      // The ONLY input for which a statement about state is true.
+      out(`No open conflicts in any mounted assetspace — nothing to resolve.`);
+    } else if (byPath.length === 0) {
+      out(
+        `"${conflictPath}" is not among the ${conflicts.length} open conflict(s) — the path is ` +
+          `repo-relative, exactly as \`exosync quarantine list\` prints it:`,
+      );
+      for (const c of conflicts) out(`  ${c.path}`);
+    } else {
+      // byPath is non-empty and nothing matched ⇒ the `--repo` filter is what
+      // excluded them. The repoKey carries the sync branch, which is the form
+      // both recorded misses in #4226 got wrong.
+      out(
+        `"${conflictPath}" is an open conflict, but the --repo you passed does not match it — ` +
+          `a repoKey carries the sync branch (owner/repo#branch). It conflicts in:`,
+      );
+      for (const c of byPath) out(`  --repo ${c.repoKey}`);
+    }
     return 1;
   }
   if (matches.length > 1) {
@@ -241,6 +267,18 @@ export async function runQuarantineResolve(
   if (result.discardedLocalBackupPath !== undefined) {
     out(
       `  ↳ your discarded local version is preserved at ${spec.localPath}/${result.discardedLocalBackupPath}`,
+    );
+    // Ticket 21123711 — the backup STAYS. req `e85487a7` (Active) guarantees it
+    // "ALWAYS backs up the discarded local version to a SIBLING
+    // .conflict.local.txt", so the word `sibling` pins the LOCATION: neither
+    // deleting it nor moving it out of the assetspace is available here. What was
+    // missing is the two facts a reader needs to act — that it never leaves this
+    // device, and when it is safe to remove. An explicit opt-in removal is a
+    // question about whose risk it is, and lives in ticket 10150529.
+    out(
+      `     it stays on this device only — '.conflict.' paths are excluded from BOTH sync ` +
+        `predicates, so the backup never reaches the remote. Delete it yourself once you have ` +
+        `checked you do not need the discarded version.`,
     );
   }
   return 0;
