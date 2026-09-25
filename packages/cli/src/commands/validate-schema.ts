@@ -281,6 +281,11 @@ export function classifyKeys(
 
 /**
  * Get list of git-staged .md files relative to vault path.
+ *
+ * Inherits the environment ON PURPOSE (req 91b2c01a allow-list): `--staged`
+ * runs from the vault's own pre-commit hook, and `git diff --cached` must read
+ * the index git is committing — for a partial commit that is the temporary
+ * GIT_INDEX_FILE git exports, not `.git/index`.
  */
 export function getStagedMdFiles(vaultPath: string): string[] {
   try {

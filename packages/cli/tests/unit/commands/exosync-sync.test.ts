@@ -16,7 +16,7 @@
  *     file on disk THROUGH the real writable port, proving port → engine →
  *     disk composition + direction plumbing + exit codes.
  */
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
@@ -30,6 +30,12 @@ import {
   type ExosyncSyncOptions,
 } from "../../../src/commands/exosync-sync";
 import type { SyncRepoSpec } from "@kitelev/exocortex-core";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
+import {
+  REPO_LOCAL_GIT_ENV,
+  repoIsolatedGitEnv,
+} from "../../../src/utils/repoIsolatedGitEnv";
 
 const ASSET_SPACE_CLASS_UID = "73bd00e4-ccc0-4f3f-b20d-c4388c4588fb";
 const OWNER = "test-owner";
@@ -332,8 +338,144 @@ describe("nodeLocalBaseShaProvider (#3590 base backfill source)", () => {
     ).toBeNull();
   }, 30_000); // real git subprocesses — see the budget note on the case above
 
+  // Req 91b2c01a. Inside ANOTHER repository's git hook, git exports that
+  // repository's GIT_DIR / GIT_INDEX_FILE. `-C <vault>` only moves the working
+  // directory, so an inheriting `git submodule status` reads the decoy and the
+  // provider returns null (full-conflict fallback for a space whose base is
+  // known). The provider must answer from the vault and leave the decoy alone.
+  // The variables go into THIS sandbox's process.env — the object the provider
+  // reads — and only around the provider call (the fixture's own git runs need
+  // a clean env).
+  it("H1 @req:91b2c01a-0c61-4ee1-a41e-dc465c84eae1 reads the vault's submodule even under another repository's hook env (decoy untouched)", async () => {
+    const remote = path.join(workdir, "remote");
+    mkdirSync(remote);
+    git(remote, ["init", "-q", "-b", "main"]);
+    writeFileSync(path.join(remote, "a.md"), "x");
+    git(remote, ["add", "-A"]);
+    git(remote, ["commit", "-q", "-m", "init"]);
+    const remoteHead = git(remote, ["rev-parse", "HEAD"]);
+
+    const vault = path.join(workdir, "vault");
+    mkdirSync(vault);
+    git(vault, ["init", "-q", "-b", "main"]);
+    git(vault, [
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      `file://${remote}`,
+      "assetspaces/o/r",
+    ]);
+
+    const decoy = path.join(workdir, "decoy");
+    mkdirSync(decoy);
+    git(decoy, ["init", "-q", "-b", "main"]);
+    writeFileSync(path.join(decoy, "d.md"), "d");
+    git(decoy, ["add", "-A"]);
+    git(decoy, ["commit", "-q", "-m", "decoy"]);
+    const decoyHead = git(decoy, ["rev-parse", "HEAD"]);
+    const decoyIndex = readFileSync(path.join(decoy, ".git", "index"));
+
+    const saved = { dir: process.env.GIT_DIR, index: process.env.GIT_INDEX_FILE };
+    process.env.GIT_DIR = path.join(decoy, ".git");
+    process.env.GIT_INDEX_FILE = path.join(decoy, ".git", "index");
+    let sha: string | null;
+    try {
+      sha = await nodeLocalBaseShaProvider(vault)(spec("assetspaces/o/r"));
+    } finally {
+      if (saved.dir === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = saved.dir;
+      if (saved.index === undefined) delete process.env.GIT_INDEX_FILE;
+      else process.env.GIT_INDEX_FILE = saved.index;
+    }
+
+    expect(sha).toBe(remoteHead);
+    expect(git(decoy, ["rev-parse", "HEAD"])).toBe(decoyHead);
+    expect(readFileSync(path.join(decoy, ".git", "index")).equals(decoyIndex)).toBe(true);
+  }, 30_000); // real git subprocesses — see the budget note on the first case
+
   it("refuses a leading-dash localPath (never lets git misread it as an option)", async () => {
     expect(await nodeLocalBaseShaProvider(workdir)(spec("--upload-pack=x"))).toBeNull();
     expect(await nodeLocalBaseShaProvider(workdir)(spec(""))).toBeNull();
+  });
+});
+
+// Req 91b2c01a, the population half: every place in packages/cli/src that runs
+// the `git` binary either strips git's repository-local variables or is on the
+// allow-list below with its reason. A new call that inherits the environment
+// silently fails the scan instead of misbehaving inside someone's hook.
+describe("CLI git calls are isolated from the enclosing repository's env (req 91b2c01a)", () => {
+  const CLI_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../src");
+
+  // file (relative to packages/cli/src) → why it inherits on purpose.
+  const INHERITS_ON_PURPOSE: Record<string, string> = {
+    "commands/validate-schema.ts":
+      "getStagedMdFiles: `git diff --cached` from the vault's own pre-commit must read the index being committed (a partial commit's temporary GIT_INDEX_FILE)",
+  };
+
+  function sourceFiles(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) return sourceFiles(full);
+      return /\.(ts|js|mjs|cjs)$/.test(e.name) ? [full] : [];
+    });
+  }
+
+  // The text of a call from its opening parenthesis to the matching close.
+  function callText(src: string, openParen: number): string {
+    let depth = 0;
+    for (let i = openParen; i < src.length; i++) {
+      if (src[i] === "(") depth++;
+      else if (src[i] === ")" && --depth === 0) return src.slice(openParen, i + 1);
+    }
+    return src.slice(openParen);
+  }
+
+  function gitCalls(): { file: string; text: string }[] {
+    const found: { file: string; text: string }[] = [];
+    const callRe =
+      /\b(?:execFile|execFileSync|spawn|spawnSync)(\()\s*"git"|\b(?:exec|execSync)(\()\s*["'`]git\b/g;
+    for (const file of sourceFiles(CLI_SRC)) {
+      const src = readFileSync(file, "utf-8");
+      for (const m of src.matchAll(callRe)) {
+        const open = (m.index ?? 0) + m[0].indexOf("(");
+        found.push({ file: path.relative(CLI_SRC, file), text: callText(src, open) });
+      }
+    }
+    return found;
+  }
+
+  it("H2 every git call in packages/cli/src strips repository-local env or is an allow-listed inheritor", () => {
+    const calls = gitCalls();
+    // Canary: the scan must see both known call sites, or it proves nothing.
+    expect(calls.map((c) => c.file).sort()).toEqual(
+      expect.arrayContaining(["commands/exosync-sync.ts", "commands/validate-schema.ts"]),
+    );
+    const offenders = calls
+      .filter((c) => !c.text.includes("repoIsolatedGitEnv("))
+      .filter((c) => !(c.file in INHERITS_ON_PURPOSE))
+      .map((c) => `${c.file}: ${c.text.replace(/\s+/g, " ").slice(0, 120)}`);
+    expect(offenders).toEqual([]);
+    // An allow-list entry for a file that no longer calls git is stale.
+    for (const file of Object.keys(INHERITS_ON_PURPOSE)) {
+      expect(calls.some((c) => c.file === file)).toBe(true);
+    }
+  });
+
+  it("H3 the stripped list is git's own --local-env-vars and equals the jest globalSetup twin", () => {
+    const own = execFileSync("git", ["rev-parse", "--local-env-vars"], { encoding: "utf-8" })
+      .split("\n")
+      .map((v) => v.trim())
+      .filter(Boolean);
+    expect(own.length).toBeGreaterThan(0);
+    expect([...REPO_LOCAL_GIT_ENV]).toEqual(expect.arrayContaining(own));
+
+    const twin = createRequire(import.meta.url)(
+      path.resolve(CLI_SRC, "../../test-utils/src/jest/stripRepoGitEnv.cjs"),
+    ) as { REPO_LOCAL_GIT_ENV: string[] };
+    expect([...REPO_LOCAL_GIT_ENV].sort()).toEqual([...twin.REPO_LOCAL_GIT_ENV].sort());
+
+    const env = repoIsolatedGitEnv({ GIT_DIR: "/decoy/.git", PATH: "/bin", GIT_TERMINAL_PROMPT: "0" });
+    expect(env).toEqual({ PATH: "/bin", GIT_TERMINAL_PROMPT: "0" });
   });
 });
