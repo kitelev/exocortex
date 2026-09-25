@@ -846,14 +846,34 @@ export class TripleClassHierarchy implements ClassHierarchy {
    * already answered, so without the memo the walk runs 425 424 309 BFS steps where 1 229 733
    * suffice.
    *
-   * ⛤ RE-DERIVING those four numbers (they are a snapshot of one corpus on one day, and nothing
-   * in the build keeps them honest): add `calls++` here and `steps++` inside the `while` of
-   * {@link walkIsSubClassOf}, print both from a `process.on("exit")` guarded by an env flag,
-   * `npm run build -w @kitelev/exocortex-cli`, then run the command above against the vault you
-   * care about. `subjects` and `shapes` come from the same trick around `registry.getAllShapes()`
-   * in `ShaclLiteValidator`. Roughly five minutes; the instrumentation is deliberately NOT shipped
-   * — it would cost a branch on the hottest path in the validator to answer a question nobody asks
-   * at runtime.
+   * ⛤ RE-DERIVING those four numbers — they are a snapshot of one corpus on one day, and nothing
+   * in the build keeps them honest. THREE counters and TWO runs; two counters and one run reach
+   * only half of them, which is why the split is spelled out rather than left to the reader:
+   *
+   *   counters — `calls++` at the top of this method; `hits++` inside the `memoised !== undefined`
+   *   branch; `steps++` inside the `while` of {@link walkIsSubClassOf}. Print all three from a
+   *   `process.on("exit")` guarded by an env flag, `npm run build -w @kitelev/exocortex-cli`.
+   *
+   *   run 1, memo intact  → `calls` = 14 220 679, `hits / calls` = 99.72 %, `steps` = 1 229 733.
+   *   run 2, memo bypassed → `steps` = 425 424 309. Bypass it with the splice the shipped mutant
+   *   `M1_memo_never_hits` already carries (`triple-class-hierarchy-memo-4369.spec.json`): the
+   *   lookup key gets a suffix that can never match, so every call falls through to the walk.
+   *   ⛔ The without-memo figure is NOT obtainable from run 1 — `walkIsSubClassOf` only executes
+   *   on a miss, so its counter there measures the memo, not its absence.
+   *
+   * The `subjects=19472 shapes=533` pair quoted in the issue is a separate print around
+   * `registry.getAllShapes()` in `ShaclLiteValidator`; it explains where most of `calls` comes
+   * from (19 472 × 533 ≈ 10.4 M of the 14.2 M, the rest being the `sh:class` range check) and is
+   * not needed to reproduce the four numbers above.
+   *
+   * ⚠ A re-run will not match to the digit, and that is the corpus moving rather than the recipe
+   * failing: replayed the same day it drifted 0.007 % on `calls` (14 219 637) and 0.009 % on the
+   * without-memo steps (425 385 464), while `steps` with the memo and the 99.72 % rate reproduced
+   * exactly. Treat the four figures as a snapshot of vault-my on 2026-09-26, not as constants.
+   *
+   * The instrumentation is deliberately NOT shipped: it would cost a branch on the hottest path
+   * in the validator to answer a question nobody asks at runtime. The recipe above was verified by
+   * executing it — both runs, all four numbers — rather than reasoned about.
    */
   isSubClassOf(child: string, parent: string): boolean {
     let byParent = this.subClassMemo.get(child);
