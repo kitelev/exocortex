@@ -19,7 +19,7 @@ export enum AssetClass {
   PROJECT_PROTOTYPE = "ems__ProjectPrototype",
   EVENT = "exo__Event",
   DAILY_NOTE = "pn__DailyNote",
-  CONCEPT = "ims__Concept",
+  CONCEPT = "concept__Concept",
   SESSION_START_EVENT = "ems__SessionStartEvent",
   SESSION_END_EVENT = "ems__SessionEndEvent",
   PROTOTYPE = "exo__Prototype",

@@ -801,13 +801,13 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
   });
 
   describe("createNarrowerConcept", () => {
-    it("should create child concept with ims__Concept_broader pointing to parent", async () => {
+    it("should create child concept with concept__Concept_genus pointing to parent", async () => {
       const service = registry.get("createNarrowerConcept")!;
       await service.execute("test-uid-123", { label: "Child Concept" });
 
       expect(deps.vaultAdapter!.create).toHaveBeenCalledWith(
         expect.stringContaining("concepts/Child Concept.md"),
-        expect.stringContaining("ims__Concept_broader: \"[[test-uid-123]]\""),
+        expect.stringContaining("concept__Concept_genus: \"[[test-uid-123]]\""),
       );
     });
 
@@ -821,7 +821,7 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
 
       const createCall = (deps.vaultAdapter!.create as jest.Mock).mock.calls[0];
       const content = createCall[1] as string;
-      expect(content).toContain("ims__Concept_definition: A narrower concept");
+      expect(content).toContain("concept__Concept_definition: A narrower concept");
       expect(content).toContain("alt-label");
     });
 

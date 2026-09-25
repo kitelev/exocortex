@@ -49,8 +49,8 @@ describe("AssetClass", () => {
     expect(AssetClass.DAILY_NOTE).toBe("pn__DailyNote");
   });
 
-  it("should have CONCEPT constant", () => {
-    expect(AssetClass.CONCEPT).toBe("ims__Concept");
+  it("[C4] CONCEPT names the live class, not the ims__ one retired by the M2-0 re-prefix", () => {
+    expect(AssetClass.CONCEPT).toBe("concept__Concept");
   });
 
   it("should have SESSION_START_EVENT constant", () => {

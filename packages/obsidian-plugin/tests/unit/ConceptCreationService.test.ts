@@ -33,9 +33,9 @@ describe("ConceptCreationService", () => {
       expect(content).toContain('exo__Asset_isDefinedBy: "[[!concepts]]"');
       expect(content).toContain("exo__Instance_class:");
       expect(content).toContain(`- "[[${AssetClass.CONCEPT}]]"`);
-      expect(content).toContain('ims__Concept_broader: "[[Parent Concept]]"');
+      expect(content).toContain('concept__Concept_genus: "[[Parent Concept]]"');
       expect(content).toContain(
-        "ims__Concept_definition: Definition of child concept",
+        "concept__Concept_definition: Definition of child concept",
       );
       expect(content).toContain("aliases:");
       expect(content).toContain("  - alias1");
@@ -220,7 +220,7 @@ describe("ConceptCreationService", () => {
       const [, content] = mockVault.create.mock.calls[0];
 
       expect(content).toContain(
-        'ims__Concept_broader: "[[Parent & Special: Concept]]"',
+        'concept__Concept_genus: "[[Parent & Special: Concept]]"',
       );
     });
 
@@ -240,7 +240,7 @@ describe("ConceptCreationService", () => {
 
       // #3750 MEDIUM-1/empty: a bare empty value parses as null in YAML; the
       // serializer now emits an explicit empty string.
-      expect(content).toContain('ims__Concept_definition: ""');
+      expect(content).toContain('concept__Concept_definition: ""');
     });
 
     it("should handle definition with special characters", async () => {
@@ -260,7 +260,7 @@ describe("ConceptCreationService", () => {
       // #3750 MEDIUM-1: a `: ` (colon-space) definition emitted bare is invalid
       // YAML (the #3748 bug, on the buildFileContent serializer) — now quoted.
       expect(content).toContain(
-        'ims__Concept_definition: "Definition with: quotes, commas, & symbols!"',
+        'concept__Concept_definition: "Definition with: quotes, commas, & symbols!"',
       );
     });
 
@@ -334,7 +334,7 @@ describe("ConceptCreationService", () => {
 
       const [, content] = mockVault.create.mock.calls[0];
 
-      expect(content).toContain('ims__Concept_broader: "[[null]]"');
+      expect(content).toContain('concept__Concept_genus: "[[null]]"');
     });
 
     it("should handle undefined parent file basename", async () => {
@@ -351,7 +351,7 @@ describe("ConceptCreationService", () => {
 
       const [, content] = mockVault.create.mock.calls[0];
 
-      expect(content).toContain('ims__Concept_broader: "[[undefined]]"');
+      expect(content).toContain('concept__Concept_genus: "[[undefined]]"');
     });
 
     it("should create file in concepts folder regardless of parent location", async () => {
@@ -387,7 +387,7 @@ describe("ConceptCreationService", () => {
       const [, content] = mockVault.create.mock.calls[0];
 
       expect(content).toContain(`"[[${AssetClass.CONCEPT}]]"`);
-      expect(AssetClass.CONCEPT).toBe("ims__Concept");
+      expect(AssetClass.CONCEPT).toBe("concept__Concept");
     });
   });
 });

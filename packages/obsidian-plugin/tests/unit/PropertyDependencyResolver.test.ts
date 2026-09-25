@@ -142,9 +142,12 @@ describe("PropertyDependencyResolver", () => {
     });
   });
 
-  describe("Concept properties (ims__Concept_)", () => {
-    it("should map ims__Concept_broader to Relations", () => {
-      const sections = resolver.getAffectedSections(["ims__Concept_broader"]);
+  describe("Concept properties", () => {
+    // genus is the live key (ConceptCreationService writes it); the ims__ siblings
+    // below are still mapped because no writer produces them — their migration is
+    // ticket b2be319b, not 45895b5f (which is this change, the WRITER half).
+    it("should map concept__Concept_genus to Relations", () => {
+      const sections = resolver.getAffectedSections(["concept__Concept_genus"]);
 
       expect(sections).toContain(LayoutSection.RELATIONS);
       expect(sections).toHaveLength(1);
