@@ -266,16 +266,6 @@
       "count": 1
     },
     {
-      "file": "packages/cli/tests/unit/utils/TransactionManager.test.ts",
-      "code": "TS2345",
-      "count": 33
-    },
-    {
-      "file": "packages/cli/tests/unit/utils/TransactionManager.test.ts",
-      "code": "TS2554",
-      "count": 1
-    },
-    {
       "file": "packages/core/tests/integration/sparql/critical-paths.test.ts",
       "code": "TS6133",
       "count": 1
