@@ -18,6 +18,8 @@
  */
 
 import type {
+  PinnedPath,
+  PinnedPathKind,
   ConflictDetail,
   QuarantineResolver,
   ResolvableConflict,
@@ -26,6 +28,7 @@ import type {
   SyncRepoSpec,
 } from "@kitelev/exocortex-core";
 
+import { LoggerFactory } from "@plugin/adapters/logging/LoggerFactory";
 import { GitHubRestClient } from "./GitHubRestClient";
 import type { SyncSpecCollection } from "./SyncDepsFactory";
 
@@ -139,7 +142,10 @@ export class QuarantineResolverCommands {
     }
 
     const specs = collection.specs as SyncRepoSpec[];
-    const conflicts = await resolver.listOpenConflicts(specs);
+    // One pass classifies every pin (#4225): the open conflicts and the pins
+    // that are not conflicts — typically incoming changes a push-only run
+    // deferred, which only a Sync clears (req 40e26259, parity with the CLI).
+    const { conflicts, pinned } = await resolver.classifyPins(specs);
     if (conflicts.length === 0) {
       // #a0a3d1d6 dissonance: the sync summary may report "quarantined N /
       // deferred N", yet the resolver legitimately lists nothing — duplicate
@@ -150,7 +156,9 @@ export class QuarantineResolverCommands {
       this.deps.notify(
         dupCount > 0
           ? `No directly-resolvable conflicts — but ${dupCount} duplicate uid(s) detected (#3477) block resolution. Run 'exosync dedup-uids' then Sync to surface them.`
-          : "No open sync conflicts — nothing to resolve ✅",
+          : pinned.length > 0
+            ? pinnedNotice(pinned)
+            : "No open sync conflicts — nothing to resolve ✅",
       );
       return false;
     }
@@ -231,6 +239,31 @@ export class QuarantineResolverCommands {
   }
 
   private logWarn(message: string): void {
-    (this.deps.log ?? ((m: string): void => console.warn(m)))(message);
+    // Default sink when no `log` is injected (production always injects one —
+    // ExocortexPlugin wires the plugin logger + activity log). It goes through
+    // the plugin Logger rather than `console`, which the plugin's lint forbids;
+    // Logger.warn honours the user's channel config (console by default).
+    (this.deps.log ?? ((m: string): void => LoggerFactory.create("QuarantineResolverCommands").warn(m)))(message);
   }
+}
+
+const PINNED_KIND_TEXT: Record<PinnedPathKind, string> = {
+  "remote-pending": "remote change(s) not applied here yet",
+  "local-withheld": "local change(s) pending a full Sync",
+  converged: "converged",
+  unclassified: "unclassified",
+};
+
+/**
+ * #4225 / req 40e26259 — the empty state must not claim «✅» over pins that
+ * are not conflicts: each marks a path that has not been reconciled with the
+ * remote yet (mostly incoming changes a push-only run deferred), and a Sync
+ * re-derives them. Same wording family as `exosync quarantine list`.
+ */
+export function pinnedNotice(pinned: readonly PinnedPath[]): string {
+  const parts = (Object.keys(PINNED_KIND_TEXT) as PinnedPathKind[])
+    .map((kind) => [kind, pinned.filter((p) => p.kind === kind).length] as const)
+    .filter(([, n]) => n > 0)
+    .map(([kind, n]) => `${n} ${PINNED_KIND_TEXT[kind]}`);
+  return `No open sync conflicts — but ${pinned.length} path(s) are pinned (${parts.join(", ")}). Run Sync to clear them.`;
 }

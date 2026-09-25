@@ -18,6 +18,7 @@ import {
 import type { SyncSpecCollection } from "../../../src/infrastructure/adapters/SyncDepsFactory";
 import type {
   ConflictDetail,
+  PinnedPath,
   QuarantineResolver,
   ResolvableConflict,
   ResolveChoice,
@@ -49,6 +50,7 @@ const conflict = (
 /** Minimal fake QuarantineResolver (structural). */
 function fakeResolver(opts: {
   conflicts: ResolvableConflict[];
+  pinned?: PinnedPath[];
   dupUids?: number;
   resolve?: (
     spec: SyncRepoSpec,
@@ -58,6 +60,7 @@ function fakeResolver(opts: {
 }): QuarantineResolver {
   return {
     listOpenConflicts: async () => opts.conflicts,
+    classifyPins: async () => ({ conflicts: opts.conflicts, pinned: opts.pinned ?? [] }),
     detectDuplicateUids: async () => opts.dupUids ?? 0,
     loadConflict: async (s: SyncRepoSpec, path: string): Promise<ConflictDetail> => ({
       repoKey: s.repoKey,
@@ -82,6 +85,7 @@ interface HarnessOpts {
   specs?: SyncRepoSpec[];
   pat?: string | null;
   conflicts?: ResolvableConflict[];
+  pinned?: PinnedPath[];
   dupUids?: number;
   isSyncBusy?: boolean;
   isSwitchInProgress?: boolean;
@@ -98,6 +102,7 @@ function makeHarness(opts: HarnessOpts = {}) {
   let openedCtx: ResolverModalContext | null = null;
   const resolver = fakeResolver({
     conflicts: opts.conflicts ?? [conflict("a/b#main")],
+    ...(opts.pinned !== undefined ? { pinned: opts.pinned } : {}),
     ...(opts.dupUids !== undefined ? { dupUids: opts.dupUids } : {}),
     ...(opts.resolve !== undefined ? { resolve: opts.resolve } : {}),
   });
@@ -196,6 +201,34 @@ describe("QuarantineResolverCommands.invokeResolve — guards & states", () => {
     h.notices.length = 0;
     await h.commands.invokeResolve();
     expect(h.notices.join()).toMatch(/already open/i);
+  });
+});
+
+// #4225 / req 40e26259 — UI parity with `exosync quarantine list` (req c0b0e8bf).
+describe("QuarantineResolverCommands.invokeResolve — pinned paths that are not conflicts", () => {
+  const REQ = "@req:40e26259-5e19-4cbe-a340-af4201a4a005";
+  const pin = (path: string, kind: PinnedPath["kind"]): PinnedPath => ({ repoKey: "a/b#main", path, kind });
+
+  it(`Y1 ${REQ} with pins but no conflict the notice counts them by kind and recommends Sync, not ✅`, async () => {
+    const h = makeHarness({
+      conflicts: [],
+      dupUids: 0,
+      pinned: [pin("x.md", "remote-pending"), pin("y.md", "remote-pending"), pin("z.md", "local-withheld")],
+    });
+    await h.commands.invokeResolve();
+    expect(h.notices).toEqual([
+      "No open sync conflicts — but 3 path(s) are pinned (2 remote change(s) not applied here yet, 1 local change(s) pending a full Sync). Run Sync to clear them.",
+    ]);
+    expect(h.getCtx()).toBeNull();
+    expect(h.commands.isBusy()).toBe(false);
+  });
+
+  it(`Y2 ${REQ} duplicate uids keep priority over the pinned notice`, async () => {
+    const h = makeHarness({ conflicts: [], dupUids: 2, pinned: [pin("x.md", "remote-pending")] });
+    await h.commands.invokeResolve();
+    const joined = h.notices.join();
+    expect(joined).toMatch(/2 duplicate uid\(s\)/);
+    expect(joined).not.toMatch(/path\(s\) are pinned/);
   });
 });
 
