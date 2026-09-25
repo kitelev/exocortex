@@ -123,7 +123,17 @@ describe("ConceptCreationService", () => {
       expect(mockVault.create).toHaveBeenCalledTimes(1);
       const content = mockVault.create.mock.calls[0][1];
       expect(content).toContain("exo__Instance_class");
-      expect(content).toContain("concept__Concept");
+      // ANCHORED on the emitted list ITEM, not on the bare substring. «concept__Concept»
+      // alone has three witnesses in this frontmatter — the class value and the keys
+      // `concept__Concept_genus` / `concept__Concept_definition` — so a bare toContain
+      // stays green even when the asset is typed as something else entirely
+      // (integration-test-revert-verify §A33: one witness cannot be removed by a
+      // one-place mutation when three exist). Mutant M4 is what holds this line.
+      //
+      // The expected value is a LITERAL, deliberately not `AssetClass.CONCEPT`: an
+      // expectation derived from the very constant under test follows it anywhere it
+      // moves and can never disagree with it (§A21).
+      expect(content).toContain('- "[[concept__Concept]]"');
       // Substring-safe: «concept__Concept» is a prefix of «concept__Concept_genus»,
       // so assert the retired form is absent rather than counting occurrences.
       expect(content).not.toContain("ims__Concept");

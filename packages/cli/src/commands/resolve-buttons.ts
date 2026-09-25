@@ -40,9 +40,11 @@ import {
  * mirrors the plugin caller `DynamicCommandButtonGroupBuilder.resolveViaFullPath`
  * exactly (`resolveForAssetMulti` then per-command `evaluate`, keeping the
  * resolver's `(priority, depth, order)` ordering). ⚠ It is STRICTLY more complete
- * than `apply <cliName> --dry-run`, which checks ONLY the precondition (Layer B),
- * never the binding targetClass-match (Layer A) — a bound-but-hidden command and
- * a never-bound command are indistinguishable under dry-run but distinct here
+ * than `apply <cliName> --dry-run`. ⛔ The blanket «never checks Layer A» was
+ * true until ticket e96eb614: `apply` now DOES consult the binding layer, but
+ * only when the command declares a binding at all, and it reports a single
+ * refusal — a bound-but-hidden command and a never-bound command are still
+ * indistinguishable under dry-run but distinct here
  * (`--show-hidden` surfaces the bound-but-hidden ones with reason
  * `precondition-false`).
  *
@@ -125,7 +127,7 @@ const UUID_RE =
  * quote/bracket noise and keep only the wikilink TARGET (everything before the
  * first `|` display alias). Returns `null` for non-string / empty values.
  */
-function cleanRef(value: unknown): string | null {
+export function cleanRef(value: unknown): string | null {
   // A frontmatter ref may be written as a scalar (`exo__Asset_prototype:
   // "[[uid]]"`) OR as a single-item YAML list (`exo__Asset_prototype:\n  -
   // "[[uid]]"`). Both forms are produced in practice — `exocortex-cli create`
@@ -147,7 +149,9 @@ function cleanRef(value: unknown): string | null {
  * `exo__Class_superClass` ancestor walk (`getClassAncestors(<uid>)` resolves the
  * class file by UID → walks superClass).
  */
-function extractClasses(frontmatter: Record<string, unknown> | null): string[] {
+export function extractClasses(
+  frontmatter: Record<string, unknown> | null,
+): string[] {
   if (!frontmatter) return [];
   const raw = frontmatter["exo__Instance_class"];
   const out: string[] = [];
@@ -183,7 +187,7 @@ function ontologyIriToSymbolic(value: string): string | null {
  * the label lookup via metadataCache; the CLI reads the already-resolved
  * symbolic instance_class IRIs, which needs no label lookup at all.
  */
-async function deriveStoreSymbolicClasses(
+export async function deriveStoreSymbolicClasses(
   tripleStore: InMemoryTripleStore,
   subjectIRI: string,
 ): Promise<string[]> {
