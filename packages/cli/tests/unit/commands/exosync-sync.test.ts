@@ -322,7 +322,7 @@ describe("nodeLocalBaseShaProvider (#3590 base backfill source)", () => {
     expect(
       await nodeLocalBaseShaProvider(vault)(spec("assetspaces/o/r")),
     ).toBeNull();
-  });
+  }, 30_000); // real git subprocesses — see the budget note on the case above
 
   it("returns null when the vault is not a git repo (git unavailable analogue)", async () => {
     const notGit = path.join(workdir, "notgit");
@@ -330,7 +330,7 @@ describe("nodeLocalBaseShaProvider (#3590 base backfill source)", () => {
     expect(
       await nodeLocalBaseShaProvider(notGit)(spec("assetspaces/o/r")),
     ).toBeNull();
-  });
+  }, 30_000); // real git subprocesses — see the budget note on the case above
 
   it("refuses a leading-dash localPath (never lets git misread it as an option)", async () => {
     expect(await nodeLocalBaseShaProvider(workdir)(spec("--upload-pack=x"))).toBeNull();

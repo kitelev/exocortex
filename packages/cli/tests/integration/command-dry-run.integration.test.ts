@@ -88,7 +88,6 @@ describe("Issue #3111: `apply rename-to-uid --dry-run` filesystem contract", () 
   let processExitSpy: jest.SpiedFunction<typeof process.exit>;
   let consoleLogSpy: jest.SpiedFunction<typeof console.log>;
   let consoleErrorSpy: jest.SpiedFunction<typeof console.error>;
-  let consoleWarnSpy: jest.SpiedFunction<typeof console.warn>;
 
   beforeEach(() => {
     vaultRoot = fs.mkdtempSync(path.join(os.tmpdir(), "exo-cli-dryrun-"));
@@ -109,15 +108,12 @@ describe("Issue #3111: `apply rename-to-uid --dry-run` filesystem contract", () 
     }) as never);
     consoleLogSpy = jest.spyOn(console, "log").mockImplementation(() => {});
     consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-    // The shipped TBox (D4-D6) makes the loader warn about unrelated assets; not asserted.
-    consoleWarnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
   });
 
   afterEach(() => {
     processExitSpy.mockRestore();
     consoleLogSpy.mockRestore();
     consoleErrorSpy.mockRestore();
-    consoleWarnSpy.mockRestore();
     fs.rmSync(vaultRoot, { recursive: true, force: true });
   });
 

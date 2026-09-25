@@ -9,8 +9,11 @@
  * any more (task 94e64b8c). Both paths call the same `rewriteInboundWikilinks`,
  * so the link-shape assertions are unchanged.
  *
- * The command/grounding fixture mirrors the real `exoas-exocmd` assets
- * (`d0a0663b` "Rename to UID", grounding `bf4772d7`).
+ * The command/grounding fixture is a gate-free LOOKALIKE of the shipped
+ * `exoas-exocmd` command (`d0a0663b` "Rename to UID", grounding `bf4772d7`):
+ * same grounding type, serviceId and destructive flag, but no precondition and
+ * no CommandBinding. The shipped command itself is exercised by D4-D6 in
+ * command-dry-run.integration.test.ts (D6 pins the link rewrite).
  */
 import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import * as fs from "fs";
