@@ -1,3 +1,4 @@
+import { Namespace } from "@kitelev/exocortex-core";
 import type {
   PropertySchemaResolver,
   PropertySchema,
@@ -136,11 +137,31 @@ export class PropertySchemaService {
     return [className, "exo__Asset"];
   }
 
+  /**
+   * `<prefix>__<ClassName>_<local>` → `<prefix>__<ClassName>`, the key
+   * {@link getPropertyNamesForClass} matches against the resolved hierarchy.
+   *
+   * ⛔ Issue #4353, found by review: this is the ONLY consumer of
+   * `ClassHierarchyResolver.resolve()`, and its `^([a-z]+__…)` copy refused a
+   * prefix with a capital, a digit or a hyphen — so fixing the resolver alone
+   * delivered NOTHING here. Measured end-to-end with the real resolver and the
+   * real service: `resolve("aiKnow__Memory")` returned the right hierarchy while
+   * `getPropertySchemaForClass("aiKnow__Memory")` still returned `[]`, i.e. the
+   * property EDITOR showed such an asset with none of its custom properties —
+   * the same silent failure #4353 is about, one file downstream.
+   *
+   * Only the PREFIX half moves to the shared grammar; the class half keeps its
+   * historical `[A-Z][a-zA-Z]*` shape.
+   */
   private getPropertyClassPrefix(propertyIRI: string): string | null {
-    const match = propertyIRI.match(/^([a-z]+__[A-Z][a-zA-Z]*)_/);
-    if (match) {
-      return match[1];
+    const parsed = Namespace.fromPropertyKey(propertyIRI);
+    if (!parsed) {
+      return null;
     }
-    return null;
+    const classHalf = parsed.localName.match(/^([A-Z][a-zA-Z]*)_/);
+    if (!classHalf) {
+      return null;
+    }
+    return `${parsed.namespace.prefix}__${classHalf[1]}`;
   }
 }

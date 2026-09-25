@@ -1,6 +1,13 @@
+import { ClassHierarchyResolver, PropertyFieldType } from "@kitelev/exocortex-core";
+import type {
+  ISPARQLQueryable,
+  PropertySchema,
+  PropertySchemaResolver,
+} from "@kitelev/exocortex-core";
 import { SPARQLQueryService } from "../../src/application/services/SPARQLQueryService";
 import { ClassDiscoveryService } from "../../src/application/services/ClassDiscoveryService";
 import { OntologySchemaService } from "../../src/application/services/OntologySchemaService";
+import { PropertySchemaService } from "../../src/domain/property-editor/PropertySchemaService";
 import { ReferencePropertyField } from "../../src/presentation/components/property-fields/ReferencePropertyField";
 import type { ReferencePropertyFieldProps } from "../../src/presentation/components/property-fields/types";
 
@@ -226,6 +233,67 @@ describe("prefix grammar #4353 — obsidian-plugin", () => {
     });
   });
 
+  describe("PropertySchemaService (property EDITOR path)", () => {
+    /**
+     * The real service over a real `ClassHierarchyResolver`; only the SPARQL store
+     * is faked. This is the consumer chain that made the resolver fix invisible
+     * before the review caught it: `getPropertySchemaForClass` →
+     * `getPropertyNamesForClass` → `getPropertyClassPrefix`.
+     */
+    async function editorProperties(
+      className: string,
+      propertyIRI: string,
+    ): Promise<string[]> {
+      const store = mockStore();
+      (store.query as jest.Mock).mockImplementation(async (q: string) =>
+        q.includes(`<${BASE}${className.split("__")[0]}#${className.split("__")[1]}>`)
+          ? [new Map([["ancestor", `${BASE}exo#Asset`]])]
+          : [],
+      );
+      const hierarchy = new ClassHierarchyResolver(
+        store as unknown as ISPARQLQueryable,
+      );
+      const schemas = new Map<string, PropertySchema>([
+        [
+          propertyIRI,
+          { type: PropertyFieldType.Text, label: "Probe" } satisfies PropertySchema,
+        ],
+      ]);
+      const resolver = {
+        getSchema: jest.fn(async (iri: string) => schemas.get(iri) ?? null),
+        getAllSchemas: jest.fn(async () => new Map(schemas)),
+        invalidateCache: jest.fn(),
+      } as unknown as PropertySchemaResolver;
+
+      const defs = await new PropertySchemaService(
+        resolver,
+        hierarchy,
+      ).getPropertySchemaForClass(className);
+      return defs.map((d) => d.name);
+    }
+
+    it("[A45] the property editor finds a camelCase class's own properties", async () => {
+      // Review finding (HIGH): `getPropertyClassPrefix`'s own `^([a-z]+__…)` copy
+      // refused the prefix, so the RESOLVER fix reached nobody — an `aiKnow__Memory`
+      // asset opened in the editor showed none of its custom properties.
+      await expect(
+        editorProperties("aiKnow__Memory", "aiKnow__Memory_title"),
+      ).resolves.toEqual(["aiKnow__Memory_title"]);
+    });
+
+    it("[A46] …a hyphenated class's own properties", async () => {
+      await expect(
+        editorProperties("adapter-exo-ims__Rel", "adapter-exo-ims__Rel_target"),
+      ).resolves.toEqual(["adapter-exo-ims__Rel_target"]);
+    });
+
+    it("[A47] …and a digit-bearing class's own properties", async () => {
+      await expect(
+        editorProperties("exo003__Alias", "exo003__Alias_alias"),
+      ).resolves.toEqual(["exo003__Alias_alias"]);
+    });
+  });
+
   describe("ReferencePropertyField", () => {
     function fieldWithRange(rangeType: string): string[] | undefined {
       const props = {
@@ -262,6 +330,20 @@ describe("prefix grammar #4353 — obsidian-plugin", () => {
 
     it("[A42] accepts a digit-bearing range already in prefix__Local form", () => {
       expect(fieldWithRange("exo003__Alias")).toEqual(["exo003__Alias"]);
+    });
+
+    it("[A44] a REGISTERED W3C range does not become a class filter", () => {
+      // Review finding (MEDIUM): `fromTermIRI` resolves the W3C vocabularies too,
+      // so without the exocortex-base guard a `rdfs:range rdfs:Class` produced the
+      // filter ["rdfs__Class"] — zero matching notes — where the old regex
+      // returned null and the picker showed everything. Same guard, same reason as
+      // `OntologySchemaService.toClassName` (axis A35).
+      expect(fieldWithRange("http://www.w3.org/2000/01/rdf-schema#Class")).toBeUndefined();
+      expect(
+        fieldWithRange("http://www.w3.org/2002/07/owl#ObjectProperty"),
+      ).toBeUndefined();
+      // …and the exocortex namespace still resolves.
+      expect(fieldWithRange(`${BASE}aiKnow#Memory`)).toEqual(["aiKnow__Memory"]);
     });
 
     it("[A43] strips the prefix from the class badge shown on a suggestion", () => {

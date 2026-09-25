@@ -19,6 +19,7 @@
       "to": "    /unknown prefix[:\\s]+['\"]?(\\w+)['\"]?/i,\n    /prefix\\s+['\"]?(\\w+)['\"]?\\s+not\\s+defined/i,\n    /undefined\\s+prefix[:\\s]+['\"]?(\\w+)['\"]?/i,",
       "expect": [
         "A50",
+        "A51",
         "A52"
       ]
     },
@@ -27,7 +28,8 @@
       "from": "  const prefixRegex = new RegExp(`PREFIX\\\\s+${PREFIX_CAPTURE}:\\\\s*<`, \"gi\");",
       "to": "  const prefixRegex = /PREFIX\\s+(\\w+):\\s*</gi;",
       "expect": [
-        "A51"
+        "A51",
+        "A52"
       ]
     }
   }

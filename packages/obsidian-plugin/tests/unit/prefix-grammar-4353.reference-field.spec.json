@@ -15,11 +15,12 @@
   "mutants": {
     "M1_range_iri_narrow": {
       "_note": "Pre-fix extractClassFromRange (IRI branch): null → NO class filter, so the autocomplete offers every note in the vault instead of the range's instances.",
-      "from": "    const term = Namespace.fromTermIRI(rangeType);\n    if (term) {\n      return `${term.namespace.prefix}__${term.localName}`;\n    }",
+      "from": "    const term = Namespace.fromTermIRI(rangeType);\n    if (\n      term &&\n      term.namespace.iri.value.startsWith(Namespace.EXOCORTEX_ONTOLOGY_BASE)\n    ) {\n      return `${term.namespace.prefix}__${term.localName}`;\n    }",
       "to": "    const m = rangeType.match(/https:\\/\\/exocortex\\.my\\/ontology\\/([a-z]+)#(.+)$/);\n    if (m) {\n      return `${m[1]}__${m[2]}`;\n    }",
       "expect": [
         "A40",
-        "A41"
+        "A41",
+        "A44"
       ]
     },
     "M2_range_prefixed_narrow": {
@@ -36,6 +37,14 @@
       "to": "    return className.replace(/^[a-z]+__/, \"\");",
       "expect": [
         "A43"
+      ]
+    },
+    "M4_range_namespace_restriction_dropped": {
+      "_note": "The guard ADDED for the review's MEDIUM finding: without the exocortex-base restriction a registered W3C range (`rdfs:Class`) becomes the class filter `[\"rdfs__Class\"]`, which matches zero notes — where the old regex returned null and the picker showed everything.",
+      "from": "    if (\n      term &&\n      term.namespace.iri.value.startsWith(Namespace.EXOCORTEX_ONTOLOGY_BASE)\n    ) {",
+      "to": "    if (term) {",
+      "expect": [
+        "A44"
       ]
     }
   }

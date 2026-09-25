@@ -29,7 +29,8 @@
       "to": "    const m = propertyName.match(/^([a-z]+)__(.+)$/);\n    if (m) {\n      return `https://exocortex.my/ontology/${m[1]}#${m[2]}`;\n    }\n\n    return propertyName;",
       "expect": [
         "A32",
-        "A33"
+        "A33",
+        "A35"
       ]
     },
     "M3_to_class_name_narrow": {
@@ -39,7 +40,8 @@
       "expect": [
         "A30",
         "A31",
-        "A32"
+        "A32",
+        "A35"
       ]
     },
     "M6_class_namespace_restriction_dropped": {

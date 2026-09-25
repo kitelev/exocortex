@@ -26,6 +26,7 @@
       "from": "    const parsed = Namespace.fromPropertyKey(value);\n    return parsed !== null && /^[A-Za-z][A-Za-z0-9_]*$/.test(parsed.localName);",
       "to": "    return /^[a-z]+__[A-Za-z][A-Za-z0-9_]*$/.test(value);",
       "expect": [
+        "A20",
         "A21",
         "A22"
       ]

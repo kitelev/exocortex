@@ -242,8 +242,19 @@ export class ReferencePropertyField {
     // `exo__Property_range` of `…/ontology/aiKnow#Memory` yielded NO class filter
     // at all — the reference autocomplete then offered every note in the vault
     // instead of the range's instances, and nothing in the UI said why.
+    // ⛔ Restricted to EXOCORTEX-DERIVED namespaces, for the same reason
+    // `OntologySchemaService.toClassName` keeps that restriction (issue #4353):
+    // the return value becomes a CLASS FILTER, and a registered W3C term is not a
+    // class. Review measured it: unguarded, `rdfs:range rdfs:Class` yielded the
+    // filter `["rdfs__Class"]`, which matches zero vault notes — where the old
+    // regex returned null and the picker simply showed everything. Latent today
+    // (no shipped property declares a raw W3C range) but it is the reverse of the
+    // breakage this issue set out to fix.
     const term = Namespace.fromTermIRI(rangeType);
-    if (term) {
+    if (
+      term &&
+      term.namespace.iri.value.startsWith(Namespace.EXOCORTEX_ONTOLOGY_BASE)
+    ) {
       return `${term.namespace.prefix}__${term.localName}`;
     }
 
