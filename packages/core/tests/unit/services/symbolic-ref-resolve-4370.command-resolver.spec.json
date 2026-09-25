@@ -40,11 +40,13 @@
       ]
     },
     "M4_grounding_ref_raw": {
-      "_note": "resolveGroundingRef returns the IRI reference as-is: the grounding does not load and loadCommand returns null.",
+      "_note": "resolveGroundingRef returns the IRI reference as-is: the grounding does not load and loadCommand returns null. U1 (twice-mounted grounding) and W1 (warning count, via the ambiguous grounding) also route through resolveGroundingRef: with it raw, U1 stays unresolved and W1 sees 0 warnings.",
       "from": "  private async resolveGroundingRef(\n    ref: IRI | Literal | unknown,\n  ): Promise<IRI | null> {\n    if (ref instanceof IRI) return this.resolveRefIriSubject(ref);",
       "to": "  private async resolveGroundingRef(\n    ref: IRI | Literal | unknown,\n  ): Promise<IRI | null> {\n    if (ref instanceof IRI) return ref;",
       "expect": [
-        "G1"
+        "G1",
+        "U1",
+        "W1"
       ]
     },
     "M5_step_ref_raw": {
@@ -95,15 +97,26 @@
         "P3",
         "Q1",
         "R1",
-        "S1"
+        "S1",
+        "U1",
+        "W1"
       ]
     },
     "M10_ambiguity_guard_removed": {
-      "_note": "Two assets sharing one prefix__Local label: without the guard the reference resolves to whichever bearer was indexed first (edit-history order) — the command runs another asset's grounding instead of staying unloaded as on main.",
+      "_note": "Two assets sharing one prefix__Local label: without the guard the reference resolves to whichever bearer was indexed first (edit-history order) — the command runs another asset's grounding instead of staying unloaded as on main. W1 turns red too: without the guard no warning is emitted at all.",
       "from": "    if (bearers.length > 1) {",
       "to": "    if (bearers.length > 99) {",
       "expect": [
-        "A1"
+        "A1",
+        "W1"
+      ]
+    },
+    "M11_warn_dedupe_removed": {
+      "_note": "The ambiguous-label warning is emitted on every call: in the plugin `warn` is a user-facing toast, so one ambiguous label would toast on every render and after every save (#3186 precedent, _fallbackWarnedKeys). Type-preserving condition.",
+      "from": "      if (!this._ambiguousRefWarnedKeys.has(ref.value)) {",
+      "to": "      if (ref.value.length >= 0) {",
+      "expect": [
+        "W1"
       ]
     }
   }

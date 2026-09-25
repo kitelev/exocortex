@@ -249,6 +249,16 @@ export class CommandResolver {
   private readonly _fallbackWarnedKeys = new Set<string>();
 
   /**
+   * Issue #4370 — once-per-session suppression for the ambiguous-label warning
+   * of {@link resolveRefIriSubject}, keyed by the reference IRI. Same reason and
+   * same lifetime as {@link _fallbackWarnedKeys}: the branch re-runs on every
+   * button render and after every `invalidateCache()`, and `warn` is a
+   * user-facing toast by default — undeduped, one ambiguous label would toast
+   * on every render. Deliberately NOT cleared by `invalidateCache()`.
+   */
+  private readonly _ambiguousRefWarnedKeys = new Set<string>();
+
+  /**
    * RFC 727572d2 — Universal Default Template singleton cache. Resolved once
    * per CommandResolver instance via {@link getUniversalCache} and dropped by
    * {@link invalidateCache} / {@link clearUniversalCache}. This instance field
@@ -2700,11 +2710,14 @@ export class CommandResolver {
       // Two assets share the label: resolving to whichever was indexed first
       // would pick by edit history (a grounding could run another asset's
       // mutation). Keep the pre-#4370 behaviour — the reference loads nothing.
-      this.logger.warn(
-        this.capWarning(
-          `Reference <${ref.value}> names a label borne by ${bearers.length} assets (${bearers.map((b) => b.uid).join(", ")}) — left unresolved`,
-        ),
-      );
+      if (!this._ambiguousRefWarnedKeys.has(ref.value)) {
+        this._ambiguousRefWarnedKeys.add(ref.value);
+        this.logger.warn(
+          this.capWarning(
+            `Reference <${ref.value}> names a label borne by ${bearers.length} assets (${bearers.map((b) => b.uid).join(", ")}) — left unresolved`,
+          ),
+        );
+      }
       return ref;
     }
     return bearers[0]?.subject ?? ref;

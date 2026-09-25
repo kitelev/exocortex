@@ -69,6 +69,8 @@ const CMD_LBL = U(52); // precondition written by LABEL, not by uid
 const GRD_DUP_A = U(60); // two groundings sharing one prefix__Local label
 const GRD_DUP_B = U(61);
 const CMD_DUP = U(62);
+const GRD_TWIN = U(70); // ONE grounding mounted at two paths
+const CMD_TWIN = U(71);
 
 const ASK = "ASK { ?s ?p ?o }";
 
@@ -213,13 +215,17 @@ const FM: Record<string, IFrontmatter> = {
   [CMD_DUP]: command(CMD_DUP, "Command via an ambiguous label", {
     exocmd__Command_grounding: `[[${GRD_DUP_B}]]`,
   }),
+  [GRD_TWIN]: createGrounding(GRD_TWIN, "exocmd__TwinGrounding"),
+  [CMD_TWIN]: command(CMD_TWIN, "Command via a twice-mounted grounding", {
+    exocmd__Command_grounding: `[[${GRD_TWIN}]]`,
+  }),
   [BIND_O]: binding(BIND_O, "Binding overriding a symbolic binding", {
     exocmd__CommandBinding_overrides: [`[[${BIND_T}]]`],
   }),
 };
 
-const fileOf = (uid: string): IFile => ({
-  path: `tbox/${uid}.md`,
+const fileOf = (uid: string, dir = "tbox"): IFile => ({
+  path: `${dir}/${uid}.md`,
   basename: uid,
   name: `${uid}.md`,
   parent: null,
@@ -254,6 +260,9 @@ async function buildStore(): Promise<InMemoryTripleStore> {
   for (const uid of Object.keys(FM)) {
     await store.addAll(await converter.convertNote(fileOf(uid)));
   }
+  // The same asset mounted in a second assetspace: a second file IRI with the
+  // same uid and the same `prefix__Local` label.
+  await store.addAll(await converter.convertNote(fileOf(GRD_TWIN, "mount2")));
   return store;
 }
 
@@ -349,12 +358,37 @@ describe("a [[uid]] reference to a prefix__Local-labelled asset resolves to that
   });
 
   it("[A1] an ambiguous label (two assets share it) is NOT resolved to either — the command stays unloaded as on main", async () => {
-    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      expect(await resolver.loadCommand(CMD_DUP)).toBeNull();
-    } finally {
-      warn.mockRestore();
-    }
+    expect(await resolver.loadCommand(CMD_DUP)).toBeNull();
+  });
+
+  it("[W1] the ambiguous-label warning fires ONCE per session — not per render, not after invalidateCache", async () => {
+    const warn = jest.fn();
+    const logger = {
+      debug: jest.fn(),
+      info: jest.fn(),
+      warn,
+      error: jest.fn(),
+    };
+    const r = new CommandResolver(store, logger);
+    await r.loadCommand(CMD_DUP);
+    await r.loadCommand(CMD_DUP);
+    r.invalidateCache();
+    await r.loadCommand(CMD_DUP);
+    const ambiguous = warn.mock.calls.filter((c) =>
+      String(c[0]).includes("left unresolved"),
+    );
+    expect(ambiguous).toHaveLength(1);
+  });
+
+  it("[U1] one asset mounted at two paths is ONE bearer — the reference resolves", async () => {
+    const bearers = await store.match(
+      undefined,
+      Namespace.EXO.term("Asset_label"),
+      new IRI("https://exocortex.my/ontology/exocmd#TwinGrounding"),
+    );
+    expect(bearers).toHaveLength(2); // premise: two file IRIs bear the label
+    const cmd = await resolver.loadCommand(CMD_TWIN);
+    expect(cmd?.grounding.label).toBe("exocmd__TwinGrounding");
   });
 
   it("[H1] control: a human-labelled grounding reference loads as before", async () => {
