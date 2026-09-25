@@ -2,6 +2,7 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   setupFiles: ['reflect-metadata'],
+  globalSetup: '<rootDir>/../test-utils/src/jest/stripRepoGitEnv.cjs',
   roots: ['<rootDir>/tests'],
   moduleNameMapper: {
     // `test-utils` is a private workspace package with no build step; tests
