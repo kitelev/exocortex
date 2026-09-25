@@ -144,10 +144,14 @@ describe("mergeInheritanceRules", () => {
   });
 
   it("@req:a2c868e9-47d3-4109-a5bc-3d8c4d1ff2bb [U3] splices the grounding rules at the position of the FIRST universal rule they shadow", () => {
+    // Two shadowed universal rules SEPARATED by a non-shadowed one: without the
+    // separator, splicing at the FIRST vs the LAST shadowed position yields the
+    // same list, and the axis cannot tell the two implementations apart.
     const universal = [
       baseRule("exo__Asset_prototype", 100),
       condRule("ems__Effort_parent", "ems__Project"),
       baseRule("ems__Effort_area", 40),
+      condRule("ems__Effort_parent", "ems__Task"),
     ];
     const grounding = [condRule("ems__Effort_parent", "ems__Task")];
     expect(

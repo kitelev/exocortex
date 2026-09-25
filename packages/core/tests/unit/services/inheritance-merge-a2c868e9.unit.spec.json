@@ -22,11 +22,12 @@
       ]
     },
     "M2_splice_guard_removed": {
-      "_note": "Drops the once-only guard around the splice, so the grounding rules are re-emitted for EVERY universal rule they shadow. This is defect D2. It has NO product effect: applyInheritanceRuleStep opens with `if (properties[rule.targetPropertyName] !== undefined) continue`, so the duplicate is swallowed and the write is idempotent — the effect harness is expected to stay GREEN, and that is the measurement proving the guard's product-level inertness, not a gap in the axis.",
+      "_note": "Drops the once-only guard around the splice, so the grounding rules are re-emitted for EVERY universal rule they shadow. This is defect D2. It has NO product effect: applyInheritanceRuleStep opens with `if (properties[rule.targetPropertyName] !== undefined) continue`, so the duplicate is swallowed and the write is idempotent — the effect harness is expected to stay GREEN, and that is the measurement proving the guard's product-level inertness, not a gap in the axis. ⛤ Re-measured 2026-09-25 after U3 gained a second shadowed universal rule separated by a non-shadowed one: the red set grew from [U2] to [U2,U3]. Written from the MEASUREMENT, not predicted (§A97).",
       "from": "      if (!usedFromGrounding.has(u.targetPropertyName)) {\n        out.push(...override);\n        usedFromGrounding.add(u.targetPropertyName);\n      }",
       "to": "      out.push(...override);\n      usedFromGrounding.add(u.targetPropertyName);",
       "expect": [
-        "U2"
+        "U2",
+        "U3"
       ]
     },
     "M3_used_marker_removed": {
@@ -36,6 +37,14 @@
       "expect": [
         "U1",
         "U2",
+        "U3"
+      ]
+    },
+    "M4_splice_at_LAST_shadowed_position": {
+      "_note": "Implements the OTHER plausible reading of the docstring — splice the grounding rules at the position of the LAST universal rule they shadow instead of the first. Type-preserving: same signature, same elements, only their position differs. This locks the second half of the docstring claim ('at the position of the FIRST universal rule they shadow'), which nothing pinned before: with both shadowed universal rules ADJACENT the two readings produce an identical list, so the axis could not tell them apart. Predicted and measured: reddens U3 ALONE (U1 has a single universal rule, U2 has no separator between its two, so neither can observe the difference).",
+      "from": "      if (!usedFromGrounding.has(u.targetPropertyName)) {\n        out.push(...override);\n        usedFromGrounding.add(u.targetPropertyName);\n      }",
+      "to": "      if (usedFromGrounding.has(u.targetPropertyName)) {\n        for (const g of override) out.splice(out.indexOf(g), 1);\n      }\n      out.push(...override);\n      usedFromGrounding.add(u.targetPropertyName);",
+      "expect": [
         "U3"
       ]
     }

@@ -15,13 +15,22 @@
  *    is ever written (the shipped precondition admits status-less targets, so
  *    this is reachable through the CLI).
  *
- * WHERE THE RULE LIVES — and why the fixture mirrors that. `mergeInheritanceRules`
- * deduplicates by `targetPropertyName`: a Grounding can express at most ONE rule
- * per property and that rule also shadows every Universal rule for the same
- * property. So the Project and Task parent rules cannot both sit on the
- * grounding — they live on the `exocmd__UniversalDefaultTemplate` singleton,
- * whose own list is not deduplicated against itself, and the grounding declares
- * no parent rule at all. The fixture reproduces exactly that topology.
+ * WHERE THE RULE LIVES — and why the fixture mirrors that. The Universal
+ * override in `mergeInheritanceRules` is keyed by `targetPropertyName`: a
+ * Grounding that declares ANY rule for a property shadows EVERY Universal rule
+ * for that property. So a grounding-local parent rule would disable BOTH
+ * template rules for this command; they live on the
+ * `exocmd__UniversalDefaultTemplate` singleton, whose own list is not
+ * deduplicated against itself, and the grounding declares no parent rule at
+ * all. The fixture reproduces exactly that topology.
+ *
+ * ⛤ Corrected 2026-09-25 (req a2c868e9): this block used to say a grounding
+ * «can express at most ONE rule per property». That half is no longer true —
+ * grounding rules are never deduplicated against each other, so several
+ * conditional rules for one property now all survive (see the
+ * «grounding-owned conditional InheritanceRules» describe below, which seeds
+ * exactly that). The shadowing half above is unchanged and is what still forces
+ * the topology this fixture mirrors.
  *
  * The template fixture carries only its InheritanceRules — no PropertyDefaults.
  * The executor then fills the scalar primitives from its legacy TS fallback and

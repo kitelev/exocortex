@@ -1,5 +1,5 @@
 {
-  "_doc": "Product-effect half of the revert-verify for requirement a2c868e9 (ticket c3de23a8): the merged rule list reaching a real GroundingExecutor run. M1 (the lost-rule defect) must redden G1+G2; M2/M3 (the duplicate defect) must stay GREEN here — `applyInheritanceRuleStep` skips a property already written, so a duplicated entry has no observable outcome. An empty `expect` is therefore the MEASUREMENT that D2 is list-level only, not a missing axis (§A118: the third honest diagnosis). ⛔ `red_re` anchors on the `● <suite> › <title>` failure header, NOT on the bare `[Xn]` key: jest echoes the SOURCE LINE of a neighbouring `it(...)` in the diff context, so a key-only pattern would report a green axis as red (§A44 — the citation is not a verdict). ⛤ MEASURED 2026-09-25 and then REMOVED from this spec on purpose: M2_splice_guard_removed and M3_used_marker_removed were run against this harness and reddened NOTHING (control 0, both mutants 0). That is the product-level proof that the duplicate defect D2 is list-only — `applyInheritanceRuleStep` skips a property already written. They are KEPT in the companion unit spec, where they redden U2 and U1+U2+U3 respectively. Keeping a never-reddening mutant here would pin this spec at rc=2 forever, turning a legitimate measurement into a permanently red gate.",
+  "_doc": "Product-effect half of the revert-verify for requirement a2c868e9 (ticket c3de23a8): the merged rule list reaching a real GroundingExecutor run. Carries M1 (the lost-rule defect D1) ALONE, so rc stays machine-readable — rc=0 means the axes still discriminate. The duplicate-entry mutants, which redden nothing here by construction, live in the companion `inheritance-merge-a2c868e9.effect-uncovered.spec.json` together with the measurement proving why. Every `expect` is the MEASURED red set (§A97).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -21,21 +21,8 @@
         "G1",
         "G2"
       ]
-    },
-    "M2_splice_guard_removed": {
-      "_note": "Drops the once-only guard around the splice, so the grounding rules are re-emitted for EVERY universal rule they shadow. This is defect D2. It has NO product effect: applyInheritanceRuleStep opens with `if (properties[rule.targetPropertyName] !== undefined) continue`, so the duplicate is swallowed and the write is idempotent — the effect harness is expected to stay GREEN, and that is the measurement proving the guard's product-level inertness, not a gap in the axis.",
-      "from": "      if (!usedFromGrounding.has(u.targetPropertyName)) {\n        out.push(...override);\n        usedFromGrounding.add(u.targetPropertyName);\n      }",
-      "to": "      out.push(...override);\n      usedFromGrounding.add(u.targetPropertyName);",
-      "expect": []
-    },
-    "M3_used_marker_removed": {
-      "_note": "Removes the used-marker, so the SECOND loop appends every grounding rule a second time. Same idempotence argument as M2 for the product effect; the list is visibly wrong.",
-      "from": "        usedFromGrounding.add(u.targetPropertyName);\n",
-      "to": "",
-      "expect": []
     }
   },
-  "_note_M2_M3": "M2 and M3 are predicted EMPTY ON PURPOSE, and the emptiness is the THING BEING GUARDED, not a gap. They reproduce the duplicate-entry defect (D2), which has no observable outcome here because `GroundingExecutor.applyInheritanceRuleStep` opens with `if (properties[rule.targetPropertyName] !== undefined) continue` — the second copy of a rule is skipped and the write is idempotent. Measured 2026-09-25: control 0 red, M2 0 red, M3 0 red. ⛔ A NON-empty red set on either of them means that guard is GONE from the executor: the duplicate would then apply twice, and this spec is the only place that would notice. They stay pinned HERE rather than only in the unit spec precisely because the unit harness never runs the executor.",
-  "_note_rc": "⛔ THIS SPEC RETURNS rc=2 BY CONSTRUCTION, and that is expected — do not 'fix' it by deleting M2/M3. Measured in `~/.claude/bin/mutant-driver.py`: the `if not red:` branch increments `bad` UNCONDITIONALLY (line 459) BEFORE the `missing = [a for a in (expect or []) ...]` check (line 465), so an empty `expect` does NOT keep rc at 0 — there is no name- or note-based escape in the driver. Precedent on main: `created-instance-c0122d7f.executor.spec.json` ships `M12_UNCOVERED_postaction_forward` with `expect: []` on the same terms. ⚠ Consequence to know: because rc is pinned at 2, rc alone cannot report a regression here — read the printed red sets. If the executor guard is ever removed, M2/M3 start reddening and rc FLIPS to 0, which is the inverse of the usual reading.",
+  "_note_rc": "rc=0 here is load-bearing: this file is the one a runner can judge by exit code. Mutants that cannot redden are deliberately NOT kept here — they would pin rc at 2 forever and mask a real regression. They are in the -uncovered companion.",
   "_note_red_re": "`red_re` anchors on the `● <suite> › <title>` failure header rather than the bare `[Xn]` key. jest echoes the SOURCE LINE of a neighbouring `it(...)` inside its diff context, so a key-only pattern reports a GREEN axis as red (same class as integration-test-revert-verify §A104). Measured while building this spec: the first key-only pattern produced 'красных НЕТ' at rc=1 on every mutant."
 }

@@ -112,7 +112,13 @@ export function mergePropertyDefaults(
  *   first universal rule they shadow. A second universal rule for the same
  *   property must not re-emit them (that produced a duplicate entry).
  *
- * Priority sort happens downstream in the executor.
+ * Priority sort happens downstream in the executor, and that sort is stable —
+ * so when a target matches SEVERAL surviving rules for one property at EQUAL
+ * priority (a dual-typed asset carrying both `ems__Project` and `ems__Task`
+ * matches a Project- and a Task-conditioned rule), the one that wins is the one
+ * appearing FIRST in the list this function returns, i.e. the grounding's own
+ * authoring order. Before the fix the last-authored rule won, because it was the
+ * only one that survived the merge at all.
  */
 export function mergeInheritanceRules(
   universal: ReadonlyArray<InheritanceRuleResolved>,
