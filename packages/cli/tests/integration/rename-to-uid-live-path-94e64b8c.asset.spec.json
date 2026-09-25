@@ -1,0 +1,19 @@
+{
+  "_doc": "Revert-verify for the re-binding of Active reqs cd33eff0 (dry-run no-mutation) and 8dc90308 (inbound link collapse) to the LIVE `apply rename-to-uid` path (task 94e64b8c). One spec per subject — the driver takes one. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout (both absolute). Axes: D1-D3 (gate-free lookalike) and D4-D6 (the SHIPPED command from the exoas-exo + exoas-exocmd submodules, called by slug) in command-dry-run.integration.test.ts; L1-L2 (lookalike) in rename-to-uid-update-inbound-links.integration.test.ts. D4-D6 need initialised submodules. Recorded runs: see PR body. This spec mutates the SHIPPED command asset in the exoas-exocmd submodule: it proves D4-D6 read the real command, not the lookalike.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/exoas-exocmd/exocmd/d0a0663b-407b-45bc-8c5c-e0ddfa883ba4.md",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/command-dry-run.integration.test.ts tests/integration/rename-to-uid-update-inbound-links.integration.test.ts 2>&1",
+  "red_re": "› ([DL]\\d+\\w*) ",
+  "mutants": {
+    "M4_shipped_command_loses_its_precondition": {
+      "from": "exocmd__Command_precondition: \"[[7885cb68-df21-4d75-a5c4-27a2f7d49fb8]]\"\n",
+      "to": "",
+      "expect": ["D5"]
+    }
+  }
+}
