@@ -1115,3 +1115,116 @@ describe("P4.3 applyLegacyExceptionFilter", () => {
   });
 });
 
+
+// ──────────────────────────────────────────────────────────────────────────────
+// #4369: TripleClassHierarchy.isSubClassOf memoisation
+// ──────────────────────────────────────────────────────────────────────────────
+//
+// SHACL asks this predicate once per (subject × shape) for the domain test and once
+// per (value × range class) for sh:class. Measured on vault-my with an instrumented
+// build: 14 220 679 calls for a single `create --dry-run --validate --use-cache`,
+// 99.72 % of them repeating a pair already answered.
+//
+// `subClassMap` is `private readonly` and every write lives in the constructor, so the
+// memo is sound BY CONSTRUCTION — there is no mutator that could invalidate an entry.
+describe("#4369 TripleClassHierarchy isSubClassOf memo", () => {
+  const RDFS_SUBCLASS_OF = "http://www.w3.org/2000/01/rdf-schema#subClassOf";
+  const RDFS_LABEL = "http://www.w3.org/2000/01/rdf-schema#label";
+
+  function makeIRI(value: string) { return new DomainIRI(value); }
+  function makeLiteral(value: string) { return new DomainLiteral(value); }
+  function makeTriple(s: any, p: any, o: any) { return { subject: s, predicate: p, object: o }; }
+
+  const CONCEPT = "obsidian://vault/ims/concept.md";
+  const ASSET = "obsidian://vault/exo/asset.md";
+  const THING = "obsidian://vault/exo/thing.md";
+  const ORPHAN = "obsidian://vault/x/orphan.md";
+
+  function makeHierarchy() {
+    return new TripleClassHierarchy([
+      makeTriple(makeIRI(CONCEPT), makeIRI(RDFS_LABEL), makeLiteral("ims__Concept")),
+      makeTriple(makeIRI(ASSET), makeIRI(RDFS_LABEL), makeLiteral("exo__Asset")),
+      makeTriple(makeIRI(THING), makeIRI(RDFS_LABEL), makeLiteral("exo__Thing")),
+      makeTriple(makeIRI(CONCEPT), makeIRI(RDFS_SUBCLASS_OF), makeIRI(ASSET)),
+      makeTriple(makeIRI(ASSET), makeIRI(RDFS_SUBCLASS_OF), makeIRI(THING)),
+    ]);
+  }
+
+  function spyOnWalk(hier: unknown) {
+    return jest.spyOn(
+      hier as { walkIsSubClassOf: (child: string, parent: string) => boolean },
+      "walkIsSubClassOf",
+    );
+  }
+
+  it("H1 answers a repeated POSITIVE pair from the memo — the hierarchy is walked once", () => {
+    const hier = makeHierarchy();
+    const walk = spyOnWalk(hier);
+
+    expect(hier.isSubClassOf(CONCEPT, THING)).toBe(true);
+    expect(hier.isSubClassOf(CONCEPT, THING)).toBe(true);
+    expect(hier.isSubClassOf(CONCEPT, THING)).toBe(true);
+
+    expect(walk).toHaveBeenCalledTimes(1);
+  });
+
+  it("H2 answers a repeated NEGATIVE pair from the memo — the exhaustive walk runs once", () => {
+    // The `false` verdict is the EXPENSIVE one: producing it visited every reachable
+    // superclass and found nothing. A memo written `if (cached) return cached` stores
+    // only hits and leaves exactly this case recomputing, so H2 is the axis that
+    // catches the naive shape — H1 stays green under it.
+    const hier = makeHierarchy();
+    const walk = spyOnWalk(hier);
+
+    expect(hier.isSubClassOf(THING, CONCEPT)).toBe(false);
+    expect(hier.isSubClassOf(THING, CONCEPT)).toBe(false);
+    expect(hier.isSubClassOf(THING, CONCEPT)).toBe(false);
+
+    expect(walk).toHaveBeenCalledTimes(1);
+  });
+
+  it("H3 returns the SAME verdicts as the un-memoised walk — absolute, not self-consistent", () => {
+    // ⛔ Asserting only "second call === first call" would be vacuous under a mutant that
+    // inverts the verdict before caching: both answers invert together. The expectations
+    // below are absolute, and each pair is also re-asked on a FRESH instance so a
+    // first-call-only defect cannot hide either.
+    const cases: Array<[string, string, boolean]> = [
+      [CONCEPT, ASSET, true],
+      [CONCEPT, THING, true],
+      [ASSET, THING, true],
+      [THING, CONCEPT, false],
+      [ASSET, CONCEPT, false],
+      [ORPHAN, THING, false],
+      [CONCEPT, CONCEPT, true],
+      [ORPHAN, ORPHAN, true],
+      ["https://exocortex.my/ontology/ims#Concept", "https://exocortex.my/ontology/exo#Thing", true],
+      ["https://exocortex.my/ontology/exo#Thing", "https://exocortex.my/ontology/ims#Concept", false],
+    ];
+
+    const hier = makeHierarchy();
+    for (const [child, parent, expected] of cases) {
+      expect(hier.isSubClassOf(child, parent)).toBe(expected);
+      expect(hier.isSubClassOf(child, parent)).toBe(expected);
+      expect(makeHierarchy().isSubClassOf(child, parent)).toBe(expected);
+    }
+  });
+
+  it("H4 memoises each parent of the same child independently", () => {
+    const hier = makeHierarchy();
+
+    expect(hier.isSubClassOf(CONCEPT, ASSET)).toBe(true);
+    // Same child, a parent that is NOT an ancestor. A memo keyed by child alone — or one
+    // whose lookup ignores the parent — hands back the previous `true` here.
+    expect(hier.isSubClassOf(CONCEPT, ORPHAN)).toBe(false);
+    // …and the first pair must still answer true afterwards.
+    expect(hier.isSubClassOf(CONCEPT, ASSET)).toBe(true);
+  });
+
+  it("H5 keeps the identity verdict from leaking to a different parent of the same child", () => {
+    const hier = makeHierarchy();
+
+    expect(hier.isSubClassOf(ORPHAN, ORPHAN)).toBe(true);
+    expect(hier.isSubClassOf(ORPHAN, THING)).toBe(false);
+    expect(hier.isSubClassOf(ORPHAN, ORPHAN)).toBe(true);
+  });
+});
