@@ -11,11 +11,13 @@ import { Namespace } from "../domain/models/rdf/Namespace";
  * `NoteToRDFConverter` emits a label in ONE of two forms, and a lookup that
  * knows only one of them misses half the corpus (issue #4354):
  *
- * - a label of the shape `prefix__Local` — which EVERY class and property
- *   definition has (`ems__Task`, `tbank-public__ProteusReport`) — is emitted as
- *   its TERM IRI, `exo:Asset_label <https://exocortex.my/ontology/ems#Task>`:
+ * - a label of the shape `prefix__Local` — which nearly every class and
+ *   property definition has (`ems__Task`, `tbank-public__ProteusReport`) — is
+ *   emitted as its TERM IRI, `exo:Asset_label <https://exocortex.my/ontology/ems#Task>`:
  *   the same IRI `valueToRDFObject` gives every reference to that class;
- * - any other label (`"Project area J"`) is emitted as a `Literal`.
+ * - any other label (`"Project area J"`) is emitted as a `Literal` — and so is
+ *   the basename fallback of a file with NO `exo__Asset_label`, even when the
+ *   file is named `prefix__Local` (live: `kitelev__ReadArticleTask.md`).
  *
  * The two copies this replaces (`CommandResolver.findUidByLabel`,
  * `WorkflowResolver.findUidByLabel`) matched the `Literal` form only, so for a

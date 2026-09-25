@@ -3,7 +3,11 @@ import { NoteToRDFConverter } from "../../../src/services/NoteToRDFConverter";
 import { CommandResolver } from "../../../src/services/CommandResolver";
 import { WorkflowResolver } from "../../../src/services/WorkflowResolver";
 import { InMemoryTripleStore } from "../../../src/infrastructure/rdf/InMemoryTripleStore";
-import { IVaultAdapter, IFile, IFrontmatter } from "../../../src/interfaces/IVaultAdapter";
+import {
+  IVaultAdapter,
+  IFile,
+  IFrontmatter,
+} from "../../../src/interfaces/IVaultAdapter";
 import { IRI } from "../../../src/domain/models/rdf/IRI";
 import { AssetClass } from "../../../src/domain/constants/AssetClass";
 import { GroundingType } from "../../../src/domain/constants/GroundingType";
@@ -29,7 +33,8 @@ import { findUidByAssetLabel } from "../../../src/utilities/assetLabelLookup";
  * label is whatever the converter makes of it — nothing is seeded by hand.
  */
 
-const U = (n: number): string => `43540000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const U = (n: number): string =>
+  `43540000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
 const EXO_CLASS = U(1); // exo__Class
 const EXO_ASSET = U(2); // exo__Asset
@@ -43,7 +48,20 @@ const HUMAN = U(9); // "Мой класс задач" (a Literal label) ⊑ ems_
 const WCT = U(10); // ems__WaitingCheckTask ⊑ ems__Task
 const WCT2 = U(11); // ems__WaitingCheckTask2 ⊑ ems__WaitingCheckTask
 const GROUNDING = U(12); // create_instance grounding, targetClass "ems__Task"
+// A class file with NO exo__Asset_label and a class-shaped file name: the
+// converter's basename fallback emits its label as a LITERAL (live instance:
+// vault-my `kitelev__ReadArticleTask.md`). The only live form that needs the
+// Literal branch for a prefix__Local name.
+const READ = U(13); // file kitelev__ReadArticleTask.md ⊑ ems__Task
+const CYC_A = U(14); // ems__CycA ⊑ ems__CycB
+const CYC_B = U(15); // ems__CycB ⊑ ems__CycA (malformed cyclic TBox)
 const GT_CREATE = GROUNDING_TYPE_UIDS[GroundingType.CREATE_INSTANCE];
+
+/** File basename when it is not the uid (UID-canon is the default). */
+const BASENAME: Record<string, string> = { [READ]: "kitelev__ReadArticleTask" };
+const UID_BY_BASENAME: Record<string, string> = Object.fromEntries(
+  Object.entries(BASENAME).map(([uid, base]) => [base, uid]),
+);
 
 const cls = (uid: string, label: string, superUid?: string): IFrontmatter => ({
   exo__Asset_uid: uid,
@@ -53,7 +71,11 @@ const cls = (uid: string, label: string, superUid?: string): IFrontmatter => ({
 });
 
 const FM: Record<string, IFrontmatter> = {
-  [EXO_CLASS]: { exo__Asset_uid: EXO_CLASS, exo__Asset_label: "exo__Class", exo__Instance_class: [`[[${EXO_CLASS}]]`] },
+  [EXO_CLASS]: {
+    exo__Asset_uid: EXO_CLASS,
+    exo__Asset_label: "exo__Class",
+    exo__Instance_class: [`[[${EXO_CLASS}]]`],
+  },
   [EXO_ASSET]: cls(EXO_ASSET, "exo__Asset"),
   [EFFORT]: cls(EFFORT, "ems__Effort", EXO_ASSET),
   [TASK]: cls(TASK, "ems__Task", EFFORT),
@@ -64,6 +86,13 @@ const FM: Record<string, IFrontmatter> = {
   [HUMAN]: cls(HUMAN, "Мой класс задач", TASK),
   [WCT]: cls(WCT, "ems__WaitingCheckTask", TASK),
   [WCT2]: cls(WCT2, "ems__WaitingCheckTask2", WCT),
+  [READ]: {
+    exo__Asset_uid: READ,
+    exo__Instance_class: [`[[${EXO_CLASS}]]`],
+    exo__Class_superClass: [`[[${TASK}]]`],
+  },
+  [CYC_A]: cls(CYC_A, "ems__CycA", CYC_B),
+  [CYC_B]: cls(CYC_B, "ems__CycB", CYC_A),
   [GT_CREATE]: {
     exo__Asset_uid: GT_CREATE,
     exo__Asset_label: "exocmd__GroundingTypeCreateInstance",
@@ -76,16 +105,22 @@ const FM: Record<string, IFrontmatter> = {
   },
 };
 
-const fileOf = (uid: string): IFile => ({
-  path: `tbox/${uid}.md`,
-  basename: uid,
-  name: `${uid}.md`,
-  parent: null,
-});
+const fileOf = (uid: string): IFile => {
+  const base = BASENAME[uid] ?? uid;
+  return {
+    path: `tbox/${base}.md`,
+    basename: base,
+    name: `${base}.md`,
+    parent: null,
+  };
+};
 
 function makeVault(): IVaultAdapter {
   return {
-    getFrontmatter: jest.fn((file: IFile) => FM[file.basename] ?? null),
+    getFrontmatter: jest.fn(
+      (file: IFile) =>
+        FM[UID_BY_BASENAME[file.basename] ?? file.basename] ?? null,
+    ),
     getAllFiles: jest.fn(),
     read: jest.fn().mockResolvedValue(""),
     create: jest.fn(),
@@ -115,7 +150,9 @@ async function buildStore(): Promise<InMemoryTripleStore> {
   return store;
 }
 
-const depthsOf = (rows: Array<{ ref: string; depth: number }>): Record<string, number> =>
+const depthsOf = (
+  rows: Array<{ ref: string; depth: number }>,
+): Record<string, number> =>
   Object.fromEntries(rows.map((r) => [r.ref, r.depth]));
 
 describe("symbolic label lookup over a converter-built store (issue #4354)", () => {
@@ -127,7 +164,13 @@ describe("symbolic label lookup over a converter-built store (issue #4354)", () 
 
   it("[L0] premise: the converter emits a prefix__Local label as a term IRI, a human label as a Literal", async () => {
     const label = async (uid: string) =>
-      (await store.match(new IRI(`obsidian://vault/tbox/${uid}.md`), undefined, undefined))
+      (
+        await store.match(
+          new IRI(`obsidian://vault/tbox/${uid}.md`),
+          undefined,
+          undefined,
+        )
+      )
         .filter((t) => t.predicate.value.endsWith("exo#Asset_label"))
         .map((t) => t.object.constructor.name);
     expect(await label(TASK)).toEqual(["IRI"]);
@@ -137,7 +180,9 @@ describe("symbolic label lookup over a converter-built store (issue #4354)", () 
 
   it("[L1] findUidByAssetLabel finds a class by its prefix__Local label (term-IRI form)", async () => {
     expect(await findUidByAssetLabel(store, "ems__Task")).toBe(TASK);
-    expect(await findUidByAssetLabel(store, "tbank-public__ProteusReport")).toBe(PROTEUS);
+    expect(
+      await findUidByAssetLabel(store, "tbank-public__ProteusReport"),
+    ).toBe(PROTEUS);
   });
 
   it("[L2] findUidByAssetLabel still finds a human label (Literal form) and returns null for an unknown one", async () => {
@@ -147,7 +192,9 @@ describe("symbolic label lookup over a converter-built store (issue #4354)", () 
   });
 
   it("[A1] the ancestor walk climbs through hyphen-prefixed symbolic superclasses to the root", async () => {
-    const d = depthsOf(await new CommandResolver(store).getClassAncestorsWithDepth(ATLAS));
+    const d = depthsOf(
+      await new CommandResolver(store).getClassAncestorsWithDepth(ATLAS),
+    );
     expect(d["tbank-public__ProteusReport"]).toBe(1);
     expect(d[PROTEUS]).toBe(1);
     expect(d["lit__WebPage"]).toBe(2);
@@ -156,17 +203,47 @@ describe("symbolic label lookup over a converter-built store (issue #4354)", () 
   });
 
   it("[A2] a symbolic seed (ems__Meeting) resolves and walks ems__Task → ems__Effort → exo__Asset", async () => {
-    const d = depthsOf(await new CommandResolver(store).getClassAncestorsWithDepth("ems__Meeting"));
+    const d = depthsOf(
+      await new CommandResolver(store).getClassAncestorsWithDepth(
+        "ems__Meeting",
+      ),
+    );
     expect(d["ems__Task"]).toBe(1);
     expect(d[TASK]).toBe(1);
     expect(d["ems__Effort"]).toBe(2);
     expect(d["exo__Asset"]).toBe(3);
   });
 
-  it("[A3] control: a Literal-labelled class seeded by UID walks the same chain", async () => {
-    const d = depthsOf(await new CommandResolver(store).getClassAncestorsWithDepth(HUMAN));
+  it("[L3] findUidByAssetLabel finds a label-less class by its class-shaped file name (Literal fallback)", async () => {
+    expect(await findUidByAssetLabel(store, "kitelev__ReadArticleTask")).toBe(
+      READ,
+    );
+  });
+
+  it("[A3] a Literal-labelled class seeded by UID walks through its symbolic superclass", async () => {
+    const d = depthsOf(
+      await new CommandResolver(store).getClassAncestorsWithDepth(HUMAN),
+    );
     expect(d["ems__Task"]).toBe(1);
     expect(d["ems__Effort"]).toBe(2);
+  });
+
+  it("[A4] a label-less class named by its file (symbolic seed) resolves through the Literal fallback", async () => {
+    const d = depthsOf(
+      await new CommandResolver(store).getClassAncestorsWithDepth(
+        "kitelev__ReadArticleTask",
+      ),
+    );
+    expect(d["ems__Task"]).toBe(1);
+  });
+
+  it("[A5] a cyclic chain (A ⊑ B ⊑ A) is walked but never lists the seed as its own ancestor", async () => {
+    const d = depthsOf(
+      await new CommandResolver(store).getClassAncestorsWithDepth(CYC_A),
+    );
+    expect(d[CYC_B]).toBe(1); // the walk resolved B and went on — the cycle was reached
+    expect(d["ems__CycA"]).toBeUndefined();
+    expect(d[CYC_A]).toBeUndefined();
   });
 
   it("[W1] a subclass two hops below Task (through a symbolic intermediate) resolves the Task workflow", async () => {
@@ -186,7 +263,9 @@ describe("symbolic label lookup over a converter-built store (issue #4354)", () 
   });
 
   it("[G1] a short-name Grounding_targetClass is substituted by the class UID (#3212)", async () => {
-    const grounding = await new CommandResolver(store).loadGroundingByUid(GROUNDING);
+    const grounding = await new CommandResolver(store).loadGroundingByUid(
+      GROUNDING,
+    );
     expect(grounding).not.toBeNull();
     expect(grounding?.targetClass).toBe(TASK);
   });

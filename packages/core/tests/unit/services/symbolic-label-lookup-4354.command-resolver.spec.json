@@ -16,7 +16,13 @@
     "M3_command_resolver_bypasses_helper": {
       "from": "    return findUidByAssetLabel(this.tripleStore, label);\n  }\n\n  private async getLinkedUID(",
       "to": "    return label.includes(\"__\") ? null : findUidByAssetLabel(this.tripleStore, label);\n  }\n\n  private async getLinkedUID(",
-      "expect": ["A1", "A2", "A3", "G1"]
+      "expect": ["A1", "A2", "A3", "A4", "A5", "G1"]
+    },
+    "M5_seed_label_not_folded": {
+      "_note": "Undo the seed-label fold in getClassAncestorsWithDepth: the seed's prefix__Local label comes back as its term IRI, the symbolic form never enters `excluded`, and a cyclic chain lists the seed as its own ancestor at depth 2 (A5). Reachable only since #4354 lets the walk past the first symbolic superclass. Type-preserving: the test argument gets a leading NUL, so the `^scheme://` anchor never matches.",
+      "from": "seedLabelRaw && LOOKS_LIKE_IRI.test(seedLabelRaw)",
+      "to": "seedLabelRaw && LOOKS_LIKE_IRI.test(\"\\u0000\" + seedLabelRaw)",
+      "expect": ["A5"]
     }
   }
 }
