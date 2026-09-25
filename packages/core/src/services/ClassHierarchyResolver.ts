@@ -1,5 +1,6 @@
 import { injectable } from "tsyringe";
 import type { ILogger } from "../interfaces/ILogger";
+import { Namespace } from "../domain/models/rdf/Namespace";
 import type { ISPARQLQueryable } from "./PropertySchemaResolver";
 
 @injectable()
@@ -74,32 +75,55 @@ export class ClassHierarchyResolver {
     return [className, "exo__Asset"];
   }
 
+  /**
+   * `prefix__LocalName` → full class IRI, derived from the SHARED grammar
+   * (`Namespace.fromPropertyKey` → `Namespace.forPrefix`).
+   *
+   * ⛔ Issue #4353: this used to be a private `^([a-z]+)__(.+)$` regex plus a
+   * two-case `switch`. The regex refused any prefix carrying a capital, a digit
+   * or a hyphen, so `aiKnow__Memory`, `exo003__Alias` and
+   * `adapter-exo-ims__relatesToConcept` fell through to the final pass-through
+   * and were handed to SPARQL as a bare frontmatter key inside `<…>` — no
+   * binding matched, `loadHierarchy` took the empty-result branch, and the class
+   * silently resolved to the two-element {@link fallback} instead of its real
+   * ancestors. Measured on the three live vaults: 10 / 13 / 22 TBox labels carry
+   * such a prefix. The `switch` was dead weight besides — both named cases
+   * produced byte-identical output to `default`.
+   *
+   * Same migration as `PropertySchemaResolver.toFullIRI` (ticket `6572f3f3`,
+   * req `38e3f174`); the two now share one grammar instead of two copies. A
+   * registered W3C prefix (`rdfs__subClassOf`) consequently mints its canonical
+   * `http://www.w3.org/…` IRI rather than a nonexistent `…/ontology/rdfs#` one.
+   *
+   * Pass-through on an unparseable name is DELIBERATE: the caller embeds the
+   * result as the `<…>` term of the hierarchy query.
+   */
   private toFullIRI(propertyName: string): string {
     if (propertyName.startsWith("http://") || propertyName.startsWith("https://")) {
       return propertyName;
     }
 
-    const match = propertyName.match(/^([a-z]+)__(.+)$/);
-    if (match) {
-      const [, prefix, localName] = match;
-      switch (prefix) {
-        case "ems":
-          return `https://exocortex.my/ontology/ems#${localName}`;
-        case "exo":
-          return `https://exocortex.my/ontology/exo#${localName}`;
-        default:
-          return `https://exocortex.my/ontology/${prefix}#${localName}`;
-      }
+    const parsed = Namespace.fromPropertyKey(propertyName);
+    if (parsed) {
+      return parsed.namespace.term(parsed.localName).value;
     }
 
     return propertyName;
   }
 
+  /**
+   * Full term IRI → `prefix__LocalName`, the exact inverse of {@link toFullIRI}
+   * derived from the SAME namespace array via `Namespace.fromTermIRI`.
+   *
+   * ⛔ Issue #4353: the regex it replaces refused the same three prefix shapes,
+   * so an ancestor IRI under `…/ontology/aiKnow#` came back RAW and entered the
+   * returned hierarchy as a full IRI — a value no caller can match against a
+   * frontmatter class name.
+   */
   private fromFullIRI(iri: string): string {
-    const match = iri.match(/https:\/\/exocortex\.my\/ontology\/([a-z]+)#(.+)$/);
-    if (match) {
-      const [, prefix, localName] = match;
-      return `${prefix}__${localName}`;
+    const term = Namespace.fromTermIRI(iri);
+    if (term) {
+      return `${term.namespace.prefix}__${term.localName}`;
     }
     return iri;
   }
