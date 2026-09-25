@@ -1141,13 +1141,19 @@ describe("#4369 TripleClassHierarchy isSubClassOf memo", () => {
   const ORPHAN = "obsidian://vault/x/orphan.md";
 
   function makeHierarchy() {
-    return new TripleClassHierarchy([
+    // The mocked DomainIRI/DomainLiteral above are plain classes, so the literals below are
+    // structurally a `{subject, predicate, object}` bag rather than a real core `Triple`.
+    // `TripleClassHierarchy` only ever reads those three fields, so the cast is to the
+    // constructor's own parameter type — narrower than `any` and it keeps the test-types
+    // ratchet honest.
+    const triples = [
       makeTriple(makeIRI(CONCEPT), makeIRI(RDFS_LABEL), makeLiteral("ims__Concept")),
       makeTriple(makeIRI(ASSET), makeIRI(RDFS_LABEL), makeLiteral("exo__Asset")),
       makeTriple(makeIRI(THING), makeIRI(RDFS_LABEL), makeLiteral("exo__Thing")),
       makeTriple(makeIRI(CONCEPT), makeIRI(RDFS_SUBCLASS_OF), makeIRI(ASSET)),
       makeTriple(makeIRI(ASSET), makeIRI(RDFS_SUBCLASS_OF), makeIRI(THING)),
-    ]);
+    ] as unknown as ConstructorParameters<typeof TripleClassHierarchy>[0];
+    return new TripleClassHierarchy(triples);
   }
 
   function spyOnWalk(hier: unknown) {
