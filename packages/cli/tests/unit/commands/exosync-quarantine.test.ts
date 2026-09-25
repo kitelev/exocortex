@@ -39,6 +39,7 @@ import {
   normalizeForCompare,
   registerQuarantineCommands,
 } from "../../../src/commands/exosync-quarantine";
+import { runExosyncSync } from "../../../src/commands/exosync-sync";
 
 const ASSET_SPACE_CLASS_UID = "73bd00e4-ccc0-4f3f-b20d-c4388c4588fb";
 const OWNER = "test-owner";
@@ -284,8 +285,8 @@ describe("exosync quarantine list — pinned paths that are not conflicts (#4225
       const text = lines.join("\n");
       expect(text).toMatch(/No open conflicts/);
       expect(lines).toContain("1 pinned path(s) are not conflicts:");
-      expect(text).toMatch(/\b1 {2}local change, delivered by the next full sync/);
-      expect(lines).toContain(`  ${REPO_KEY}  ${CONFLICT}  [local change, delivered by the next full sync]`);
+      expect(text).toMatch(/\b1 {2}local change, not pushed yet — the next push or sync delivers it/);
+      expect(lines).toContain(`  ${REPO_KEY}  ${CONFLICT}  [local change, not pushed yet — the next push or sync delivers it]`);
       expect(lines).toContain(`Clear with: exosync sync --vault ${fx.vault} --token-from-gh`);
     } finally {
       fx.cleanup();
@@ -300,7 +301,7 @@ describe("exosync quarantine list — pinned paths that are not conflicts (#4225
       await runQuarantineList({ vault: fx.vault, token: FAKE_PAT }, deps(fx.gh, lines));
       const text = lines.join("\n");
       expect(text).toMatch(/\b1 {2}remote change not applied here yet — this copy is behind/);
-      expect(text).not.toContain("[local change, delivered by the next full sync]");
+      expect(text).not.toContain("[local change, not pushed yet — the next push or sync delivers it]");
     } finally {
       fx.cleanup();
     }
@@ -314,6 +315,26 @@ describe("exosync quarantine list — pinned paths that are not conflicts (#4225
     try {
       await runQuarantineList({ vault: fx.vault, token: FAKE_PAT, json: true }, deps(fx.gh, lines));
       expect(JSON.parse(lines.join("\n"))).toEqual([]);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  // The kind text says the next PUSH delivers a local-withheld change. This axis
+  // keeps that claim derived from the engine: if push ever starts withholding
+  // pinned local edits, X4 turns red and the text must change with it.
+  it(`X4 ${REQ} a pinned local change with remote == base is delivered by a plain push`, async () => {
+    const base = mdAsset("uid-1", "base");
+    const local = mdAsset("uid-1", "LOCAL edit");
+    const fx = await makeConflictVault({ base, local });
+    fx.gh.commitDirect("main", { [CONFLICT]: base }, "back to base");
+    const lines: string[] = [];
+    try {
+      // Same predicate before the push is false: the axis discriminates.
+      expect(fx.gh.headFiles().get(CONFLICT)).toBe(base);
+      const code = await runExosyncSync("push", { vault: fx.vault, token: FAKE_PAT }, deps(fx.gh, lines));
+      expect(code).toBe(0);
+      expect(fx.gh.headFiles().get(CONFLICT)).toBe(local);
     } finally {
       fx.cleanup();
     }

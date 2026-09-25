@@ -182,7 +182,7 @@ export async function runQuarantineList(
 
 const PINNED_KIND_TEXT: Record<PinnedPathKind, string> = {
   "remote-pending": "remote change not applied here yet — this copy is behind",
-  "local-withheld": "local change, delivered by the next full sync",
+  "local-withheld": "local change, not pushed yet — the next push or sync delivers it",
   converged: "converged, clears on the next sync",
   unclassified: "unclassified (remote tree unavailable, or a file-mode space)",
 };
@@ -192,9 +192,10 @@ const PINNED_KIND_TEXT: Record<PinnedPathKind, string> = {
  * conflicts ✅» over them, and a push-only device never runs the pull that
  * clears them. What a pin costs depends on its kind: a `remote-pending` pin is an
  * incoming change this copy has not applied (the vault reads stale data); a
- * `local-withheld` one is a local change the next full sync delivers. A pin does
- * NOT exclude a local change from push by itself — push re-reads the remote diff
- * for pinned paths (review of #4391, probed on the real engine).
+ * `local-withheld` one is a local change not pushed yet — the next push delivers
+ * it: a pin does NOT exclude a local change from push, push re-reads the remote
+ * diff for pinned paths (review of #4391, probed on the real engine; locked by
+ * axis X4). Only the PIN needs a sync to clear.
  * The remedy for every kind is `exosync sync` (pull + push); a pull alone
  * applies incoming changes but ships nothing.
  */

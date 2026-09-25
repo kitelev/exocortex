@@ -217,7 +217,7 @@ describe("QuarantineResolverCommands.invokeResolve — pinned paths that are not
     });
     await h.commands.invokeResolve();
     expect(h.notices).toEqual([
-      "No open sync conflicts — but 3 path(s) are pinned (2 remote change(s) not applied here yet, 1 local change(s) pending a full Sync). Run Sync to clear them.",
+      "No open sync conflicts — but 3 path(s) are pinned (2 remote change(s) not applied here yet, 1 local change(s) not pushed yet). Run Sync to clear them.",
     ]);
     expect(h.getCtx()).toBeNull();
     expect(h.commands.isBusy()).toBe(false);
