@@ -10,7 +10,10 @@ import { GroundingType } from "../domain/constants/GroundingType";
 import { resolveGroundingTypeFromIRI } from "../domain/constants/GroundingTypeUIDs";
 import { utf8ToBase64 } from "../utilities/base64";
 import { iriToObsidianName } from "../utilities/iriToObsidianName";
-import { findUidByAssetLabel } from "../utilities/assetLabelLookup";
+import {
+  findUidByAssetLabel,
+  labelTermBearers,
+} from "../utilities/assetLabelLookup";
 import {
   COMMAND_VARIANT_VALUES,
   LABEL_CLASS_VALUES,
@@ -2692,21 +2695,19 @@ export class CommandResolver {
       undefined,
     );
     if (ownUid.length > 0) return ref;
-    const bearers = await this.tripleStore.match(
-      undefined,
-      Namespace.EXO.term("Asset_label"),
-      ref,
-    );
-    for (const bearer of bearers) {
-      if (!(bearer.subject instanceof IRI)) continue;
-      const uid = await this.tripleStore.match(
-        bearer.subject,
-        Namespace.EXO.term("Asset_uid"),
-        undefined,
+    const bearers = await labelTermBearers(this.tripleStore, ref);
+    if (bearers.length > 1) {
+      // Two assets share the label: resolving to whichever was indexed first
+      // would pick by edit history (a grounding could run another asset's
+      // mutation). Keep the pre-#4370 behaviour — the reference loads nothing.
+      this.logger.warn(
+        this.capWarning(
+          `Reference <${ref.value}> names a label borne by ${bearers.length} assets (${bearers.map((b) => b.uid).join(", ")}) — left unresolved`,
+        ),
       );
-      if (uid.length > 0) return bearer.subject;
+      return ref;
     }
-    return ref;
+    return bearers[0]?.subject ?? ref;
   }
 
   /**

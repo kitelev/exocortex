@@ -63,6 +63,12 @@ const CMD_PH = U(36);
 const BIND_C = U(40);
 const BIND_S = U(41);
 const BIND_O = U(42);
+const PRE_ALL = U(50); // AllPrecondition over the symbolic PRE_S
+const CMD_ALL = U(51);
+const CMD_LBL = U(52); // precondition written by LABEL, not by uid
+const GRD_DUP_A = U(60); // two groundings sharing one prefix__Local label
+const GRD_DUP_B = U(61);
+const CMD_DUP = U(62);
 
 const ASK = "ASK { ?s ?p ?o }";
 
@@ -191,6 +197,22 @@ const FM: Record<string, IFrontmatter> = {
   [BIND_S]: binding(BIND_S, "Binding with a symbolic style", {
     exocmd__CommandBinding_style: `[[${STY_S}]]`,
   }),
+  [PRE_ALL]: {
+    exo__Asset_uid: PRE_ALL,
+    exo__Asset_label: "All-of precondition",
+    exocmd__AllPrecondition_preconditions: [`[[${PRE_S}]]`],
+  },
+  [CMD_ALL]: command(CMD_ALL, "Command gated by a composite", {
+    exocmd__Command_precondition: `[[${PRE_ALL}]]`,
+  }),
+  [CMD_LBL]: command(CMD_LBL, "Command gated by a label-form reference", {
+    exocmd__Command_precondition: "[[exocmd__SymPrecondition]]",
+  }),
+  [GRD_DUP_A]: createGrounding(GRD_DUP_A, "exocmd__DupGrounding"),
+  [GRD_DUP_B]: createGrounding(GRD_DUP_B, "exocmd__DupGrounding"),
+  [CMD_DUP]: command(CMD_DUP, "Command via an ambiguous label", {
+    exocmd__Command_grounding: `[[${GRD_DUP_B}]]`,
+  }),
   [BIND_O]: binding(BIND_O, "Binding overriding a symbolic binding", {
     exocmd__CommandBinding_overrides: [`[[${BIND_T}]]`],
   }),
@@ -312,6 +334,27 @@ describe("a [[uid]] reference to a prefix__Local-labelled asset resolves to that
     expect(grd?.inheritanceRule?.map((r) => r.sourcePropertyName)).toEqual([
       "ems__Effort_area",
     ]);
+  });
+
+  it("[P2] AllPrecondition_preconditions: a symbolic child of a composite is loaded", async () => {
+    const cmd = await resolver.loadCommand(CMD_ALL);
+    const children = cmd?.precondition?.composite?.children ?? [];
+    expect(children.map((c) => c.label)).toEqual(["exocmd__SymPrecondition"]);
+    expect(children[0]?.sparqlAsk).toBe(ASK);
+  });
+
+  it("[P3] a label-form reference [[prefix__Local]] (emitted as the term IRI) resolves to the asset", async () => {
+    const cmd = await resolver.loadCommand(CMD_LBL);
+    expect(cmd?.precondition?.sparqlAsk).toBe(ASK);
+  });
+
+  it("[A1] an ambiguous label (two assets share it) is NOT resolved to either — the command stays unloaded as on main", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(await resolver.loadCommand(CMD_DUP)).toBeNull();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("[H1] control: a human-labelled grounding reference loads as before", async () => {

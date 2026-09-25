@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for issue #4370 — a canonical [[uid]] reference to an asset whose exo__Asset_label is prefix__Local is emitted as that label's term IRI; CommandResolver now maps it back to the file subject (resolveRefIriSubject). One mutant per resolution site plus the helper (M9 = main before #4370). Z0 (premise) and H1/H2 (human-labelled controls) stay green under every mutant. `red_re` anchors on the `● <suite> › [Xn]` failure header.",
+  "_doc": "Revert-verify mutants for issue #4370 — a canonical [[uid]] reference to an asset whose exo__Asset_label is prefix__Local is emitted as that label's term IRI; CommandResolver now maps it back to the file subject (resolveRefIriSubject). One mutant per resolution site, the helper (M9 = main before #4370) and its ambiguity guard (M10). Z0 (premise) and H1/H2 (human-labelled controls) stay green under every mutant. `red_re` anchors on the `● <suite> › [Xn]` failure header.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -26,7 +26,9 @@
       "from": "  private async resolvePreconditionRef(\n    ref: IRI | Literal | unknown,\n  ): Promise<IRI | null> {\n    if (ref instanceof IRI) return this.resolveRefIriSubject(ref);",
       "to": "  private async resolvePreconditionRef(\n    ref: IRI | Literal | unknown,\n  ): Promise<IRI | null> {\n    if (ref instanceof IRI) return ref;",
       "expect": [
-        "P1"
+        "P1",
+        "P2",
+        "P3"
       ]
     },
     "M3_query_ref_raw": {
@@ -79,9 +81,9 @@
       ]
     },
     "M9_helper_identity": {
-      "_note": "resolveRefIriSubject returns every IRI unchanged — equivalent to main before #4370 at all eight sites.",
+      "_note": "resolveRefIriSubject returns every IRI unchanged — equivalent to main before #4370 at all eight sites. Type-preserving form (a bare `if (ref)` narrows ref to never below and breaks compilation — integration-test-revert-verify §A36).",
       "from": "  private async resolveRefIriSubject(ref: IRI): Promise<IRI> {\n",
-      "to": "  private async resolveRefIriSubject(ref: IRI): Promise<IRI> {\n    if (ref) return ref;\n",
+      "to": "  private async resolveRefIriSubject(ref: IRI): Promise<IRI> {\n    if (ref.value.length >= 0) return ref;\n",
       "expect": [
         "B1",
         "C1",
@@ -89,9 +91,19 @@
         "G1",
         "O1",
         "P1",
+        "P2",
+        "P3",
         "Q1",
         "R1",
         "S1"
+      ]
+    },
+    "M10_ambiguity_guard_removed": {
+      "_note": "Two assets sharing one prefix__Local label: without the guard the reference resolves to whichever bearer was indexed first (edit-history order) — the command runs another asset's grounding instead of staying unloaded as on main.",
+      "from": "    if (bearers.length > 1) {",
+      "to": "    if (bearers.length > 99) {",
+      "expect": [
+        "A1"
       ]
     }
   }
