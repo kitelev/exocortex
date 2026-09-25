@@ -4,6 +4,7 @@ module.exports = {
   rootDir: ".",
   testMatch: ["<rootDir>/tests/**/*.test.ts"],
   setupFilesAfterEnv: ["<rootDir>/tests/setup.ts"],
+  globalSetup: "<rootDir>/tests/globalSetup.cjs",
   moduleNameMapper: {
     // `test-utils` is a private workspace package with no build step; tests
     // resolve it straight from source. Mapped to the helper FILE rather than the
