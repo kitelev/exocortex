@@ -623,8 +623,7 @@ export class CommandResolver {
     if (typeTriples.length === 0) return null;
 
     // Load command properties
-    const name =
-      (await this.readAssetLabel(subject)) ?? "Unknown Command";
+    const name = (await this.readAssetLabel(subject)) ?? "Unknown Command";
     const labelTemplate = await this.getLiteralValue(
       subject,
       Namespace.EXOCMD.term("Command_labelTemplate"),
@@ -956,8 +955,7 @@ export class CommandResolver {
     );
     if (!uid) return null;
 
-    const label =
-      (await this.readAssetLabel(subject)) ?? "";
+    const label = (await this.readAssetLabel(subject)) ?? "";
 
     // Load command reference
     const commandRef = await this.getLinkedUID(
@@ -1129,8 +1127,7 @@ export class CommandResolver {
     );
     if (!uid) return null;
 
-    const label =
-      (await this.readAssetLabel(subject)) ?? "";
+    const label = (await this.readAssetLabel(subject)) ?? "";
 
     const variantRaw = await this.getLiteralValue(
       subject,
@@ -1429,8 +1426,7 @@ export class CommandResolver {
       subject,
       Namespace.EXO.term("Asset_uid"),
     );
-    const label =
-      (await this.readAssetLabel(subject)) ?? "";
+    const label = (await this.readAssetLabel(subject)) ?? "";
 
     // Cycle / over-depth guards (fail-closed). Only combinator subjects recurse,
     // but checking here keeps both boundaries in one place. At the top level
@@ -1744,8 +1740,7 @@ export class CommandResolver {
     );
     if (!uid) return null;
 
-    const label =
-      (await this.readAssetLabel(subject)) ?? "";
+    const label = (await this.readAssetLabel(subject)) ?? "";
     const type = await this.resolveGroundingTypeReference(subject);
     if (!type) return null;
 

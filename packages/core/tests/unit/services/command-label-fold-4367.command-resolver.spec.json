@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for issue #4367 — the six exo__Asset_label reads in CommandResolver now go through readAssetLabel (#4364). One mutant per site that is REACHABLE with an IRI label through the converter (command name, binding label, grounding label by UID) plus the shared helper. The precondition, style and wikilink-alias sites have no mutant: with an IRI label they are unreachable through the converter today (see the test header), so a mutant there would be equivalent. `red_re` anchors on the `● <suite> › [Xn]` failure header (integration-test-revert-verify §A44/§A104).",
+  "_doc": "Revert-verify mutants for issue #4367 — the six exo__Asset_label reads in CommandResolver now go through readAssetLabel (#4364). One mutant per site, each reached with an IRI label through the real converter: command name, binding label, grounding label by UID (canonical [[uid]]); style and precondition through a path-form wikilink or a bare UID (the canonical [[uid]] to such an asset resolves to a symbolic IRI and loads nothing — #4370); the wikilink alias through a Literal isDefinedBy that is not a whole-string wikilink (see the test header). Plus the shared helper. `red_re` anchors on the `● <suite> › [Xn]` failure header (integration-test-revert-verify §A44/§A104).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -15,27 +15,70 @@
   "mutants": {
     "M1_command_name_raw": {
       "_note": "loadCommand reads the label with getLiteralValue again (pre-#4367): the button name is the full term IRI.",
-      "from": "      (await this.readAssetLabel(subject)) ?? \"Unknown Command\";",
-      "to": "      (await this.getLiteralValue(subject, Namespace.EXO.term(\"Asset_label\"))) ?? \"Unknown Command\";",
-      "expect": ["C1"]
+      "from": "    const name = (await this.readAssetLabel(subject)) ?? \"Unknown Command\";",
+      "to": "    const name = (await this.getLiteralValue(subject, Namespace.EXO.term(\"Asset_label\"))) ?? \"Unknown Command\";",
+      "expect": [
+        "C1"
+      ]
     },
     "M2_binding_label_raw": {
       "_note": "loadBindingDefinition reads the label raw.",
-      "from": "      (await this.readAssetLabel(subject)) ?? \"\";\n\n    // Load command reference",
-      "to": "      (await this.getLiteralValue(subject, Namespace.EXO.term(\"Asset_label\"))) ?? \"\";\n\n    // Load command reference",
-      "expect": ["B1"]
+      "from": "    const label = (await this.readAssetLabel(subject)) ?? \"\";\n\n    // Load command reference",
+      "to": "    const label = (await this.getLiteralValue(subject, Namespace.EXO.term(\"Asset_label\"))) ?? \"\";\n\n    // Load command reference",
+      "expect": [
+        "B1"
+      ]
     },
     "M3_grounding_label_raw": {
       "_note": "loadGroundingDefinition reads the label raw.",
-      "from": "      (await this.readAssetLabel(subject)) ?? \"\";\n    const type = await this.resolveGroundingTypeReference(subject);",
-      "to": "      (await this.getLiteralValue(subject, Namespace.EXO.term(\"Asset_label\"))) ?? \"\";\n    const type = await this.resolveGroundingTypeReference(subject);",
-      "expect": ["G1"]
+      "from": "    const label = (await this.readAssetLabel(subject)) ?? \"\";\n    const type = await this.resolveGroundingTypeReference(subject);",
+      "to": "    const label = (await this.getLiteralValue(subject, Namespace.EXO.term(\"Asset_label\"))) ?? \"\";\n    const type = await this.resolveGroundingTypeReference(subject);",
+      "expect": [
+        "G1"
+      ]
     },
     "M4_helper_no_fold": {
-      "_note": "readAssetLabel stops folding a term IRI: every reachable site returns the raw IRI at once.",
+      "_note": "readAssetLabel stops folding a term IRI: every site returns the raw IRI at once.",
       "from": "    if (node instanceof IRI) return iriToObsidianName(node.value) ?? node.value;",
       "to": "    if (node instanceof IRI) return node.value;",
-      "expect": ["B1", "C1", "G1"]
+      "expect": [
+        "A1",
+        "A2",
+        "B1",
+        "C1",
+        "G1",
+        "P1",
+        "P2",
+        "S1",
+        "S2"
+      ]
+    },
+    "M5_style_label_raw": {
+      "_note": "loadStyleAsset reads the label raw.",
+      "from": "    const label = (await this.readAssetLabel(subject)) ?? \"\";\n\n    const variantRaw",
+      "to": "    const label = (await this.getLiteralValue(subject, Namespace.EXO.term(\"Asset_label\"))) ?? \"\";\n\n    const variantRaw",
+      "expect": [
+        "S1",
+        "S2"
+      ]
+    },
+    "M6_precondition_label_raw": {
+      "_note": "loadPreconditionSubject reads the label raw.",
+      "from": "    const label = (await this.readAssetLabel(subject)) ?? \"\";\n\n    // Cycle / over-depth guards",
+      "to": "    const label = (await this.getLiteralValue(subject, Namespace.EXO.term(\"Asset_label\"))) ?? \"\";\n\n    // Cycle / over-depth guards",
+      "expect": [
+        "P1",
+        "P2"
+      ]
+    },
+    "M7_alias_label_raw": {
+      "_note": "resolveWikilinkAlias reads the target label raw: the alias written for a Literal isDefinedBy is the full term IRI.",
+      "from": "    const label = await this.readAssetLabel(assetSubject);",
+      "to": "    const label = await this.getLiteralValue(assetSubject, Namespace.EXO.term(\"Asset_label\"));",
+      "expect": [
+        "A1",
+        "A2"
+      ]
     }
   }
 }
