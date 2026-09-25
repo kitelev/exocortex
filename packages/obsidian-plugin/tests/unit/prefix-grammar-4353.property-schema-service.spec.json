@@ -1,0 +1,27 @@
+{
+  "_doc": "Revert-verify mutant for the review's HIGH finding on issue #4353: `getPropertyClassPrefix` is the ONLY consumer of `ClassHierarchyResolver.resolve()`, and its own narrow prefix copy made the resolver fix invisible — the property EDITOR showed a camelCase/hyphenated/digit-prefixed asset with none of its custom properties.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/domain/property-editor/PropertySchemaService.ts",
+  "harness": "cd \"$(dirname {subject})/../../..\" && node ../../node_modules/jest/bin/jest.js tests/unit/prefix-grammar-4353.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_property_class_prefix_narrow": {
+      "_note": "Pre-fix getPropertyClassPrefix: `^([a-z]+__[A-Z][a-zA-Z]*)_` returns null for such a key, so `getPropertyNamesForClass` matches nothing against the (correctly resolved) hierarchy.",
+      "from": "    const parsed = Namespace.fromPropertyKey(propertyIRI);\n    if (!parsed) {\n      return null;\n    }\n    const classHalf = parsed.localName.match(/^([A-Z][a-zA-Z]*)_/);\n    if (!classHalf) {\n      return null;\n    }\n    return `${parsed.namespace.prefix}__${classHalf[1]}`;",
+      "to": "    const match = propertyIRI.match(/^([a-z]+__[A-Z][a-zA-Z]*)_/);\n    if (match) {\n      return match[1];\n    }\n    return null;",
+      "expect": [
+        "A45",
+        "A46",
+        "A47"
+      ]
+    }
+  }
+}

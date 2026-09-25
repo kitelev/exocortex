@@ -13,6 +13,27 @@
  * @see https://github.com/kitelev/exocortex/issues/2221
  */
 
+import { PREFIX_PATTERN_SOURCE } from "./namespacePrefix.js";
+
+/**
+ * A namespace prefix as it appears inside a SPARQL query or a parser error
+ * message — the CLI copy of core `Namespace.PREFIX_PATTERN_SOURCE`.
+ *
+ * ⛔ Issue #4353: both readers below used `(\w+)`, which does not include `-`.
+ * A hyphenated prefix was therefore TRUNCATED in the diagnostic
+ * (`Unknown prefix 'tbank-nessy'` came out as `Unknown prefix 'tbank'`) and,
+ * in {@link extractDeclaredPrefixes}, not matched at all — so a prefix the query
+ * DOES declare was missing from "Available prefixes", and the enhancer's advice
+ * pointed at a prefix that does not exist. `\w` also admits `_` and a leading
+ * digit, neither of which is a legal prefix.
+ *
+ * ⚠ Both readers keep the `i` flag their predecessors had — SPARQL's `PREFIX`
+ * keyword and a parser's wording are case-insensitive. That also relaxes the
+ * grammar's leading `[a-z]` to either case, exactly as `\w+` did; the captured
+ * value only ever reaches a diagnostic string, never the graph.
+ */
+const PREFIX_CAPTURE = `(${PREFIX_PATTERN_SOURCE})`;
+
 /**
  * Error type classification for SPARQL errors.
  */
@@ -209,7 +230,7 @@ export function getQueryContext(
  * @returns Array of declared prefix names
  */
 function extractDeclaredPrefixes(query: string): string[] {
-  const prefixRegex = /PREFIX\s+(\w+):\s*</gi;
+  const prefixRegex = new RegExp(`PREFIX\\s+${PREFIX_CAPTURE}:\\s*<`, "gi");
   const prefixes: string[] = [];
   let match;
 
@@ -229,9 +250,9 @@ function extractDeclaredPrefixes(query: string): string[] {
 function extractUnknownPrefix(message: string): string | null {
   // Match patterns like "Unknown prefix: foo" or "Unknown prefix 'foo'"
   const patterns = [
-    /unknown prefix[:\s]+['"]?(\w+)['"]?/i,
-    /prefix\s+['"]?(\w+)['"]?\s+not\s+defined/i,
-    /undefined\s+prefix[:\s]+['"]?(\w+)['"]?/i,
+    new RegExp(`unknown prefix[:\\s]+['"]?${PREFIX_CAPTURE}['"]?`, "i"),
+    new RegExp(`prefix\\s+['"]?${PREFIX_CAPTURE}['"]?\\s+not\\s+defined`, "i"),
+    new RegExp(`undefined\\s+prefix[:\\s]+['"]?${PREFIX_CAPTURE}['"]?`, "i"),
   ];
 
   for (const pattern of patterns) {

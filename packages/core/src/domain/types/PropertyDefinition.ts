@@ -1,3 +1,4 @@
+import { Namespace } from "../models/rdf/Namespace";
 import { PropertyFieldType } from "./PropertyFieldType";
 
 /**
@@ -166,9 +167,21 @@ export interface PropertyOption {
  * ```
  */
 export function propertyNameToUri(propertyName: string): string {
-  // Replace double underscore with colon for prefix
-  return propertyName.replace(/^([a-z]+)__/, "$1:");
+  // Replace double underscore with colon for prefix. The prefix shape comes from
+  // the SHARED grammar (`Namespace.PREFIX_PATTERN_SOURCE`, via fromPropertyKey);
+  // ⛔ issue #4353: the `^([a-z]+)__` copy this replaces refused a prefix with a
+  // capital, a digit or a hyphen, so `aiKnow__Memory_title`, `exo003__Alias_alias`
+  // and `tbank-nessy__LessonLearned_x` came back UNCHANGED — still in `__` form
+  // where the caller expects the `prefix:Local` compact form.
+  const parsed = Namespace.fromPropertyKey(propertyName);
+  return parsed ? `${parsed.namespace.prefix}:${parsed.localName}` : propertyName;
 }
+
+/**
+ * The compact `prefix:` head, built from the SAME shared grammar as
+ * {@link propertyNameToUri} so the two directions cannot drift.
+ */
+const COMPACT_PREFIX_RE = new RegExp(`^(${Namespace.PREFIX_PATTERN_SOURCE}):`);
 
 /**
  * Convert a prefixed URI to a frontmatter property name.
@@ -186,11 +199,17 @@ export function propertyNameToUri(propertyName: string): string {
  * ```
  */
 export function uriToPropertyName(uri: string): string {
-  // Handle full IRI
+  // Handle full IRI — resolved by `Namespace.fromTermIRI`, the shared inverse of
+  // the forward emission path. ⛔ Issue #4353: the `\/([a-z]+)#([A-Za-z0-9_]+)$`
+  // copy this replaces refused a prefix with a capital, a digit or a hyphen and
+  // fell through to the last-segment fallback, which DROPS the namespace
+  // (`…/ontology/aiKnow#Memory_title` → `Memory_title`) — the exact inverse of
+  // what {@link propertyNameToUri} produces, so the round trip was broken for
+  // every such namespace while looking like a plausible result.
   if (uri.startsWith("http://") || uri.startsWith("https://")) {
-    const match = uri.match(/\/([a-z]+)#([A-Za-z0-9_]+)$/);
-    if (match) {
-      return `${match[1]}__${match[2]}`;
+    const term = Namespace.fromTermIRI(uri);
+    if (term) {
+      return `${term.namespace.prefix}__${term.localName}`;
     }
     // Fallback: extract last segment
     const lastHash = uri.lastIndexOf("#");
@@ -199,8 +218,8 @@ export function uriToPropertyName(uri: string): string {
     return separator >= 0 ? uri.substring(separator + 1) : uri;
   }
 
-  // Handle prefixed URI
-  return uri.replace(/^([a-z]+):/, "$1__");
+  // Handle prefixed URI (same grammar as propertyNameToUri emits).
+  return uri.replace(COMPACT_PREFIX_RE, "$1__");
 }
 
 /**
@@ -224,8 +243,15 @@ export function extractPropertyLabel(propertyNameOrUri: string): string {
     ? uriToPropertyName(propertyNameOrUri)
     : propertyNameOrUri;
 
-  // Remove prefix (exo__, ems__, etc.)
-  const withoutPrefix = propertyName.replace(/^[a-z]+__/, "");
+  // Remove prefix (exo__, ems__, etc.) — the shared grammar decides what a
+  // prefix is. ⛔ Issue #4353: the `^[a-z]+__` copy this replaces left
+  // `aiKnow__Memory_title` UNSTRIPPED, and the camelCase/underscore formatting
+  // below then turned it into " Memory title" — a visible garbage label in the
+  // property editor, for every namespace whose prefix carries a capital, a digit
+  // or a hyphen. This is the one copy in this file with a production caller
+  // (`PropertySchemaResolver`).
+  const parsed = Namespace.fromPropertyKey(propertyName);
+  const withoutPrefix = parsed ? parsed.localName : propertyName;
 
   // Split on underscore (e.g., "Asset_label" -> "label")
   const parts = withoutPrefix.split("_");
