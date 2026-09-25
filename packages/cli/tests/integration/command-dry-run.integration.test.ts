@@ -124,7 +124,7 @@ describe("Issue #3111: `apply rename-to-uid --dry-run` filesystem contract", () 
   }
 
   describe("rename-to-uid --dry-run (Issue #3111 primary)", () => {
-    it("@req:cd33eff0-4414-4fc3-8fa5-461bb92093fc does not rename file or mutate frontmatter", async () => {
+    it("D1 @req:cd33eff0-4414-4fc3-8fa5-461bb92093fc does not rename file or mutate frontmatter", async () => {
       const filePath = path.join(vaultRoot, "Note.md");
       fs.writeFileSync(filePath, buildTaskMd({ uid: ASSET_UID, label: "Note" }), "utf-8");
       const refPath = path.join(vaultRoot, "ref.md");
@@ -149,7 +149,7 @@ describe("Issue #3111: `apply rename-to-uid --dry-run` filesystem contract", () 
       expect(out).not.toMatch(/^✅ /m);
     });
 
-    it("does not write missing label under dry-run", async () => {
+    it("D2 does not write missing label under dry-run", async () => {
       const filePath = path.join(vaultRoot, "Note.md");
       fs.writeFileSync(filePath, buildTaskMd({ uid: ASSET_UID, label: "" }), "utf-8");
       const before = snapshot(filePath);
@@ -160,7 +160,7 @@ describe("Issue #3111: `apply rename-to-uid --dry-run` filesystem contract", () 
       expect(snapshot(filePath).content).toBe(before.content);
     });
 
-    it("control: the same fixture WITHOUT --dry-run does rename (the preview is not vacuous)", async () => {
+    it("D3 control: the same fixture WITHOUT --dry-run does rename (the preview is not vacuous)", async () => {
       const filePath = path.join(vaultRoot, "Note.md");
       fs.writeFileSync(filePath, buildTaskMd({ uid: ASSET_UID, label: "Note" }), "utf-8");
 

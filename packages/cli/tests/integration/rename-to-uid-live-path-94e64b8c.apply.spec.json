@@ -1,0 +1,19 @@
+{
+  "_doc": "Revert-verify for the re-binding of Active reqs cd33eff0 (dry-run no-mutation) and 8dc90308 (inbound link collapse) to the LIVE `apply rename-to-uid` path (task 94e64b8c). One spec per subject — the driver takes one. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout (both absolute). Axes: D1-D3 command-dry-run.integration.test.ts, L1-L2 rename-to-uid-update-inbound-links.integration.test.ts. Recorded runs: see PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/apply.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/command-dry-run.integration.test.ts tests/integration/rename-to-uid-update-inbound-links.integration.test.ts 2>&1",
+  "red_re": "› ([DL]\\d+\\w*) ",
+  "mutants": {
+    "M1_apply_dry_run_early_return_removed": {
+      "from": "  if (options.dryRun) {\n    // Issue #4298",
+      "to": "  if (options.dryRun && false) {\n    // Issue #4298",
+      "expect": ["D1", "D2", "L2"]
+    }
+  }
+}

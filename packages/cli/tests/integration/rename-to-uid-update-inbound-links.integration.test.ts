@@ -117,7 +117,7 @@ describe("Issue #3113: rename-to-uid updates inbound wikilinks", () => {
     return full;
   }
 
-  it("@req:8dc90308-e3e8-4f46-918a-c7757dd4b675 collapses all wikilink shapes to bare [[uid]]; skips code/embeds/already-UID-form", async () => {
+  it("L1 @req:8dc90308-e3e8-4f46-918a-c7757dd4b675 collapses all wikilink shapes to bare [[uid]]; skips code/embeds/already-UID-form", async () => {
     const inbox = "01 Inbox/Choco.md";
     write(inbox, targetFile({ uid: ASSET_UID, label: "Choco" }));
 
@@ -200,7 +200,7 @@ describe("Issue #3113: rename-to-uid updates inbound wikilinks", () => {
     expect(fs.readFileSync(unrelated, "utf-8")).toContain("[[Banana]]");
   });
 
-  it("dry-run leaves inbound links and the target untouched", async () => {
+  it("L2 dry-run leaves inbound links and the target untouched", async () => {
     // The dead CommandExecutor path also PRINTED a link-count preview
     // ("[dry-run] Would update links in N file(s)"); `apply --dry-run` has one
     // generic preview line for every command and does not count links.
