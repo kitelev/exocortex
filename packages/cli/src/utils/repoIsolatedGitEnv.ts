@@ -1,21 +1,26 @@
 /**
- * git's repository-local environment variables — the list `git rev-parse
- * --local-env-vars` prints (git 2.33). Inside a git hook, git exports these for
- * the repository being committed; a `git` child process that inherits them
- * works on THAT repository whatever `-C <dir>` says (`-C` moves the working
- * directory, GIT_DIR still names the repository). git removes exactly these
- * before it runs a command in another repository (submodules), so the CLI does
- * the same before running git against the vault.
+ * git's repository-local environment variables (`git rev-parse
+ * --local-env-vars`, 16 on git 2.33) minus the two config channels. Inside a
+ * git hook git exports them for the repository being committed; a `git` child
+ * that inherits them works on THAT repository whatever `-C <dir>` says (`-C`
+ * moves the working directory, GIT_DIR still names the repository).
  *
- * Test-side twin: packages/test-utils/src/jest/stripRepoGitEnv.cjs (PR #4380);
- * the cli test pins both lists to each other and to git's own output.
+ * Kept on purpose: GIT_CONFIG_PARAMETERS and GIT_CONFIG_COUNT (with the
+ * GIT_CONFIG_KEY_n / GIT_CONFIG_VALUE_n they index). They carry the caller's
+ * `-c` and env-provided config — e.g. `safe.directory` in a container — which is
+ * not tied to a repository. git keeps them itself when it runs a command inside
+ * a submodule (measured on git 2.33: `git -c k=v submodule foreach` and
+ * GIT_CONFIG_COUNT both still resolve inside, while GIT_DIR is replaced).
+ * Stripping them turned an env-configured `safe.directory` into «dubious
+ * ownership» (review of #4388).
+ *
+ * The jest globalSetup twin (packages/test-utils/src/jest/stripRepoGitEnv.cjs)
+ * strips the whole list, config included: there hermetic tests are the goal.
  * Req 91b2c01a.
  */
 export const REPO_LOCAL_GIT_ENV: readonly string[] = [
   "GIT_ALTERNATE_OBJECT_DIRECTORIES",
   "GIT_CONFIG",
-  "GIT_CONFIG_PARAMETERS",
-  "GIT_CONFIG_COUNT",
   "GIT_OBJECT_DIRECTORY",
   "GIT_DIR",
   "GIT_WORK_TREE",

@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify for req 91b2c01a (the CLI's own git calls ignore the enclosing repository's GIT_* env; task 9cf206cd part 2). Subject: the exosync base-SHA provider. H1 = provider under a decoy repository's GIT_DIR/GIT_INDEX_FILE, H2 = population scan of git calls in packages/cli/src, H3 = the stripped list. M2 (env option dropped) is invisible to H1 by construction: the child then inherits the jest worker's REAL env, which the shared globalSetup (#4380) has already cleaned — H2 is the axis that catches it. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
+  "_doc": "Revert-verify for req 91b2c01a (the CLI's own git calls ignore the enclosing repository's GIT_* env; task 9cf206cd part 2). Subject: the exosync base-SHA provider. Axes in exosync-sync.test.ts: H1 provider under a decoy repository's GIT_DIR/GIT_INDEX_FILE; H2 classification scan of every child_process importer in packages/cli/src; H3 the stripped list; H4 env-provided config survives. M2 and M6-M9 are invisible to H1 by construction (the child then inherits the jest worker's REAL env, already cleaned by the shared globalSetup of #4380) — H2 is the axis for them. M6-M9 are the bypass forms found in review of #4388 (comment-only helper, promisify alias, single quotes, a git constant). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -18,6 +18,26 @@
     "M2_drop_env_option": {
       "from": "          env: repoIsolatedGitEnv(process.env),\n",
       "to": "",
+      "expect": ["H2"]
+    },
+    "M6_helper_only_in_a_comment": {
+      "from": "          env: repoIsolatedGitEnv(process.env),\n",
+      "to": "          // env: repoIsolatedGitEnv(process.env),\n",
+      "expect": ["H2"]
+    },
+    "M7_promisify_alias_without_env": {
+      "from": "      const { stdout } = await execFile(\n        \"git\",\n        [\"-C\", vaultPath, \"submodule\", \"status\", spec.localPath],\n        // Run inside another repository's git hook, the inherited GIT_DIR /\n        // GIT_INDEX_FILE would make git read THAT repository instead of the\n        // vault (req 91b2c01a).\n        {\n          timeout: 30_000,\n          maxBuffer: 4 * 1024 * 1024,\n          env: repoIsolatedGitEnv(process.env),\n        },\n      );\n",
+      "to": "      const { stdout } = await promisify(execFileCb)(\n        \"git\",\n        [\"-C\", vaultPath, \"submodule\", \"status\", spec.localPath],\n        { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 },\n      );\n",
+      "expect": ["H2"]
+    },
+    "M8_single_quoted_git_without_env": {
+      "from": "      const { stdout } = await execFile(\n        \"git\",\n        [\"-C\", vaultPath, \"submodule\", \"status\", spec.localPath],\n        // Run inside another repository's git hook, the inherited GIT_DIR /\n        // GIT_INDEX_FILE would make git read THAT repository instead of the\n        // vault (req 91b2c01a).\n        {\n          timeout: 30_000,\n          maxBuffer: 4 * 1024 * 1024,\n          env: repoIsolatedGitEnv(process.env),\n        },\n      );\n",
+      "to": "      const { stdout } = await execFile(\n        'git',\n        [\"-C\", vaultPath, \"submodule\", \"status\", spec.localPath],\n        { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 },\n      );\n",
+      "expect": ["H2"]
+    },
+    "M9_git_constant_env_kept": {
+      "from": "      const { stdout } = await execFile(\n        \"git\",\n        [\"-C\", vaultPath, \"submodule\", \"status\", spec.localPath],\n        // Run inside another repository's git hook, the inherited GIT_DIR /\n        // GIT_INDEX_FILE would make git read THAT repository instead of the\n        // vault (req 91b2c01a).\n        {\n          timeout: 30_000,\n          maxBuffer: 4 * 1024 * 1024,\n          env: repoIsolatedGitEnv(process.env),\n        },\n      );\n",
+      "to": "      const GIT = \"git\";\n      const { stdout } = await execFile(\n        GIT,\n        [\"-C\", vaultPath, \"submodule\", \"status\", spec.localPath],\n        // Run inside another repository's git hook, the inherited GIT_DIR /\n        // GIT_INDEX_FILE would make git read THAT repository instead of the\n        // vault (req 91b2c01a).\n        {\n          timeout: 30_000,\n          maxBuffer: 4 * 1024 * 1024,\n          env: repoIsolatedGitEnv(process.env),\n        },\n      );\n",
       "expect": ["H2"]
     }
   }

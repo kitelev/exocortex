@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify for req 91b2c01a, subject = the shared helper. See exosync-sync.git-env-91b2c01a.provider.spec.json for the axes.",
+  "_doc": "Revert-verify for req 91b2c01a, subject = the shared helper. See exosync-sync.git-env-91b2c01a.provider.spec.json for the axes. M5 is the review regression of #4388: stripping the config channels breaks env-provided config such as safe.directory. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -13,12 +13,17 @@
     "M3_helper_strips_nothing": {
       "from": "  for (const name of REPO_LOCAL_GIT_ENV) delete env[name];\n",
       "to": "  void REPO_LOCAL_GIT_ENV;\n",
-      "expect": ["H1", "H3"]
+      "expect": ["H1", "H4"]
     },
     "M4_list_forgets_GIT_INDEX_FILE": {
       "from": "  \"GIT_INDEX_FILE\",\n",
       "to": "",
       "expect": ["H1", "H3"]
+    },
+    "M5_list_strips_GIT_CONFIG_COUNT_again": {
+      "from": "  \"GIT_CONFIG\",\n",
+      "to": "  \"GIT_CONFIG\",\n  \"GIT_CONFIG_COUNT\",\n",
+      "expect": ["H3", "H4"]
     }
   }
 }
