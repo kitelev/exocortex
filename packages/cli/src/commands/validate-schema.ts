@@ -615,6 +615,20 @@ export function domainToAlgebraTriples(triples: DomainTriple[]): AlgebraStyleTri
 export class TripleClassHierarchy implements ClassHierarchy {
   private readonly subClassMap: Map<string, Set<string>> = new Map();
 
+  /**
+   * Memo for {@link isSubClassOf}, keyed child -> parent -> verdict (#4369).
+   *
+   * NESTED maps rather than one composite key: a `child + SEP + parent` key needs a separator
+   * that cannot occur in an IRI, and picking one is a footgun with no upside here.
+   *
+   * Sound BY CONSTRUCTION, not by convention: `subClassMap` is `private readonly` and every write
+   * to it lives in the constructor (Passes 2a/2b/3); the two methods that read it afterwards
+   * (`collectAncestors`, `walkIsSubClassOf`) never mutate. There is no mutator, so there is
+   * nothing that could invalidate an entry. `runShapesValidation` builds a fresh instance per
+   * invocation, so the memo does not outlive the map it caches either.
+   */
+  private readonly subClassMemo = new Map<string, Map<string, boolean>>();
+
   constructor(triples: DomainTriple[]) {
     // Pass 1: build fileIRI → ontologyURI map.
     // Primary source: rdfs:label triples (e.g. from UUID-named class files with exo__Asset_label).
@@ -819,7 +833,67 @@ export class TripleClassHierarchy implements ClassHierarchy {
     return result;
   }
 
+  /**
+   * Transitive subclass test over {@link subClassMap}, memoised per (child, parent).
+   *
+   * ⛔ The NEGATIVE verdict is cached too, and that is the point rather than a nicety: a `false`
+   * is the EXHAUSTIVE walk — it visited every reachable superclass and found nothing — so a memo
+   * that only stored hits would leave the expensive case uncached.
+   *
+   * Measured 2026-09-26 on vault-my (`create --dry-run --validate --use-cache`, warm cache):
+   * SHACL asks this 14 220 679 times for a single create — once per (subject × shape) for the
+   * domain test plus once per (value × range class). 99.72 % of those calls repeat a pair
+   * already answered, so without the memo the walk runs 425 424 309 BFS steps where 1 229 733
+   * suffice.
+   *
+   * ⛤ RE-DERIVING those four numbers — they are a snapshot of one corpus on one day, and nothing
+   * in the build keeps them honest. THREE counters and TWO runs; two counters and one run reach
+   * only half of them, which is why the split is spelled out rather than left to the reader:
+   *
+   *   counters — `calls++` at the top of this method; `hits++` inside the `memoised !== undefined`
+   *   branch; `steps++` inside the `while` of {@link walkIsSubClassOf}. Print all three from a
+   *   `process.on("exit")` guarded by an env flag, `npm run build -w @kitelev/exocortex-cli`.
+   *
+   *   run 1, memo intact  → `calls` = 14 220 679, `hits / calls` = 99.72 %, `steps` = 1 229 733.
+   *   run 2, memo bypassed → `steps` = 425 424 309. Bypass it with the splice the shipped mutant
+   *   `M1_memo_never_hits` already carries (`triple-class-hierarchy-memo-4369.spec.json`): the
+   *   lookup key gets a suffix that can never match, so every call falls through to the walk.
+   *   ⛔ The without-memo figure is NOT obtainable from run 1 — `walkIsSubClassOf` only executes
+   *   on a miss, so its counter there measures the memo, not its absence.
+   *
+   * The `subjects=19472 shapes=533` pair quoted in the issue is a separate print around
+   * `registry.getAllShapes()` in `ShaclLiteValidator`; it explains where most of `calls` comes
+   * from (19 472 × 533 ≈ 10.4 M of the 14.2 M, the rest being the `sh:class` range check) and is
+   * not needed to reproduce the four numbers above.
+   *
+   * ⚠ A re-run will not match to the digit, and that is the corpus moving rather than the recipe
+   * failing: replayed the same day it drifted 0.007 % on `calls` (14 219 637) and 0.009 % on the
+   * without-memo steps (425 385 464), while `steps` with the memo and the 99.72 % rate reproduced
+   * exactly. Treat the four figures as a snapshot of vault-my on 2026-09-26, not as constants.
+   *
+   * The instrumentation is deliberately NOT shipped: it would cost a branch on the hottest path
+   * in the validator to answer a question nobody asks at runtime. The recipe above was verified by
+   * executing it — both runs, all four numbers — rather than reasoned about.
+   */
   isSubClassOf(child: string, parent: string): boolean {
+    let byParent = this.subClassMemo.get(child);
+    if (byParent) {
+      const memoised = byParent.get(parent);
+      // `undefined` = never asked; `false` = asked and genuinely not a subclass. Distinguishing
+      // them is what keeps the exhaustive-walk case out of the recomputation path.
+      if (memoised !== undefined) return memoised;
+    } else {
+      byParent = new Map();
+      this.subClassMemo.set(child, byParent);
+    }
+
+    const verdict = this.walkIsSubClassOf(child, parent);
+    byParent.set(parent, verdict);
+    return verdict;
+  }
+
+  /** The un-memoised walk. Split out so the memo wraps it rather than being tangled into it. */
+  private walkIsSubClassOf(child: string, parent: string): boolean {
     const visited = new Set<string>();
     const queue: string[] = [child];
     while (queue.length > 0) {
