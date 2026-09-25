@@ -49,6 +49,14 @@ const BINDING_PROTO = "bbbbbbbb-0000-0000-0000-000000000203";
 const PROTOTYPE = "bbbbbbbb-0000-0000-0000-000000000401";
 const TARGET_PROTO = "bbbbbbbb-0000-0000-0000-000000000304";
 const TARGET_NOCLASS2 = "bbbbbbbb-0000-0000-0000-000000000305";
+// #4378 — a command whose label is `prefix__Local`: the binding's `[[uid]]`
+// reference to it is emitted as that label's term IRI, with no uid inside.
+const CMD_SYM = "bbbbbbbb-0000-0000-0000-000000000105";
+const BINDING_SYM = "bbbbbbbb-0000-0000-0000-000000000204";
+// Two commands sharing one `prefix__Local` label; only the first is bound.
+const CMD_DUP1 = "bbbbbbbb-0000-0000-0000-000000000106";
+const CMD_DUP2 = "bbbbbbbb-0000-0000-0000-000000000107";
+const BINDING_DUP = "bbbbbbbb-0000-0000-0000-000000000205";
 
 const NOT_BOUND = /is not bound to the target's class/;
 
@@ -199,6 +207,31 @@ function buildVault(): string {
     ]),
   );
 
+  // #4378 — symbolic-labelled command bound to test__Widget.
+  const symCommand = (uid: string, label: string, cli: string): string =>
+    fm([
+      `exo__Asset_uid: ${uid}`,
+      `exo__Asset_label: ${label}`,
+      `exo__Instance_class: ["[[exocmd__Command]]"]`,
+      `exocmd__Command_cliName: ${cli}`,
+      `exocmd__Command_grounding: "[[${GND}]]"`,
+    ]);
+  const widgetBinding = (uid: string, cmd: string): string =>
+    fm([
+      `exo__Asset_uid: ${uid}`,
+      `exo__Asset_label: "binding ${uid.slice(-3)} → test__Widget"`,
+      `exo__Instance_class: ["[[exocmd__CommandBinding]]"]`,
+      `exocmd__CommandBinding_command: "[[${cmd}]]"`,
+      `exocmd__CommandBinding_targetClass: test__Widget`,
+      `exocmd__CommandBinding_position: inline`,
+      `exocmd__CommandBinding_order: 10`,
+    ]);
+  write(CMD_SYM, symCommand(CMD_SYM, "exocmd__BgSymCommand", "bg-sym"));
+  write(BINDING_SYM, widgetBinding(BINDING_SYM, CMD_SYM));
+  write(CMD_DUP1, symCommand(CMD_DUP1, "exocmd__BgDupCommand", "bg-dup1"));
+  write(CMD_DUP2, symCommand(CMD_DUP2, "exocmd__BgDupCommand", "bg-dup2"));
+  write(BINDING_DUP, widgetBinding(BINDING_DUP, CMD_DUP1));
+
   return root;
 }
 
@@ -290,5 +323,38 @@ describe("ticket e96eb614 — CLI apply honours the command's binding scope", ()
   it("A6 classless target bypasses the gate for a NON-root binding too (documented trade-off)", async () => {
     await runApply("bg-bound", TARGET_NOCLASS2);
     expect(errors()).not.toMatch(NOT_BOUND);
+  });
+
+  // #4378 — the binding names the command through a term IRI with no uid in it.
+  // Before the fix the substring match missed it, the command read as UNBOUND
+  // and ran on any class (fail-open).
+  it("A7 a command with a prefix__Local label is still gated: refused on a target of another class", async () => {
+    await runApply("bg-sym", TARGET_GADGET);
+    expect(errors()).toMatch(NOT_BOUND);
+  });
+
+  it("A8 a command with a prefix__Local label runs on a target of its bound class", async () => {
+    await runApply("bg-sym", TARGET_WIDGET);
+    expect(errors()).not.toMatch(NOT_BOUND);
+  });
+
+  // An ambiguous label (two commands bear it) counts as bound, and the resolver
+  // leaves the ambiguous reference unlinked (#4373) — so the gate fails CLOSED,
+  // matching the plugin, which shows no button for it either.
+  it("A9 an ambiguous command label fails closed — refused even on the bound class, with the real reason named", async () => {
+    await runApply("bg-dup1", TARGET_WIDGET);
+    expect(errors()).toMatch(NOT_BOUND);
+    expect(errors()).toMatch(/label is ambiguous/);
+  });
+
+  // ⛔ A10 locks a DOCUMENTED trade-off (review of PR #4384), like A6: bg-dup2
+  // declares NO binding of its own, but it bears the same label as the bound
+  // bg-dup1, so the binding's term-IRI reference cannot tell them apart and it
+  // reads as bound — refused on every classed target. On main it ran anywhere.
+  // Fail-closed is the safe side (identity is lost) and matches the plugin,
+  // which shows no button for it; if this ever changes, change it on purpose.
+  it("A10 a command that only SHARES a bound command's label is refused too (documented trade-off)", async () => {
+    await runApply("bg-dup2", TARGET_GADGET);
+    expect(errors()).toMatch(NOT_BOUND);
   });
 });
