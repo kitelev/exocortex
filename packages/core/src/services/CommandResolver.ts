@@ -259,6 +259,29 @@ export class CommandResolver {
   private readonly _ambiguousRefWarnedKeys = new Set<string>();
 
   /**
+   * Issue #4382 — once-per-session suppression for EVERY warning this class
+   * emits, keyed by the exact message text. The loaders re-run on every button
+   * render and after every `invalidateCache()` (each `.md` save), and in the
+   * plugin `warn` is a user-facing toast by default plus a log-file line — one
+   * malformed asset would toast on every render (#3186: ~6 MB / 54k lines in
+   * two days). A repeated identical text carries no new information, so
+   * dropping it loses nothing — which is why every per-entry message names the
+   * ENTRY (`<refSubject>`), not just its grounding: two broken entries are two
+   * texts, two warnings. Deliberately NOT cleared by `invalidateCache()`
+   * (same reason as {@link _fallbackWarnedKeys}); fixing the data stops the
+   * warning by construction. Bounded by the number of distinct messages the
+   * vault can produce.
+   */
+  private readonly _warnedMessages = new Set<string>();
+
+  /** The only place this class calls `logger.warn` (#4382). */
+  private warnOnce(message: string): void {
+    if (this._warnedMessages.has(message)) return;
+    this._warnedMessages.add(message);
+    this.logger.warn(message);
+  }
+
+  /**
    * RFC 727572d2 — Universal Default Template singleton cache. Resolved once
    * per CommandResolver instance via {@link getUniversalCache} and dropped by
    * {@link invalidateCache} / {@link clearUniversalCache}. This instance field
@@ -774,7 +797,7 @@ export class CommandResolver {
         Namespace.EXO.term("Asset_uid"),
       );
       if (!uid) {
-        this.logger.warn(
+        this.warnOnce(
           `[CommandResolver] paletteEnabled command at ${subject.value} has no exo__Asset_uid — skipped`,
         );
         continue;
@@ -782,7 +805,7 @@ export class CommandResolver {
 
       const command = await this.loadCommand(uid);
       if (!command) {
-        this.logger.warn(
+        this.warnOnce(
           `[CommandResolver] paletteEnabled command ${uid} could not be loaded (missing grounding?) — skipped`,
         );
         continue;
@@ -799,7 +822,7 @@ export class CommandResolver {
       const paletteId = explicitPaletteId ?? cliName ?? uid;
 
       if (seenIds.has(paletteId)) {
-        this.logger.warn(
+        this.warnOnce(
           `[CommandResolver] duplicate paletteId "${paletteId}" — first registration wins, dropping ${uid}`,
         );
         continue;
@@ -1098,7 +1121,7 @@ export class CommandResolver {
         if (fromAsset) return fromAsset;
       }
       // Reference present but didn't yield a usable style asset — log + try inline
-      this.logger.warn(
+      this.warnOnce(
         this.capWarning(
           `CommandBinding ${bindingUid}: style reference unresolved, falling back to inline variant`,
         ),
@@ -1212,7 +1235,7 @@ export class CommandResolver {
     if ((COMMAND_VARIANT_VALUES as readonly string[]).includes(normalized)) {
       return normalized as CommandVariant;
     }
-    this.logger.warn(
+    this.warnOnce(
       this.capWarning(
         `CommandBindingStyle variant "${normalized}" not in whitelist [${COMMAND_VARIANT_VALUES.join(",")}]; dropped (asset ${contextUid})`,
       ),
@@ -1230,7 +1253,7 @@ export class CommandResolver {
     if ((LABEL_CLASS_VALUES as readonly string[]).includes(normalized)) {
       return normalized as LabelClass;
     }
-    this.logger.warn(
+    this.warnOnce(
       this.capWarning(
         `CommandBindingStyle labelClass "${normalized}" not in whitelist [${LABEL_CLASS_VALUES.join(",")}]; dropped (asset ${contextUid})`,
       ),
@@ -1248,7 +1271,7 @@ export class CommandResolver {
     if ((STYLE_SOURCE_VALUES as readonly string[]).includes(normalized)) {
       return normalized as StyleSource;
     }
-    this.logger.warn(
+    this.warnOnce(
       this.capWarning(
         `CommandBindingStyle source "${normalized}" not in whitelist [${STYLE_SOURCE_VALUES.join(",")}]; dropped (asset ${contextUid})`,
       ),
@@ -1697,7 +1720,7 @@ export class CommandResolver {
     // (typo in `Grounding_targetPrototype`, missing variant for a new
     // prototype, etc.) — same failure shape as the original bug this
     // fix addresses. Warn so misconfig is visible in plugin logs.
-    this.logger.warn(
+    this.warnOnce(
       `Command ${parentSubject.value}: ${refTriples.length} groundings declared, ` +
         `none matched context.targetClass='${context.targetClass}' via ` +
         `Grounding_targetPrototype — falling back to first grounding by ` +
@@ -1774,7 +1797,7 @@ export class CommandResolver {
     if (targetProperty && this.looksLikeUUID(targetProperty)) {
       const resolved = await this.resolveLabelByUID(targetProperty);
       if (!resolved) {
-        this.logger.warn(
+        this.warnOnce(
           `Grounding ${uid}: targetProperty wikilink UID '${targetProperty}' is not resolvable to exo__Asset_label — grounding skipped (would otherwise write a UUID-named frontmatter key).`,
         );
         return null;
@@ -1819,7 +1842,7 @@ export class CommandResolver {
       // dropping the substitution.
       const resolved = await this.resolveLabelByUID(substitutionRefRaw);
       if (!resolved) {
-        this.logger.warn(
+        this.warnOnce(
           `Grounding ${uid}: targetValueSubstitution UID '${substitutionRefRaw}' is not resolvable to exo__Asset_label (SubstitutionToken instance missing or unlabelled) — grounding skipped.`,
         );
         return null;
@@ -1960,7 +1983,7 @@ export class CommandResolver {
       legacyPropertyDefaultsRaw !== "" &&
       !this._legacyPropertyDefaultsWarnedGroundings.has(uid)
     ) {
-      this.logger.warn(
+      this.warnOnce(
         `Grounding ${uid}: deprecated exocmd__Grounding_propertyDefaults (plural) JSON predicate detected — the parser was removed in RFC v2 Phase 5 (#3167); value is ignored. Migrate to ref-form exocmd__Grounding_propertyDefault (singular) pointing to exocmd__PropertyDefault assets. See vault TBox c8f87363-d39c-45cb-9d4d-1be96d70f892 for the canonical replacement.`,
       );
       this._legacyPropertyDefaultsWarnedGroundings.add(uid);
@@ -2064,7 +2087,7 @@ export class CommandResolver {
       if (normalized === "forward" || normalized === "rollback") {
         direction = normalized;
       } else if (normalized !== "") {
-        this.logger.warn(
+        this.warnOnce(
           `Grounding ${uid}: exocmd__Grounding_direction value '${directionRaw}' is not 'forward' or 'rollback' — treating as undefined (will default to 'forward' at dispatch).`,
         );
       }
@@ -2277,8 +2300,8 @@ export class CommandResolver {
         Namespace.EXOCMD.term("PropertyDefault_property"),
       );
       if (!propertyRefUid) {
-        this.logger.warn(
-          `Grounding ${contextUid}: PropertyDefault asset missing exocmd__PropertyDefault_property — entry skipped.`,
+        this.warnOnce(
+          `Grounding ${contextUid}: PropertyDefault asset <${refSubject.value}> missing exocmd__PropertyDefault_property — entry skipped.`,
         );
         continue;
       }
@@ -2286,7 +2309,7 @@ export class CommandResolver {
         ? await this.resolveLabelByUID(propertyRefUid)
         : propertyRefUid;
       if (!propertyName) {
-        this.logger.warn(
+        this.warnOnce(
           `Grounding ${contextUid}: PropertyDefault property UID '${propertyRefUid}' is not resolvable to exo__Asset_label — entry skipped.`,
         );
         continue;
@@ -2298,7 +2321,7 @@ export class CommandResolver {
         Namespace.EXOCMD.term("PropertyDefault_value"),
       );
       if (!valueRefUid) {
-        this.logger.warn(
+        this.warnOnce(
           `Grounding ${contextUid}: PropertyDefault '${propertyName}' missing exocmd__PropertyDefault_value — entry skipped.`,
         );
         continue;
@@ -2491,7 +2514,7 @@ export class CommandResolver {
     if (candidates.length === 0) return null;
     if (candidates.length === 1) return candidates[0];
     const sorted = [...candidates].sort((a, b) => a.value.localeCompare(b.value));
-    this.logger.warn(
+    this.warnOnce(
       `Multiple UniversalDefaultTemplate singletons found (${sorted.length}); selecting deterministically by lexicographic UID order: ${sorted[0].value}`,
     );
     return sorted[0];
@@ -2557,8 +2580,8 @@ export class CommandResolver {
         Namespace.EXOCMD.term("InheritanceRule_sourceProperty"),
       );
       if (!sourcePropertyName) {
-        this.logger.warn(
-          `Grounding ${groundingUid}: InheritanceRule missing/unresolvable exocmd__InheritanceRule_sourceProperty — entry skipped.`,
+        this.warnOnce(
+          `Grounding ${groundingUid}: InheritanceRule <${refSubject.value}> missing/unresolvable exocmd__InheritanceRule_sourceProperty — entry skipped.`,
         );
         continue;
       }
@@ -2568,8 +2591,8 @@ export class CommandResolver {
         Namespace.EXOCMD.term("InheritanceRule_targetProperty"),
       );
       if (!targetPropertyName) {
-        this.logger.warn(
-          `Grounding ${groundingUid}: InheritanceRule missing/unresolvable exocmd__InheritanceRule_targetProperty — entry skipped.`,
+        this.warnOnce(
+          `Grounding ${groundingUid}: InheritanceRule <${refSubject.value}> missing/unresolvable exocmd__InheritanceRule_targetProperty — entry skipped.`,
         );
         continue;
       }
@@ -2608,8 +2631,8 @@ export class CommandResolver {
         // hardens against `unwrapWikilink` ever surfacing a whitespace-only
         // name (today it already trims to "").
         if (!refName || !refName.trim()) {
-          this.logger.warn(
-            `Grounding ${groundingUid}: InheritanceRule has exocmd__InheritanceRule_targetClassCondition triple but ref is unresolvable — entire rule skipped (would otherwise apply unconditionally, broadening scope).`,
+          this.warnOnce(
+            `Grounding ${groundingUid}: InheritanceRule <${refSubject.value}> has exocmd__InheritanceRule_targetClassCondition triple but ref is unresolvable — entire rule skipped (would otherwise apply unconditionally, broadening scope).`,
           );
           continue;
         }
@@ -2656,8 +2679,8 @@ export class CommandResolver {
         }
       }
       if (exclusionBroken) {
-        this.logger.warn(
-          `Grounding ${groundingUid}: InheritanceRule has unresolvable exocmd__InheritanceRule_targetClassExclusion entry — entire rule skipped (would otherwise expand scope by silently dropping the excluded class).`,
+        this.warnOnce(
+          `Grounding ${groundingUid}: InheritanceRule <${refSubject.value}> has unresolvable exocmd__InheritanceRule_targetClassExclusion entry — entire rule skipped (would otherwise expand scope by silently dropping the excluded class).`,
         );
         continue;
       }
@@ -2712,7 +2735,7 @@ export class CommandResolver {
       // mutation). Keep the pre-#4370 behaviour — the reference loads nothing.
       if (!this._ambiguousRefWarnedKeys.has(ref.value)) {
         this._ambiguousRefWarnedKeys.add(ref.value);
-        this.logger.warn(
+        this.warnOnce(
           this.capWarning(
             `Reference <${ref.value}> names a label borne by ${bearers.length} assets (${bearers.map((b) => b.uid).join(", ")}) — left unresolved`,
           ),
@@ -2826,7 +2849,7 @@ export class CommandResolver {
       const fallbackKey = `${groundingUid}|${valueRefUid}`;
       if (!this._fallbackWarnedKeys.has(fallbackKey)) {
         this._fallbackWarnedKeys.add(fallbackKey);
-        this.logger.warn(
+        this.warnOnce(
           this.capWarning(
             `Grounding ${groundingUid}: PropertyDefault '${propertyName}' → value asset ${valueRefUid} not in store; SKIPPING the property (the executor's own default applies). Previously this emitted a wikilink, i.e. a link written where a value belongs.`,
           ),
@@ -2926,7 +2949,7 @@ export class CommandResolver {
       Namespace.EXOCMD.term("SubstitutionToken_resolver"),
     );
     if (!resolverIdRaw || !resolverIdRaw.trim()) {
-      this.logger.warn(
+      this.warnOnce(
         `Grounding ${groundingUid}: PropertyDefault '${propertyName}' references SubstitutionToken '${tokenUid}' with no exocmd__SubstitutionToken_resolver — falling back to wikilink form.`,
       );
       return `"[[${tokenUid}]]"`;
@@ -2934,7 +2957,7 @@ export class CommandResolver {
     const resolverId = resolverIdRaw.trim();
 
     if (!KNOWN_SUBSTITUTION_RESOLVER_IDS.has(resolverId)) {
-      this.logger.warn(
+      this.warnOnce(
         `Grounding ${groundingUid}: PropertyDefault '${propertyName}' SubstitutionToken '${tokenUid}' declares unknown resolver-id '${resolverId}' — falling back to wikilink form. Known ids: ${Array.from(KNOWN_SUBSTITUTION_RESOLVER_IDS).join(", ")}.`,
       );
       return `"[[${tokenUid}]]"`;
@@ -2969,7 +2992,7 @@ export class CommandResolver {
       Namespace.EXOCMD.term("TokenInvocation_token"),
     );
     if (!tokenRefUid) {
-      this.logger.warn(
+      this.warnOnce(
         `Grounding ${groundingUid}: PropertyDefault '${propertyName}' TokenInvocation '${invocationUid}' missing exocmd__TokenInvocation_token — entry skipped.`,
       );
       return null;
@@ -2981,14 +3004,14 @@ export class CommandResolver {
       )) ?? "";
 
     if (!this.looksLikeUUID(tokenRefUid)) {
-      this.logger.warn(
+      this.warnOnce(
         `Grounding ${groundingUid}: PropertyDefault '${propertyName}' TokenInvocation '${invocationUid}' references non-UUID token '${tokenRefUid}' — entry skipped.`,
       );
       return null;
     }
     const tokenSubject = await this.findSubjectByUID(tokenRefUid);
     if (!tokenSubject) {
-      this.logger.warn(
+      this.warnOnce(
         `Grounding ${groundingUid}: PropertyDefault '${propertyName}' TokenInvocation '${invocationUid}' token ref '${tokenRefUid}' not found in store — entry skipped.`,
       );
       return null;
@@ -3240,7 +3263,7 @@ export class CommandResolver {
         );
       }
 
-      this.logger.warn(
+      this.warnOnce(
         `[exocmd-grounding-type-literal-form] legacy literal-string form '${raw}' for exocmd__Grounding_type on <${subject.value}>. Migrate to wikilink form per RFC 9d20c91f Phase 3.`,
       );
       return null;
