@@ -1,4 +1,10 @@
 import { Command } from "commander";
+import {
+  extractClasses,
+  deriveStoreSymbolicClasses,
+  cleanRef,
+} from "./resolve-buttons.js";
+import { Namespace } from "@kitelev/exocortex-core";
 import { existsSync } from "fs";
 import { resolve, relative, isAbsolute, sep as pathSep } from "path";
 import {
@@ -354,6 +360,98 @@ async function executeOnTarget(
     targetFrontmatter && typeof targetFrontmatter === "object"
       ? (targetFrontmatter as Record<string, unknown>).exo__Asset_uid
       : undefined;
+  // ── Layer A — binding gate (ticket e96eb614) ───────────────────────────────
+  // `apply` resolved a command by its GLOBAL `cliName` and gated it on the
+  // precondition alone, so a command whose CommandBindings declare
+  // `targetClass = ems__Task | ems__Project` still ran against, say, a concept:
+  // every conjunct of its composite precondition is NEGATIVE ("not archived",
+  // "not a prototype", "not terminal"), and a non-Effort target satisfies them
+  // all vacuously. The plugin never had the hole — its button-set comes from
+  // the binding layer (`resolve-buttons` Layer A), which `apply` skipped.
+  //
+  // ⛔ The gate is CONDITIONAL on the command declaring a binding at all.
+  // Measured on vault-exodev: 74 commands carry a `cliName`, 65 have a
+  // CommandBinding, and 11 have NONE (`set-label`, `cold-archive`,
+  // `set-planned-start`, …). An unconditional gate would kill those 11
+  // outright. "No binding declared" means "no declared class scope", not
+  // "scope = nothing".
+  //
+  // Utility commands stay unaffected by construction: `repair-folder`,
+  // `archive`, `rename-to-uid` and `set-ontology` bind to `exo__Asset`, the
+  // root class, so the ancestor walk matches every asset.
+  // ⛔ НЕ `resolver.findBindings()`: вызванный БЕЗ фильтров, он возвращает пусто
+  //    всегда — `bindingMatches` требует непустой контекст (assetClass /
+  //    prototypeChain / assetIRI) и при всех `undefined` отвечает `false`.
+  //    ⛤ Прежняя редакция этого комментария называла причиной отсутствие
+  //    `rdf:type exocmd#CommandBinding` при необъявленном TBox — это ОПРОВЕРГНУТО
+  //    пробой ревьюера на той же фикстуре: тип эмитится (1 триплa), а
+  //    `findBindings()` всё равно даёт 0. Вывод (ключеваться на предикате) верен,
+  //    обоснование было ложным — и durable-комментарий с ложным механизмом
+  //    опаснее его отсутствия ([[decision-surface-must-derive-from-mechanism]]).
+  const bindingCommandTriples = await tripleStore.match(
+    undefined,
+    Namespace.EXOCMD.term("CommandBinding_command"),
+    undefined,
+  );
+  const commandIsBound = bindingCommandTriples.some((t) =>
+    String(t.object).includes(commandUid),
+  );
+  if (commandIsBound) {
+    const frontmatterClasses = extractClasses(
+      targetFrontmatter as Record<string, unknown> | null,
+    );
+    const storeClasses = await deriveStoreSymbolicClasses(
+      tripleStore,
+      targetIRI,
+    );
+    const assetClasses = [...new Set([...frontmatterClasses, ...storeClasses])];
+    // ⛔ ЦЕЛЬ БЕЗ ОБЪЯВЛЕННОГО КЛАССА НЕ ГЕЙТИТСЯ (CRITICAL-1 ревью PR #4363).
+    //    `resolveForAssetMulti` выходит `return []` на пустом `assetClasses`
+    //    ДО универсального корня (`UNIVERSAL_ROOT_CLASS = "exo__Asset"`), поэтому
+    //    команда, привязанная к корневому классу — `repair-folder`, `archive`,
+    //    `rename-to-uid`, `set-ontology` — была бы отвергнута ровно на той
+    //    популяции, ради которой её и зовут: на ассете со сломанным/пустым
+    //    frontmatter. База такую цель не отвергала никогда ⇒ гейт обязан
+    //    пропустить её, а не «на всякий случай» отказать.
+    // ⛤ Прототип передаётся ТРЕТЬИМ аргументом (CRITICAL-2 того же ревью): без
+    //    него команда, чей единственный биндинг — `targetPrototype`, отвергалась
+    //    БЕЗУСЛОВНО, даже на цели с совпадающим прототипом. `resolve-buttons`,
+    //    который этот гейт зеркалит, аргумент передаёт всегда.
+    // ⛔ ОБЛАСТЬ ЭТОГО ГВАРДА ШИРЕ ЕГО ОБОСНОВАНИЯ, и это принятый компромисс, а
+    //    не недосмотр (MEDIUM round-2 ревью PR #4363). Обоснование выше говорит
+    //    про root-class-биндинги, а условие отключает гейт ЦЕЛИКОМ — в том числе
+    //    для `targetAsset` (ему класс цели не нужен вовсе) и для обычного
+    //    non-root `targetClass`. То есть на цели без объявленного класса команда
+    //    проходит независимо от того, чем она привязана.
+    //    Почему принято: (1) это НЕ хуже base — до этого PR гейта не было вовсе;
+    //    (2) `targetAsset`-биндингов в vault-exodev сегодня **0**, а
+    //    `targetPrototype` — **1** (независимый замер 2026-09-25), поэтому
+    //    класс-независимая ветка усложнила бы код ради неиспользуемых данных.
+    //    Ось A6 фиксирует поведение как НАМЕРЕННОЕ: если его менять — менять
+    //    осознанно, а не молча.
+    if (assetClasses.length > 0) {
+      const prototypeIRI = cleanRef(
+        (targetFrontmatter as Record<string, unknown> | null)?.[
+          "exo__Asset_prototype"
+        ],
+      );
+      const boundHere = await resolver.resolveForAssetMulti(
+        targetIRI,
+        assetClasses,
+        prototypeIRI ?? undefined,
+      );
+      if (!boundHere.some((rc) => rc.command.id === commandUid)) {
+        console.error(
+          `❌ "${command.name}" is not bound to the target's class on "${vaultRelative}".`,
+        );
+        console.error(
+          `   Declared classes: ${assetClasses.join(", ")}.`,
+        );
+        return failed;
+      }
+    }
+  }
+
   const evalContext: EvalContext = {
     targetIRI,
     filePath: vaultRelative,
