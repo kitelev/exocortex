@@ -38,6 +38,14 @@
         "C2",
         "C3"
       ]
+    },
+    "M4_asset_typed_as_something_else": {
+      "_note": "Added 2026-09-25 after post-factum review of PR #4351 showed C3 could not fail for this. Retypes the created asset as a DIFFERENT class while every concept__ KEY stays in place. Before C3 was anchored on the emitted list item, the whole suite stayed green here: `toContain(\"concept__Concept\")` had three witnesses (the class value plus the keys concept__Concept_genus / concept__Concept_definition), so removing one of them changed nothing (integration-test-revert-verify §A33). The defect this ticket exists to prevent — an asset that no class resolver and no SHACL shape will pick up — was therefore invisible to its own axes. Predicted [C3]; the measured set is what the `expect` below records.",
+      "from": "frontmatter[\"exo__Instance_class\"] = [`\"[[${AssetClass.CONCEPT}]]\"`];",
+      "to": "frontmatter[\"exo__Instance_class\"] = [`\"[[exo__Asset]]\"`];",
+      "expect": [
+        "C3"
+      ]
     }
   }
 }
