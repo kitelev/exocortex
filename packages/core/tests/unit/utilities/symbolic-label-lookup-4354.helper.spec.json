@@ -17,7 +17,7 @@
       "_note": "The pre-#4354 behaviour of both copies: only the Literal form is matched. Every symbolic lookup fails — the class walk, the workflow walk and the grounding UID substitution.",
       "from": "  const term = labelTermIRI(label);",
       "to": "  const term = labelTermIRI(label) && null;",
-      "expect": ["L1", "A1", "A2", "A3", "A5", "W1", "W2", "G1"]
+      "expect": ["L1", "A1", "A2", "A3", "A5", "A7", "W1", "W2", "G1"]
     },
     "M2_literal_form_ignored": {
       "_note": "The Literal fallback removed: a human label is no longer found (L2), nor a label-less class named by its class-shaped file (L3, A4 — the converter emits that basename label as a Literal; live: vault-my kitelev__ReadArticleTask). Every term-IRI axis stays green.",

@@ -1,0 +1,35 @@
+{
+  "_doc": "Revert-verify mutants for issue #4361 — the one label fold point `CommandResolver.readAssetLabel`, shared by resolveLabelByUID (#4007) and the ancestor walk's seed label (#4354). M1 is #4354's former M6 and M2 its former M5, moved here with the code they guard (the seed-label fold moved into this helper). `red_re` anchors on the `● <suite> › [Xn]` failure header, not on a bare key: jest echoes neighbouring `it(...)` source lines in its diff context (integration-test-revert-verify §A44/§A104).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/CommandResolver.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/services/symbolic-label-lookup-4354.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_literal_folded_by_string_shape": {
+      "_note": "The pre-#4361 behaviour: a Literal label that looks like a URL is folded (`https://example.com/page.md` → `page`). resolveLabelByUID returns a label the asset never had (R1) and the ancestor walk excludes the genuine superclass file `page.md` (A6).",
+      "from": "    if (node instanceof Literal) return node.value;",
+      "to": "    if (node instanceof Literal) return /^[a-z][a-z0-9+.-]*:\\/\\//i.test(node.value) ? (iriToObsidianName(node.value) ?? node.value) : node.value;",
+      "expect": ["A6", "R1"]
+    },
+    "M2_term_iri_not_folded": {
+      "_note": "No fold at all: a prefix__Local label comes back as its term IRI (#4007 regression, R2) and the walk's seed never enters `excluded` in symbolic form, so a cyclic chain lists the seed as its own ancestor (A5).",
+      "from": "    if (node instanceof IRI) return iriToObsidianName(node.value) ?? node.value;",
+      "to": "    if (node instanceof IRI) return node.value;",
+      "expect": ["A5", "R2"]
+    },
+    "M3_literal_label_dropped": {
+      "_note": "A Literal label is lost: resolveLabelByUID returns null for every human label (R3) and for the URL-looking one (R1), and the walk no longer excludes a seed whose label is a Literal — a cycle through a label-less class (basename label, emitted as a Literal) lists the seed as its own ancestor (A7).",
+      "from": "    if (node instanceof Literal) return node.value;",
+      "to": "    if (node instanceof Literal) return null;",
+      "expect": ["A7", "R1", "R3"]
+    }
+  }
+}

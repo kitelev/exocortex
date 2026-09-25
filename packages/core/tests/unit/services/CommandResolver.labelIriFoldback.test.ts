@@ -95,8 +95,10 @@ describe("Issue #4007: resolveLabelByUID folds a term-IRI label back to its key 
   });
 
   it("leaves a plain label that ends in .md untouched", async () => {
-    // Canary — green in BOTH states. `iriToObsidianName`'s second shape strips
-    // a trailing `.md` off a vault URL; unguarded, it would eat this label.
+    // Canary — green in BOTH states. The label is a Literal, so it is returned
+    // as written (#4361: folded by node type). It has no `/`, so even a string-
+    // shape fold would not have eaten it; the URL-looking case is R1 in
+    // symbolic-label-lookup-4354.test.ts.
     await addAsset(store, PROP_UID, new Literal("Notes about foo.md"));
     expect(await resolver.resolveLabelByUID(PROP_UID)).toBe(
       "Notes about foo.md",
