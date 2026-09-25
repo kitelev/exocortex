@@ -77,12 +77,31 @@ export class ShapeLoader {
    * RFC-004 strip-canon form) resolve to its canonical class IRI, as
    * loadFromRDFGraph already does through `uidToClassIRI` (ticket 32d44596).
    */
-  static async loadFromVaultFS(vaultPath: string): Promise<ShapeRegistry> {
+  static async loadFromVaultFS(
+    vaultPath: string,
+    io?: {
+      /**
+       * Read one file's text by ABSOLUTE path. Default: `fs/promises`.
+       *
+       * The scan reads every markdown file in the vault, and so do the other
+       * collaborators of one `create` — each through its own walk, so the same
+       * file was read once per collaborator (#4291: five passes, 84 618 reads).
+       * Passing a shared reader makes those passes share one read per file.
+       * It is a source of TEXT, not of shapes: what the loader does with the
+       * text — and therefore which shapes it registers — is unchanged.
+       */
+      readFile?: (filePath: string, encoding: "utf-8") => Promise<string>;
+    },
+  ): Promise<ShapeRegistry> {
     const { readdir, readFile } = await import("fs/promises");
     const path = await import("path");
     const registry = new ShapeRegistry();
     const scan: FsScan = { classEdges: [], candidates: [], uidToLabel: new Map() };
-    await ShapeLoader.scanDir(vaultPath, scan, { readdir, readFile, path });
+    await ShapeLoader.scanDir(vaultPath, scan, {
+      readdir,
+      readFile: io?.readFile ?? readFile,
+      path,
+    });
     const propertyClassKeys = ShapeLoader.propertyClassKeysFromEdges(scan.classEdges);
     for (const candidate of scan.candidates) {
       // Fail-soft: one malformed property asset should not abort the load.

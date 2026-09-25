@@ -1,0 +1,54 @@
+{
+  "_doc": "Revert-verify mutants for c3f586b4 (#4291) — `create.ts`, the wiring that makes one `create` read each vault file once. M1 takes the default back to the non-memoising adapter (the state this ticket found); M2 withholds the shared reader from both collaborators at once; M3/M4 withhold it from one each, so a regression can be attributed rather than merely detected; M6 hands it out even when the adapter does not memoise, which is what S5 exists to forbid.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?)[: ]",
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/create-single-pass-c3f586b4.test.ts 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/create.ts",
+  "mutants": {
+    "M1_default_adapter_does_not_memoise": {
+      "from": "      this.options.fsAdapter ?? new PlanningFsAdapter(this.vaultPath);",
+      "to": "      this.options.fsAdapter ?? new NodeFsAdapter(this.vaultPath);",
+      "expect": ["S1", "S3", "S4", "S6"],
+      "_note": "The pre-fix state verbatim. It reddens more than S1 because the shared reader is derived FROM the adapter: with a plain NodeFsAdapter there is nothing to share, so both collaborators fall back to their own walks."
+    },
+    "M2_shared_reader_never_offered": {
+      "from": "    const adapter = this.fsAdapter;",
+      "to": "    const adapter = this.fsAdapter; return undefined;",
+      "expect": ["S3", "S4", "S6"],
+      "_note": "Type-preserving: the getter's return type already admits undefined. S1/S2 stay green — the adapter is still the memoising one, only the collaborators stop sharing it."
+    },
+    "M3_shape_loader_reads_on_its_own": {
+      "from": "ShapeLoader.loadFromVaultFS(this.vaultPath, {\n      readFile: this.sharedReader,\n    })",
+      "to": "ShapeLoader.loadFromVaultFS(this.vaultPath, {\n      readFile: undefined,\n    })",
+      "expect": ["S3"],
+      "_note_anchor": "Multi-line on purpose: the one-line form `      readFile: this.sharedReader,` is a SUBSTRING of the validator's more-indented line, so a single-line anchor matches twice and the driver refuses it.",
+      "_note": "S6 stays green by construction, and that is the honest reading: a ShapeLoader reading through `fs/promises` bypasses the adapter entirely, so its reads never reach the spy S6 counts. S6 measures the shared path; S3 is what holds this collaborator on it."
+    },
+    "M4_property_validator_reads_on_its_own": {
+      "from": "        readFile: this.sharedReader,",
+      "to": "        readFile: undefined,",
+      "expect": ["S4"],
+      "_note": "Same asymmetry as M3 — S6 cannot see reads that leave the adapter."
+    },
+    "M7_injected_adapter_ignored": {
+      "from": "      this.options.fsAdapter ?? new PlanningFsAdapter(this.vaultPath);",
+      "to": "      new PlanningFsAdapter(this.vaultPath);",
+      "expect": ["S2", "S5"],
+      "_note_expect": "MEASURED, not predicted: the first prediction was [S2], derived from the mutant's topic (integration-test-revert-verify §A44). S5 reddens too, and correctly — S5 injects a plain NodeFsAdapter, so ignoring the injection builds the memoising one there as well and the shared reader stops being undefined.",
+      "_note": "Added after the first driver run showed S2 reddening under NO mutant — an axis nothing can break is not an axis (integration-test-revert-verify §A8). `create-batch` depends on this branch: it passes its own PlanningFsAdapter carrying the batch's pending uids, and silently building a fresh one would drop them."
+    },
+    "M6_reader_offered_for_a_non_memoising_adapter": {
+      "from": "      : undefined;",
+      "to": "      : (filePath: string): Promise<string> => adapter.readFile(filePath);",
+      "expect": ["S5"],
+      "_note": "The cold path is the guarantee: with a plain NodeFsAdapter the collaborators must keep their own `fs/promises` walks, i.e. today's behaviour. Handing them a reader there would also be wrong on its own terms — the base readFile takes a vault-RELATIVE path and the walkers address absolutely."
+    }
+  }
+}

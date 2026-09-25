@@ -138,11 +138,28 @@ export class PropertyNameValidator {
   /** Injectable warn-level diagnostics channel (defaults to no-op, as `CliProfileResolver`). */
   private readonly warn: (msg: string) => void;
 
+  /**
+   * Read one file's text by ABSOLUTE path. Default: `fs/promises` — the walk
+   * below reads every markdown file in the vault, and so does every other
+   * collaborator of one `create`, each through its own walk (#4291: five
+   * passes, 84 618 reads over 16 923 files). An injected reader lets them
+   * share one read per file. It supplies TEXT only: which names this validator
+   * harvests from that text is unchanged.
+   */
+  private readonly readFileImpl?: (
+    filePath: string,
+    encoding: "utf-8",
+  ) => Promise<string>;
+
   constructor(
     private readonly vaultPath: string,
-    options: { warn?: (msg: string) => void } = {},
+    options: {
+      warn?: (msg: string) => void;
+      readFile?: (filePath: string, encoding: "utf-8") => Promise<string>;
+    } = {},
   ) {
     this.warn = options.warn ?? (() => undefined);
+    this.readFileImpl = options.readFile;
   }
 
   /**
@@ -207,7 +224,8 @@ export class PropertyNameValidator {
     if (this.cache) return this.cache;
 
     // eslint-disable-next-line import/no-nodejs-modules
-    const { readdir, readFile } = await import("fs/promises");
+    const { readdir, readFile: readFileFs } = await import("fs/promises");
+    const readFile = this.readFileImpl ?? readFileFs;
 
     const classDefs: ClassDefRecord[] = [];
     const candidates: PropertyDefCandidate[] = [];

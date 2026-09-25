@@ -1,0 +1,22 @@
+{
+  "_doc": "Revert-verify mutant for c3f586b4 (#4291) — the adapter half. The wiring spec beside this one proves the collaborators are HANDED the shared reader; this one proves the reader is worth sharing, i.e. that a second read of the same file does not reach the disk. Separate spec because the driver mutates ONE subject per run.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?)[: ]",
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/create-single-pass-c3f586b4.test.ts 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/adapters/PlanningFsAdapter.ts",
+  "mutants": {
+    "M5_content_memo_defeated": {
+      "from": "    return this.memo(this.contents, filePath, () => super.readFile(filePath));",
+      "to": "    return super.readFile(filePath);",
+      "expect": ["S3", "S6"],
+      "_note": "Semantics are preserved (the base class still raises FileNotFoundError); only the memo goes. S3 reddens because the second read of one file now reaches the disk; S6 because the walks stop sharing reads. S1/S2/S4/S5 stay green — the adapter is still the memoising CLASS and the reader is still handed out, it simply no longer remembers anything."
+    }
+  }
+}
