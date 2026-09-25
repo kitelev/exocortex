@@ -41,6 +41,13 @@ const CMD_UNBOUND = "bbbbbbbb-0000-0000-0000-000000000102";
 const BINDING = "bbbbbbbb-0000-0000-0000-000000000201";
 const TARGET_WIDGET = "bbbbbbbb-0000-0000-0000-000000000301";
 const TARGET_GADGET = "bbbbbbbb-0000-0000-0000-000000000302";
+const TARGET_NOCLASS = "bbbbbbbb-0000-0000-0000-000000000303";
+const CMD_ROOT = "bbbbbbbb-0000-0000-0000-000000000103";
+const BINDING_ROOT = "bbbbbbbb-0000-0000-0000-000000000202";
+const CMD_PROTO = "bbbbbbbb-0000-0000-0000-000000000104";
+const BINDING_PROTO = "bbbbbbbb-0000-0000-0000-000000000203";
+const PROTOTYPE = "bbbbbbbb-0000-0000-0000-000000000401";
+const TARGET_PROTO = "bbbbbbbb-0000-0000-0000-000000000304";
 
 const NOT_BOUND = /is not bound to the target's class/;
 
@@ -122,6 +129,65 @@ function buildVault(): string {
     );
   }
 
+  // ⛔ CRITICAL-1 ревью PR #4363: команда, привязанная к КОРНЕВОМУ классу, и цель
+  //    БЕЗ `exo__Instance_class`. `resolveForAssetMulti` на пустом списке классов
+  //    выходит `return []` ДО универсального корня, поэтому без явного пропуска
+  //    гейт отверг бы `repair-folder`/`archive` на сломанном ассете.
+  write(CMD_ROOT, command(CMD_ROOT, "Root command", "bg-root"));
+  write(
+    BINDING_ROOT,
+    fm([
+      `exo__Asset_uid: ${BINDING_ROOT}`,
+      `exo__Asset_label: "binding bg-root → exo__Asset"`,
+      `exo__Instance_class: ["[[exocmd__CommandBinding]]"]`,
+      `exocmd__CommandBinding_command: "[[${CMD_ROOT}]]"`,
+      `exocmd__CommandBinding_targetClass: exo__Asset`,
+      `exocmd__CommandBinding_position: inline`,
+      `exocmd__CommandBinding_order: 10`,
+    ]),
+  );
+  write(
+    TARGET_NOCLASS,
+    fm([
+      `exo__Asset_uid: ${TARGET_NOCLASS}`,
+      `exo__Asset_label: "Target without a declared class"`,
+    ]),
+  );
+
+  // ⛔ CRITICAL-2 того же ревью: биндинг ТОЛЬКО по прототипу. Гейт обязан
+  //    передавать `prototypeIRI` третьим аргументом, иначе такие команды
+  //    отвергаются безусловно даже на совпадающей цели.
+  write(
+    PROTOTYPE,
+    fm([
+      `exo__Asset_uid: ${PROTOTYPE}`,
+      `exo__Asset_label: "Prototype asset"`,
+      `exo__Instance_class: ["[[${CLASS_GADGET}]]"]`,
+    ]),
+  );
+  write(CMD_PROTO, command(CMD_PROTO, "Prototype command", "bg-proto"));
+  write(
+    BINDING_PROTO,
+    fm([
+      `exo__Asset_uid: ${BINDING_PROTO}`,
+      `exo__Asset_label: "binding bg-proto → prototype"`,
+      `exo__Instance_class: ["[[exocmd__CommandBinding]]"]`,
+      `exocmd__CommandBinding_command: "[[${CMD_PROTO}]]"`,
+      `exocmd__CommandBinding_targetPrototype: "[[${PROTOTYPE}]]"`,
+      `exocmd__CommandBinding_position: inline`,
+      `exocmd__CommandBinding_order: 10`,
+    ]),
+  );
+  write(
+    TARGET_PROTO,
+    fm([
+      `exo__Asset_uid: ${TARGET_PROTO}`,
+      `exo__Asset_label: "Target with a matching prototype"`,
+      `exo__Instance_class: ["[[${CLASS_GADGET}]]"]`,
+      `exo__Asset_prototype: "[[${PROTOTYPE}]]"`,
+    ]),
+  );
+
   return root;
 }
 
@@ -185,6 +251,21 @@ describe("ticket e96eb614 — CLI apply honours the command's binding scope", ()
   // kills the 11 real commands that declare no binding at all.
   it("A3 command WITHOUT any binding is not gated (no declared class scope)", async () => {
     await runApply("bg-unbound", TARGET_GADGET);
+    expect(errors()).not.toMatch(NOT_BOUND);
+  });
+
+  // ⛔ CRITICAL-1 ревью: root-bound command on a class-less target. Base never
+  //    refused it, and `repair-folder`/`archive` are run against exactly such
+  //    malformed assets — the gate must not become stricter than base here.
+  it("A4 root-bound command on a target WITHOUT a declared class is not refused", async () => {
+    await runApply("bg-root", TARGET_NOCLASS);
+    expect(errors()).not.toMatch(NOT_BOUND);
+  });
+
+  // ⛔ CRITICAL-2 ревью: prototype-only binding. Without passing `prototypeIRI`
+  //    to resolveForAssetMulti every such command is refused unconditionally.
+  it("A5 prototype-bound command on a matching target is not refused", async () => {
+    await runApply("bg-proto", TARGET_PROTO);
     expect(errors()).not.toMatch(NOT_BOUND);
   });
 });

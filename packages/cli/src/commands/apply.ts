@@ -2,6 +2,7 @@ import { Command } from "commander";
 import {
   extractClasses,
   deriveStoreSymbolicClasses,
+  cleanRef,
 } from "./resolve-buttons.js";
 import { Namespace } from "@kitelev/exocortex-core";
 import { existsSync } from "fs";
@@ -378,11 +379,15 @@ async function executeOnTarget(
   // Utility commands stay unaffected by construction: `repair-folder`,
   // `archive`, `rename-to-uid` and `set-ontology` bind to `exo__Asset`, the
   // root class, so the ancestor walk matches every asset.
-  // ⛔ НЕ `resolver.findBindings()`: он перечисляет биндинги по `rdf:type
-  //    exocmd#CommandBinding`, а этот тип эмитится только когда класс объявлен
-  //    TBox'ом в том же vault. Замер на фикстуре: триплов `CommandBinding_command`
-  //    — 1, а `findBindings()` вернул 0. Предикат — наблюдаемый факт, тип —
-  //    производное от наличия TBox, поэтому гейт ключуется на предикате.
+  // ⛔ НЕ `resolver.findBindings()`: вызванный БЕЗ фильтров, он возвращает пусто
+  //    всегда — `bindingMatches` требует непустой контекст (assetClass /
+  //    prototypeChain / assetIRI) и при всех `undefined` отвечает `false`.
+  //    ⛤ Прежняя редакция этого комментария называла причиной отсутствие
+  //    `rdf:type exocmd#CommandBinding` при необъявленном TBox — это ОПРОВЕРГНУТО
+  //    пробой ревьюера на той же фикстуре: тип эмитится (1 триплa), а
+  //    `findBindings()` всё равно даёт 0. Вывод (ключеваться на предикате) верен,
+  //    обоснование было ложным — и durable-комментарий с ложным механизмом
+  //    опаснее его отсутствия ([[decision-surface-must-derive-from-mechanism]]).
   const bindingCommandTriples = await tripleStore.match(
     undefined,
     Namespace.EXOCMD.term("CommandBinding_command"),
@@ -400,18 +405,38 @@ async function executeOnTarget(
       targetIRI,
     );
     const assetClasses = [...new Set([...frontmatterClasses, ...storeClasses])];
-    const boundHere = await resolver.resolveForAssetMulti(
-      targetIRI,
-      assetClasses,
-    );
-    if (!boundHere.some((rc) => rc.command.id === commandUid)) {
-      console.error(
-        `❌ "${command.name}" is not bound to the target's class on "${vaultRelative}".`,
+    // ⛔ ЦЕЛЬ БЕЗ ОБЪЯВЛЕННОГО КЛАССА НЕ ГЕЙТИТСЯ (CRITICAL-1 ревью PR #4363).
+    //    `resolveForAssetMulti` выходит `return []` на пустом `assetClasses`
+    //    ДО универсального корня (`UNIVERSAL_ROOT_CLASS = "exo__Asset"`), поэтому
+    //    команда, привязанная к корневому классу — `repair-folder`, `archive`,
+    //    `rename-to-uid`, `set-ontology` — была бы отвергнута ровно на той
+    //    популяции, ради которой её и зовут: на ассете со сломанным/пустым
+    //    frontmatter. База такую цель не отвергала никогда ⇒ гейт обязан
+    //    пропустить её, а не «на всякий случай» отказать.
+    // ⛤ Прототип передаётся ТРЕТЬИМ аргументом (CRITICAL-2 того же ревью): без
+    //    него команда, чей единственный биндинг — `targetPrototype`, отвергалась
+    //    БЕЗУСЛОВНО, даже на цели с совпадающим прототипом. `resolve-buttons`,
+    //    который этот гейт зеркалит, аргумент передаёт всегда.
+    if (assetClasses.length > 0) {
+      const prototypeIRI = cleanRef(
+        (targetFrontmatter as Record<string, unknown> | null)?.[
+          "exo__Asset_prototype"
+        ],
       );
-      console.error(
-        `   Declared classes: ${assetClasses.length > 0 ? assetClasses.join(", ") : "(none)"}.`,
+      const boundHere = await resolver.resolveForAssetMulti(
+        targetIRI,
+        assetClasses,
+        prototypeIRI ?? undefined,
       );
-      return failed;
+      if (!boundHere.some((rc) => rc.command.id === commandUid)) {
+        console.error(
+          `❌ "${command.name}" is not bound to the target's class on "${vaultRelative}".`,
+        );
+        console.error(
+          `   Declared classes: ${assetClasses.join(", ")}.`,
+        );
+        return failed;
+      }
     }
   }
 
