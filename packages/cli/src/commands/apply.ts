@@ -37,6 +37,7 @@ import {
   findInputSchemaViolation,
   vaultPathToIRI,
   IRI,
+  labelTermBearers,
   liveClock,
   frozenClock,
   liveUidGenerator,
@@ -393,9 +394,28 @@ async function executeOnTarget(
     Namespace.EXOCMD.term("CommandBinding_command"),
     undefined,
   );
-  const commandIsBound = bindingCommandTriples.some((t) =>
-    String(t.object).includes(commandUid),
-  );
+  // #4378 — match the binding's command reference by IDENTITY, not by IRI
+  // substring. A `[[uid]]` to a command whose label is `prefix__Local` is
+  // emitted as that label's term IRI, which carries no uid: the substring test
+  // missed it and the gate was skipped (fail-OPEN). A term IRI names this
+  // command iff the command bears it as its `exo__Asset_label`. An ambiguous
+  // label (another asset bears it too) still counts as bound — the gate then
+  // fails CLOSED, in step with the resolver, which leaves an ambiguous
+  // reference unlinked (#4373).
+  let commandIsBound = false;
+  for (const t of bindingCommandTriples) {
+    if (String(t.object).includes(commandUid)) {
+      commandIsBound = true;
+      break;
+    }
+    if (t.object instanceof IRI) {
+      const bearers = await labelTermBearers(tripleStore, t.object);
+      if (bearers.some((b) => b.uid === commandUid)) {
+        commandIsBound = true;
+        break;
+      }
+    }
+  }
   if (commandIsBound) {
     const frontmatterClasses = extractClasses(
       targetFrontmatter as Record<string, unknown> | null,

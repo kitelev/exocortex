@@ -1,0 +1,34 @@
+{
+  "_doc": "Revert-verify mutants for issue #4378 — `apply` decides whether the Layer-A binding gate applies by matching the binding's command reference to the command by IDENTITY (uid in the object, or the command bears the term IRI as its label), not by IRI substring. M1 = main before #4378 (substring only): a prefix__Local-labelled command reads as unbound and runs on any class. M2 = an ambiguous label counted as unbound (fail-open instead of closed). `red_re` anchors on the `● <suite> › A<n> …` failure header (this suite names its axes `A<n>` without brackets).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› (A\\d+) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/apply.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/apply-binding-gate.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_substring_only": {
+      "_note": "Only the substring test survives (main before #4378): the term-IRI reference never matches.",
+      "from": "    if (t.object instanceof IRI) {\n      const bearers = await labelTermBearers(tripleStore, t.object);",
+      "to": "    if (t.object instanceof IRI && t.object.value.length < 0) {\n      const bearers = await labelTermBearers(tripleStore, t.object);",
+      "expect": [
+        "A7",
+        "A9"
+      ]
+    },
+    "M2_ambiguous_as_unbound": {
+      "_note": "An ambiguous label counts as NOT bound: the gate is skipped and the command runs on any class (fail-open), out of step with the resolver.",
+      "from": "      if (bearers.some((b) => b.uid === commandUid)) {",
+      "to": "      if (bearers.length === 1 && bearers[0].uid === commandUid) {",
+      "expect": [
+        "A9"
+      ]
+    }
+  }
+}
