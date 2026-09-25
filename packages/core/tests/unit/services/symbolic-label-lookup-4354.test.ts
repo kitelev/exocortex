@@ -285,4 +285,26 @@ describe("symbolic label lookup over a converter-built store (issue #4354)", () 
     expect(grounding).not.toBeNull();
     expect(grounding?.targetClass).toBe(TASK);
   });
+
+  // Issue #4361 — resolveLabelByUID reads the label as a NODE: a term IRI is
+  // folded to its key form (#4007), a Literal is returned as written.
+  it("[R1] resolveLabelByUID returns a Literal label that looks like a URL verbatim (#4361)", async () => {
+    expect(await new CommandResolver(store).resolveLabelByUID(URL_CLS)).toBe(
+      "https://example.com/page.md",
+    );
+  });
+
+  it("[R2] resolveLabelByUID folds a term-IRI label back to its key form (#4007)", async () => {
+    const resolver = new CommandResolver(store);
+    expect(await resolver.resolveLabelByUID(TASK)).toBe("ems__Task");
+    expect(await resolver.resolveLabelByUID(PROTEUS)).toBe(
+      "tbank-public__ProteusReport",
+    );
+  });
+
+  it("[R3] resolveLabelByUID returns a human Literal label verbatim", async () => {
+    expect(await new CommandResolver(store).resolveLabelByUID(HUMAN)).toBe(
+      "Мой класс задач",
+    );
+  });
 });

@@ -11,14 +11,6 @@ import { resolveGroundingTypeFromIRI } from "../domain/constants/GroundingTypeUI
 import { utf8ToBase64 } from "../utilities/base64";
 import { iriToObsidianName } from "../utilities/iriToObsidianName";
 import { findUidByAssetLabel } from "../utilities/assetLabelLookup";
-
-/**
- * Absolute-IRI shape (`scheme://…`). Gates the label fold-back in
- * {@link CommandResolver.resolveLabelByUID}: only a value that IS an IRI is
- * handed to `iriToObsidianName`, whose vault-URL shape would otherwise strip a
- * trailing `.md` off an ordinary label.
- */
-const LOOKS_LIKE_IRI = /^[a-z][a-z0-9+.-]*:\/\//i;
 import {
   COMMAND_VARIANT_VALUES,
   LABEL_CLASS_VALUES,
@@ -3385,25 +3377,40 @@ export class CommandResolver {
   async resolveLabelByUID(uid: string): Promise<string | null> {
     const subject = await this.findSubjectByUID(uid);
     if (!subject) return null;
-    const raw = await this.getLiteralValue(
-      subject,
-      Namespace.EXO.term("Asset_label"),
-    );
-    if (raw === null) return null;
-    // ⛔ A label that itself parses as `prefix__LocalName` — which EVERY property
-    // definition's label does (`ems__Effort_area`) — is emitted by the converter
-    // as a term IRI, not a Literal, so `getLiteralValue` hands back
-    // `https://exocortex.my/ontology/ems#Effort_area`. Callers want the label;
-    // an InheritanceRule that took this verbatim wrote the raw IRI as the
-    // frontmatter KEY, and `apply start-effort` then failed to find
-    // `ems__Effort_status` and appended a SECOND status (issue #4007).
-    //
-    // Folded back through the shared inverse of the forward emission path, so
-    // this cannot drift from it and covers every registered namespace — an
-    // explicit prefix list is what silently dropped the ad-hoc ones before
-    // (#3274). Guarded on IRI shape so an ordinary label ending in `.md` is not
-    // mistaken for a vault URL by that helper's second shape.
-    return LOOKS_LIKE_IRI.test(raw) ? (iriToObsidianName(raw) ?? raw) : raw;
+    return this.readAssetLabel(subject);
+  }
+
+  /**
+   * An asset's `exo__Asset_label` in key form, read as a NODE — the one fold
+   * point for {@link resolveLabelByUID} and the ancestor walk's seed label.
+   *
+   * ⛔ A label that parses as `prefix__LocalName` — which nearly every class and
+   * property definition's label does (`ems__Effort_area`) — is emitted by the
+   * converter as a term IRI, not a Literal. Callers want the label; an
+   * InheritanceRule that took the IRI verbatim wrote it as the frontmatter KEY,
+   * and `apply start-effort` then failed to find `ems__Effort_status` and
+   * appended a SECOND status (issue #4007). It is folded back through the
+   * shared inverse of the forward emission path, so this cannot drift from it
+   * and covers every registered namespace — an explicit prefix list is what
+   * silently dropped the ad-hoc ones before (#3274).
+   *
+   * Folded by NODE TYPE, not by string shape (#4361): a Literal label is
+   * returned as written even when it merely looks like a URL — the shape test
+   * turned `https://example.com/page.md` into `page`, which made the ancestor
+   * walk exclude a genuine superclass file named `page.md` (#4354 review) and
+   * gave resolveLabelByUID a label the asset never had.
+   */
+  private async readAssetLabel(subject: IRI): Promise<string | null> {
+    const node = (
+      await this.tripleStore.match(
+        subject,
+        Namespace.EXO.term("Asset_label"),
+        undefined,
+      )
+    )[0]?.object;
+    if (node instanceof IRI) return iriToObsidianName(node.value) ?? node.value;
+    if (node instanceof Literal) return node.value;
+    return null;
   }
 
   /**
@@ -3488,25 +3495,11 @@ export class CommandResolver {
       Namespace.EXO.term("Asset_uid"),
     );
     if (seedUid) excluded.add(seedUid);
-    // A `prefix__Local` label is emitted as its term IRI, while the walk records
-    // ancestors in the symbolic form — fold it, or a cyclic chain (`A ⊑ B ⊑ A`)
-    // surfaces `A` as its own ancestor now that the walk gets past the first
-    // symbolic superclass (#4354). Folded by NODE TYPE, not by string shape: a
-    // Literal label that merely looks like a URL (`https://…/page.md`) must stay
-    // as written, or its fold (`page`) would exclude a genuine ancestor.
-    const seedLabelNode = (
-      await this.tripleStore.match(
-        seedFileIRI,
-        Namespace.EXO.term("Asset_label"),
-        undefined,
-      )
-    )[0]?.object;
-    const seedLabel =
-      seedLabelNode instanceof IRI
-        ? (iriToObsidianName(seedLabelNode.value) ?? seedLabelNode.value)
-        : seedLabelNode instanceof Literal
-          ? seedLabelNode.value
-          : null;
+    // The walk records ancestors in the symbolic form, so the seed's label must
+    // be folded the same way, or a cyclic chain (`A ⊑ B ⊑ A`) surfaces `A` as
+    // its own ancestor now that the walk gets past the first symbolic
+    // superclass (#4354). Shared fold point with resolveLabelByUID (#4361).
+    const seedLabel = await this.readAssetLabel(seedFileIRI);
     if (seedLabel) excluded.add(seedLabel);
 
     // Record an ancestor ref at its nearest depth. BFS first-reach is the
