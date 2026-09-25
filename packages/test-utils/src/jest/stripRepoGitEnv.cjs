@@ -33,9 +33,16 @@ const REPO_LOCAL_GIT_ENV = [
   "GIT_COMMON_DIR",
 ];
 
-async function stripRepoGitEnv(env = process.env) {
+function stripFrom(env) {
   for (const name of REPO_LOCAL_GIT_ENV) delete env[name];
 }
 
-module.exports = stripRepoGitEnv;
+// ⛔ Jest calls a globalSetup as `fn(globalConfig, projectConfig)`, so the
+// default export must IGNORE its arguments and always clean the real
+// process.env. (A first draft took `env = process.env` and, under jest,
+// scrubbed `globalConfig` instead — caught by the decoy run, not by a unit axis.)
+module.exports = async function stripRepoGitEnv() {
+  stripFrom(process.env);
+};
+module.exports.stripFrom = stripFrom;
 module.exports.REPO_LOCAL_GIT_ENV = REPO_LOCAL_GIT_ENV;

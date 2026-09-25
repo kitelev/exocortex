@@ -16,9 +16,10 @@
  *
  *  G1 wiring: every packages/<pkg>/jest.config.js (enumerated, not listed)
  *     declares that globalSetup.
- *  G2 the module deletes each listed variable and nothing else.
+ *  G2 the helper deletes each listed variable and nothing else.
  *  G3 end to end: in a process whose GIT_DIR points at a decoy repo, git run
- *     after the setup finds its own temp repo; without the setup it finds the
+ *     after the setup — invoked with jest's (globalConfig, projectConfig)
+ *     arguments — finds its own temp repo; without the setup it finds the
  *     decoy (control — the hazard is real, not assumed).
  *
  * The decoy is always a temp repo; the working repository is never pointed at.
@@ -32,7 +33,8 @@ import * as path from "path";
 const repoRoot = path.resolve(__dirname, "../../../../..");
 const SHARED = path.join(repoRoot, "packages/test-utils/src/jest/stripRepoGitEnv.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const stripRepoGitEnv = require(SHARED) as ((env?: NodeJS.ProcessEnv) => Promise<void>) & {
+const stripRepoGitEnv = require(SHARED) as ((...jestArgs: unknown[]) => Promise<void>) & {
+  stripFrom: (env: NodeJS.ProcessEnv) => void;
   REPO_LOCAL_GIT_ENV: string[];
 };
 
@@ -76,7 +78,7 @@ describe("hook-safe git environment for every jest config", () => {
   it("G2 the setup deletes every repo-local git variable and leaves the rest", async () => {
     const env: NodeJS.ProcessEnv = { PATH: "/usr/bin", GIT_TERMINAL_PROMPT: "0" };
     for (const name of stripRepoGitEnv.REPO_LOCAL_GIT_ENV) env[name] = "/decoy";
-    await stripRepoGitEnv(env);
+    stripRepoGitEnv.stripFrom(env);
     expect(stripRepoGitEnv.REPO_LOCAL_GIT_ENV).toEqual(
       expect.arrayContaining(["GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_COMMON_DIR"]),
     );
@@ -93,7 +95,8 @@ describe("hook-safe git environment for every jest config", () => {
           "-e",
           `const s = require(${JSON.stringify(SHARED)});
            (async () => {
-             if (${runSetup}) await s();
+             // Called exactly as jest calls a globalSetup: (globalConfig, projectConfig).
+             if (${runSetup}) await s({ rootDir: "/g" }, { rootDir: "/p" });
              const r = require("child_process").execFileSync("git", ["rev-parse", "--absolute-git-dir"], { cwd: ${JSON.stringify(own)}, encoding: "utf8" });
              process.stdout.write(r.trim());
            })();`,
