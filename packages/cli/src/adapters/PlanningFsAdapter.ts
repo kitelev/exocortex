@@ -6,12 +6,17 @@ import { NodeFsAdapter } from "./NodeFsAdapter.js";
  * Read-side memo over {@link NodeFsAdapter} for the READ-ONLY planning phase of
  * `create-batch` (req 1848dff9-bb2e-43a9-95e7-d917d6cef552).
  *
- * Why it exists: one `create` reads every vault file four times (measured
- * 2026-09-25 on vault-exodev, 34,935 files: class index, TBox walk, anchor /
- * status resolution — every lookup walks the vault because `NodeFsAdapter`
- * caches nothing). Planning N items through the same collaborators would read
- * the vault 4×N times. This adapter answers every repeated lookup from memory,
- * so a batch pays each vault pass once.
+ * Why it exists: one `create` reads every vault file several times — class index, TBox walk,
+ * anchor / status resolution — because every lookup walks the vault and `NodeFsAdapter` caches
+ * nothing. Planning N items through the same collaborators would pay that N times over; this
+ * adapter answers every repeated lookup from memory, so a batch pays each vault pass once.
+ *
+ * ⚠ Two measurements of "how many times" live in this package and they do NOT agree, because they
+ * were taken over different corpora: this class's original note said FOUR passes over 34,935 files
+ * on vault-exodev, while {@link CreateContextOptions.fsAdapter} records FIVE passes / 84,618 reads
+ * over 16,923 **markdown** files on vault-bot-kitelev (2026-09-25, #4291). Neither is wrong; the
+ * pass COUNT also grew between them. Treat the figure next to each claim as scoped to the vault and
+ * file population named there, and re-measure before quoting either in a new decision.
  *
  * Correct by construction for the phase it serves: planning never writes, so
  * nothing it memoises can go stale while it runs. The write phase uses a
@@ -42,6 +47,7 @@ export class PlanningFsAdapter extends NodeFsAdapter {
   private readonly root: string;
   private markdownNames?: Promise<{ lower: string; rel: string }[]>;
   private readonly listings = new Map<string, Promise<string[]>>();
+  private readonly contents = new Map<string, Promise<string>>();
   private readonly metadata = new Map<string, Promise<Record<string, any>>>();
   private readonly existence = new Map<string, Promise<boolean>>();
   private readonly byUidFilename = new Map<string, Promise<string | null>>();
@@ -78,6 +84,34 @@ export class PlanningFsAdapter extends NodeFsAdapter {
     // fresh one per call, and a caller that sorts or splices it must not
     // reorder the memo for the next caller).
     return files.slice();
+  }
+
+  /**
+   * The ONE place a vault file's text is read during planning (#4291).
+   *
+   * `NodeFsAdapter.getFileMetadata` reads through `this.readFile`, so memoising
+   * here also serves every frontmatter lookup — and, via
+   * {@link readFileAbsolute}, the collaborators that walk the vault themselves
+   * (`ShapeLoader`, `PropertyNameValidator`) rather than through the adapter.
+   * Before they shared this memo each of them re-read the whole corpus: five
+   * passes, 84 618 reads over 16 923 files for ONE `create`.
+   *
+   * Semantics are the base class's — `super.readFile` still raises
+   * `FileNotFoundError` for a missing file, and a failed read is not memoised.
+   */
+  override readFile(filePath: string): Promise<string> {
+    return this.memo(this.contents, filePath, () => super.readFile(filePath));
+  }
+
+  /**
+   * {@link readFile} for a caller holding an ABSOLUTE path.
+   *
+   * The vault walkers address files absolutely (`path.join(dir, entry.name)`
+   * from the vault root); the memo is keyed vault-relative, so both address
+   * the same entry and neither reads a file the other already read.
+   */
+  readFileAbsolute(absolutePath: string): Promise<string> {
+    return this.readFile(path.relative(this.root, absolutePath));
   }
 
   override async getFileMetadata(
@@ -173,6 +207,7 @@ export class PlanningFsAdapter extends NodeFsAdapter {
   private forget(): void {
     this.markdownNames = undefined;
     this.listings.clear();
+    this.contents.clear();
     this.metadata.clear();
     this.existence.clear();
     this.byUidFilename.clear();

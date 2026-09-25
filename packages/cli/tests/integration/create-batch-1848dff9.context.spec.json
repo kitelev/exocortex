@@ -29,9 +29,10 @@
       "expect": ["B6a"]
     },
     "X4_shape_registry_loaded_per_call": {
-      "from": "    this.shapeRegistryLoad ??= ShapeLoader.loadFromVaultFS(this.vaultPath).catch(",
-      "to": "    this.shapeRegistryLoad = ShapeLoader.loadFromVaultFS(this.vaultPath).catch(",
-      "expect": ["B6a"]
+      "from": "    this.shapeRegistryLoad ??= ShapeLoader.loadFromVaultFS(this.vaultPath, {",
+      "to": "    this.shapeRegistryLoad = ShapeLoader.loadFromVaultFS(this.vaultPath, {",
+      "expect": ["B6a"],
+      "_note_anchor": "Anchor re-pointed 2026-09-25 (#4291): the call now passes a shared reader as a second argument, so the previous one-line anchor no longer matched. The mutant is unchanged in SUBSTANCE — it still turns the once-per-invocation load into a per-call one."
     },
     "X5_neighbour_scan_memo_bypassed": {
       "from": "    let scan = this.neighbourScans.get(key);",
