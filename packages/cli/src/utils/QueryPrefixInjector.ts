@@ -73,8 +73,12 @@ export function injectExocortexPrefixes(query: string): string {
   // NoteToRDFConverter's runtime auto-extension so cross-namespace SPARQL
   // queries like `?s aiKnow:Memory_aboutConcept ?c` resolve without forcing
   // the user to hand-declare every PREFIX.
+  // `?` / `$` in the lookbehind: a prefix never starts a variable name. Once the
+  // grammar admits `-`, `?n-aiKnow:w` (a minus glued to a variable) would
+  // otherwise scan as the prefix `n-aiKnow` and leave `aiKnow` undeclared
+  // (#4352 review); the scan now starts after the variable, at `aiKnow`.
   const usedPrefixPattern = new RegExp(
-    `(?<![:\\w])(${PREFIX_PATTERN_SOURCE}):[a-zA-Z_]`,
+    `(?<![:\\w?$])(${PREFIX_PATTERN_SOURCE}):[a-zA-Z_]`,
     "g",
   );
   const usedPrefixes = new Set<string>();

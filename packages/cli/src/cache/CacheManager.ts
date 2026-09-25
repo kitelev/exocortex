@@ -39,8 +39,15 @@ export type { SerializedNode, SerializedTriple };
  * v2 cache would keep serving `"3"^^xsd:decimal` next to freshly converted
  * `"3"^^xsd:integer` for as long as the files' mtimes stay unchanged — the
  * version bump makes every v2 cache "invalid" and rebuilt once.
+ *
+ * #4350 (v4): a hyphenated namespace prefix (`tbank-nessy__`) now parses, so
+ * UNCHANGED files convert differently — such keys emit triples, such labels and
+ * aliases become IRIs, and a `[[uid]]` link to such a class becomes its
+ * symbolic IRI instead of the class's file IRI. A v3 cache would keep serving
+ * the old graph for every file whose mtime did not move, and a delta would mix
+ * the two; the bump makes every v3 cache "invalid" and rebuilt once.
  */
-export const CACHE_FORMAT_VERSION = 3;
+export const CACHE_FORMAT_VERSION = 4;
 
 /**
  * Cache metadata stored alongside the triple cache

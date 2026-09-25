@@ -4,10 +4,10 @@
  * `@kitelev/exocortex-core` without `Namespace`. This suite imports the REAL
  * core and fails the moment the copy and the original disagree — in text (P1)
  * or in verdict (P2) — and pins the SPARQL prefix auto-declaration that rides on
- * the copy (Q1, Q2).
+ * the copy (Q1, Q2, Q3).
  */
 import { describe, it, expect } from "@jest/globals";
-import { Namespace } from "@kitelev/exocortex-core";
+import { Namespace, SPARQLParser } from "@kitelev/exocortex-core";
 import { PREFIX_PATTERN_SOURCE, PREFIX_RE } from "../../../src/utils/namespacePrefix.js";
 import { injectExocortexPrefixes } from "../../../src/utils/QueryPrefixInjector.js";
 
@@ -44,5 +44,20 @@ describe("injectExocortexPrefixes — hyphenated prefixes (issue #4350)", () => 
       "PREFIX tbank-nessy: <https://example.org/nessy#>\nSELECT ?s WHERE { ?s tbank-nessy:LessonLearned_text ?o }";
     const result = injectExocortexPrefixes(query);
     expect((result.match(/PREFIX tbank-nessy:/g) || []).length).toBe(1);
+  });
+
+  it("[Q3] a minus glued to a variable does not fold the variable into the prefix", () => {
+    // Review finding on #4352: once `-` is legal inside a prefix, the scan read
+    // `?n-aiKnow:w` as the prefix `n-aiKnow` and left `aiKnow` undeclared, so the
+    // query stopped parsing. `aiKnow` is NOT in the static prefix set — it is
+    // exactly the auto-declared case. The glued form is its ONLY use in the
+    // query: a second, free-standing `aiKnow:` would declare it on its own and
+    // the parse assertion below would pass with the bug in place.
+    const result = injectExocortexPrefixes(
+      "SELECT ?n WHERE { ?s ?p ?n . FILTER(?n-aiKnow:w > 0) }",
+    );
+    expect(result).toContain("PREFIX aiKnow: <https://exocortex.my/ontology/aiKnow#>");
+    expect(result).not.toMatch(/PREFIX n-aiKnow:/);
+    expect(() => new SPARQLParser().parse(result)).not.toThrow();
   });
 });

@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutant for issue #4350 — CacheManager TBOX_FORM. With the pre-fix shape a hyphen-prefixed label is not TBox form, so a class that GAINS one (human label → `tbank-crm__Contact`) is refreshed as a DELTA and the referrer keeps the stale file IRI instead of `…/tbank-crm#Contact` (H5). ⛤ The axis uses the GAIN on purpose: for a relabel of an already-TBox class the rebuild is carried by entryHasTBoxLabel's IRI-object check (core emits a TBox label as an IRI object), so TBOX_FORM is defensive there — measured: the relabel form of H5 stayed green under this very mutant (integration-test-revert-verify §A35/§A111). `red_re` anchors on the `● <suite> › [Xn]` failure header, not on a bare key: jest echoes neighbouring `it(...)` source lines in its diff context (integration-test-revert-verify §A44/§A104).",
+  "_doc": "Revert-verify mutant for issue #4350 — CacheManager TBOX_FORM. With the pre-fix shape a hyphen-prefixed label is not TBox form, so a class that GAINS one (human label → `tbank-crm__Contact`) is refreshed as a DELTA and the referrer keeps the stale file IRI instead of `…/tbank-crm#Contact` (H5). ⛤ The axis uses the GAIN on purpose: for a relabel of an already-TBox class the rebuild is carried by entryHasTBoxLabel's IRI-object check (core emits a TBox label as an IRI object), so TBOX_FORM is defensive there — measured: the relabel form of H5 stayed green under this very mutant (integration-test-revert-verify §A35/§A111). `red_re` anchors on the `● <suite> › [Xn]` failure header, not on a bare key: jest echoes neighbouring `it(...)` source lines in its diff context (integration-test-revert-verify §A44/§A104). M13 pins the cache-format bump (H6).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -17,6 +17,12 @@
       "from": "const TBOX_FORM = new RegExp(`^${PREFIX_PATTERN_SOURCE}__\\\\S+$`);",
       "to": "const TBOX_FORM = /^[a-z][a-zA-Z0-9]*__\\S+$/;",
       "expect": ["H5"]
+    },
+    "M13_format_version_back_to_3": {
+      "_note": "The v3 → v4 bump is what retires a cache written before #4350: back at 3, a v3 cache is accepted and keeps the hyphen class as a file IRI (H6). Review finding HIGH on #4352.",
+      "from": "export const CACHE_FORMAT_VERSION = 4;",
+      "to": "export const CACHE_FORMAT_VERSION = 3;",
+      "expect": ["H6"]
     }
   }
 }

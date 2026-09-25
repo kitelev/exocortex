@@ -26,6 +26,9 @@
  *       is carried by `entryHasTBoxLabel`'s IRI-object check (core emits a TBox
  *       label as an IRI), so `TBOX_FORM` is defensive there and a mutant of it
  *       reddens nothing (measured) — only the gain reaches it.
+ *   H6  cache format: a cache written before #4350 (formatVersion 3, the hyphen
+ *       class still a FILE IRI) is invalid and rebuilt — unchanged files would
+ *       otherwise keep the old graph and a delta would mix both (#4352 review).
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, jest } from "@jest/globals";
 import * as fs from "fs";
@@ -36,7 +39,7 @@ import { runShapesValidation } from "../../src/commands/validate-schema.js";
 import { FileSystemVaultAdapter } from "../../src/adapters/FileSystemVaultAdapter.js";
 import { CandidateShaclValidator } from "../../src/services/CandidateShaclValidator.js";
 import { findCommand } from "../../src/commands/find.js";
-import { CacheManager, serializeNode } from "../../src/cache/CacheManager.js";
+import { CacheManager, CACHE_FORMAT_VERSION, serializeNode } from "../../src/cache/CacheManager.js";
 
 const ONT = "https://exocortex.my/ontology/";
 
@@ -238,6 +241,56 @@ exo__Instance_class:
       const second = await cache.loadOrBuild();
       expect(second.mode).toBe("rebuild");
       expect(classesOf(second.triples)).toEqual([`${ONT}tbank-crm#Contact`]);
+    } finally {
+      fs.rmSync(vault, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("[H6] a cache written before #4350 (formatVersion 3, hyphen class as a file IRI) is invalid and rebuilt", async () => {
+    const vault = fs.mkdtempSync(path.join(os.tmpdir(), "exo-4350-hyphen-fmt-"));
+    try {
+      const classRel = `tbank-crm/${CONTACT_CLASS_UID}.md`;
+      const instRel = `${CONTACT_UID}.md`;
+      writeAll(vault, {
+        [`exo/${EXO_CLASS_UID}.md`]: cls(EXO_CLASS_UID, "exo__Class"),
+        [classRel]: cls(CONTACT_CLASS_UID, "tbank-crm__Contact"),
+        [instRel]: `---
+exo__Asset_uid: ${CONTACT_UID}
+exo__Asset_label: "Контакт"
+exo__Instance_class:
+  - "[[${CONTACT_CLASS_UID}]]"
+---
+`,
+      });
+      const symbolic = `${ONT}tbank-crm#Contact`;
+      const fileIri = vaultPathToIRI(classRel);
+      const classesOf = (triples: { subject: unknown; predicate: unknown; object: unknown }[]) =>
+        triples
+          .filter(
+            (t) =>
+              serializeNode(t.subject as never).value === vaultPathToIRI(instRel) &&
+              serializeNode(t.predicate as never).value === `${ONT}exo#Instance_class`,
+          )
+          .map((t) => serializeNode(t.object as never).value);
+
+      const cache = new CacheManager(vault);
+      const cachePath = cache.getCachePath();
+      const fresh = await cache.loadOrBuild();
+      expect(classesOf(fresh.triples)).toEqual([symbolic]);
+      const written = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
+      expect(written.metadata.formatVersion).toBe(CACHE_FORMAT_VERSION);
+
+      // Rewrite the cache as the previous CLI left it: same manifest (every
+      // entry still "fresh" by mtime), format 3, the class as its file IRI.
+      const stale = JSON.parse(JSON.stringify(written).split(symbolic).join(fileIri));
+      stale.metadata.formatVersion = 3;
+      fs.writeFileSync(cachePath, JSON.stringify(stale));
+      expect(JSON.stringify(stale)).not.toContain(symbolic);
+
+      expect(await cache.isCacheValid()).toBe(false);
+      const rebuilt = await cache.loadOrBuild();
+      expect(rebuilt.mode).toBe("rebuild");
+      expect(classesOf(rebuilt.triples)).toEqual([symbolic]);
     } finally {
       fs.rmSync(vault, { recursive: true, force: true });
     }

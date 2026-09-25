@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for issue #4350 — QueryPrefixInjector. Two regexes: the used-prefix scan (which declared the tail `macbook:` of `device-work-macbook:`) and the declared-prefix scan (which, on `\\\\w+`, did not see a hand-declared hyphenated PREFIX and declared it a second time). `red_re` anchors on the `● <suite> › [Xn]` failure header, not on a bare key: jest echoes neighbouring `it(...)` source lines in its diff context (integration-test-revert-verify §A44/§A104).",
+  "_doc": "Revert-verify mutants for issue #4350 — QueryPrefixInjector. Two regexes: the used-prefix scan (which declared the tail `macbook:` of `device-work-macbook:`) and the declared-prefix scan (which, on `\\\\w+`, did not see a hand-declared hyphenated PREFIX and declared it a second time). `red_re` anchors on the `● <suite> › [Xn]` failure header, not on a bare key: jest echoes neighbouring `it(...)` source lines in its diff context (integration-test-revert-verify §A44/§A104). M14 pins the variable-guard in the lookbehind (Q3).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -14,14 +14,20 @@
   "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/utils/namespace-prefix-parity-4350.test.ts tests/integration/hyphen-namespace-4350.integration.test.ts --verbose 2>&1",
   "mutants": {
     "M7_used_scan_keeps_old_shape": {
-      "from": "    `(?<![:\\\\w])(${PREFIX_PATTERN_SOURCE}):[a-zA-Z_]`,",
-      "to": "    `(?<![:\\\\w])([a-z][a-zA-Z0-9]*):[a-zA-Z_]`,",
+      "from": "    `(?<![:\\\\w?$])(${PREFIX_PATTERN_SOURCE}):[a-zA-Z_]`,",
+      "to": "    `(?<![:\\\\w?$])([a-z][a-zA-Z0-9]*):[a-zA-Z_]`,",
       "expect": ["Q1"]
     },
     "M8_declared_scan_keeps_word_only": {
       "from": "  const prefixPattern = /PREFIX\\s+([\\w-]+)\\s*:/gi;",
       "to": "  const prefixPattern = /PREFIX\\s+(\\w+)\\s*:/gi;",
       "expect": ["Q2"]
+    },
+    "M14_lookbehind_admits_variables": {
+      "_note": "Without `?`/`$` in the lookbehind the scan folds the variable into the prefix (`?n-aiKnow:w` → `n-aiKnow`) and `aiKnow` stays undeclared (Q3). Review finding LOW on #4352.",
+      "from": "    `(?<![:\\\\w?$])(${PREFIX_PATTERN_SOURCE}):[a-zA-Z_]`,",
+      "to": "    `(?<![:\\\\w])(${PREFIX_PATTERN_SOURCE}):[a-zA-Z_]`,",
+      "expect": ["Q3"]
     }
   }
 }
