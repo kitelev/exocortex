@@ -1,0 +1,35 @@
+{
+  "_doc": "Revert-verify mutants for issue #4357 — a created concept must land BESIDE its parent (inside an assetspace), not in a hardcoded top-level `concepts/` folder which is outside every assetspace and therefore never carried by ExoSync. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). M1 restores the pre-fix state verbatim. `red_re` anchors on the `● <suite> › <title>` failure header, not the bare `[Cn]` key (integration-test-revert-verify §A44/§A104).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/ConceptCreationService.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/services/ConceptCreationService.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_hardcoded_top_level_folder": {
+      "_note": "The pre-fix state verbatim: the destination becomes the literal the bug shipped. ⛔ Note the OLD test could not catch this — it asserted `stringContaining(\"concepts/\")`, which the CORRECT path `assetspaces/.../exoas-concept/concept/x.md` also satisfies. The axes now compare the full path, which is what makes this mutant detectable at all.",
+      "from": "    const folderPath = ConceptCreationService.folderOf(parentFile.path);",
+      "to": "    const folderPath = \"concepts\";",
+      "expect": ["C5", "C6"]
+    },
+    "M2_anchor_not_inherited": {
+      "_note": "Keeps the placement fix but drops the anchor inheritance, so the child declares the fail-open `[[!concepts]]` while sitting in a real assetspace. That combination is precisely what makes the placement UNCHECKABLE by `audit co-location` — the bang anchor is fail-open by design — so this mutant guards the half of the fix that restores auditability.",
+      "from": "      this.inheritedAnchor(parentFile),",
+      "to": "      null,",
+      "expect": ["C7"]
+    },
+    "M3_no_fallback_when_parent_has_no_anchor": {
+      "_note": "Removes the compatibility fallback: a parent without an anchor would yield an EMPTY isDefinedBy rather than the previous `[[!concepts]]`. Guards that the fix is additive for parents that predate anchoring, rather than silently emitting a broken value.",
+      "from": "        : '\"[[!concepts]]\"';",
+      "to": "        : '\"\"';",
+      "expect": ["C8"]
+    }
+  }
+}

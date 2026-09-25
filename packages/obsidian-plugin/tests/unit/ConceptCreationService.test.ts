@@ -6,9 +6,13 @@ describe("ConceptCreationService", () => {
 
   beforeEach(() => {
     mockVault = {
-      create: jest.fn().mockResolvedValue({ path: "concepts/test-concept.md" }),
+      create: jest.fn().mockResolvedValue({ path: "assetspaces/kitelev/exoas-concept/concept/test-concept.md" }),
       getAbstractFileByPath: jest.fn().mockReturnValue(null),
       createFolder: jest.fn().mockResolvedValue(undefined),
+      // Part of IVaultAdapter's contract; the service reads it to inherit the parent's ontology
+      // anchor (#4357). Absent here until then, which is why this suite could not observe that
+      // the service consulted nothing about the parent's placement.
+      getFrontmatter: jest.fn().mockReturnValue(null),
     };
     service = new ConceptCreationService(mockVault);
   });
@@ -17,6 +21,7 @@ describe("ConceptCreationService", () => {
     it("should create concept file with basic frontmatter", async () => {
       const mockParentFile = {
         basename: "Parent Concept",
+        path: "assetspaces/kitelev/exoas-concept/concept/Parent Concept.md",
       } as any;
 
       await service.createNarrowerConcept(
@@ -29,7 +34,7 @@ describe("ConceptCreationService", () => {
       expect(mockVault.create).toHaveBeenCalledTimes(1);
       const [filePath, content] = mockVault.create.mock.calls[0];
 
-      expect(filePath).toBe("concepts/Child Concept.md");
+      expect(filePath).toBe("assetspaces/kitelev/exoas-concept/concept/Child Concept.md");
       expect(content).toContain('exo__Asset_isDefinedBy: "[[!concepts]]"');
       expect(content).toContain("exo__Instance_class:");
       expect(content).toContain(`- "[[${AssetClass.CONCEPT}]]"`);
@@ -45,6 +50,7 @@ describe("ConceptCreationService", () => {
     it("should add .md extension if not provided", async () => {
       const mockParentFile = {
         basename: "Parent Concept",
+        path: "assetspaces/kitelev/exoas-concept/concept/Parent Concept.md",
       } as any;
 
       await service.createNarrowerConcept(
@@ -55,12 +61,13 @@ describe("ConceptCreationService", () => {
       );
 
       const [filePath] = mockVault.create.mock.calls[0];
-      expect(filePath).toBe("concepts/Child Concept.md");
+      expect(filePath).toBe("assetspaces/kitelev/exoas-concept/concept/Child Concept.md");
     });
 
     it("should not duplicate .md extension if already provided", async () => {
       const mockParentFile = {
         basename: "Parent Concept",
+        path: "assetspaces/kitelev/exoas-concept/concept/Parent Concept.md",
       } as any;
 
       await service.createNarrowerConcept(
@@ -71,7 +78,7 @@ describe("ConceptCreationService", () => {
       );
 
       const [filePath] = mockVault.create.mock.calls[0];
-      expect(filePath).toBe("concepts/Child Concept.md");
+      expect(filePath).toBe("assetspaces/kitelev/exoas-concept/concept/Child Concept.md");
     });
 
     it("should create concepts folder if it does not exist", async () => {
@@ -79,6 +86,7 @@ describe("ConceptCreationService", () => {
 
       const mockParentFile = {
         basename: "Parent Concept",
+        path: "assetspaces/kitelev/exoas-concept/concept/Parent Concept.md",
       } as any;
 
       await service.createNarrowerConcept(
@@ -88,8 +96,8 @@ describe("ConceptCreationService", () => {
         [],
       );
 
-      expect(mockVault.getAbstractFileByPath).toHaveBeenCalledWith("concepts");
-      expect(mockVault.createFolder).toHaveBeenCalledWith("concepts");
+      expect(mockVault.getAbstractFileByPath).toHaveBeenCalledWith("assetspaces/kitelev/exoas-concept/concept");
+      expect(mockVault.createFolder).toHaveBeenCalledWith("assetspaces/kitelev/exoas-concept/concept");
     });
 
     it("should not create concepts folder if it already exists", async () => {
@@ -99,6 +107,7 @@ describe("ConceptCreationService", () => {
 
       const mockParentFile = {
         basename: "Parent Concept",
+        path: "assetspaces/kitelev/exoas-concept/concept/Parent Concept.md",
       } as any;
 
       await service.createNarrowerConcept(
@@ -108,13 +117,14 @@ describe("ConceptCreationService", () => {
         [],
       );
 
-      expect(mockVault.getAbstractFileByPath).toHaveBeenCalledWith("concepts");
+      expect(mockVault.getAbstractFileByPath).toHaveBeenCalledWith("assetspaces/kitelev/exoas-concept/concept");
       expect(mockVault.createFolder).not.toHaveBeenCalled();
     });
 
     it("should generate valid UUIDv4 for exo__Asset_uid", async () => {
       const mockParentFile = {
         basename: "Parent Concept",
+        path: "assetspaces/kitelev/exoas-concept/concept/Parent Concept.md",
       } as any;
 
       await service.createNarrowerConcept(
@@ -134,6 +144,7 @@ describe("ConceptCreationService", () => {
     it("should generate ISO 8601 timestamp for exo__Asset_createdAt", async () => {
       const mockParentFile = {
         basename: "Parent Concept",
+        path: "assetspaces/kitelev/exoas-concept/concept/Parent Concept.md",
       } as any;
 
       await service.createNarrowerConcept(
@@ -153,6 +164,7 @@ describe("ConceptCreationService", () => {
     it("should omit aliases if empty array provided", async () => {
       const mockParentFile = {
         basename: "Parent Concept",
+        path: "assetspaces/kitelev/exoas-concept/concept/Parent Concept.md",
       } as any;
 
       await service.createNarrowerConcept(
@@ -170,6 +182,7 @@ describe("ConceptCreationService", () => {
     it("should include single alias", async () => {
       const mockParentFile = {
         basename: "Parent Concept",
+        path: "assetspaces/kitelev/exoas-concept/concept/Parent Concept.md",
       } as any;
 
       await service.createNarrowerConcept(
@@ -188,6 +201,7 @@ describe("ConceptCreationService", () => {
     it("should include multiple aliases", async () => {
       const mockParentFile = {
         basename: "Parent Concept",
+        path: "assetspaces/kitelev/exoas-concept/concept/Parent Concept.md",
       } as any;
 
       await service.createNarrowerConcept(
@@ -207,6 +221,7 @@ describe("ConceptCreationService", () => {
 
     it("should handle parent concept name with special characters", async () => {
       const mockParentFile = {
+        path: "assetspaces/kitelev/exoas-concept/concept/Parent.md",
         basename: "Parent & Special: Concept",
       } as any;
 
@@ -227,6 +242,7 @@ describe("ConceptCreationService", () => {
     it("should handle empty definition", async () => {
       const mockParentFile = {
         basename: "Parent Concept",
+        path: "assetspaces/kitelev/exoas-concept/concept/Parent Concept.md",
       } as any;
 
       await service.createNarrowerConcept(
@@ -246,6 +262,7 @@ describe("ConceptCreationService", () => {
     it("should handle definition with special characters", async () => {
       const mockParentFile = {
         basename: "Parent Concept",
+        path: "assetspaces/kitelev/exoas-concept/concept/Parent Concept.md",
       } as any;
 
       await service.createNarrowerConcept(
@@ -266,13 +283,14 @@ describe("ConceptCreationService", () => {
 
     it("should return created file", async () => {
       const mockCreatedFile = {
-        path: "concepts/Child Concept.md",
+        path: "assetspaces/kitelev/exoas-concept/concept/Child Concept.md",
         basename: "Child Concept",
       };
       mockVault.create.mockResolvedValue(mockCreatedFile);
 
       const mockParentFile = {
         basename: "Parent Concept",
+        path: "assetspaces/kitelev/exoas-concept/concept/Parent Concept.md",
       } as any;
 
       const result = await service.createNarrowerConcept(
@@ -290,6 +308,7 @@ describe("ConceptCreationService", () => {
 
       const mockParentFile = {
         basename: "Parent Concept",
+        path: "assetspaces/kitelev/exoas-concept/concept/Parent Concept.md",
       } as any;
 
       await expect(
@@ -308,6 +327,7 @@ describe("ConceptCreationService", () => {
 
       const mockParentFile = {
         basename: "Parent Concept",
+        path: "assetspaces/kitelev/exoas-concept/concept/Parent Concept.md",
       } as any;
 
       await expect(
@@ -322,6 +342,7 @@ describe("ConceptCreationService", () => {
 
     it("should handle null parent file basename", async () => {
       const mockParentFile = {
+        path: "assetspaces/kitelev/exoas-concept/concept/Parent.md",
         basename: null,
       } as any;
 
@@ -339,6 +360,7 @@ describe("ConceptCreationService", () => {
 
     it("should handle undefined parent file basename", async () => {
       const mockParentFile = {
+        path: "assetspaces/kitelev/exoas-concept/concept/Parent.md",
         basename: undefined,
       } as any;
 
@@ -354,10 +376,16 @@ describe("ConceptCreationService", () => {
       expect(content).toContain('concept__Concept_genus: "[[undefined]]"');
     });
 
-    it("should create file in concepts folder regardless of parent location", async () => {
+    // ⛔ Was "should create file in concepts folder REGARDLESS of parent location" — it asserted
+    // the defect itself: a hardcoded top-level folder outside every assetspace, which ExoSync
+    // never carried (issue #4357). The guarantee is the opposite one.
+    it("creates the file in the PARENT's folder, following the parent's location", async () => {
+      // A DIFFERENT assetspace than the other fixtures on purpose: the guarantee is that the
+      // child follows wherever the parent is, so a fixture sharing the default folder could not
+      // tell "follows the parent" from "happens to use the same literal".
       const mockParentFile = {
         basename: "Parent Concept",
-        parent: { path: "some/other/folder" },
+        path: "assetspaces/kitelev/exoas-shared-private/concepts/Parent Concept.md",
       } as any;
 
       await service.createNarrowerConcept(
@@ -369,12 +397,15 @@ describe("ConceptCreationService", () => {
 
       const [filePath] = mockVault.create.mock.calls[0];
 
-      expect(filePath).toBe("concepts/Child Concept.md");
+      expect(filePath).toBe(
+        "assetspaces/kitelev/exoas-shared-private/concepts/Child Concept.md",
+      );
     });
 
     it("should include CONCEPT asset class", async () => {
       const mockParentFile = {
         basename: "Parent Concept",
+        path: "assetspaces/kitelev/exoas-concept/concept/Parent Concept.md",
       } as any;
 
       await service.createNarrowerConcept(
