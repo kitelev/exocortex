@@ -32,6 +32,16 @@ export type { MetadataResolver };
  */
 export const COMPOSED_SOURCE_MARKER = "displayName";
 
+/**
+ * What one render pass counted: how many `{{placeholder}}`s the template NAMED, and how many of
+ * them substituted to something non-empty. Exported as ONE named type so the engine and a caller
+ * reading the counts cannot drift apart if a field is ever added (review of PR #4366, LOW-3).
+ */
+export interface PlaceholderStats {
+  placeholders: number;
+  nonEmpty: number;
+}
+
 /** What a compiled placeholder actually carries: `{{key!displayName}}` / `{{key::FMT!displayName}}`. */
 const COMPOSED_SOURCE_SUFFIX = `!${COMPOSED_SOURCE_MARKER}`;
 
@@ -87,7 +97,7 @@ export class DisplayNameTemplateEngine {
     basename: string,
     createdDate?: Date,
     metadataResolver?: MetadataResolver,
-    onPlaceholderStats?: (stats: { placeholders: number; nonEmpty: number }) => void,
+    onPlaceholderStats?: (stats: PlaceholderStats) => void,
   ): string | null {
     if (!this.template || this.template.trim() === "") {
       return null;

@@ -80,21 +80,28 @@ export class ConceptDefinitionResolver {
     // The counts come from the render pass ITSELF rather than from a second parse of the
     // template here — renderSegment's own docblock warns that an emptiness verdict taken from a
     // different pass can disagree with the string that was built.
-    let stats: { placeholders: number; nonEmpty: number } | null = null;
+    // Three primitives rather than one nullable object: TypeScript narrows a nullable-OBJECT
+    // `let` to its `null` initializer across the closure boundary (it cannot see the callback as
+    // part of the synchronous flow), which would force a cast at the read site. A `let` without
+    // an explicit annotation widens instead, so the same semantics need no `as` (review LOW-2).
+    let reported = false;
+    let placeholders = 0;
+    let nonEmpty = 0;
     const rendered = new DisplayNameTemplateEngine(template, { joinArrayValues: true }).render(
       metadata,
       "",
       undefined,
       this.metadataResolver ?? undefined,
       (s) => {
-        stats = s;
+        reported = true;
+        placeholders = s.placeholders;
+        nonEmpty = s.nonEmpty;
       },
     );
     // Fail-closed on a missing report too: the engine does not report on its separator path,
     // where empty fields are dropped by design, so "cannot vouch" must fall through to the
     // stored narrative rather than silently pass the degenerate phrase.
-    const slots = stats as { placeholders: number; nonEmpty: number } | null;
-    if (!slots || slots.nonEmpty < slots.placeholders) return null;
+    if (!reported || nonEmpty < placeholders) return null;
     return rendered && rendered.trim() ? rendered : null;
   }
 

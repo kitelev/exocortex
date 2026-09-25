@@ -8,15 +8,17 @@
   "mutants": {
     "M1_no_slot_guard": {
       "_note": "The pre-fix state: the render is returned whenever it trims non-empty, so `\"{{differentia}} {{genus}}\"` with no differentia yields the parent's bare label and shadows the stored narrative.",
-      "from": "    if (!slots || slots.nonEmpty < slots.placeholders) return null;",
+      "from": "    if (!reported || nonEmpty < placeholders) return null;",
       "to": "    if (false) return null;",
-      "expect": ["D1", "D2", "D3"]
+      "expect": ["D1", "D2", "D3"],
+      "_note_anchor": "Anchor re-pointed after review LOW-2 replaced the nullable-object `stats` with three primitives; the guard's SEMANTICS are unchanged, only its expression (§A71 — my own edit invalidated the anchor, not drift in someone else's code)."
     },
     "M2_guard_keyed_on_differentia_name": {
       "_note": "The wrong fix the AC forbids: keyed on the literal property NAME rather than on the template's slots. D1/D2 stay GREEN (differentia really is the missing key there), so only D3 — whose vault spec names `concept__Concept_scope` instead — can tell the two designs apart. That asymmetry is the whole point of D3.",
-      "from": "    if (!slots || slots.nonEmpty < slots.placeholders) return null;",
+      "from": "    if (!reported || nonEmpty < placeholders) return null;",
       "to": "    if (!this.resolveWikilinkLabels(metadata[\"concept__Concept_differentia\"]).length) return null;",
-      "expect": ["D3"]
+      "expect": ["D3"],
+      "_note_anchor": "Anchor re-pointed after review LOW-2 replaced the nullable-object `stats` with three primitives; the guard's SEMANTICS are unchanged, only its expression (§A71 — my own edit invalidated the anchor, not drift in someone else's code)."
     }
   }
 }
