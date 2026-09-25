@@ -12,6 +12,7 @@ import {
   type GenericAssetCreationConfig,
 } from "@kitelev/exocortex-core";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
+import { PlanningFsAdapter } from "../adapters/PlanningFsAdapter.js";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { ClassResolverService } from "../services/ClassResolverService.js";
 import { WikilinkValidator } from "../services/WikilinkValidator.js";
@@ -362,9 +363,19 @@ export interface PlannedCreate {
 
 export interface CreateContextOptions {
   /**
-   * The filesystem adapter every lookup goes through. Default: a plain
-   * {@link NodeFsAdapter}, which is what `create` has always used.
-   * `create-batch` passes a {@link PlanningFsAdapter} that memoises reads.
+   * The filesystem adapter every lookup goes through. Default: a
+   * {@link PlanningFsAdapter} — the same memoising adapter `create-batch`
+   * passes (#4291). It is not an optimisation of one lookup but of their
+   * NUMBER: `planCreate`'s collaborators each walk the vault independently
+   * (class index, status resolution ×2, class-neighbour scan, shape load), and
+   * the base {@link NodeFsAdapter} caches nothing, so the same file was read
+   * once per collaborator — measured five full passes, 84 618 reads over
+   * 16 923 files, 12 s wall.
+   *
+   * Safe for the single `create` for the same reason it is safe for a batch:
+   * planning never writes. The write half runs on a separate
+   * `FileSystemVaultAdapter`, so nothing memoised here can be read back after
+   * a write — and the adapter drops every memo on a mutation anyway.
    */
   fsAdapter?: NodeFsAdapter;
   /** Diagnostics sink. Default: `process.stderr.write` — `create` unchanged. */
@@ -412,7 +423,7 @@ export class CreateContext {
 
   get fsAdapter(): NodeFsAdapter {
     this.fsAdapterInstance ??=
-      this.options.fsAdapter ?? new NodeFsAdapter(this.vaultPath);
+      this.options.fsAdapter ?? new PlanningFsAdapter(this.vaultPath);
     return this.fsAdapterInstance;
   }
 
@@ -428,10 +439,31 @@ export class CreateContext {
     return this.wikilinkValidatorInstance;
   }
 
+  /**
+   * The text reader `planCreate`'s vault-walking collaborators share (#4291).
+   *
+   * `ShapeLoader` and `PropertyNameValidator` walk the vault themselves rather
+   * than through the adapter, so before they shared a reader each re-read the
+   * whole corpus. `undefined` when the adapter does not memoise — the
+   * collaborator then falls back to `fs/promises`, i.e. exactly its prior
+   * behaviour, which is what keeps this an optimisation and not a dependency.
+   */
+  private get sharedReader():
+    | ((filePath: string, encoding: "utf-8") => Promise<string>)
+    | undefined {
+    const adapter = this.fsAdapter;
+    return adapter instanceof PlanningFsAdapter
+      ? (filePath: string): Promise<string> => adapter.readFileAbsolute(filePath)
+      : undefined;
+  }
+
   get propertyNameValidator(): PropertyNameValidator {
     this.propertyNameValidatorInstance ??= new PropertyNameValidator(
       this.vaultPath,
-      { warn: (msg) => this.warn(`⚠ ${msg}\n`) },
+      {
+        warn: (msg) => this.warn(`⚠ ${msg}\n`),
+        readFile: this.sharedReader,
+      },
     );
     return this.propertyNameValidatorInstance;
   }
@@ -448,9 +480,9 @@ export class CreateContext {
    * `create` stays byte-identical to its prior behaviour.
    */
   shapeRegistry(): Promise<ShapeRegistry> {
-    this.shapeRegistryLoad ??= ShapeLoader.loadFromVaultFS(this.vaultPath).catch(
-      () => new ShapeRegistry(),
-    );
+    this.shapeRegistryLoad ??= ShapeLoader.loadFromVaultFS(this.vaultPath, {
+      readFile: this.sharedReader,
+    }).catch(() => new ShapeRegistry());
     return this.shapeRegistryLoad;
   }
 
