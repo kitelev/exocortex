@@ -3,11 +3,16 @@ import { extractAssetReference } from "@kitelev/exocortex-core";
 import type { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 
 /**
- * Shared CLI-side folder-repair helpers. Consumed by `FolderRepairExecutor`
- * (single-file `repair-folder` command) and the `audit-*` / `create` /
- * `set-property` commands. Previously duplicated across executors (audit #3384
- * finding H4; the batch `repair-folder` copy went with the dead `BatchExecutor`,
- * ticket 99a904a9).
+ * Shared CLI-side folder-repair helpers. Consumed by the `audit-*` / `create` /
+ * `set-property` commands and `isDefinedByRangeGuard`. Previously duplicated
+ * across executors (audit #3384 finding H4; the batch `repair-folder` copy went
+ * with the dead `BatchExecutor`, ticket 99a904a9, and the single-file copy's
+ * consumer `FolderRepairExecutor` with the dead `CommandExecutor` family, task
+ * 94e64b8c).
+ *
+ * ⛔ `apply repair-folder` does NOT go through these helpers: its grounding is
+ * `service_call` → `repairFolder` → core `FolderRepairService`, which resolves
+ * `exo__Asset_isDefinedBy` via `IVaultAdapter.getFirstLinkpathDest`.
  *
  * These implement the CLI's Node-fs reference-resolution strategy, which is
  * deliberately distinct from the plugin/grounding path (core
@@ -44,8 +49,8 @@ export async function findReferencedFile(
   }
 
   // Try 2: Same folder as source file. `path.dirname` returns "." for a
-  // root-level source; both prior copies resolved identically here —
-  // FolderRepairExecutor produced "./<ref>.md" and the (since removed) batch
+  // root-level source; both prior copies resolved identically here — the
+  // (since removed) FolderRepairExecutor produced "./<ref>.md" and the batch
   // copy produced "<ref>.md", which `NodeFsAdapter.resolvePath` (path.join)
   // and the downstream `path.dirname` collapse to the same value.
   const sourceDir = path.dirname(sourceFilePath);
@@ -99,10 +104,11 @@ export function normalizePath(filePath: string): string {
  * (Try 2) probe only the vault root, which never spuriously matches a
  * UID-named ontology file living under `assetspaces/`. Resolution therefore
  * comes from the direct-path (Try 1), UID-index (Try 3) or basename-scan
- * (Try 4) branches — exactly as it does for `apply repair-folder`.
+ * (Try 4) branches.
  *
  * A root-level ontology (`path.dirname` → ".") returns "" so the caller writes
- * to the vault root, matching FolderRepairExecutor's expected-folder convention.
+ * to the vault root — the same convention core `FolderRepairService.repairFolder`
+ * uses for `expectedFolder === ""`.
  */
 export async function resolveCoLocationFolder(
   fsAdapter: NodeFsAdapter,

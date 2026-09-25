@@ -11,11 +11,6 @@
       "count": 1
     },
     {
-      "file": "packages/cli/tests/integration/command-dry-run.integration.test.ts",
-      "code": "TS6133",
-      "count": 1
-    },
-    {
       "file": "packages/cli/tests/integration/commands/apply-profile.integration.test.ts",
       "code": "TS2345",
       "count": 1
@@ -191,46 +186,6 @@
       "count": 1
     },
     {
-      "file": "packages/cli/tests/unit/executors/AssetCreationExecutor.test.ts",
-      "code": "TS2345",
-      "count": 3
-    },
-    {
-      "file": "packages/cli/tests/unit/executors/AssetCreationExecutor.test.ts",
-      "code": "TS6133",
-      "count": 2
-    },
-    {
-      "file": "packages/cli/tests/unit/executors/CommandExecutor.error.test.ts",
-      "code": "TS2345",
-      "count": 27
-    },
-    {
-      "file": "packages/cli/tests/unit/executors/CommandExecutor.error.test.ts",
-      "code": "TS6133",
-      "count": 2
-    },
-    {
-      "file": "packages/cli/tests/unit/executors/CommandExecutor.test.ts",
-      "code": "TS2345",
-      "count": 72
-    },
-    {
-      "file": "packages/cli/tests/unit/executors/CommandExecutor.test.ts",
-      "code": "TS6133",
-      "count": 2
-    },
-    {
-      "file": "packages/cli/tests/unit/executors/FolderRepairExecutor.test.ts",
-      "code": "TS2345",
-      "count": 61
-    },
-    {
-      "file": "packages/cli/tests/unit/executors/FolderRepairExecutor.test.ts",
-      "code": "TS6133",
-      "count": 1
-    },
-    {
       "file": "packages/cli/tests/unit/formatters/CsvFormatter.test.ts",
       "code": "TS6133",
       "count": 3
@@ -308,16 +263,6 @@
     {
       "file": "packages/cli/tests/unit/utils/SPARQLErrorEnhancer.test.ts",
       "code": "TS6133",
-      "count": 1
-    },
-    {
-      "file": "packages/cli/tests/unit/utils/TransactionManager.test.ts",
-      "code": "TS2345",
-      "count": 33
-    },
-    {
-      "file": "packages/cli/tests/unit/utils/TransactionManager.test.ts",
-      "code": "TS2554",
       "count": 1
     },
     {
