@@ -1,0 +1,25 @@
+{
+  "_doc": "Revert-verify mutant for issue #4370 on assetLabelLookup.labelTermBearers — one asset mounted at two paths (two file IRIs, one uid) must stay ONE bearer, otherwise CommandResolver.resolveRefIriSubject treats every twice-mounted asset as ambiguous and the reference silently stops resolving. `red_re` anchors on the `● <suite> › [Xn]` failure header.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/utilities/assetLabelLookup.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/services/symbolic-ref-resolve-4370.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_uid_dedupe_removed": {
+      "_note": "labelTermBearers no longer collapses bearers sharing a uid: a twice-mounted asset becomes two bearers ⇒ ambiguous ⇒ unresolved.",
+      "from": "    if (!uid || seen.has(uid)) continue;",
+      "to": "    if (!uid) continue;",
+      "expect": [
+        "U1"
+      ]
+    }
+  }
+}
