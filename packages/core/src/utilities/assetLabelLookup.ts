@@ -38,11 +38,8 @@ export async function findUidByAssetLabel(
 
   const term = labelTermIRI(label);
   if (term) {
-    for (const triple of await store.match(undefined, labelPredicate, term)) {
-      if (!(triple.subject instanceof IRI)) continue;
-      const uid = await uidOf(store, triple.subject);
-      if (uid) return uid;
-    }
+    const [first] = await labelTermBearers(store, term);
+    if (first) return first.uid;
   }
 
   for (const triple of await store.match(undefined, labelPredicate, undefined)) {
@@ -56,6 +53,37 @@ export async function findUidByAssetLabel(
     }
   }
   return null;
+}
+
+/**
+ * Every asset (with a uid) whose `exo__Asset_label` object IS `labelTerm` — the
+ * term IRI the converter emits for a `prefix__Local` label — in store order,
+ * one entry per distinct uid (the same asset mounted twice is ONE bearer).
+ *
+ * Shared by {@link findUidByAssetLabel} (first bearer wins, #4354) and
+ * `CommandResolver.resolveRefIriSubject` (#4370), which maps a `[[uid]]`
+ * reference emitted as that term IRI back to the asset: there more than one
+ * distinct bearer means the reference is ambiguous and must not be resolved to
+ * whichever happened to be indexed first.
+ */
+export async function labelTermBearers(
+  store: ITripleStore,
+  labelTerm: IRI,
+): Promise<Array<{ subject: IRI; uid: string }>> {
+  const bearers: Array<{ subject: IRI; uid: string }> = [];
+  const seen = new Set<string>();
+  for (const triple of await store.match(
+    undefined,
+    Namespace.EXO.term("Asset_label"),
+    labelTerm,
+  )) {
+    if (!(triple.subject instanceof IRI)) continue;
+    const uid = await uidOf(store, triple.subject);
+    if (!uid || seen.has(uid)) continue;
+    seen.add(uid);
+    bearers.push({ subject: triple.subject, uid });
+  }
+  return bearers;
 }
 
 /**
