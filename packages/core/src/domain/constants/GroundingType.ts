@@ -32,22 +32,23 @@ export enum GroundingType {
    *
    * ⛔ The guarantee is NOT unconditional, and an earlier revision of this
    * comment stated it as if it were ("leaving its co-values and their order
-   * untouched", full stop). Two measured qualifications:
+   * untouched", full stop). One measured qualification remains:
    *
-   * 1. Co-values survive **for the two-space list-item shape this codebase's
-   *    writers produce**. `FrontmatterService.parseObject` matches array items
-   *    with `/^ {2}- (.*)$/`, so a BLOCK-SCALAR item breaks the loop and every
-   *    item after it in the same array is dropped from the READ — and this
-   *    type writes back what it read. Measured 2026-09-20 on
-   *    `[ems__Task, |<block body>, ems__Effort]`: `parseObject` returns
-   *    `["ems__Task", "|"]` and `ems__Effort` is gone. The limitation is
-   *    shared with `property_append` (identical read+write pattern), lives in
-   *    FrontmatterService, and is tracked separately — it is named here
-   *    because this type is the one that makes the promise out loud.
-   * 2. The list can SHRINK BY ONE: when `replaceToExpression` already appears
-   *    elsewhere in the list, the `from` item is dropped rather than
-   *    duplicated (set semantics, matching `property_append`'s dedup). Order
-   *    of the surviving items is preserved, their count is not.
+   * - The list can SHRINK BY ONE: when `replaceToExpression` already appears
+   *   elsewhere in the list, the `from` item is dropped rather than duplicated
+   *   (set semantics, matching `property_append`'s dedup). Order of the
+   *   surviving items is preserved, their count is not.
+   *
+   * ⛤ A SECOND qualification stood here until issue #4314 and is now **lifted**:
+   * co-values used to survive only for the two-space list-item shape, because
+   * `FrontmatterService.parseObject` matched items with `/^ {2}- (.*)$/` and any
+   * other line ended the array — so a block-scalar item, a nested map or an
+   * interleaved comment dropped every item after it from the READ, and this type
+   * wrote the truncation back. `parseObject` now carries such a continuation on
+   * the item it belongs to and reads column-0 and flow-style lists as lists, so
+   * co-values survive on every shape measured across the three canonical vaults.
+   * What it still does NOT do is re-emit an interleaved `#` comment: a comment is
+   * not a value, and rewriting the property drops it (as it did before).
    *
    * Reads `targetProperty`,
    * `replaceFromExpression` (the value to find) and `replaceToExpression` (the
