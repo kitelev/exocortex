@@ -1,0 +1,22 @@
+{
+  "_doc": "Revert-verify for the shared jest globalSetup that strips the enclosing repo's GIT_* env (task 9cf206cd). Axes G1 (wiring of every packages/*/jest.config.js), G2 (the helper), G3 (end to end against a decoy repo, setup called with jest's arguments) in hook-safe-git-env.test.ts. One spec per subject. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout. Recorded runs: see PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/jest.ui.config.js",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../..\" && node ./node_modules/jest/bin/jest.js --config packages/obsidian-plugin/jest.config.js packages/obsidian-plugin/tests/unit/build/hook-safe-git-env.test.ts 2>&1",
+  "red_re": "› (G\\d+\\w*) ",
+  "mutants": {
+    "W3_ui_config_loses_globalSetup": {
+      "from": "  globalSetup: \"<rootDir>/../test-utils/src/jest/stripRepoGitEnv.cjs\",\n",
+      "to": "",
+      "expect": ["G1"]
+    }
+  }
+}
