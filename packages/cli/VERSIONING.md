@@ -194,24 +194,24 @@ Clarifying existing behavior, adding examples.
 
 Commands and options documented in [CLI_API_REFERENCE.md](docs/CLI_API_REFERENCE.md):
 
-| Command                              | Status     |
-| ------------------------------------ | ---------- |
-| `exocortex sparql query`             | **Stable** |
-| `exocortex command start`            | **Stable** |
-| `exocortex command complete`         | **Stable** |
-| `exocortex command trash`            | **Stable** |
-| `exocortex command archive`          | **Stable** |
-| `exocortex command move-to-backlog`  | **Stable** |
+| Command                              | Status      |
+| ------------------------------------ | ----------- |
+| `exocortex sparql query`             | **Stable**  |
+| `exocortex command start`            | **Stable**  |
+| `exocortex command complete`         | **Stable**  |
+| `exocortex command trash`            | **Stable**  |
+| `exocortex command archive`          | **Stable**  |
+| `exocortex command move-to-backlog`  | **Stable**  |
 | `exocortex command move-to-analysis` | **Removed** |
 | `exocortex command move-to-todo`     | **Removed** |
-| `exocortex command create-task`      | **Stable** |
-| `exocortex command create-meeting`   | **Stable** |
-| `exocortex command create-project`   | **Stable** |
-| `exocortex command create-area`      | **Stable** |
-| `exocortex command rename-to-uid`    | **Stable** |
-| `exocortex command update-label`     | **Stable** |
-| `exocortex command schedule`         | **Stable** |
-| `exocortex command set-deadline`     | **Stable** |
+| `exocortex command create-task`      | **Stable**  |
+| `exocortex command create-meeting`   | **Stable**  |
+| `exocortex command create-project`   | **Stable**  |
+| `exocortex command create-area`      | **Stable**  |
+| `exocortex command rename-to-uid`    | **Stable**  |
+| `exocortex command update-label`     | **Stable**  |
+| `exocortex command schedule`         | **Stable**  |
+| `exocortex command set-deadline`     | **Stable**  |
 
 ### Tier 2: Experimental
 
@@ -225,7 +225,6 @@ Commands marked as experimental may change between minor versions:
 
 Internal APIs not exposed via CLI are not covered by versioning:
 
-- `CommandExecutor` TypeScript class
 - `NodeFsAdapter` implementation
 - Internal utility functions
 
