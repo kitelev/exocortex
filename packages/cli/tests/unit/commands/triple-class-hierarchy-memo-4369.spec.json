@@ -23,16 +23,16 @@
       "expect": ["H2"]
     },
     "M3_lookup_ignores_the_parent": {
-      "_note": "Child-keyed memo: the first verdict cached for a child answers every later parent of that child.",
+      "_note": "Child-keyed memo: the first verdict cached for a child answers every later parent of that child. H6 joins the set because its cyclic fixture asks several parents of the same child.",
       "from": "      const memoised = byParent.get(parent);",
       "to": "      const memoised = byParent.values().next().value;",
-      "expect": ["H3", "H4", "H5"]
+      "expect": ["H3", "H4", "H5", "H6"]
     },
     "M4_verdict_inverted_before_caching": {
       "_note": "Guards H3 against being written as a self-consistency check: a memo that inverts answers consistently, so only ABSOLUTE expectations catch it. H1/H2 are in the measured set too — they redden on their VALUE assertion (`toBe(true)` / `toBe(false)`), which runs before their walk-count assertion, not because they observe the memo.",
       "from": "    const verdict = this.walkIsSubClassOf(child, parent);",
       "to": "    const verdict = !this.walkIsSubClassOf(child, parent);",
-      "expect": ["H1", "H2", "H3", "H4", "H5"]
+      "expect": ["H1", "H2", "H3", "H4", "H5", "H6"]
     }
   }
 }

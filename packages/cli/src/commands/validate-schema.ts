@@ -623,8 +623,9 @@ export class TripleClassHierarchy implements ClassHierarchy {
    *
    * Sound BY CONSTRUCTION, not by convention: `subClassMap` is `private readonly` and every write
    * to it lives in the constructor (Passes 2a/2b/3); the two methods that read it afterwards
-   * (`collectAncestors`, `isSubClassOf`) never mutate. There is no mutator, so there is nothing
-   * that could invalidate an entry.
+   * (`collectAncestors`, `walkIsSubClassOf`) never mutate. There is no mutator, so there is
+   * nothing that could invalidate an entry. `runShapesValidation` builds a fresh instance per
+   * invocation, so the memo does not outlive the map it caches either.
    */
   private readonly subClassMemo = new Map<string, Map<string, boolean>>();
 
@@ -839,10 +840,20 @@ export class TripleClassHierarchy implements ClassHierarchy {
    * is the EXHAUSTIVE walk — it visited every reachable superclass and found nothing — so a memo
    * that only stored hits would leave the expensive case uncached.
    *
-   * Measured on vault-my (`create --dry-run --validate --use-cache`, warm cache, instrumented
-   * build): SHACL asks this 14 220 679 times for a single create — once per (subject × shape)
-   * for the domain test plus once per (value × range class). 99.72 % of those calls repeat a
-   * pair already answered, so the walk runs 425 424 309 BFS steps where 1 229 733 suffice.
+   * Measured 2026-09-26 on vault-my (`create --dry-run --validate --use-cache`, warm cache):
+   * SHACL asks this 14 220 679 times for a single create — once per (subject × shape) for the
+   * domain test plus once per (value × range class). 99.72 % of those calls repeat a pair
+   * already answered, so without the memo the walk runs 425 424 309 BFS steps where 1 229 733
+   * suffice.
+   *
+   * ⛤ RE-DERIVING those four numbers (they are a snapshot of one corpus on one day, and nothing
+   * in the build keeps them honest): add `calls++` here and `steps++` inside the `while` of
+   * {@link walkIsSubClassOf}, print both from a `process.on("exit")` guarded by an env flag,
+   * `npm run build -w @kitelev/exocortex-cli`, then run the command above against the vault you
+   * care about. `subjects` and `shapes` come from the same trick around `registry.getAllShapes()`
+   * in `ShaclLiteValidator`. Roughly five minutes; the instrumentation is deliberately NOT shipped
+   * — it would cost a branch on the hottest path in the validator to answer a question nobody asks
+   * at runtime.
    */
   isSubClassOf(child: string, parent: string): boolean {
     let byParent = this.subClassMemo.get(child);

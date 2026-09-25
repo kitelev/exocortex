@@ -1233,4 +1233,39 @@ describe("#4369 TripleClassHierarchy isSubClassOf memo", () => {
     expect(hier.isSubClassOf(ORPHAN, THING)).toBe(false);
     expect(hier.isSubClassOf(ORPHAN, ORPHAN)).toBe(true);
   });
+
+  it("H6 answers over a CYCLIC hierarchy and for an empty-string parent, memoised and not", () => {
+    // The chain fixture above cannot reach these two shapes, and both are exactly where a memo
+    // could plausibly diverge from the walk: the negative verdict over a cycle is the one that
+    // depends on the walk's own `visited` set terminating, and "" is the one key where a caller
+    // might expect Map lookup to behave specially. Its own fixture, so the cycle cannot perturb
+    // H1..H5.
+    const A = "obsidian://vault/cyc/a.md";
+    const B = "obsidian://vault/cyc/b.md";
+    const C = "obsidian://vault/cyc/c.md";
+    const cyclic = [
+      makeTriple(makeIRI(A), makeIRI(RDFS_SUBCLASS_OF), makeIRI(B)),
+      makeTriple(makeIRI(B), makeIRI(RDFS_SUBCLASS_OF), makeIRI(A)), // ← closes the cycle
+      makeTriple(makeIRI(C), makeIRI(RDFS_SUBCLASS_OF), makeIRI(A)),
+    ] as unknown as ConstructorParameters<typeof TripleClassHierarchy>[0];
+
+    const hier = new TripleClassHierarchy(cyclic);
+
+    const cases: Array<[string, string, boolean]> = [
+      [A, B, true],
+      [B, A, true],
+      [C, B, true], // reachable only by traversing the cycle
+      [A, "obsidian://vault/cyc/absent.md", false], // exhaustive walk over the cycle terminates
+      [A, "", false],
+      ["", "", true],
+      [C, C, true],
+    ];
+
+    for (const [child, parent, expected] of cases) {
+      // first call walks, second is served by the memo, third proves a fresh instance agrees
+      expect(hier.isSubClassOf(child, parent)).toBe(expected);
+      expect(hier.isSubClassOf(child, parent)).toBe(expected);
+      expect(new TripleClassHierarchy(cyclic).isSubClassOf(child, parent)).toBe(expected);
+    }
+  });
 });
