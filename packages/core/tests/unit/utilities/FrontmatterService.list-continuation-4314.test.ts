@@ -33,7 +33,7 @@ import * as yaml from "js-yaml";
  *
  * ⛔ A top-level `key: |` block scalar (106 carriers) is deliberately NOT changed
  * here — it is a SCALAR, not in #4314, and flipping what its readers see is a
- * separate unit of work (issue #4372). P7 locks that it still reads as `"|-"`.
+ * separate unit of work (issue #4379). P7 locks that it still reads as `"|-"`.
  */
 
 const UID_A = "[[9a1cf31c-9d41-4ef3-9023-584a8d087d16]]";
@@ -208,7 +208,7 @@ describe("FrontmatterService.parseObject — list continuation (issue #4314)", (
     expect(plain?.exo__Asset_archived).toBe("true");
 
     // A top-level block scalar is a SCALAR and still reads as its indicator
-    // (issue #4372 — out of scope here, on purpose).
+    // (issue #4379 — out of scope here, on purpose).
     const blockScalar = fm.parseObject(
       `---\nconcept__Concept_definition: |-\n  first line\n  second line\nexo__Asset_label: "L"\n---\nBody`,
     );
