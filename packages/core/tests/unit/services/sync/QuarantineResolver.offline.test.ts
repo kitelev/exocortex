@@ -205,3 +205,33 @@ describe("QuarantineResolver — OFFLINE list/diff from the device-local cache",
     expect(await resolver.listOpenConflicts([spec()])).toHaveLength(0);
   });
 });
+
+// #4225 — an uncached pin that cannot be classified offline is REPORTED, not
+// silently dropped; the cached conflict still surfaces as a conflict.
+describe("QuarantineResolver.classifyPins — offline (#4225)", () => {
+  it("P7 @req:c0b0e8bf-355d-4b03-9512-618c879f0940 an uncached pin with the remote tree unavailable is unclassified; the cached conflict stays a conflict", async () => {
+    const cache = await cacheWith([
+      {
+        repoKey: REPO_KEY,
+        path: PATH,
+        uid: "u1",
+        reason: "frontmatter conflict",
+        baseContent: BASE,
+        localContent: LOCAL,
+        remoteContent: REMOTE,
+      },
+    ]);
+    const disk = new FakeLocalFiles({ [PATH]: LOCAL, "beta.md": mdAsset("u2", "local") });
+    const resolver = new QuarantineResolver({
+      transport: offlineTransport,
+      watermarkStore: await watermarkPins([PATH, "beta.md"]),
+      localFilesFor: () => disk,
+      sha1: sha1Hex,
+      conflictCache: cache,
+    });
+
+    const { conflicts, pinned } = await resolver.classifyPins([spec()]);
+    expect(conflicts.map((c) => c.path)).toEqual([PATH]);
+    expect(pinned).toEqual([{ repoKey: REPO_KEY, path: "beta.md", kind: "unclassified" }]);
+  });
+});

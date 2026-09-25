@@ -74,6 +74,7 @@ import { collectVaultSpecs } from "./exosync-parity.js";
 import { registerQuarantineCommands } from "./exosync-quarantine.js";
 import { RestPushService } from "../services/RestPushService.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
+import { repoIsolatedGitEnv } from "../utils/repoIsolatedGitEnv.js";
 
 export interface ExosyncSyncOptions {
   vault: string;
@@ -301,7 +302,14 @@ export function nodeLocalBaseShaProvider(
       const { stdout } = await execFile(
         "git",
         ["-C", vaultPath, "submodule", "status", spec.localPath],
-        { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 },
+        // Run inside another repository's git hook, the inherited GIT_DIR /
+        // GIT_INDEX_FILE would make git read THAT repository instead of the
+        // vault (req 91b2c01a).
+        {
+          timeout: 30_000,
+          maxBuffer: 4 * 1024 * 1024,
+          env: repoIsolatedGitEnv(process.env),
+        },
       );
       const m = stdout.match(/^[ +\-U]?([0-9a-f]{40})\b/m);
       return m ? m[1] : null;
@@ -481,9 +489,10 @@ export async function runExosyncSync(
   // git-repo quarantine store was retired — offline-resolution program).
   const quarantine: QuarantinePort = conflictCache;
 
+  const watermarkStore = new FileWatermarkStore(nodeWatermarkFileIO(watermarkPath));
   const engine = new SyncEngine({
     transport,
-    watermarkStore: new FileWatermarkStore(nodeWatermarkFileIO(watermarkPath)),
+    watermarkStore,
     // mtime-manifest local-hash skip (perf) — same IO/store family as the
     // watermark; skips reading+re-hashing unchanged asset files each sync.
     localManifestStore: new FileLocalManifestStore(
@@ -536,8 +545,21 @@ export async function runExosyncSync(
       }),
       { pulled: 0, pushed: 0, merged: 0, quarantined: 0 },
     );
+    // #4225 — pins left behind by push-only runs (deferred incoming changes)
+    // are cleared only by a pull, and a push-only device never pulls, so they
+    // accumulated unseen. The count rides in the Summary line itself: machine
+    // readers parse that line and skip it as a known form, so the addition stays
+    // silent for them and visible for a human. It counts EVERY pin, open
+    // conflicts included — `quarantine list` breaks them down.
+    const watermarks = await watermarkStore.getAll();
+    let pinnedTotal = 0;
+    for (const spec of specs) {
+      pinnedTotal += watermarks[spec.repoKey]?.pinnedPaths?.length ?? 0;
+    }
+    const pinnedTail =
+      pinnedTotal > 0 ? `, pinned ${pinnedTotal} (incl. conflicts; see \`exosync quarantine list\`)` : "";
     out(
-      `Summary: ${results.length} repo(s) — pulled ${totals.pulled}, pushed ${totals.pushed}, merged ${totals.merged}, quarantined ${totals.quarantined}`,
+      `Summary: ${results.length} repo(s) — pulled ${totals.pulled}, pushed ${totals.pushed}, merged ${totals.merged}, quarantined ${totals.quarantined}${pinnedTail}`,
     );
     // ExoSync Phase 0 (measure-first) — run-total per-phase breakdown so the
     // dominant phase is visible (which optimisation Phase 1 picks).

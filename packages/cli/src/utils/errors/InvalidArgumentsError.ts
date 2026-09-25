@@ -16,11 +16,11 @@ export class InvalidArgumentsError extends CLIError {
     context?: Record<string, unknown>,
   ) {
     const defaultGuidance = `Check command syntax and argument format.
-Use: exocortex command --help for usage information.`;
+Use: exocortex --help for usage information.`;
 
     super(message, context, {
       message: suggestion || "Check command syntax and argument format",
-      suggestion: "exocortex command --help",
+      suggestion: "exocortex --help",
     });
 
     this.guidance = suggestion || defaultGuidance;
