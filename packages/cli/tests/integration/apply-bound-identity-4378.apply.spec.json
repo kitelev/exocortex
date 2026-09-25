@@ -18,6 +18,7 @@
       "from": "    if (t.object instanceof IRI) {\n      const bearers = await labelTermBearers(tripleStore, t.object);",
       "to": "    if (t.object instanceof IRI && t.object.value.length < 0) {\n      const bearers = await labelTermBearers(tripleStore, t.object);",
       "expect": [
+        "A10",
         "A7",
         "A9"
       ]
@@ -26,6 +27,15 @@
       "_note": "An ambiguous label counts as NOT bound: the gate is skipped and the command runs on any class (fail-open), out of step with the resolver.",
       "from": "      if (bearers.some((b) => b.uid === commandUid)) {",
       "to": "      if (bearers.length === 1 && bearers[0].uid === commandUid) {",
+      "expect": [
+        "A10",
+        "A9"
+      ]
+    },
+    "M3_ambiguity_reason_dropped": {
+      "_note": "The refusal no longer names the real reason (the command's label is ambiguous) — the user only sees 'not bound to the target's class' next to a class the binding does target.",
+      "from": "        if (ambiguousBearers.length > 0) {",
+      "to": "        if (ambiguousBearers.length < 0) {",
       "expect": [
         "A9"
       ]

@@ -341,8 +341,20 @@ describe("ticket e96eb614 — CLI apply honours the command's binding scope", ()
   // An ambiguous label (two commands bear it) counts as bound, and the resolver
   // leaves the ambiguous reference unlinked (#4373) — so the gate fails CLOSED,
   // matching the plugin, which shows no button for it either.
-  it("A9 an ambiguous command label fails closed — refused even on the bound class", async () => {
+  it("A9 an ambiguous command label fails closed — refused even on the bound class, with the real reason named", async () => {
     await runApply("bg-dup1", TARGET_WIDGET);
+    expect(errors()).toMatch(NOT_BOUND);
+    expect(errors()).toMatch(/label is ambiguous/);
+  });
+
+  // ⛔ A10 locks a DOCUMENTED trade-off (review of PR #4384), like A6: bg-dup2
+  // declares NO binding of its own, but it bears the same label as the bound
+  // bg-dup1, so the binding's term-IRI reference cannot tell them apart and it
+  // reads as bound — refused on every classed target. On main it ran anywhere.
+  // Fail-closed is the safe side (identity is lost) and matches the plugin,
+  // which shows no button for it; if this ever changes, change it on purpose.
+  it("A10 a command that only SHARES a bound command's label is refused too (documented trade-off)", async () => {
+    await runApply("bg-dup2", TARGET_GADGET);
     expect(errors()).toMatch(NOT_BOUND);
   });
 });

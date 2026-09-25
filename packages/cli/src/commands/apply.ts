@@ -376,6 +376,12 @@ async function executeOnTarget(
   // `set-planned-start`, …). An unconditional gate would kill those 11
   // outright. "No binding declared" means "no declared class scope", not
   // "scope = nothing".
+  // ⛔ One exception, accepted (review of PR #4384): a command whose label
+  // it SHARES with a bound asset reads as bound (the binding's term-IRI
+  // reference cannot tell the two bearers apart), and is then refused on every
+  // classed target — the resolver cannot link an ambiguous reference either,
+  // so the plugin shows no button for it. Live radius 0: every term label is
+  // unique in the three vaults. Axis A10.
   //
   // Utility commands stay unaffected by construction: `repair-folder`,
   // `archive`, `rename-to-uid` and `set-ontology` bind to `exo__Asset`, the
@@ -403,6 +409,9 @@ async function executeOnTarget(
   // fails CLOSED, in step with the resolver, which leaves an ambiguous
   // reference unlinked (#4373).
   let commandIsBound = false;
+  // uids bearing the command's label when the binding names it only through
+  // an AMBIGUOUS term IRI — reported if the gate then refuses (#4378).
+  let ambiguousBearers: string[] = [];
   for (const t of bindingCommandTriples) {
     if (String(t.object).includes(commandUid)) {
       commandIsBound = true;
@@ -412,6 +421,7 @@ async function executeOnTarget(
       const bearers = await labelTermBearers(tripleStore, t.object);
       if (bearers.some((b) => b.uid === commandUid)) {
         commandIsBound = true;
+        if (bearers.length > 1) ambiguousBearers = bearers.map((b) => b.uid);
         break;
       }
     }
@@ -467,6 +477,11 @@ async function executeOnTarget(
         console.error(
           `   Declared classes: ${assetClasses.join(", ")}.`,
         );
+        if (ambiguousBearers.length > 0) {
+          console.error(
+            `   The command's label is ambiguous — borne by ${ambiguousBearers.join(", ")} — so its binding reference cannot be resolved.`,
+          );
+        }
         return failed;
       }
     }
