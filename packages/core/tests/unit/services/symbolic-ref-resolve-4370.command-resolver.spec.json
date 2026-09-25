@@ -1,0 +1,98 @@
+{
+  "_doc": "Revert-verify mutants for issue #4370 — a canonical [[uid]] reference to an asset whose exo__Asset_label is prefix__Local is emitted as that label's term IRI; CommandResolver now maps it back to the file subject (resolveRefIriSubject). One mutant per resolution site plus the helper (M9 = main before #4370). Z0 (premise) and H1/H2 (human-labelled controls) stay green under every mutant. `red_re` anchors on the `● <suite> › [Xn]` failure header.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/CommandResolver.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/services/symbolic-ref-resolve-4370.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_style_ref_raw": {
+      "_note": "loadLinkedStyle takes the IRI reference as the subject again.",
+      "from": "        styleSubject = await this.resolveRefIriSubject(ref);",
+      "to": "        styleSubject = ref;",
+      "expect": [
+        "S1"
+      ]
+    },
+    "M2_precondition_ref_raw": {
+      "_note": "resolvePreconditionRef returns the IRI reference as-is: a symbolic precondition vanishes and the command shows UNGATED.",
+      "from": "  private async resolvePreconditionRef(\n    ref: IRI | Literal | unknown,\n  ): Promise<IRI | null> {\n    if (ref instanceof IRI) return this.resolveRefIriSubject(ref);",
+      "to": "  private async resolvePreconditionRef(\n    ref: IRI | Literal | unknown,\n  ): Promise<IRI | null> {\n    if (ref instanceof IRI) return ref;",
+      "expect": [
+        "P1"
+      ]
+    },
+    "M3_query_ref_raw": {
+      "_note": "loadPreconditionQueryRef reads Asset_uid off the IRI reference itself.",
+      "from": "        await this.resolveRefIriSubject(queryRef),",
+      "to": "        queryRef,",
+      "expect": [
+        "Q1"
+      ]
+    },
+    "M4_grounding_ref_raw": {
+      "_note": "resolveGroundingRef returns the IRI reference as-is: the grounding does not load and loadCommand returns null.",
+      "from": "  private async resolveGroundingRef(\n    ref: IRI | Literal | unknown,\n  ): Promise<IRI | null> {\n    if (ref instanceof IRI) return this.resolveRefIriSubject(ref);",
+      "to": "  private async resolveGroundingRef(\n    ref: IRI | Literal | unknown,\n  ): Promise<IRI | null> {\n    if (ref instanceof IRI) return ref;",
+      "expect": [
+        "G1"
+      ]
+    },
+    "M5_step_ref_raw": {
+      "_note": "loadCompositeSteps takes the IRI step reference as the subject again.",
+      "from": "        stepSubject = await this.resolveRefIriSubject(triple.object);",
+      "to": "        stepSubject = triple.object;",
+      "expect": [
+        "C1"
+      ]
+    },
+    "M6_ref_triple_object_raw": {
+      "_note": "resolveRefTripleObject (property defaults, inheritance rules) returns the IRI as-is.",
+      "from": "    if (object instanceof IRI) return this.resolveRefIriSubject(object);",
+      "to": "    if (object instanceof IRI) return object;",
+      "expect": [
+        "D1",
+        "R1"
+      ]
+    },
+    "M7_linked_uid_raw": {
+      "_note": "getLinkedUID reads Asset_uid off the IRI itself, then falls back to the path basename (`exocmd#SymCommand`).",
+      "from": "      // Try to find UID of the linked asset\n      const uidTriples = await this.tripleStore.match(\n        await this.resolveRefIriSubject(obj),",
+      "to": "      // Try to find UID of the linked asset\n      const uidTriples = await this.tripleStore.match(\n        obj,",
+      "expect": [
+        "B1"
+      ]
+    },
+    "M8_linked_uids_raw": {
+      "_note": "getLinkedUIDs (CommandBinding_overrides) reads Asset_uid off the IRI itself.",
+      "from": "      if (obj instanceof IRI) {\n        const uidTriples = await this.tripleStore.match(\n          await this.resolveRefIriSubject(obj),",
+      "to": "      if (obj instanceof IRI) {\n        const uidTriples = await this.tripleStore.match(\n          obj,",
+      "expect": [
+        "O1"
+      ]
+    },
+    "M9_helper_identity": {
+      "_note": "resolveRefIriSubject returns every IRI unchanged — equivalent to main before #4370 at all eight sites.",
+      "from": "  private async resolveRefIriSubject(ref: IRI): Promise<IRI> {\n",
+      "to": "  private async resolveRefIriSubject(ref: IRI): Promise<IRI> {\n    if (ref) return ref;\n",
+      "expect": [
+        "B1",
+        "C1",
+        "D1",
+        "G1",
+        "O1",
+        "P1",
+        "Q1",
+        "R1",
+        "S1"
+      ]
+    }
+  }
+}
