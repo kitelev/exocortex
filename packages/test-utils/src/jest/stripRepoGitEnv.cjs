@@ -1,10 +1,11 @@
 // Jest globalSetup shared by every package's jest config.
 //
-// Runs once in the jest PARENT process, before any worker is spawned, so every
-// worker — and every `git` a test or the code under test spawns without an
-// explicit `env` — inherits an environment that does not point at the
+// Runs once in the jest PARENT process, before any TEST worker is forked, so
+// every test worker — and every `git` a test or the code under test spawns
+// without an explicit `env` — inherits an environment that does not point at the
 // ENCLOSING repository. (Deleting these in a setupFiles* module only edits the
 // sandbox's copy of process.env; child_process still uses the real one.)
+// jest-haste-map may fork its crawler workers earlier; they run no test code.
 //
 // Why: inside a git hook (pre-commit → lint-staged → jest --findRelatedTests)
 // git exports GIT_DIR / GIT_INDEX_FILE / … for the repository being committed.

@@ -14,9 +14,13 @@
  * workers — and every `git` spawned without an explicit `env` — inherit a clean
  * environment.
  *
- *  G1 wiring: every packages/<pkg>/jest.config.js (enumerated, not listed)
- *     declares that globalSetup.
- *  G2 the helper deletes each listed variable and nothing else.
+ *  G1 wiring: every jest config in the tree (any directory outside
+ *     node_modules / .git / dist / coverage, any jest[.<name>].config.[c|m][j|t]s)
+ *     declares that globalSetup, and no package.json carries an inline "jest"
+ *     config object. A filesystem walk, not `git ls-files`: the axis must also
+ *     hold in a mutant-driver copy of the tree, which has no .git.
+ *  G2 the helper deletes each listed variable and nothing else; the list is
+ *     pinned name by name and covers `git rev-parse --local-env-vars`.
  *  G3 end to end: in a process whose GIT_DIR points at a decoy repo, git run
  *     after the setup — invoked with jest's (globalConfig, projectConfig)
  *     arguments — finds its own temp repo; without the setup it finds the
@@ -38,12 +42,23 @@ const stripRepoGitEnv = require(SHARED) as ((...jestArgs: unknown[]) => Promise<
   REPO_LOCAL_GIT_ENV: string[];
 };
 
-function jestConfigs(): string[] {
-  const pkgs = path.join(repoRoot, "packages");
-  return fs
-    .readdirSync(pkgs)
-    .map((d) => path.join(pkgs, d, "jest.config.js"))
-    .filter((f) => fs.existsSync(f));
+const JEST_CONFIG_RE = /(^|\/)jest(\.[^/]+)?\.config\.[cm]?[jt]s$/;
+
+const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "coverage"]);
+
+function walk(dir: string, out: string[] = []): string[] {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (e.isDirectory()) {
+      if (!SKIP_DIRS.has(e.name)) walk(path.join(dir, e.name), out);
+    } else if (e.isFile()) {
+      out.push(path.relative(repoRoot, path.join(dir, e.name)));
+    }
+  }
+  return out;
+}
+
+function jestConfigs(files: string[]): string[] {
+  return files.filter((p) => JEST_CONFIG_RE.test(p)).map((p) => path.join(repoRoot, p));
 }
 
 function tmpGitRepo(prefix: string): string {
@@ -59,12 +74,26 @@ function cleanEnv(): NodeJS.ProcessEnv {
 }
 
 describe("hook-safe git environment for every jest config", () => {
-  it("G1 every packages/*/jest.config.js declares the shared stripRepoGitEnv globalSetup", () => {
-    const configs = jestConfigs();
-    // Canary: the enumeration must see the packages that run real git in tests.
-    expect(configs.map((c) => path.basename(path.dirname(c)))).toEqual(
-      expect.arrayContaining(["cli", "obsidian-plugin", "core"]),
+  it("G1 every tracked jest config declares the shared stripRepoGitEnv globalSetup", () => {
+    const files = walk(repoRoot);
+    const configs = jestConfigs(files);
+    // Canary: the enumeration must see the packages that run real git in tests,
+    // and the non-default-named UI config.
+    expect(configs.map((c) => path.relative(repoRoot, c))).toEqual(
+      expect.arrayContaining([
+        "packages/cli/jest.config.js",
+        "packages/core/jest.config.js",
+        "packages/obsidian-plugin/jest.config.js",
+        "packages/obsidian-plugin/jest.ui.config.js",
+      ]),
     );
+    const inlineJestConfig = files
+      .filter((p) => path.basename(p) === "package.json")
+      .filter((p) => {
+        const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, p), "utf8")) as { jest?: unknown };
+        return typeof pkg.jest === "object" && pkg.jest !== null;
+      });
+    expect(inlineJestConfig).toEqual([]);
     const offenders = configs.filter((cfgPath) => {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const cfg = require(cfgPath) as { globalSetup?: string; rootDir?: string };
@@ -79,16 +108,41 @@ describe("hook-safe git environment for every jest config", () => {
     const env: NodeJS.ProcessEnv = { PATH: "/usr/bin", GIT_TERMINAL_PROMPT: "0" };
     for (const name of stripRepoGitEnv.REPO_LOCAL_GIT_ENV) env[name] = "/decoy";
     stripRepoGitEnv.stripFrom(env);
-    expect(stripRepoGitEnv.REPO_LOCAL_GIT_ENV).toEqual(
-      expect.arrayContaining(["GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_COMMON_DIR"]),
-    );
     expect(Object.keys(env).sort()).toEqual(["GIT_TERMINAL_PROMPT", "PATH"]);
+    // Pinned name by name — a list built from itself cannot notice a dropped entry.
+    expect([...stripRepoGitEnv.REPO_LOCAL_GIT_ENV].sort()).toEqual([
+      "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+      "GIT_COMMON_DIR",
+      "GIT_CONFIG",
+      "GIT_CONFIG_COUNT",
+      "GIT_CONFIG_PARAMETERS",
+      "GIT_DIR",
+      "GIT_GRAFT_FILE",
+      "GIT_IMPLICIT_WORK_TREE",
+      "GIT_INDEX_FILE",
+      "GIT_INTERNAL_SUPER_PREFIX",
+      "GIT_NO_REPLACE_OBJECTS",
+      "GIT_OBJECT_DIRECTORY",
+      "GIT_PREFIX",
+      "GIT_REPLACE_REF_BASE",
+      "GIT_SHALLOW_FILE",
+      "GIT_WORK_TREE",
+    ]);
+    // …and it must cover what the installed git itself calls repo-local.
+    const fromGit = execFileSync("git", ["rev-parse", "--local-env-vars"], {
+      encoding: "utf8",
+      env: cleanEnv(),
+    })
+      .split("\n")
+      .filter(Boolean);
+    expect(fromGit.length).toBeGreaterThan(0);
+    expect(stripRepoGitEnv.REPO_LOCAL_GIT_ENV).toEqual(expect.arrayContaining(fromGit));
   });
 
   it("G3 after the setup a spawned git finds its own repo, not the decoy the env points at", () => {
-    const decoy = tmpGitRepo("hook-env-decoy-");
-    const own = tmpGitRepo("hook-env-own-");
-    const probe = (runSetup: boolean) =>
+    let decoy: string | undefined;
+    let own: string | undefined;
+    const probe = (runSetup: boolean, d: string, o: string) =>
       execFileSync(
         process.execPath,
         [
@@ -97,21 +151,23 @@ describe("hook-safe git environment for every jest config", () => {
            (async () => {
              // Called exactly as jest calls a globalSetup: (globalConfig, projectConfig).
              if (${runSetup}) await s({ rootDir: "/g" }, { rootDir: "/p" });
-             const r = require("child_process").execFileSync("git", ["rev-parse", "--absolute-git-dir"], { cwd: ${JSON.stringify(own)}, encoding: "utf8" });
+             const r = require("child_process").execFileSync("git", ["rev-parse", "--absolute-git-dir"], { cwd: ${JSON.stringify(o)}, encoding: "utf8" });
              process.stdout.write(r.trim());
            })();`,
         ],
         {
           encoding: "utf8",
-          env: { ...cleanEnv(), GIT_DIR: path.join(decoy, ".git"), GIT_INDEX_FILE: path.join(decoy, ".git", "index") },
+          env: { ...cleanEnv(), GIT_DIR: path.join(d, ".git"), GIT_INDEX_FILE: path.join(d, ".git", "index") },
         },
       );
     try {
-      expect(probe(false)).toBe(path.join(decoy, ".git")); // control: the hazard is real
-      expect(probe(true)).toBe(path.join(own, ".git"));
+      decoy = tmpGitRepo("hook-env-decoy-");
+      own = tmpGitRepo("hook-env-own-");
+      expect(probe(false, decoy, own)).toBe(path.join(decoy, ".git")); // control: the hazard is real
+      expect(probe(true, decoy, own)).toBe(path.join(own, ".git"));
     } finally {
-      fs.rmSync(decoy, { recursive: true, force: true });
-      fs.rmSync(own, { recursive: true, force: true });
+      if (decoy) fs.rmSync(decoy, { recursive: true, force: true });
+      if (own) fs.rmSync(own, { recursive: true, force: true });
     }
   });
 });
