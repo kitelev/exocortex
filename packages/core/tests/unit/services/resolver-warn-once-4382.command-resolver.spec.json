@@ -1,0 +1,54 @@
+{
+  "_doc": "Revert-verify mutants for issue #4382 — every CommandResolver warning goes through warnOnce (once per session per message text). M1 = the dedupe removed; M2–M4 = one named site bypasses it again (S0 is the structural lock: exactly one direct logger.warn, inside warnOnce). `red_re` anchors on the `● <suite> › [Xn]` failure header.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/CommandResolver.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/services/resolver-warn-once-4382.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_no_dedupe": {
+      "_note": "warnOnce forwards every call: each loader pass re-emits the warning (a toast per render in the plugin).",
+      "from": "    if (this._warnedMessages.has(message)) return;",
+      "to": "    if (this._warnedMessages.has(message) && message.length < 0) return;",
+      "expect": [
+        "W1",
+        "W2",
+        "W3"
+      ]
+    },
+    "M2_style_site_direct": {
+      "_note": "This site calls logger.warn directly again, bypassing the dedupe.",
+      "from": "this.warnOnce(\n        this.capWarning(\n          `CommandBinding ${bindingUid}: style reference unresolved",
+      "to": "this.logger.warn(\n        this.capWarning(\n          `CommandBinding ${bindingUid}: style reference unresolved",
+      "expect": [
+        "S0",
+        "W1"
+      ]
+    },
+    "M3_propertydefault_site_direct": {
+      "_note": "This site calls logger.warn directly again, bypassing the dedupe.",
+      "from": "this.warnOnce(\n          `Grounding ${contextUid}: PropertyDefault asset missing exocmd__PropertyDefault_property",
+      "to": "this.logger.warn(\n          `Grounding ${contextUid}: PropertyDefault asset missing exocmd__PropertyDefault_property",
+      "expect": [
+        "S0",
+        "W2"
+      ]
+    },
+    "M4_inheritancerule_site_direct": {
+      "_note": "This site calls logger.warn directly again, bypassing the dedupe.",
+      "from": "this.warnOnce(\n          `Grounding ${groundingUid}: InheritanceRule missing/unresolvable exocmd__InheritanceRule_sourceProperty",
+      "to": "this.logger.warn(\n          `Grounding ${groundingUid}: InheritanceRule missing/unresolvable exocmd__InheritanceRule_sourceProperty",
+      "expect": [
+        "S0",
+        "W3"
+      ]
+    }
+  }
+}
