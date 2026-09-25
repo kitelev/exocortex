@@ -32,6 +32,16 @@ export type { MetadataResolver };
  */
 export const COMPOSED_SOURCE_MARKER = "displayName";
 
+/**
+ * What one render pass counted: how many `{{placeholder}}`s the template NAMED, and how many of
+ * them substituted to something non-empty. Exported as ONE named type so the engine and a caller
+ * reading the counts cannot drift apart if a field is ever added (review of PR #4366, LOW-3).
+ */
+export interface PlaceholderStats {
+  placeholders: number;
+  nonEmpty: number;
+}
+
 /** What a compiled placeholder actually carries: `{{key!displayName}}` / `{{key::FMT!displayName}}`. */
 const COMPOSED_SOURCE_SUFFIX = `!${COMPOSED_SOURCE_MARKER}`;
 
@@ -86,7 +96,8 @@ export class DisplayNameTemplateEngine {
     metadata: Record<string, unknown>,
     basename: string,
     createdDate?: Date,
-    metadataResolver?: MetadataResolver
+    metadataResolver?: MetadataResolver,
+    onPlaceholderStats?: (stats: PlaceholderStats) => void,
   ): string | null {
     if (!this.template || this.template.trim() === "") {
       return null;
@@ -122,6 +133,15 @@ export class DisplayNameTemplateEngine {
         nonEmpty += 1;
       },
     );
+
+    // Hand the SAME pass's counts to a caller that needs a stricter verdict than this method's
+    // own (#4359 wants "EVERY named slot rendered", not "at least one did"). Deliberately
+    // reported from here and NOT recomputed by the caller: a second parse of the template would
+    // be a second opinion on emptiness, which is exactly what renderSegment's docblock warns
+    // against. ⛔ NOT reported on the separator path — that mode drops empty fields BY DESIGN,
+    // so "every slot non-empty" is not a meaningful question there; a caller that needs the
+    // guarantee must treat a missing report as "cannot vouch" rather than as "all present".
+    onPlaceholderStats?.({ placeholders, nonEmpty });
 
     // Separator mode already declines in this situation ("the affixes alone are not a name");
     // this is the same judgement on the plain path, minus ONE case. ⛔ The exception is not

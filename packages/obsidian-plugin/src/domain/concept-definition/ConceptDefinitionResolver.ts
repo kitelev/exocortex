@@ -65,12 +65,43 @@ export class ConceptDefinitionResolver {
     // engine resolves each {{property}} 1-hop; joinArrayValues renders a multi-valued differentia
     // as all adjectives joined (dropping bare-UID values), while leaving the displayName path
     // (default first-only) unchanged.
+    // #4359 — EVERY slot the template names must have rendered, not just genus.
+    //
+    // The gate above only asks about genus, so `"{{differentia}} {{genus}}"` with no differentia
+    // rendered to " <parent label>", trimmed to the parent's bare label, and was returned as a
+    // "computed definition". Measured on vault-my: 1601 concepts carry genus, 8 carry
+    // differentia — so 1593 rendered as their parent's name, and for 225 of them that phrase
+    // also SHADOWED a real stored narrative, because `resolve()` is `computed ?? stored`.
+    //
+    // ⛔ Expressed as "every named slot resolved", NOT as "differentia is present": the template
+    // is vault data (exo__DisplayNameSpec, compiled by ConceptDefinitionSpecService) and may name
+    // other properties entirely. Hardcoding the key would re-fix this one spec and miss the next.
+    //
+    // The counts come from the render pass ITSELF rather than from a second parse of the
+    // template here — renderSegment's own docblock warns that an emptiness verdict taken from a
+    // different pass can disagree with the string that was built.
+    // Three primitives rather than one nullable object: TypeScript narrows a nullable-OBJECT
+    // `let` to its `null` initializer across the closure boundary (it cannot see the callback as
+    // part of the synchronous flow), which would force a cast at the read site. A `let` without
+    // an explicit annotation widens instead, so the same semantics need no `as` (review LOW-2).
+    let reported = false;
+    let placeholders = 0;
+    let nonEmpty = 0;
     const rendered = new DisplayNameTemplateEngine(template, { joinArrayValues: true }).render(
       metadata,
       "",
       undefined,
       this.metadataResolver ?? undefined,
+      (s) => {
+        reported = true;
+        placeholders = s.placeholders;
+        nonEmpty = s.nonEmpty;
+      },
     );
+    // Fail-closed on a missing report too: the engine does not report on its separator path,
+    // where empty fields are dropped by design, so "cannot vouch" must fall through to the
+    // stored narrative rather than silently pass the degenerate phrase.
+    if (!reported || nonEmpty < placeholders) return null;
     return rendered && rendered.trim() ? rendered : null;
   }
 

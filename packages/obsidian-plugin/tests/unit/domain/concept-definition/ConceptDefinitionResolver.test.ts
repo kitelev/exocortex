@@ -63,7 +63,10 @@ const conceptTarget = (uid: string, label: string): Fm => ({
 });
 
 /** The VAULT-DECLARED composition spec + parts. `includeGenusPart` drives revert-verify axis-1. */
-function specFiles(includeGenusPart = true): Fm[] {
+function specFiles(
+  includeGenusPart = true,
+  firstPart: { uid: string; key: string } = { uid: DIFF_PROP_UID, key: "concept__Concept_differentia" },
+): Fm[] {
   const parts: Fm[] = [
     {
       path: "part-differentia.md",
@@ -72,7 +75,7 @@ function specFiles(includeGenusPart = true): Fm[] {
         exo__Instance_class: [`[[${PRINTED_PROPERTY_UID}|exo__PrintedProperty]]`],
         exo__DisplayNamePart_of: `[[${SPEC_UID}]]`,
         exo__DisplayNamePart_order: 0,
-        exo__PrintedProperty_property: `[[${DIFF_PROP_UID}|concept__Concept_differentia]]`,
+        exo__PrintedProperty_property: `[[${firstPart.uid}|${firstPart.key}]]`,
       },
     },
     {
@@ -118,11 +121,14 @@ function specFiles(includeGenusPart = true): Fm[] {
 }
 
 /** Build (specService, resolver) over an in-memory vault carrying the spec + parts + targets. */
-function harness(includeGenusPart = true): {
+function harness(
+  includeGenusPart = true,
+  firstPart?: { uid: string; key: string },
+): {
   template: string | null;
   resolver: ConceptDefinitionResolver;
 } {
-  const app = createVaultApp(specFiles(includeGenusPart));
+  const app = createVaultApp(specFiles(includeGenusPart, firstPart));
   const specService = new ConceptDefinitionSpecService(app);
   specService.initialize(); // REAL scanVault — compiles the vault-declared template
   const template = specService.getTemplate("concept__Concept");
@@ -229,4 +235,61 @@ describe("ConceptDefinitionResolver — vault-declared composition (req eb18a3a4
     expect(resolver.resolve({ exo__Asset_label: "orphan concept" }, template)).toBeNull();
     expect(resolver.resolve({ concept__Concept_definition: "   " }, template)).toBeNull();
   });
+
+  // #4359 — a template slot that renders to NOTHING must not yield a "computed" definition.
+  // Measured on vault-my: 1601 concepts carry genus, 8 carry differentia ⇒ 1593 rendered as
+  // their parent's bare label, and for 225 of those the phrase SHADOWED a stored narrative
+  // (resolve() is `computed ?? stored`).
+
+  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da [D1] genus WITHOUT differentia → the STORED narrative is returned, not the parent's bare label", () => {
+    const { template, resolver } = harness();
+    const stored = "a goal that is reviewed every quarter";
+    const definition = resolver.resolve(
+      { concept__Concept_genus: `[[${OKR_UID}]]`, concept__Concept_definition: stored },
+      template,
+    );
+    // Pre-fix this returned "OKR" — the parent's label — shadowing the narrative below.
+    expect(definition).toBe(stored);
+    expect(resolver.resolveComputed(
+      { concept__Concept_genus: `[[${OKR_UID}]]`, concept__Concept_definition: stored },
+      template,
+    )).toBeNull();
+  });
+
+  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da [D2] genus WITHOUT differentia and no stored text → null, never the parent's label", () => {
+    const { template, resolver } = harness();
+    const definition = resolver.resolve({ concept__Concept_genus: `[[${OKR_UID}]]` }, template);
+    expect(definition).toBeNull();
+    // The specific degenerate value the defect produced, named so a regression is unmistakable.
+    expect(definition).not.toBe("OKR");
+  });
+
+  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da [D3] the guard is about EVERY named slot, not about the key 'differentia' — a spec naming a different property behaves identically", () => {
+    // The composition template is VAULT data and may name any property. If the guard were keyed
+    // on `concept__Concept_differentia`, this spec would sail past it and degenerate again.
+    const otherPart = { uid: "5cc92949-0000-4000-8000-0000000000ff", key: "concept__Concept_scope" };
+    const { template, resolver } = harness(true, otherPart);
+    expect(template).toBe("{{concept__Concept_scope}} {{concept__Concept_genus}}");
+
+    const stored = "scoped to one team";
+    // Slot present → composes, proving the fixture really drives this property.
+    expect(
+      resolver.resolve(
+        {
+          concept__Concept_genus: `[[${OKR_UID}]]`,
+          concept__Concept_scope: `[[${QUARTERLY_UID}]]`,
+          concept__Concept_definition: stored,
+        },
+        template,
+      ),
+    ).toBe("quarterly OKR");
+    // Slot missing → falls through to stored, exactly as for differentia.
+    expect(
+      resolver.resolve(
+        { concept__Concept_genus: `[[${OKR_UID}]]`, concept__Concept_definition: stored },
+        template,
+      ),
+    ).toBe(stored);
+  });
+
 });
