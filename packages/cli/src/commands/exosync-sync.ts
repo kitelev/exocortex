@@ -74,6 +74,7 @@ import { collectVaultSpecs } from "./exosync-parity.js";
 import { registerQuarantineCommands } from "./exosync-quarantine.js";
 import { RestPushService } from "../services/RestPushService.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
+import { repoIsolatedGitEnv } from "../utils/repoIsolatedGitEnv.js";
 
 export interface ExosyncSyncOptions {
   vault: string;
@@ -301,7 +302,14 @@ export function nodeLocalBaseShaProvider(
       const { stdout } = await execFile(
         "git",
         ["-C", vaultPath, "submodule", "status", spec.localPath],
-        { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 },
+        // Run inside another repository's git hook, the inherited GIT_DIR /
+        // GIT_INDEX_FILE would make git read THAT repository instead of the
+        // vault (req 91b2c01a).
+        {
+          timeout: 30_000,
+          maxBuffer: 4 * 1024 * 1024,
+          env: repoIsolatedGitEnv(process.env),
+        },
       );
       const m = stdout.match(/^[ +\-U]?([0-9a-f]{40})\b/m);
       return m ? m[1] : null;

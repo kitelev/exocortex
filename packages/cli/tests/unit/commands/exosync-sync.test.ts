@@ -16,7 +16,7 @@
  *     file on disk THROUGH the real writable port, proving port → engine →
  *     disk composition + direction plumbing + exit codes.
  */
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
@@ -30,6 +30,12 @@ import {
   type ExosyncSyncOptions,
 } from "../../../src/commands/exosync-sync";
 import type { SyncRepoSpec } from "@kitelev/exocortex-core";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
+import {
+  REPO_LOCAL_GIT_ENV,
+  repoIsolatedGitEnv,
+} from "../../../src/utils/repoIsolatedGitEnv";
 
 const ASSET_SPACE_CLASS_UID = "73bd00e4-ccc0-4f3f-b20d-c4388c4588fb";
 const OWNER = "test-owner";
@@ -332,8 +338,226 @@ describe("nodeLocalBaseShaProvider (#3590 base backfill source)", () => {
     ).toBeNull();
   }, 30_000); // real git subprocesses — see the budget note on the case above
 
+  // Req 91b2c01a. Inside ANOTHER repository's git hook, git exports that
+  // repository's GIT_DIR / GIT_INDEX_FILE. `-C <vault>` only moves the working
+  // directory, so an inheriting `git submodule status` reads the decoy and the
+  // provider returns null (full-conflict fallback for a space whose base is
+  // known). The provider must answer from the vault and leave the decoy alone.
+  // The variables go into THIS sandbox's process.env — the object the provider
+  // reads — and only around the provider call (the fixture's own git runs need
+  // a clean env).
+  it("H1 @req:91b2c01a-0c61-4ee1-a41e-dc465c84eae1 reads the vault's submodule even under another repository's hook env (decoy untouched)", async () => {
+    const remote = path.join(workdir, "remote");
+    mkdirSync(remote);
+    git(remote, ["init", "-q", "-b", "main"]);
+    writeFileSync(path.join(remote, "a.md"), "x");
+    git(remote, ["add", "-A"]);
+    git(remote, ["commit", "-q", "-m", "init"]);
+    const remoteHead = git(remote, ["rev-parse", "HEAD"]);
+
+    const vault = path.join(workdir, "vault");
+    mkdirSync(vault);
+    git(vault, ["init", "-q", "-b", "main"]);
+    git(vault, [
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      `file://${remote}`,
+      "assetspaces/o/r",
+    ]);
+
+    const decoy = path.join(workdir, "decoy");
+    mkdirSync(decoy);
+    git(decoy, ["init", "-q", "-b", "main"]);
+    writeFileSync(path.join(decoy, "d.md"), "d");
+    git(decoy, ["add", "-A"]);
+    git(decoy, ["commit", "-q", "-m", "decoy"]);
+    const decoyHead = git(decoy, ["rev-parse", "HEAD"]);
+    const decoyIndex = readFileSync(path.join(decoy, ".git", "index"));
+
+    const saved = { dir: process.env.GIT_DIR, index: process.env.GIT_INDEX_FILE };
+    process.env.GIT_DIR = path.join(decoy, ".git");
+    process.env.GIT_INDEX_FILE = path.join(decoy, ".git", "index");
+    let sha: string | null;
+    try {
+      sha = await nodeLocalBaseShaProvider(vault)(spec("assetspaces/o/r"));
+    } finally {
+      if (saved.dir === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = saved.dir;
+      if (saved.index === undefined) delete process.env.GIT_INDEX_FILE;
+      else process.env.GIT_INDEX_FILE = saved.index;
+    }
+
+    expect(sha).toBe(remoteHead);
+    expect(git(decoy, ["rev-parse", "HEAD"])).toBe(decoyHead);
+    expect(readFileSync(path.join(decoy, ".git", "index")).equals(decoyIndex)).toBe(true);
+  }, 30_000); // real git subprocesses — see the budget note on the first case
+
   it("refuses a leading-dash localPath (never lets git misread it as an option)", async () => {
     expect(await nodeLocalBaseShaProvider(workdir)(spec("--upload-pack=x"))).toBeNull();
     expect(await nodeLocalBaseShaProvider(workdir)(spec(""))).toBeNull();
+  });
+});
+
+// Req 91b2c01a, the population half. The population is every file in
+// packages/cli/src that imports child_process (not every call the regex happens
+// to recognise), and each one is classified: it strips git's repository-local
+// variables, it inherits them on purpose for a NAMED call, or it spawns no git.
+// A new spawner fails the scan until someone classifies it.
+describe("CLI git calls are isolated from the enclosing repository's env (req 91b2c01a)", () => {
+  const CLI_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../src");
+
+  type Rule =
+    | { kind: "strips" }
+    | { kind: "inherits"; call: string; reason: string }
+    | { kind: "no-git"; spawns: string };
+  const SPAWNERS: Record<string, Rule> = {
+    "commands/exosync-sync.ts": { kind: "strips" },
+    "commands/validate-schema.ts": {
+      kind: "inherits",
+      call: "git diff --cached",
+      reason:
+        "getStagedMdFiles: `git diff --cached` from the vault's own pre-commit must read the index being committed (a partial commit's temporary GIT_INDEX_FILE)",
+    },
+    "mcp/cliRunner.ts": { kind: "no-git", spawns: "the exocortex CLI itself" },
+    "services/RestPushService.ts": { kind: "no-git", spawns: "gh auth token" },
+    "services/SpawnService.ts": { kind: "no-git", spawns: "tmux" },
+  };
+
+  function sourceFiles(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) return sourceFiles(full);
+      return /\.(ts|js|mjs|cjs)$/.test(e.name) ? [full] : [];
+    });
+  }
+
+  // Comments blanked to spaces (offsets kept), strings left intact, so a helper
+  // name that survives only in a comment does not count.
+  function withoutComments(src: string): string {
+    let out = "";
+    let quote: string | null = null;
+    for (let i = 0; i < src.length; i++) {
+      const c = src[i];
+      if (quote) {
+        out += c;
+        if (c === "\\") { out += src[i + 1] ?? ""; i++; continue; }
+        if (c === quote) quote = null;
+        continue;
+      }
+      if (c === '"' || c === "'" || c === "`") { quote = c; out += c; continue; }
+      if (c === "/" && src[i + 1] === "/") {
+        while (i < src.length && src[i] !== "\n") { out += " "; i++; }
+        out += src[i] ?? "";
+        continue;
+      }
+      if (c === "/" && src[i + 1] === "*") {
+        const end = src.indexOf("*/", i + 2);
+        const stop = end === -1 ? src.length : end + 2;
+        for (; i < stop; i++) out += src[i] === "\n" ? "\n" : " ";
+        i--;
+        continue;
+      }
+      out += c;
+    }
+    return out;
+  }
+
+  // The text of a call from its opening parenthesis to the matching close.
+  function callText(src: string, openParen: number): string {
+    let depth = 0;
+    for (let i = openParen; i < src.length; i++) {
+      if (src[i] === "(") depth++;
+      else if (src[i] === ")" && --depth === 0) return src.slice(openParen, i + 1);
+    }
+    return src.slice(openParen);
+  }
+
+  const IMPORTS_CHILD_PROCESS = /(?:\bfrom|\brequire\(|\bimport\()\s*["'`](?:node:)?child_process["'`]/;
+  // A string that IS "git" or starts with "git " — as a call's first argument or anywhere.
+  const GIT_LITERAL = /["'`]git(?=["'`\s])/g;
+
+  function scan(): { file: string; problems: string[] }[] {
+    return sourceFiles(CLI_SRC)
+      .filter((f) => IMPORTS_CHILD_PROCESS.test(readFileSync(f, "utf-8")))
+      .map((f) => {
+        const file = path.relative(CLI_SRC, f);
+        const src = withoutComments(readFileSync(f, "utf-8"));
+        const rule = SPAWNERS[file];
+        const problems: string[] = [];
+        if (!rule) problems.push("imports child_process but is not classified in SPAWNERS");
+        const literals = [...src.matchAll(GIT_LITERAL)].map((m) => m.index ?? 0);
+        if (rule?.kind === "strips" && literals.length === 0) {
+          problems.push("classified `strips` but runs no git (stale entry?)");
+        }
+        for (const at of literals) {
+          const open = src.lastIndexOf("(", at);
+          const isFirstArg = open !== -1 && /^\(\s*$/.test(src.slice(open, at));
+          const call = isFirstArg ? callText(src, open) : "";
+          const where = `${file}: ${src.slice(at, at + 40).replace(/\s+/g, " ")}`;
+          if (!isFirstArg) {
+            problems.push(`git literal outside a call's first argument (constant or alias?) — ${where}`);
+          } else if (rule?.kind === "no-git") {
+            problems.push(`classified no-git (spawns ${rule.spawns}) but calls git — ${where}`);
+          } else if (rule?.kind === "inherits" && call.includes(rule.call)) {
+            // the one named call that inherits on purpose
+          } else if (!/\benv\s*:\s*repoIsolatedGitEnv\(/.test(call)) {
+            problems.push(`git call without env: repoIsolatedGitEnv(...) — ${where}`);
+          }
+        }
+        if (rule?.kind === "inherits" && !literals.some((at) => src.slice(at + 1).startsWith(rule.call))) {
+          problems.push(`allow-listed call «${rule.call}» no longer exists (stale entry)`);
+        }
+        return { file, problems };
+      });
+  }
+
+  it("H2 every child_process importer in packages/cli/src is classified, and every git call strips repository-local env or is the one named inheritor", () => {
+    const result = scan();
+    // Canary: the population is what the table says, no more, no less.
+    expect(result.map((r) => r.file).sort()).toEqual(Object.keys(SPAWNERS).sort());
+    expect(result.flatMap((r) => r.problems)).toEqual([]);
+  });
+
+  it("H3 the stripped list is git's own --local-env-vars minus the two config channels, and a subset of the jest globalSetup twin", () => {
+    const CONFIG_CHANNELS = ["GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT"];
+    const own = execFileSync("git", ["rev-parse", "--local-env-vars"], { encoding: "utf-8" })
+      .split("\n")
+      .map((v) => v.trim())
+      .filter(Boolean);
+    expect(own.length).toBeGreaterThan(0);
+    expect([...REPO_LOCAL_GIT_ENV]).toEqual(
+      expect.arrayContaining(own.filter((v) => !CONFIG_CHANNELS.includes(v))),
+    );
+    expect(REPO_LOCAL_GIT_ENV.filter((v) => CONFIG_CHANNELS.includes(v))).toEqual([]);
+
+    const twin = createRequire(import.meta.url)(
+      path.resolve(CLI_SRC, "../../test-utils/src/jest/stripRepoGitEnv.cjs"),
+    ) as { REPO_LOCAL_GIT_ENV: string[] };
+    expect(twin.REPO_LOCAL_GIT_ENV).toEqual(expect.arrayContaining([...REPO_LOCAL_GIT_ENV]));
+  });
+
+  // The reviewer's regression on #4388: env-provided config (safe.directory in a
+  // container) must still reach git. Real git reads it back.
+  it("H4 config given through the environment survives the helper and reaches git", () => {
+    const dir = mkTmp("gitenv-config-");
+    try {
+      const env = repoIsolatedGitEnv({
+        ...process.env,
+        GIT_DIR: path.join(dir, "no-such-repo"),
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "probe.fromenv",
+        GIT_CONFIG_VALUE_0: "kept",
+        GIT_CONFIG_PARAMETERS: "'probe.fromc'='kept-too'",
+      });
+      expect(env.GIT_DIR).toBeUndefined();
+      const get = (key: string) =>
+        execFileSync("git", ["config", "--get", key], { cwd: dir, env, encoding: "utf-8" }).trim();
+      expect(get("probe.fromenv")).toBe("kept");
+      expect(get("probe.fromc")).toBe("kept-too");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

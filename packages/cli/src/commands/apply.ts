@@ -744,7 +744,7 @@ export function applyCommand(): Command {
     .option("--yes", "Skip destructive-command confirmation")
     .option(
       "--input <json>",
-      `JSON userInput for a grounding. Value-setting commands need a value key, e.g. set-planned-start / set-scheduled-date: --input '{"value":"<ISO>"}'. A command whose grounding declares its own input key uses THAT key: set-label: --input '{"label":"New label"}'. Asset-reference inputs (set-parent: --input '{"parent":"<uid>"}'; set-blocker: --input '{"blocker":"<uid>"}') take a BARE uid; a copied [[uid]] or [[uid|alias]] is accepted and unwrapped, anything else that still looks like a link is refused. The required key is named in the error if omitted.`,
+      `JSON userInput for a grounding. Value-setting commands need a value key, e.g. set-planned-start / set-scheduled-date: --input '{"value":"<ISO>"}'. A command whose grounding declares its own input key uses THAT key: set-label: --input '{"label":"New label"}'. Asset-reference inputs (set-parent: --input '{"parent":"<uid>"}'; set-blocker: --input '{"blocker":"<uid>"}'; set-ontology: --input '{"ontology":"<uid>"}') take a BARE uid; a copied [[uid]] or [[uid|alias]] is accepted and unwrapped, anything else that still looks like a link is refused. The required key is named in the error if omitted.`,
     )
     .option(
       "--seed <uuid>",
