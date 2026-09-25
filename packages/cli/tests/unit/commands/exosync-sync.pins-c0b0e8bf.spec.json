@@ -11,8 +11,8 @@
   "red_re": "› (W\\d+\\w*) ",
   "mutants": {
     "M9_summary_never_carries_pins": {
-      "from": "      pinnedTotal > 0 ? `, pinned ${pinnedTotal} (see \\`exosync quarantine list\\`)` : \"\";\n",
-      "to": "      false ? `, pinned ${pinnedTotal} (see \\`exosync quarantine list\\`)` : \"\";\n",
+      "from": "      pinnedTotal > 0 ? `, pinned ${pinnedTotal} (incl. conflicts; see \\`exosync quarantine list\\`)` : \"\";\n",
+      "to": "      false ? `, pinned ${pinnedTotal} (incl. conflicts; see \\`exosync quarantine list\\`)` : \"\";\n",
       "expect": ["W1"]
     }
   }

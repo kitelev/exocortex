@@ -272,7 +272,7 @@ describe("exosync quarantine list", () => {
 describe("exosync quarantine list — pinned paths that are not conflicts (#4225)", () => {
   const REQ = "@req:c0b0e8bf-355d-4b03-9512-618c879f0940";
 
-  it(`X1 ${REQ} a local edit withheld by a pin is counted, named by path, and the remedy is a pull`, async () => {
+  it(`X1 ${REQ} a pinned local change is counted, named by path, and the remedy is a full sync`, async () => {
     const base = mdAsset("uid-1", "base");
     const fx = await makeConflictVault({ base, local: mdAsset("uid-1", "LOCAL edit") });
     // Remote back to the base content: only the local copy differs ⇒ local-withheld.
@@ -283,24 +283,24 @@ describe("exosync quarantine list — pinned paths that are not conflicts (#4225
       expect(code).toBe(0);
       const text = lines.join("\n");
       expect(text).toMatch(/No open conflicts/);
-      expect(text).toMatch(/1 pinned path\(s\) are not conflicts but stay EXCLUDED from push/);
-      expect(text).toMatch(/\b1 {2}local edit withheld from push/);
-      expect(lines).toContain(`  ${REPO_KEY}  ${CONFLICT}  [local edit withheld from push]`);
-      expect(lines).toContain(`Clear with: exosync pull --vault ${fx.vault} --token-from-gh`);
+      expect(lines).toContain("1 pinned path(s) are not conflicts:");
+      expect(text).toMatch(/\b1 {2}local change, delivered by the next full sync/);
+      expect(lines).toContain(`  ${REPO_KEY}  ${CONFLICT}  [local change, delivered by the next full sync]`);
+      expect(lines).toContain(`Clear with: exosync sync --vault ${fx.vault} --token-from-gh`);
     } finally {
       fx.cleanup();
     }
   });
 
-  it(`X2 ${REQ} a deferred incoming change is counted as awaiting pull and not named as a withheld edit`, async () => {
+  it(`X2 ${REQ} a deferred incoming change is counted as not applied here, and not named as a local change`, async () => {
     const base = mdAsset("uid-1", "base");
     const fx = await makeConflictVault({ base, local: base });
     const lines: string[] = [];
     try {
       await runQuarantineList({ vault: fx.vault, token: FAKE_PAT }, deps(fx.gh, lines));
       const text = lines.join("\n");
-      expect(text).toMatch(/\b1 {2}remote change awaiting pull/);
-      expect(text).not.toContain("[local edit withheld from push]");
+      expect(text).toMatch(/\b1 {2}remote change not applied here yet — this copy is behind/);
+      expect(text).not.toContain("[local change, delivered by the next full sync]");
     } finally {
       fx.cleanup();
     }

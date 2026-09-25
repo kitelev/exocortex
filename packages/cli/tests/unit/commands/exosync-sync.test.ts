@@ -220,7 +220,7 @@ describe("runExosyncSync — wiring", () => {
     try {
       expect(await run("sync")).not.toMatch(/pinned/);
       gh.commitDirect("main", { [FILE_B]: mdAsset("u2", "remote add") }, "device B");
-      expect(await run("push")).toMatch(/, pinned 1 \(see `exosync quarantine list`\)$/);
+      expect(await run("push")).toMatch(/, pinned 1 \(incl\. conflicts; see `exosync quarantine list`\)$/);
       expect(await run("pull")).not.toMatch(/pinned/);
     } finally {
       fx.cleanup();

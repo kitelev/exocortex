@@ -93,21 +93,24 @@ export interface ResolvableConflict {
 }
 
 /**
- * Why a pinned path is NOT an open conflict (#4225). A pin excludes its path
- * from push until a later sync re-derives it; a push-only device never runs
- * that pull, so these accumulate silently — `listOpenConflicts` omits them by
- * design (they need no human choice), which made them invisible.
+ * Why a pinned path is NOT an open conflict (#4225). Push-only runs pin every
+ * incoming change they defer (#3473), and only a pull clears those — a
+ * push-only device never pulls, so they accumulate. `listOpenConflicts` omits
+ * them by design (no human choice needed), which made them invisible.
  *
- *  - `remote-pending` — local == base, the remote changed or added the path: a
- *    deferred incoming change (push-only runs pin these, #3473). A pull clears
- *    it. ⛔ Unpinning it WITHOUT a pull would adopt the new remote tree while the
- *    disk keeps the old copy, and the next push would send that old copy as a
- *    "local edit" over the remote — so the remedy is a pull, never a prune.
- *  - `local-withheld` — remote == base, the local copy changed: a local edit
- *    that push skips while the path stays pinned.
+ *  - `remote-pending` — local == base; the remote changed, added or deleted the
+ *    path: an incoming change this copy has not applied (it is behind). A pull
+ *    clears it. ⛔ Unpinning it WITHOUT a pull would adopt the new remote tree
+ *    while the disk keeps the old copy, and a later push would send that old
+ *    copy over the remote (probed on the real engine, review of #4391).
+ *  - `local-withheld` — remote == base, the local copy changed. A pin does not
+ *    keep it out of push (push re-reads the remote diff for pinned paths); a
+ *    persistent one is typically the local half of a cross-path group that only
+ *    a full sync settles.
  *  - `converged` — local == remote: the pin clears on the next sync.
- *  - `unclassified` — offline with nothing cached, or a file-mode FileSpace
- *    (binary, not classified by this text resolver).
+ *  - `unclassified` — the remote tree could not be fetched (offline, 403, 404)
+ *    and nothing is cached, or a file-mode FileSpace (binary, not classified by
+ *    this text resolver).
  */
 export type PinnedPathKind =
   | "remote-pending"
@@ -204,8 +207,9 @@ export interface QuarantineResolverDeps {
    * so listing and diffing a conflict works fully OFFLINE. The on-disk LOCAL
    * version is always re-read fresh. The network is used only as a fallback for
    * a pinned path with no cache entry (a conflict quarantined before PR-2), and
-   * when that fetch fails (offline) such uncached pins are simply omitted from
-   * the list rather than aborting it. Absent ⇒ legacy network-only behaviour.
+   * when that fetch fails (offline) such uncached pins are omitted from the
+   * conflict list rather than aborting it (`classifyPins` reports them as
+   * `unclassified`). Absent ⇒ legacy network-only behaviour.
    */
   conflictCache?: ConflictCacheReadPort;
   /**
@@ -295,8 +299,9 @@ export class QuarantineResolver {
     // versions captured at quarantine time, so a fully-cached repo needs ZERO
     // network. The head tree is fetched only when some pin is NOT cached (a
     // pre-PR-2 conflict). When a cache IS wired and that fetch fails (offline),
-    // uncached pins are omitted rather than aborting the whole list — so the
-    // cached conflicts still surface. Without a cache the resolver keeps its
+    // uncached pins are left out of the conflict list (and reported
+    // `unclassified`) rather than aborting the whole list — so the cached
+    // conflicts still surface. Without a cache the resolver keeps its
     // legacy network-only behaviour: a fetch failure propagates (no silent []).
     const hasCache = this.deps.conflictCache !== undefined;
     const cachedByPath = await this.cachedRecordsFor(spec, pinned);

@@ -545,17 +545,19 @@ export async function runExosyncSync(
       }),
       { pulled: 0, pushed: 0, merged: 0, quarantined: 0 },
     );
-    // #4225 — a pin keeps its path OUT of push until a pull re-derives it, and a
-    // push-only run is exactly what leaves them behind (deferred incoming
-    // changes). The count rides in the Summary line itself: machine readers
-    // parse that line and skip it as a known form, so the addition stays silent
-    // for them and visible for a human.
+    // #4225 — pins left behind by push-only runs (deferred incoming changes)
+    // are cleared only by a pull, and a push-only device never pulls, so they
+    // accumulated unseen. The count rides in the Summary line itself: machine
+    // readers parse that line and skip it as a known form, so the addition stays
+    // silent for them and visible for a human. It counts EVERY pin, open
+    // conflicts included — `quarantine list` breaks them down.
+    const watermarks = await watermarkStore.getAll();
     let pinnedTotal = 0;
     for (const spec of specs) {
-      pinnedTotal += (await watermarkStore.get(spec.repoKey))?.pinnedPaths?.length ?? 0;
+      pinnedTotal += watermarks[spec.repoKey]?.pinnedPaths?.length ?? 0;
     }
     const pinnedTail =
-      pinnedTotal > 0 ? `, pinned ${pinnedTotal} (see \`exosync quarantine list\`)` : "";
+      pinnedTotal > 0 ? `, pinned ${pinnedTotal} (incl. conflicts; see \`exosync quarantine list\`)` : "";
     out(
       `Summary: ${results.length} repo(s) — pulled ${totals.pulled}, pushed ${totals.pushed}, merged ${totals.merged}, quarantined ${totals.quarantined}${pinnedTail}`,
     );

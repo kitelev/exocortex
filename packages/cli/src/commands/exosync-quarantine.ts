@@ -181,17 +181,22 @@ export async function runQuarantineList(
 }
 
 const PINNED_KIND_TEXT: Record<PinnedPathKind, string> = {
-  "remote-pending": "remote change awaiting pull",
-  "local-withheld": "local edit withheld from push",
+  "remote-pending": "remote change not applied here yet — this copy is behind",
+  "local-withheld": "local change, delivered by the next full sync",
   converged: "converged, clears on the next sync",
-  unclassified: "unclassified (offline, or a file-mode space)",
+  unclassified: "unclassified (remote tree unavailable, or a file-mode space)",
 };
 
 /**
- * #4225 — pins that are not conflicts still keep their path OUT of push until a
- * pull re-derives them, and a push-only vault never pulls. `list` used to say
- * only «No open conflicts ✅» over hundreds of them. Every local-withheld path is
- * named: those are local writes that are not reaching the remote.
+ * #4225 — pins that are not conflicts. `list` used to answer only «No open
+ * conflicts ✅» over them, and a push-only device never runs the pull that
+ * clears them. What a pin costs depends on its kind: a `remote-pending` pin is an
+ * incoming change this copy has not applied (the vault reads stale data); a
+ * `local-withheld` one is a local change the next full sync delivers. A pin does
+ * NOT exclude a local change from push by itself — push re-reads the remote diff
+ * for pinned paths (review of #4391, probed on the real engine).
+ * The remedy for every kind is `exosync sync` (pull + push); a pull alone
+ * applies incoming changes but ships nothing.
  */
 function printPinnedNotConflicting(
   pinned: readonly PinnedPath[],
@@ -200,9 +205,7 @@ function printPinnedNotConflicting(
 ): void {
   if (pinned.length === 0) return;
   out("");
-  out(
-    `${pinned.length} pinned path(s) are not conflicts but stay EXCLUDED from push until a pull clears them:`,
-  );
+  out(`${pinned.length} pinned path(s) are not conflicts:`);
   for (const kind of Object.keys(PINNED_KIND_TEXT) as PinnedPathKind[]) {
     const n = pinned.filter((p) => p.kind === kind).length;
     if (n > 0) out(`  ${String(n).padStart(5)}  ${PINNED_KIND_TEXT[kind]}`);
@@ -210,10 +213,10 @@ function printPinnedNotConflicting(
   for (const p of pinned.filter((x) => x.kind === "local-withheld")) {
     out(`  ${p.repoKey}  ${p.path}  [${PINNED_KIND_TEXT["local-withheld"]}]`);
   }
-  // ⛔ A pull, never a hand-edit of the watermark: a pin on a deferred incoming
+  // ⛔ A sync, never a hand-edit of the watermark: a pin on a deferred incoming
   //    change keeps the OLD watermark entry, and dropping it without a pull makes
-  //    the next push send the old disk copy over the remote (#4225).
-  out(`Clear with: exosync pull --vault ${vaultPath} --token-from-gh`);
+  //    a later push send the old disk copy over the remote (#4225).
+  out(`Clear with: exosync sync --vault ${vaultPath} --token-from-gh`);
 }
 
 /** `exosync quarantine resolve <path> --take …`. Exit 0 on success, 1 on error. */

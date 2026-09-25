@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify for req c0b0e8bf (#4225: pinned-but-not-conflicting paths are classified and reported). Subject: QuarantineResolver.classifyPins. Axes P1-P6 in QuarantineResolver.test.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
+  "_doc": "Revert-verify for req c0b0e8bf (#4225: pinned-but-not-conflicting paths are classified and reported). Subject: QuarantineResolver.classifyPins. Axes P1-P6 in QuarantineResolver.test.ts, P7 in QuarantineResolver.offline.test.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/QuarantineResolver.ts",
   "symlink_node_modules": [
@@ -7,7 +7,7 @@
     "packages/cli/node_modules",
     "packages/core/node_modules"
   ],
-  "harness": "cd \"$(dirname {subject})/../../..\" && NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js tests/unit/services/sync/QuarantineResolver.test.ts -t 'P[0-9] ' 2>&1",
+  "harness": "cd \"$(dirname {subject})/../../..\" && NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js tests/unit/services/sync/QuarantineResolver.test.ts tests/unit/services/sync/QuarantineResolver.offline.test.ts -t 'P[0-9] ' 2>&1",
   "red_re": "› (P\\d+\\w*) ",
   "mutants": {
     "M1_swap_remote_pending_and_local_withheld": {
@@ -29,6 +29,11 @@
       "from": "        pinned: pinned.map((path) => ({ repoKey: spec.repoKey, path, kind: \"unclassified\" })),\n",
       "to": "        pinned: [],\n",
       "expect": ["P5"]
+    },
+    "M10_offline_unclassified_pin_dropped_again": {
+      "from": "        if (!networkAvailable) {\n          others.push({ repoKey: spec.repoKey, path, kind: \"unclassified\" });\n          continue;\n        }\n",
+      "to": "        if (!networkAvailable) continue;\n",
+      "expect": ["P7"]
     }
   }
 }

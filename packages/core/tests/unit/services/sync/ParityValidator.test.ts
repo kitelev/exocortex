@@ -160,6 +160,10 @@ describe("ParityValidator — clean state and pending classifications", () => {
   });
 
   // #4225 — the pin is accounted (never M2), so the green line hid it.
+  // ⛔ The count sits AFTER the closing parenthesis on purpose, and this exact
+  //    string is load-bearing: the vault-quiescent-deliver daemon parses
+  //    `(N repo(s) checked[, K skipped])` and turns BROKEN on anything new inside
+  //    it (review of #4391, HIGH).
   it("S1 @req:c0b0e8bf-355d-4b03-9512-618c879f0940 the summary line carries the pinned count while staying green", async () => {
     const h = makeHarness({ [FILE_A]: mdAsset("u1") });
     await bootstrap(h);
@@ -171,7 +175,7 @@ describe("ParityValidator — clean state and pending classifications", () => {
     const round = await h.validator.runRound([h.spec], { trigger: "standalone" });
 
     expect(summarizeParityRound(round)).toBe(
-      "ExoSync parity: M1=0, M2=∅ (1 repo(s) checked, 1 pinned)",
+      "ExoSync parity: M1=0, M2=∅ (1 repo(s) checked), 1 pinned",
     );
   });
 });

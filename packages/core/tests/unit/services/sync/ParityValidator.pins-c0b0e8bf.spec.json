@@ -14,6 +14,11 @@
       "from": "    (n, r) => n + r.discrepancies.filter((d) => d.cls === \"quarantine-pinned\").length,\n",
       "to": "    (n, r) => n + r.discrepancies.filter((d) => d.cls === \"format-only-drift\").length,\n",
       "expect": ["S1"]
+    },
+    "M11_pinned_count_inside_the_parentheses": {
+      "from": "    ? `ExoSync parity: M1=0, M2=∅ (${record.checkedRepos} repo(s) checked${tail})${pinnedTail}`\n",
+      "to": "    ? `ExoSync parity: M1=0, M2=∅ (${record.checkedRepos} repo(s) checked${tail}${pinnedTail})`\n",
+      "expect": ["S1"]
     }
   }
 }
