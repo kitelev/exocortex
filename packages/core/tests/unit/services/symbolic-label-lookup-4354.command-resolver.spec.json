@@ -16,7 +16,7 @@
     "M3_command_resolver_bypasses_helper": {
       "from": "    return findUidByAssetLabel(this.tripleStore, label);\n  }\n\n  private async getLinkedUID(",
       "to": "    return label.includes(\"__\") ? null : findUidByAssetLabel(this.tripleStore, label);\n  }\n\n  private async getLinkedUID(",
-      "expect": ["A1", "A2", "A3", "A4", "A5", "G1"]
+      "expect": ["A1", "A2", "A3", "A4", "A5", "A7", "G1"]
     }
   }
 }

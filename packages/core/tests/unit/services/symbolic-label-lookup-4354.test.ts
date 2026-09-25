@@ -57,12 +57,15 @@ const CYC_A = U(14); // ems__CycA ⊑ ems__CycB
 const CYC_B = U(15); // ems__CycB ⊑ ems__CycA (malformed cyclic TBox)
 const PAGE = U(16); // file page.md, human label "Page"
 const URL_CLS = U(17); // Literal label "https://example.com/page.md" ⊑ PAGE
+const CYC_R = U(18); // file kitelev__CycR.md, NO label ⊑ ems__CycS
+const CYC_S = U(19); // ems__CycS ⊑ CYC_R (cycle through a label-less class)
 const GT_CREATE = GROUNDING_TYPE_UIDS[GroundingType.CREATE_INSTANCE];
 
 /** File basename when it is not the uid (UID-canon is the default). */
 const BASENAME: Record<string, string> = {
   [READ]: "kitelev__ReadArticleTask",
   [PAGE]: "page",
+  [CYC_R]: "kitelev__CycR",
 };
 const UID_BY_BASENAME: Record<string, string> = Object.fromEntries(
   Object.entries(BASENAME).map(([uid, base]) => [base, uid]),
@@ -99,6 +102,12 @@ const FM: Record<string, IFrontmatter> = {
   [CYC_A]: cls(CYC_A, "ems__CycA", CYC_B),
   [CYC_B]: cls(CYC_B, "ems__CycB", CYC_A),
   [PAGE]: cls(PAGE, "Page"),
+  [CYC_R]: {
+    exo__Asset_uid: CYC_R,
+    exo__Instance_class: [`[[${EXO_CLASS}]]`],
+    exo__Class_superClass: [`[[${CYC_S}]]`],
+  },
+  [CYC_S]: cls(CYC_S, "ems__CycS", CYC_R),
   [URL_CLS]: cls(URL_CLS, "https://example.com/page.md", PAGE),
   [GT_CREATE]: {
     exo__Asset_uid: GT_CREATE,
@@ -248,7 +257,7 @@ describe("symbolic label lookup over a converter-built store (issue #4354)", () 
     const d = depthsOf(
       await new CommandResolver(store).getClassAncestorsWithDepth(CYC_A),
     );
-    expect(d[CYC_B]).toBe(1); // B resolved; mutant M5 proves the walk continued past it
+    expect(d[CYC_B]).toBe(1); // B resolved; mutant M2 (4361 spec) proves the walk continued past it
     expect(d["ems__CycA"]).toBeUndefined();
     expect(d[CYC_A]).toBeUndefined();
   });
@@ -260,6 +269,18 @@ describe("symbolic label lookup over a converter-built store (issue #4354)", () 
       await new CommandResolver(store).getClassAncestorsWithDepth(URL_CLS),
     );
     expect(d["page"]).toBe(1);
+  });
+
+  it("[A7] a cycle through a label-less class (Literal basename label) never lists the seed as its own ancestor", async () => {
+    // The converter gives a label-less file named `prefix__Name` a LITERAL
+    // label from its basename (live: kitelev__ReadArticleTask) — the Literal
+    // branch of the seed-label fold is what keeps this seed out of its ancestors.
+    const d = depthsOf(
+      await new CommandResolver(store).getClassAncestorsWithDepth(CYC_R),
+    );
+    expect(d[CYC_S]).toBe(1);
+    expect(d["kitelev__CycR"]).toBeUndefined();
+    expect(d[CYC_R]).toBeUndefined();
   });
 
   it("[W1] a subclass two hops below Task (through a symbolic intermediate) resolves the Task workflow", async () => {

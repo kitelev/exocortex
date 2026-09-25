@@ -3359,7 +3359,7 @@ export class CommandResolver {
   /**
    * Resolve a UID to the linked asset's `exo__Asset_label` via the triple
    * store. Returns null if no asset with that UID exists in the store or
-   * if the asset has no `exo__Asset_label` literal.
+   * if the asset has no `exo__Asset_label` (see {@link readAssetLabel}).
    *
    * Originally an RFC 31c1a0be Phase 3 helper (private). Promoted to
    * public as a triple-store fallback for the UI builder's UUID→symbolic
@@ -3381,8 +3381,9 @@ export class CommandResolver {
   }
 
   /**
-   * An asset's `exo__Asset_label` in key form, read as a NODE — the one fold
-   * point for {@link resolveLabelByUID} and the ancestor walk's seed label.
+   * An asset's `exo__Asset_label`, read as a NODE — a term IRI folded to its
+   * key form, a Literal as written. The one fold point for
+   * {@link resolveLabelByUID} and the ancestor walk's seed label.
    *
    * ⛔ A label that parses as `prefix__LocalName` — which nearly every class and
    * property definition's label does (`ems__Effort_area`) — is emitted by the

@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for issue #4361 — the one label fold point `CommandResolver.readAssetLabel`, shared by resolveLabelByUID (#4007) and the ancestor walk's seed label (#4354). M1 and M2 are #4354's M5/M6 moved here with the code they guard (the seed-label fold moved into this helper). `red_re` anchors on the `● <suite> › [Xn]` failure header, not on a bare key: jest echoes neighbouring `it(...)` source lines in its diff context (integration-test-revert-verify §A44/§A104).",
+  "_doc": "Revert-verify mutants for issue #4361 — the one label fold point `CommandResolver.readAssetLabel`, shared by resolveLabelByUID (#4007) and the ancestor walk's seed label (#4354). M1 is #4354's former M6 and M2 its former M5, moved here with the code they guard (the seed-label fold moved into this helper). `red_re` anchors on the `● <suite> › [Xn]` failure header, not on a bare key: jest echoes neighbouring `it(...)` source lines in its diff context (integration-test-revert-verify §A44/§A104).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -26,10 +26,10 @@
       "expect": ["A5", "R2"]
     },
     "M3_literal_label_dropped": {
-      "_note": "A Literal label is lost: resolveLabelByUID returns null for every human label (R3) and for the URL-looking one (R1). The walk's exclusion of a Literal-labelled seed only guards cycles through Literal labels, which the fixture does not build — no A-axis is expected.",
+      "_note": "A Literal label is lost: resolveLabelByUID returns null for every human label (R3) and for the URL-looking one (R1), and the walk no longer excludes a seed whose label is a Literal — a cycle through a label-less class (basename label, emitted as a Literal) lists the seed as its own ancestor (A7).",
       "from": "    if (node instanceof Literal) return node.value;",
       "to": "    if (node instanceof Literal) return null;",
-      "expect": ["R1", "R3"]
+      "expect": ["A7", "R1", "R3"]
     }
   }
 }
