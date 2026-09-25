@@ -7,11 +7,16 @@
  * `workflow_transition` groundings) WORK on any Task subclass — not just the
  * exact built-in three. Before this, a subclass resolved `null` (silent no-op).
  *
- * Production-shape: a real {@link WorkflowResolver} over an
- * {@link InMemoryTripleStore}, seeded with the REAL store IRI shape — the class
+ * A real {@link WorkflowResolver} over an {@link InMemoryTripleStore}: the class
  * FILE IRI is the subject of `exo__Class_superClass`, whose OBJECT is the
- * symbolic parent-class IRI (`https://exocortex.my/ontology/ems#Task`), exactly
- * as `NoteToRDFConverter` emits (dual-IRI). No mocks of the resolver logic.
+ * symbolic parent-class IRI (`https://exocortex.my/ontology/ems#Task`), as
+ * `NoteToRDFConverter` emits (dual-IRI). No mocks of the resolver logic.
+ *
+ * ⛔ NOT fully production-shape (issue #4354): `seedClass` writes the class
+ * LABEL as a `Literal`, while the converter emits a `prefix__Local` label as its
+ * term IRI. That difference hid a Literal-only label lookup for as long as this
+ * suite existed. The converter-built counterpart of these axes is
+ * `symbolic-label-lookup-4354.test.ts` (W1/W2).
  *
  * Revert-verify ([[integration-test-revert-verify]]): with the ancestry walk
  * (`findBuiltInWorkflowByAncestry`) neutralised, the "subclass inherits Task
