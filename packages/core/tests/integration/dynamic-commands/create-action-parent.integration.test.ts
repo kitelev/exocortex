@@ -15,13 +15,22 @@
  *    is ever written (the shipped precondition admits status-less targets, so
  *    this is reachable through the CLI).
  *
- * WHERE THE RULE LIVES — and why the fixture mirrors that. `mergeInheritanceRules`
- * deduplicates by `targetPropertyName`: a Grounding can express at most ONE rule
- * per property and that rule also shadows every Universal rule for the same
- * property. So the Project and Task parent rules cannot both sit on the
- * grounding — they live on the `exocmd__UniversalDefaultTemplate` singleton,
- * whose own list is not deduplicated against itself, and the grounding declares
- * no parent rule at all. The fixture reproduces exactly that topology.
+ * WHERE THE RULE LIVES — and why the fixture mirrors that. The Universal
+ * override in `mergeInheritanceRules` is keyed by `targetPropertyName`: a
+ * Grounding that declares ANY rule for a property shadows EVERY Universal rule
+ * for that property. So a grounding-local parent rule would disable BOTH
+ * template rules for this command; they live on the
+ * `exocmd__UniversalDefaultTemplate` singleton, whose own list is not
+ * deduplicated against itself, and the grounding declares no parent rule at
+ * all. The fixture reproduces exactly that topology.
+ *
+ * ⛤ Corrected 2026-09-25 (req a2c868e9): this block used to say a grounding
+ * «can express at most ONE rule per property». That half is no longer true —
+ * grounding rules are never deduplicated against each other, so several
+ * conditional rules for one property now all survive (see the
+ * «grounding-owned conditional InheritanceRules» describe below, which seeds
+ * exactly that). The shadowing half above is unchanged and is what still forces
+ * the topology this fixture mirrors.
  *
  * The template fixture carries only its InheritanceRules — no PropertyDefaults.
  * The executor then fills the scalar primitives from its legacy TS fallback and
@@ -239,6 +248,12 @@ const IR_TASK_PARENT = "65acce2f-e0eb-48e2-bcb3-8d5c9664e799"; // NEW (req 2821f
 const GROUNDING_CREATE_ACTION = "1bc1e938-d07b-41b0-8264-d9ca81104af2";
 const IR_ISDEFINEDBY = "cbe000c4-b29a-4405-876d-790fb2296121"; // unconditional pass-through
 
+// Grounding-OWNED parent rules (fixture-only UIDs, req a2c868e9): a grounding
+// declaring TWO conditional rules for ems__Effort_parent. Before req a2c868e9
+// the name-keyed Map kept only the LAST of them.
+const IR_G_PROJECT_PARENT = "95ec8f78-310b-475c-8fa3-f53303205cc6";
+const IR_G_TASK_PARENT = "c66449af-d76d-4a2d-89e7-3b8622015f08";
+
 // Fixture-owned targets.
 const TASK_TARGET = "aa000001-1111-4111-8111-111111111111";
 const PROJECT_TARGET = "aa000002-2222-4222-8222-222222222222";
@@ -332,11 +347,16 @@ function target(
 interface SeedOptions {
   /** false = the pre-fix data state: the Task rule is not on the template. */
   withTaskRule: boolean;
+  /**
+   * UIDs of InheritanceRules the GROUNDING declares for itself (req a2c868e9).
+   * Default `[]` = the shipped «Create action» shape, which owns no parent rule.
+   */
+  groundingParentRules?: readonly string[];
 }
 
 async function seedVault(
   fs: InMemoryFileSystem,
-  { withTaskRule }: SeedOptions,
+  { withTaskRule, groundingParentRules = [] }: SeedOptions,
 ): Promise<void> {
   const templateRules = [
     IR_PROJECT_PARENT,
@@ -378,6 +398,20 @@ async function seedVault(
       PROP_ISDEFINEDBY,
       PROP_ISDEFINEDBY,
     ),
+    inheritanceRule(
+      IR_G_PROJECT_PARENT,
+      "Grounding IR: Project.uid → new.ems__Effort_parent",
+      PROP_UID,
+      PROP_PARENT,
+      CLS_PROJECT,
+    ),
+    inheritanceRule(
+      IR_G_TASK_PARENT,
+      "Grounding IR: Task.uid → new.ems__Effort_parent",
+      PROP_UID,
+      PROP_PARENT,
+      CLS_TASK,
+    ),
 
     // ---- Universal Default Template singleton (carries BOTH parent rules) ----
     [
@@ -406,6 +440,7 @@ async function seedVault(
         'exocmd__Grounding_inputSchema: \'{"type":"object","properties":{"label":{"type":"string"}},"required":["label"]}\'',
         "exocmd__Grounding_inheritanceRule:",
         `  - "[[${IR_ISDEFINEDBY}]]"`,
+        ...groundingParentRules.map((r) => `  - "[[${r}]]"`),
       ),
     ],
 
@@ -561,6 +596,49 @@ describe("req 2821fdf0 — revert-verify (the Task rule removed from the Univers
     const { frontmatter } = await createActionOn(PROTOTYPE_TARGET, {
       withTaskRule: false,
     });
+    expect(parentOf(frontmatter)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// req a2c868e9 — a grounding may declare SEVERAL conditional InheritanceRules
+// for ONE targetPropertyName.
+//
+// Before the fix `mergeInheritanceRules` keyed the grounding list by
+// `targetPropertyName` alone, so building the map kept only the LAST rule and
+// `usedFromGrounding` dropped the rest. With a universal rule present for the
+// same property the surviving rule was whichever was authored last — the other
+// condition silently never fired. Both orders are exercised because the defect
+// is order-dependent: it eats the rule that is NOT last.
+// ---------------------------------------------------------------------------
+
+describe("grounding-owned conditional InheritanceRules for one property", () => {
+  const projectFirst = {
+    withTaskRule: true,
+    groundingParentRules: [IR_G_PROJECT_PARENT, IR_G_TASK_PARENT],
+  } as const;
+  const taskFirst = {
+    withTaskRule: true,
+    groundingParentRules: [IR_G_TASK_PARENT, IR_G_PROJECT_PARENT],
+  } as const;
+
+  it("@req:a2c868e9-47d3-4109-a5bc-3d8c4d1ff2bb [G1] Project target gets its parent from the Project-conditioned grounding rule when a Task-conditioned one is declared AFTER it", async () => {
+    const { frontmatter } = await createActionOn(PROJECT_TARGET, projectFirst);
+    expect(parentOf(frontmatter)).toBe(`"[[${PROJECT_TARGET}]]"`);
+  });
+
+  it("@req:a2c868e9-47d3-4109-a5bc-3d8c4d1ff2bb [G2] Task target gets its parent from the Task-conditioned grounding rule when a Project-conditioned one is declared AFTER it", async () => {
+    const { frontmatter } = await createActionOn(TASK_TARGET, taskFirst);
+    expect(parentOf(frontmatter)).toBe(`"[[${TASK_TARGET}]]"`);
+  });
+
+  it("@req:a2c868e9-47d3-4109-a5bc-3d8c4d1ff2bb [G3] the rule declared LAST keeps working too (control: this axis was green before the fix as well)", async () => {
+    const { frontmatter } = await createActionOn(TASK_TARGET, projectFirst);
+    expect(parentOf(frontmatter)).toBe(`"[[${TASK_TARGET}]]"`);
+  });
+
+  it("@req:a2c868e9-47d3-4109-a5bc-3d8c4d1ff2bb [G4] a target matching NEITHER condition still receives no parent", async () => {
+    const { frontmatter } = await createActionOn(CONCEPT_TARGET, projectFirst);
     expect(parentOf(frontmatter)).toBeUndefined();
   });
 });

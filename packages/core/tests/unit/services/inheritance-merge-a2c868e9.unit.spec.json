@@ -1,0 +1,53 @@
+{
+  "_doc": "Revert-verify mutants for requirement a2c868e9-47d3-4109-a5bc-3d8c4d1ff2bb (ticket c3de23a8) — `mergeInheritanceRules`. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). Two dedup sites were measured per integration-test-revert-verify §A33: the name-keyed Map (M1) and the used-marker loop (M2/M3) — a one-site fix produces a DUPLICATE instead of a fix, so both are mutated separately. This spec pins the merged LIST; the product effect lives in the companion spec `inheritance-merge-a2c868e9.effect.spec.json`. Every `expect` is the MEASURED red set (§A97); the prediction is quoted in each `_note`. ⛔ `red_re` anchors on the `● <suite> › <title>` failure header, NOT on the bare `[Xn]` key: jest echoes the SOURCE LINE of a neighbouring `it(...)` in the diff context, so a key-only pattern would report a green axis as red (§A44 — the citation is not a verdict).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› @req:\\S+ \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/UniversalDefaultTemplateResolver.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/services/UniversalDefaultTemplateResolver.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_grounding_map_last_wins": {
+      "_note": "Rebuilds the grounding map LAST-WINS (the pre-fix shape), type-preserving: the map stays Map<string, Rule[]>, each name just keeps a single-element bucket. This is defect D1 — a grounding's earlier conditional rule is dropped before any logic runs. Predicted: U1 on the unit harness, G1+G2 on the effect harness.",
+      "from": "    if (bucket) bucket.push(g);\n    else groundingByName.set(g.targetPropertyName, [g]);",
+      "to": "    groundingByName.set(g.targetPropertyName, [g]);",
+      "expect": [
+        "U1"
+      ]
+    },
+    "M2_splice_guard_removed": {
+      "_note": "Drops the once-only guard around the splice, so the grounding rules are re-emitted for EVERY universal rule they shadow. This is defect D2. It has NO product effect: applyInheritanceRuleStep opens with `if (properties[rule.targetPropertyName] !== undefined) continue`, so the duplicate is swallowed and the write is idempotent — the effect harness is expected to stay GREEN, and that is the measurement proving the guard's product-level inertness, not a gap in the axis. ⛤ Re-measured 2026-09-25 after U3 gained a second shadowed universal rule separated by a non-shadowed one: the red set grew from [U2] to [U2,U3]. Written from the MEASUREMENT, not predicted (§A97).",
+      "from": "      if (!usedFromGrounding.has(u.targetPropertyName)) {\n        out.push(...override);\n        usedFromGrounding.add(u.targetPropertyName);\n      }",
+      "to": "      out.push(...override);\n      usedFromGrounding.add(u.targetPropertyName);",
+      "expect": [
+        "U2",
+        "U3"
+      ]
+    },
+    "M3_used_marker_removed": {
+      "_note": "Removes the used-marker, so the SECOND loop appends every grounding rule a second time. Same idempotence argument as M2 for the product effect; the list is visibly wrong.",
+      "from": "        usedFromGrounding.add(u.targetPropertyName);\n",
+      "to": "",
+      "expect": [
+        "U1",
+        "U2",
+        "U3"
+      ]
+    },
+    "M4_splice_at_LAST_shadowed_position": {
+      "_note": "Implements the OTHER plausible reading of the docstring — splice the grounding rules at the position of the LAST universal rule they shadow instead of the first. Type-preserving: same signature, same elements, only their position differs. This locks the second half of the docstring claim ('at the position of the FIRST universal rule they shadow'), which nothing pinned before: with both shadowed universal rules ADJACENT the two readings produce an identical list, so the axis could not tell them apart. Predicted and measured: reddens U3 ALONE (U1 has a single universal rule, U2 has no separator between its two, so neither can observe the difference).",
+      "from": "      if (!usedFromGrounding.has(u.targetPropertyName)) {\n        out.push(...override);\n        usedFromGrounding.add(u.targetPropertyName);\n      }",
+      "to": "      if (usedFromGrounding.has(u.targetPropertyName)) {\n        for (const g of override) out.splice(out.indexOf(g), 1);\n      }\n      out.push(...override);\n      usedFromGrounding.add(u.targetPropertyName);",
+      "expect": [
+        "U3"
+      ]
+    }
+  },
+  "_note_red_re": "`red_re` anchors on the `● <suite> › <title>` failure header rather than the bare `[Xn]` key. jest echoes the SOURCE LINE of a neighbouring `it(...)` inside its diff context, so a key-only pattern reports a GREEN axis as red (same class as integration-test-revert-verify §A104). Measured while building this spec: the first key-only pattern produced 'красных НЕТ' at rc=1 on every mutant."
+}

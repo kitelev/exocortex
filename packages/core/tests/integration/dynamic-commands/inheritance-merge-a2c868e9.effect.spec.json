@@ -1,0 +1,28 @@
+{
+  "_doc": "Product-effect half of the revert-verify for requirement a2c868e9 (ticket c3de23a8): the merged rule list reaching a real GroundingExecutor run. Carries M1 (the lost-rule defect D1) ALONE, so rc stays machine-readable — rc=0 means the axes still discriminate. The duplicate-entry mutants, which redden nothing here by construction, live in the companion `inheritance-merge-a2c868e9.effect-uncovered.spec.json` together with the measurement proving why. Every `expect` is the MEASURED red set (§A97).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› @req:\\S+ \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/UniversalDefaultTemplateResolver.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/dynamic-commands/create-action-parent.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_grounding_map_last_wins": {
+      "_note": "Rebuilds the grounding map LAST-WINS (the pre-fix shape), type-preserving: the map stays Map<string, Rule[]>, each name just keeps a single-element bucket. This is defect D1 — a grounding's earlier conditional rule is dropped before any logic runs. Predicted: U1 on the unit harness, G1+G2 on the effect harness.",
+      "from": "    if (bucket) bucket.push(g);\n    else groundingByName.set(g.targetPropertyName, [g]);",
+      "to": "    groundingByName.set(g.targetPropertyName, [g]);",
+      "expect": [
+        "G1",
+        "G2"
+      ]
+    }
+  },
+  "_note_rc": "rc=0 here is load-bearing: this file is the one a runner can judge by exit code. Mutants that cannot redden are deliberately NOT kept here — they would pin rc at 2 forever and mask a real regression. They are in the -uncovered companion.",
+  "_note_red_re": "`red_re` anchors on the `● <suite> › <title>` failure header rather than the bare `[Xn]` key. jest echoes the SOURCE LINE of a neighbouring `it(...)` inside its diff context, so a key-only pattern reports a GREEN axis as red (same class as integration-test-revert-verify §A104). Measured while building this spec: the first key-only pattern produced 'красных НЕТ' at rc=1 on every mutant."
+}

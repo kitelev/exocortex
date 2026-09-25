@@ -100,4 +100,68 @@ describe("mergeInheritanceRules", () => {
     expect(merged).toHaveLength(1);
     expect(merged[0].priority).toBe(200);
   });
+
+  // req a2c868e9 — several conditional rules for ONE property.
+  //
+  // These axes are deliberately unit-level. The duplicate-override defect (the
+  // second one below) has NO observable product effect: applyInheritanceRuleStep
+  // opens with `if (properties[rule.targetPropertyName] !== undefined) continue`,
+  // so a duplicated entry is swallowed by that guard and the write is idempotent.
+  // The list's cleanliness is therefore the only thing an axis can assert here.
+  // The LOST-RULE defect does have a product effect and is pinned end-to-end in
+  // create-action-parent.integration.test.ts.
+  const condRule = (
+    targetPropertyName: string,
+    targetClassCondition: string,
+    priority = 50,
+  ): InheritanceRuleResolved => ({
+    ...baseRule(targetPropertyName, priority),
+    targetClassCondition,
+  });
+
+  it("@req:a2c868e9-47d3-4109-a5bc-3d8c4d1ff2bb [U1] keeps EVERY grounding rule for one property — they are distinct conditional rules, not a conflict", () => {
+    const universal = [condRule("ems__Effort_parent", "ems__Project")];
+    const grounding = [
+      condRule("ems__Effort_parent", "ems__Project"),
+      condRule("ems__Effort_parent", "ems__Task"),
+    ];
+    expect(
+      mergeInheritanceRules(universal, grounding).map(
+        (r) => r.targetClassCondition,
+      ),
+    ).toEqual(["ems__Project", "ems__Task"]);
+  });
+
+  it("@req:a2c868e9-47d3-4109-a5bc-3d8c4d1ff2bb [U2] emits the grounding override EXACTLY ONCE when several universal rules target that property", () => {
+    const universal = [
+      condRule("ems__Effort_parent", "ems__Project"),
+      condRule("ems__Effort_parent", "ems__Task"),
+    ];
+    const grounding = [condRule("ems__Effort_parent", "ems__Project")];
+    const merged = mergeInheritanceRules(universal, grounding);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].targetClassCondition).toBe("ems__Project");
+  });
+
+  it("@req:a2c868e9-47d3-4109-a5bc-3d8c4d1ff2bb [U3] splices the grounding rules at the position of the FIRST universal rule they shadow", () => {
+    // Two shadowed universal rules SEPARATED by a non-shadowed one: without the
+    // separator, splicing at the FIRST vs the LAST shadowed position yields the
+    // same list, and the axis cannot tell the two implementations apart.
+    const universal = [
+      baseRule("exo__Asset_prototype", 100),
+      condRule("ems__Effort_parent", "ems__Project"),
+      baseRule("ems__Effort_area", 40),
+      condRule("ems__Effort_parent", "ems__Task"),
+    ];
+    const grounding = [condRule("ems__Effort_parent", "ems__Task")];
+    expect(
+      mergeInheritanceRules(universal, grounding).map(
+        (r) => r.targetPropertyName,
+      ),
+    ).toEqual([
+      "exo__Asset_prototype",
+      "ems__Effort_parent",
+      "ems__Effort_area",
+    ]);
+  });
 });

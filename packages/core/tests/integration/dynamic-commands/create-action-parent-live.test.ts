@@ -13,9 +13,13 @@
  *
  *   1. The Universal Default Template (62907ff4) lists BOTH parent rules —
  *      01f570c9 (condition ems__Project) and 65acce2f (condition ems__Task).
- *      They can only coexist there: `mergeInheritanceRules` deduplicates by
- *      `targetPropertyName`, so a Grounding can express at most one rule per
- *      property and that one also shadows the Universal rules for it.
+ *      They live there because the Universal override in
+ *      `mergeInheritanceRules` is keyed by `targetPropertyName`: any rule a
+ *      Grounding declares for a property shadows EVERY Universal rule for it.
+ *      ⛤ Corrected 2026-09-25 (req a2c868e9) — this used to add «a Grounding
+ *      can express at most one rule per property», which is no longer true:
+ *      grounding rules are no longer deduplicated against each other. The
+ *      shadowing, which is what actually forces this topology, is unchanged.
  *   2. Therefore the «Create action» grounding (1bc1e938) declares NO rule
  *      whose `_targetProperty` is `ems__Effort_parent`. Adding one back would
  *      silently disable BOTH template rules for this command — the exact defect

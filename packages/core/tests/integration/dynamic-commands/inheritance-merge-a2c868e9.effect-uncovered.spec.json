@@ -1,0 +1,32 @@
+{
+  "_doc": "UNCOVERED-half of the revert-verify for requirement a2c868e9 (ticket c3de23a8). It carries ONLY the mutants that reproduce the duplicate-entry defect D2 and reden NOTHING on the effect harness, because `GroundingExecutor.applyInheritanceRuleStep` opens with `if (properties[rule.targetPropertyName] !== undefined) continue` — the duplicate is skipped and the write is idempotent. They are kept as APPLIED mutants rather than deleted: if that guard is ever removed from the executor, they start reddening and this file is the only place that would notice. ⛔ This spec returns rc=2 BY CONSTRUCTION and therefore cannot report a regression through rc — read the printed red sets. Measured in `~/.claude/bin/mutant-driver.py`: the `if not red:` branch increments `bad` UNCONDITIONALLY (line 459) BEFORE the `missing` check (line 465), and `parse_mutant` returns `(expect or None)` (line 236) — an empty list is falsy, so `expect: []` is IDENTICAL to no expect at all; the driver has no «I expect zero red» semantics. The machine-readable half lives in `inheritance-merge-a2c868e9.effect.spec.json`, which carries M1 alone and returns rc=0.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› @req:\\S+ \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/UniversalDefaultTemplateResolver.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/dynamic-commands/create-action-parent.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "M2_splice_guard_removed": {
+      "_note": "Drops the once-only guard around the splice, so the grounding rules are re-emitted for EVERY universal rule they shadow. This is defect D2. It has NO product effect: applyInheritanceRuleStep opens with `if (properties[rule.targetPropertyName] !== undefined) continue`, so the duplicate is swallowed and the write is idempotent — the effect harness is expected to stay GREEN, and that is the measurement proving the guard's product-level inertness, not a gap in the axis.",
+      "from": "      if (!usedFromGrounding.has(u.targetPropertyName)) {\n        out.push(...override);\n        usedFromGrounding.add(u.targetPropertyName);\n      }",
+      "to": "      out.push(...override);\n      usedFromGrounding.add(u.targetPropertyName);",
+      "expect": []
+    },
+    "M3_used_marker_removed": {
+      "_note": "Removes the used-marker, so the SECOND loop appends every grounding rule a second time. Same idempotence argument as M2 for the product effect; the list is visibly wrong.",
+      "from": "        usedFromGrounding.add(u.targetPropertyName);\n",
+      "to": "",
+      "expect": []
+    }
+  },
+  "_note_M2_M3": "M2 and M3 are predicted EMPTY ON PURPOSE, and the emptiness is the THING BEING GUARDED, not a gap. They reproduce the duplicate-entry defect (D2), which has no observable outcome here because `GroundingExecutor.applyInheritanceRuleStep` opens with `if (properties[rule.targetPropertyName] !== undefined) continue` — the second copy of a rule is skipped and the write is idempotent. Measured 2026-09-25: control 0 red, M2 0 red, M3 0 red. ⛔ A NON-empty red set on either of them means that guard is GONE from the executor: the duplicate would then apply twice, and this spec is the only place that would notice. They stay pinned HERE rather than only in the unit spec precisely because the unit harness never runs the executor.",
+  "_note_red_re": "`red_re` anchors on the `● <suite> › <title>` failure header rather than the bare `[Xn]` key. jest echoes the SOURCE LINE of a neighbouring `it(...)` inside its diff context, so a key-only pattern reports a GREEN axis as red (same class as integration-test-revert-verify §A104). Measured while building this spec: the first key-only pattern produced 'красных НЕТ' at rc=1 on every mutant.",
+  "_note_rc": "rc=2 is expected here and is NOT a failure signal — see _doc. ⚠ Inverted reading: if the executor guard disappears, M2/M3 begin to redden and rc FLIPS to 0."
+}
