@@ -3,7 +3,6 @@ import path from "path";
 import * as glob from "glob";
 
 export interface RewriteOptions {
-  dryRun?: boolean;
   /** Relative-to-root path of the file being renamed (skipped during scan). */
   excludeRelPath?: string;
 }
@@ -39,7 +38,7 @@ export async function rewriteInboundWikilinks(
   newBasename: string,
   opts: RewriteOptions = {},
 ): Promise<RewriteResult> {
-  const { dryRun = false, excludeRelPath } = opts;
+  const { excludeRelPath } = opts;
   const pattern = path.join(rootPath, "**/*.md");
   const files = await glob.glob(pattern, {
     nodir: true,
@@ -80,9 +79,7 @@ export async function rewriteInboundWikilinks(
       result.filesModified += 1;
       result.replacements += replacements;
       result.modifiedFiles.push(relPath);
-      if (!dryRun) {
-        await fs.writeFile(absPath, updated, "utf-8");
-      }
+      await fs.writeFile(absPath, updated, "utf-8");
     }
   }
 

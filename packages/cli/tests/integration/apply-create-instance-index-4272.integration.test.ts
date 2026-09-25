@@ -445,6 +445,10 @@ describe(`#4272 apply create-instance resolvers answer from the store index (req
     expect(loaded.explicitCount).toBeGreaterThan(0);
   });
 
+  // Budget, not a speed claim: the whole file runs in about 1 s alone, but I2
+  // converts the fixture vault and walks it through three resolver pairs, and
+  // under a loaded pre-commit (`jest --findRelatedTests`, load average 55-70 on
+  // 2026-09-26) it hit the 5 s default twice while correct.
   it(`I2 the three resolver factories answer identically on the indexed adapter and on the scan ${REQ}`, async () => {
     const vaultAdapter = new FileSystemVaultAdapter(root);
     const converter = new NoteToRDFConverter(vaultAdapter);
@@ -511,5 +515,5 @@ describe(`#4272 apply create-instance resolvers answer from the store index (req
     );
     expect(idx.stats.scanFallbacks).toBe(0);
     expect(idx.stats.indexedLookups).toBeGreaterThan(0);
-  });
+  }, 30_000);
 });
