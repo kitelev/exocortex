@@ -17,6 +17,7 @@ import {
 } from "../domain/defaults/DefaultWorkflows";
 import { CLASS_UID_TO_LABEL } from "../domain/constants/WorkflowClassUids";
 import { iriToObsidianName } from "../utilities/iriToObsidianName";
+import { findUidByAssetLabel } from "../utilities/assetLabelLookup";
 import { LoggingService } from "./LoggingService";
 
 /**
@@ -322,30 +323,13 @@ export class WorkflowResolver {
   /**
    * req 915b20b2 — resolve a class label (`ems__WaitingCheckTask`) to the
    * `exo__Asset_uid` of the asset that carries it. `null` when unknown.
+   * Issue #4354: matches BOTH emitted label forms — see
+   * {@link findUidByAssetLabel} (the Literal-only copy found no class in a
+   * converter-built store, so a multi-hop subclass never reached its built-in
+   * workflow).
    */
   private async findUidByLabel(label: string): Promise<string | null> {
-    const labelTriples = await this.tripleStore.match(
-      undefined,
-      Namespace.EXO.term("Asset_label"),
-      undefined,
-    );
-    for (const triple of labelTriples) {
-      if (
-        triple.object instanceof Literal &&
-        triple.object.value === label &&
-        triple.subject instanceof IRI
-      ) {
-        const uidTriples = await this.tripleStore.match(
-          triple.subject,
-          Namespace.EXO.term("Asset_uid"),
-          undefined,
-        );
-        if (uidTriples.length > 0 && uidTriples[0].object instanceof Literal) {
-          return uidTriples[0].object.value;
-        }
-      }
-    }
-    return null;
+    return findUidByAssetLabel(this.tripleStore, label);
   }
 
   /**

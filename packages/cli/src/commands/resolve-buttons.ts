@@ -178,9 +178,10 @@ function ontologyIriToSymbolic(value: string): string | null {
  * against. This is the CLI's equivalent of the plugin's metadata-cache
  * UID→symbolic expansion (`extractAssetClasses` #3141) — necessary because the
  * converter substitutes class-shaped `exo__Asset_label` literals to IRIs too,
- * which breaks the resolver's triple-store `resolveLabelByUID`/`findUidByLabel`
- * (the plugin sidesteps this via metadataCache; the CLI reads the already-
- * resolved symbolic instance_class IRIs instead).
+ * which broke the resolver's triple-store `resolveLabelByUID` (fixed #4007) and
+ * `findUidByLabel` (fixed #4354) when this was written. The plugin sidesteps
+ * the label lookup via metadataCache; the CLI reads the already-resolved
+ * symbolic instance_class IRIs, which needs no label lookup at all.
  */
 async function deriveStoreSymbolicClasses(
   tripleStore: InMemoryTripleStore,

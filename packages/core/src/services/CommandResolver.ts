@@ -10,6 +10,7 @@ import { GroundingType } from "../domain/constants/GroundingType";
 import { resolveGroundingTypeFromIRI } from "../domain/constants/GroundingTypeUIDs";
 import { utf8ToBase64 } from "../utilities/base64";
 import { iriToObsidianName } from "../utilities/iriToObsidianName";
+import { findUidByAssetLabel } from "../utilities/assetLabelLookup";
 
 /**
  * Absolute-IRI shape (`scheme://…`). Gates the label fold-back in
@@ -3487,10 +3488,25 @@ export class CommandResolver {
       Namespace.EXO.term("Asset_uid"),
     );
     if (seedUid) excluded.add(seedUid);
-    const seedLabel = await this.getLiteralValue(
-      seedFileIRI,
-      Namespace.EXO.term("Asset_label"),
-    );
+    // A `prefix__Local` label is emitted as its term IRI, while the walk records
+    // ancestors in the symbolic form — fold it, or a cyclic chain (`A ⊑ B ⊑ A`)
+    // surfaces `A` as its own ancestor now that the walk gets past the first
+    // symbolic superclass (#4354). Folded by NODE TYPE, not by string shape: a
+    // Literal label that merely looks like a URL (`https://…/page.md`) must stay
+    // as written, or its fold (`page`) would exclude a genuine ancestor.
+    const seedLabelNode = (
+      await this.tripleStore.match(
+        seedFileIRI,
+        Namespace.EXO.term("Asset_label"),
+        undefined,
+      )
+    )[0]?.object;
+    const seedLabel =
+      seedLabelNode instanceof IRI
+        ? (iriToObsidianName(seedLabelNode.value) ?? seedLabelNode.value)
+        : seedLabelNode instanceof Literal
+          ? seedLabelNode.value
+          : null;
     if (seedLabel) excluded.add(seedLabel);
 
     // Record an ancestor ref at its nearest depth. BFS first-reach is the
@@ -3591,37 +3607,20 @@ export class CommandResolver {
   }
 
   /**
-   * Reverse-direction lookup: given an `exo__Asset_label` literal value
-   * (e.g. `"ems__Task"`), find the matching asset's `exo__Asset_uid` in
-   * the triple store. Used by `loadGroundingDefinition` (#3212) to
-   * substitute the canonical UID when `Grounding_targetClass` is stored
-   * as a plain short-name literal or wikilink-to-label rather than as
-   * a UUID wikilink. Returns null when no asset bears that label or
-   * the labelled asset has no UID literal.
+   * Reverse-direction lookup: given an `exo__Asset_label` value (e.g.
+   * `"ems__Task"`), find the matching asset's `exo__Asset_uid` in the triple
+   * store. Used by `loadGroundingDefinition` (#3212) to substitute the
+   * canonical UID when `Grounding_targetClass` is stored as a plain short-name
+   * or wikilink-to-label rather than as a UUID wikilink, and by
+   * {@link resolveClassFileIRI} to continue the ancestor walk through a
+   * symbolic superclass. Returns null when no asset bears that label or the
+   * labelled asset has no UID literal.
+   *
+   * Issue #4354: matches BOTH emitted label forms (term IRI for `prefix__Local`,
+   * `Literal` otherwise) — see {@link findUidByAssetLabel}.
    */
   private async findUidByLabel(label: string): Promise<string | null> {
-    const labelTriples = await this.tripleStore.match(
-      undefined,
-      Namespace.EXO.term("Asset_label"),
-      undefined,
-    );
-    for (const triple of labelTriples) {
-      if (
-        triple.object instanceof Literal &&
-        triple.object.value === label &&
-        triple.subject instanceof IRI
-      ) {
-        const uidTriples = await this.tripleStore.match(
-          triple.subject,
-          Namespace.EXO.term("Asset_uid"),
-          undefined,
-        );
-        if (uidTriples.length > 0 && uidTriples[0].object instanceof Literal) {
-          return uidTriples[0].object.value;
-        }
-      }
-    }
-    return null;
+    return findUidByAssetLabel(this.tripleStore, label);
   }
 
   private async getLinkedUID(
