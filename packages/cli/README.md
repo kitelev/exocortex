@@ -81,7 +81,6 @@ npx @kitelev/exocortex-cli find --class ems__Task --vault ~/vault
 | Option             | Default | Description                                                                                   |
 | ------------------ | ------- | --------------------------------------------------------------------------------------------- |
 | `--vault <path>`   | cwd     | Path to Obsidian vault                                                                        |
-| `--also <path>`    | —       | Additional vault to include (repeatable)                                                      |
 | `--sparql <query>` | —       | SPARQL SELECT query (must bind `?path`)                                                       |
 | `--class <value>`  | —       | Filter by class label via the vault's `find__Alias` asset labelled `class` (e.g. `ems__Task`) |
 
@@ -203,7 +202,6 @@ npx @kitelev/exocortex-cli query "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 10" -
 | Option                  | Default | Description                                                                                  |
 | ----------------------- | ------- | -------------------------------------------------------------------------------------------- |
 | `--vault <path>`        | cwd     | Path to Obsidian vault                                                                       |
-| `--also <path>`         | —       | Additional vault to include in the query (repeatable)                                        |
 | `--format <type>`       | `table` | Output format: `table`, `json`, `csv`, `ntriples`                                            |
 | `--output <type>`       | `text`  | Response format: `text` or `json` (for MCP tools)                                            |
 | `--timeout <duration>`  | `30s`   | Query timeout (e.g. `30s`, `5000ms`); env fallback `EXOCORTEX_SPARQL_TIMEOUT`                |
@@ -220,6 +218,8 @@ npx @kitelev/exocortex-cli query "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 10" -
 
 **Built-in templates:** `tasks-by-date`, `tasks-by-status`, `projects-active`, `concepts-by-domain`, `sleep-analysis`.
 
+**One vault per call.** The query store is built from the AssetSpaces mounted in `--vault` only (a vault is an environment; its profile decides what is mounted). The former `--also <path>` flag was removed in #3646. To query data your working vault does not mount — for example a cold archive AssetSpace — point `--vault` at a vault whose profile mounts it; no separate flag is needed.
+
 **Examples:**
 
 ```bash
@@ -232,9 +232,9 @@ npx @kitelev/exocortex-cli query \
      ?task exo:Asset_label ?label .
    }" --vault ~/vault
 
-# Cross-vault query (repeatable --also)
-npx @kitelev/exocortex-cli query "SELECT ?s WHERE { ?s ?p ?o }" \
-  --vault ~/vault --also ~/vault-archive
+# Query an AssetSpace your working vault does not mount (e.g. a cold archive):
+# run against a vault where it IS mounted — there is no extra-vault flag
+npx @kitelev/exocortex-cli query "SELECT ?s WHERE { ?s ?p ?o }" --vault ~/vault-with-archive
 
 # Template with parameters
 npx @kitelev/exocortex-cli query --template tasks-by-date --param date=2026-01-15 --vault ~/vault
@@ -275,7 +275,6 @@ npx @kitelev/exocortex-cli index --vault ~/vault --stats
 | Option            | Default | Description                                                    |
 | ----------------- | ------- | -------------------------------------------------------------- |
 | `--vault <path>`  | cwd     | Path to Obsidian vault                                         |
-| `--also <path>`   | —       | Additional vault to include in the combined index (repeatable) |
 | `--output <type>` | `text`  | Response format: `text` or `json`                              |
 | `--stats`         | off     | Show cache statistics after building                           |
 | `--force`         | off     | Force rebuild even if the cache is valid                       |
@@ -297,10 +296,9 @@ Check frontmatter properties against the ontology (schema linting), or run SHACL
 | Option            | Default | Description                                                                            |
 | ----------------- | ------- | -------------------------------------------------------------------------------------- |
 | `--vault <path>`  | cwd     | Path to Obsidian vault                                                                 |
-| `--also <path>`   | —       | Additional vault merged into the validation graph (repeatable; disables `--use-cache`) |
 | `--output <type>` | `text`  | Response format: `text` or `json`                                                      |
 | `--staged`        | off     | Only validate git-staged `.md` files (for pre-commit hooks)                            |
-| `--use-cache`     | off     | Use the persistent triple cache (ignored when `--also` is set)                         |
+| `--use-cache`     | off     | Use the persistent triple cache                                                        |
 | `--shapes-mode`   | off     | Run SHACL-lite shapes validation instead of schema linting                             |
 | `--format <type>` | `text`  | Shapes-mode output format: `text`, `json`, `earl`                                      |
 | `--class <iri>`   | —       | Only validate assets whose `exo__Instance_class` matches this IRI/slug                 |
