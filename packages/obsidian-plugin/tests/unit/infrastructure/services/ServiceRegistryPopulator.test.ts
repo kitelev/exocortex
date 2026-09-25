@@ -805,8 +805,11 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
       const service = registry.get("createNarrowerConcept")!;
       await service.execute("test-uid-123", { label: "Child Concept" });
 
+      // The child lands in the PARENT's folder (`folder/`, per the fixture at the top of this
+      // file), not in a hardcoded top-level `concepts/` — the latter is outside every assetspace
+      // and ExoSync never carried it (issue #4357). This expectation asserted the defect.
       expect(deps.vaultAdapter!.create).toHaveBeenCalledWith(
-        expect.stringContaining("concepts/Child Concept.md"),
+        "folder/Child Concept.md",
         expect.stringContaining("concept__Concept_genus: \"[[test-uid-123]]\""),
       );
     });
