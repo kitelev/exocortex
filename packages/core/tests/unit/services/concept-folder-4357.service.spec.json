@@ -17,19 +17,47 @@
       "_note": "The pre-fix state verbatim: the destination becomes the literal the bug shipped. ⛔ Note the OLD test could not catch this — it asserted `stringContaining(\"concepts/\")`, which the CORRECT path `assetspaces/.../exoas-concept/concept/x.md` also satisfies. The axes now compare the full path, which is what makes this mutant detectable at all.",
       "from": "    const folderPath = ConceptCreationService.folderOf(parentFile.path);",
       "to": "    const folderPath = \"concepts\";",
-      "expect": ["C5", "C6"]
+      "expect": [
+        "C5",
+        "C6"
+      ]
     },
     "M2_anchor_not_inherited": {
       "_note": "Keeps the placement fix but drops the anchor inheritance, so the child declares the fail-open `[[!concepts]]` while sitting in a real assetspace. That combination is precisely what makes the placement UNCHECKABLE by `audit co-location` — the bang anchor is fail-open by design — so this mutant guards the half of the fix that restores auditability.",
-      "from": "      this.inheritedAnchor(parentFile),",
+      "from": "      await this.inheritedAnchor(parentFile),",
       "to": "      null,",
-      "expect": ["C7"]
+      "expect": [
+        "C7",
+        "C9",
+        "C10"
+      ],
+      "_note_anchor": "Re-pointed when MEDIUM-1 made inheritedAnchor async — the previous anchor (the same call without `await`) no longer exists in the subject.",
+      "_note_expect": "MEASURED, not predicted (integration-test-revert-verify §A44): the first list was [C7], derived from the mutant's TOPIC. Nulling the anchor outright is observed by every axis that reads it — C9 (the fallback read) and C10 (the round-trip) included, because both assert a concrete inherited value rather than merely 'some anchor'."
     },
     "M3_no_fallback_when_parent_has_no_anchor": {
       "_note": "Removes the compatibility fallback: a parent without an anchor would yield an EMPTY isDefinedBy rather than the previous `[[!concepts]]`. Guards that the fix is additive for parents that predate anchoring, rather than silently emitting a broken value.",
-      "from": "        : '\"[[!concepts]]\"';",
-      "to": "        : '\"\"';",
-      "expect": ["C8"]
+      "from": "    frontmatter[\"exo__Asset_isDefinedBy\"] = inheritedAnchor ?? \"[[!concepts]]\";",
+      "to": "    frontmatter[\"exo__Asset_isDefinedBy\"] = inheritedAnchor ?? \"\";",
+      "expect": [
+        "C8"
+      ],
+      "_note_anchor": "Re-pointed when MEDIUM-2 collapsed the ternary into `??` — the old anchor line was deleted by that fix. Shares its `from` line with M5 by design: the driver applies each mutant to an untouched src, so only in-subject uniqueness matters."
+    },
+    "M4_cached_read_only": {
+      "_note": "Review MEDIUM-1: back to the cache-only reader. `getFrontmatter` is metadataCache-backed and returns null on a cold index / fresh device / right after an ExoSync pull (those write via vault.adapter, which does not refresh the cache), so the anchor silently degrades to the fail-open `[[!concepts]]` sentinel — invisible to `audit co-location` by design. Same class as the measured NoteToRDFConverter incident (4 of 7 buttons gone until the cache warmed).",
+      "from": "    const fm = this.vault.getFrontmatterWithFallback\n      ? await this.vault.getFrontmatterWithFallback(parentFile)\n      : this.vault.getFrontmatter(parentFile);",
+      "to": "    const fm = this.vault.getFrontmatter(parentFile);",
+      "expect": [
+        "C9"
+      ]
+    },
+    "M5_hand_rolled_quoting": {
+      "_note": "Review MEDIUM-2: restores the hand-rolled pre-quoting. Byte-identical for ordinary values (measured: the serializer emits the same line whether the value arrives quoted or bare), so only the embedded-quote axis can see it — which is exactly why the defect shipped review-invisible.",
+      "from": "    frontmatter[\"exo__Asset_isDefinedBy\"] = inheritedAnchor ?? \"[[!concepts]]\";",
+      "to": "    frontmatter[\"exo__Asset_isDefinedBy\"] = inheritedAnchor !== null ? (inheritedAnchor.startsWith('\"') ? inheritedAnchor : `\"${inheritedAnchor}\"`) : '\"[[!concepts]]\"';",
+      "expect": [
+        "C10"
+      ]
     }
   }
 }

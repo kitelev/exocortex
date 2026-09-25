@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { describe, it, expect, beforeEach, jest } from "@jest/globals";
 import { ConceptCreationService } from "../../../src/services/ConceptCreationService";
 import type { IVaultAdapter, IFile } from "../../../src/interfaces/IVaultAdapter";
+import { parseYamlFrontmatterTolerant } from "../../../src/utilities/parseYamlFrontmatter";
 
 describe("ConceptCreationService", () => {
   let service: ConceptCreationService;
@@ -85,6 +86,50 @@ describe("ConceptCreationService", () => {
 
       const content = mockVault.create.mock.calls[0][1];
       expect(content).toContain('exo__Asset_isDefinedBy: "[[!concepts]]"');
+    });
+
+    it("[C9] reads the parent through the DISK FALLBACK, so a cold metadataCache cannot silently drop the anchor", async () => {
+      const parentFile = {
+        basename: "BroadConcept",
+        path: "assetspaces/kitelev/exoas-concept/concept/BroadConcept.md",
+      } as IFile;
+      // Exactly the cold-cache shape: the cached reader knows nothing yet, the disk does.
+      // Without the fallback the anchor degrades to the fail-open `[[!concepts]]` sentinel,
+      // which `audit co-location` skips BY DESIGN — so the regression would be invisible.
+      mockVault.getFrontmatter.mockReturnValue(null);
+      (mockVault as unknown as {
+        getFrontmatterWithFallback: () => Promise<Record<string, unknown>>;
+      }).getFrontmatterWithFallback = jest.fn(async () => ({
+        exo__Asset_isDefinedBy: "[[9d1d2e9d|$concept]]",
+      }));
+
+      await service.createNarrowerConcept(parentFile, "narrow", "def", []);
+
+      const content = mockVault.create.mock.calls[0][1];
+      expect(content).toContain('exo__Asset_isDefinedBy: "[[9d1d2e9d|$concept]]"');
+      expect(content).not.toContain("[[!concepts]]");
+    });
+
+    it("[C10] round-trips an anchor containing a double quote — the shared serializer owns quoting, not a hand-rolled wrapper", async () => {
+      const parentFile = {
+        basename: "BroadConcept",
+        path: "assetspaces/kitelev/exoas-concept/concept/BroadConcept.md",
+      } as IFile;
+      // A parent alias may legitimately contain `"`. Pre-quoting the value by hand produced
+      // `""[[…]]""`, which the serializer then escaped wholesale: the reader decoded a LITERAL
+      // string with quote characters as data instead of a wikilink.
+      const anchorValue = '[[9d1d2e9d|Some "Quoted" Alias]]';
+      mockVault.getFrontmatter.mockReturnValue({
+        exo__Asset_isDefinedBy: anchorValue,
+      } as never);
+
+      await service.createNarrowerConcept(parentFile, "narrow", "def", []);
+
+      const content = mockVault.create.mock.calls[0][1];
+      const yamlBlock = content.split("---")[1];
+      // Parsed with the PRODUCT's own reader, not a hand-written expectation about bytes.
+      const parsed = parseYamlFrontmatterTolerant(yamlBlock);
+      expect(parsed?.["exo__Asset_isDefinedBy"]).toBe(anchorValue);
     });
 
     it("[C1] writes the parent as concept__Concept_genus — NOT the retired ims__ prefix and NOT the deprecated concept__Concept_broader", async () => {
