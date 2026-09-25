@@ -1,3 +1,4 @@
+import { Namespace } from "@kitelev/exocortex-core";
 import { SPARQLQueryService } from "./SPARQLQueryService";
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 
@@ -265,25 +266,35 @@ export class ClassDiscoveryService {
    */
   private isPrefixedClassName(value: string | undefined): boolean {
     if (!value) return false;
-    return /^[a-z]+__[A-Za-z][A-Za-z0-9_]*$/.test(value);
+    // ⛔ Issue #4353: the local-name half stays pinned to `[A-Za-z][A-Za-z0-9_]*`,
+    // but the PREFIX half now comes from the shared grammar — the `^[a-z]+__`
+    // copy refused a prefix with a capital, a digit or a hyphen, so `aiKnow__Memory`
+    // was not recognised as a prefixed class name and `canCreateInstance` dropped
+    // it from the creation dropdown entirely.
+    const parsed = Namespace.fromPropertyKey(value);
+    return parsed !== null && /^[A-Za-z][A-Za-z0-9_]*$/.test(parsed.localName);
   }
 
   /**
    * Convert full IRI to class name format (e.g., "ems__Task").
    */
   private toClassName(iri: string): string | null {
-    // Handle prefixed names that were already converted
-    if (iri.startsWith("ems__") || iri.startsWith("exo__") ||
-        iri.startsWith("ims__") || iri.startsWith("pn__")) {
+    // Handle prefixed names that were already converted. ⛔ Issue #4353: this
+    // used to be a four-prefix `startsWith` list (`ems__`/`exo__`/`ims__`/`pn__`),
+    // which had to be edited for every new namespace; the shared grammar answers
+    // the same question for all of them.
+    if (Namespace.fromPropertyKey(iri)) {
       return iri;
     }
 
-    const match = iri.match(
-      /https:\/\/exocortex\.my\/ontology\/([a-z]+)#(.+)$/,
-    );
-    if (match) {
-      const [, prefix, localName] = match;
-      return `${prefix}__${localName}`;
+    // ⛔ Issue #4353: the `…/ontology/([a-z]+)#(.+)$` copy refused a prefix with a
+    // capital, a digit or a hyphen and fell through to the last-segment fallback,
+    // which DROPS the namespace — a class-def whose label is emitted as the
+    // symbolic IRI `…/ontology/aiKnow#Memory` surfaced as the bare className
+    // `Memory`, and the dropdown then offered a class no writer can resolve.
+    const term = Namespace.fromTermIRI(iri);
+    if (term) {
+      return `${term.namespace.prefix}__${term.localName}`;
     }
 
     // Fallback: try to extract local name from any URI
@@ -301,8 +312,11 @@ export class ClassDiscoveryService {
    * Extract human-readable label from class name.
    */
   private extractLabel(className: string): string {
-    // Remove prefix (ems__, exo__, etc.)
-    const withoutPrefix = className.replace(/^[a-z]+__/, "");
+    // Remove prefix (ems__, exo__, etc.) — shared grammar, issue #4353: the
+    // `^[a-z]+__` copy left `aiKnow__Memory` unstripped and the camelCase split
+    // below rendered it as the dropdown label "Ai Know__ Memory".
+    const parsed = Namespace.fromPropertyKey(className);
+    const withoutPrefix = parsed ? parsed.localName : className;
 
     // Convert camelCase to spaces and capitalize first letter
     return withoutPrefix

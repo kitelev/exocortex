@@ -1,5 +1,6 @@
 import { injectable } from "tsyringe";
 import type { ILogger } from "../interfaces/ILogger";
+import { Namespace } from "../domain/models/rdf/Namespace";
 import type { ISPARQLQueryable } from "./PropertySchemaResolver";
 
 export interface EnumValue {
@@ -103,11 +104,21 @@ export class EnumValueResolver {
     return values;
   }
 
+  /**
+   * `<prefix>__<Class>` → `<prefix>__<Class>_rank`, the optional ordering
+   * property the enum query reads.
+   *
+   * ⛔ Issue #4353: the `^([a-z]+)__(.+)$` copy this replaces refused a prefix
+   * carrying a capital, a digit or a hyphen, so for `aiKnow__…`, `exo003__…` and
+   * `adapter-exo-ims__…` it returned null — the query lost its `OPTIONAL { … _rank }`
+   * clause entirely and the values came back ordered by instance IRI instead of
+   * by the author's declared rank. Silent: the list rendered, just in the wrong
+   * order. Now derived from the shared grammar.
+   */
   private buildRankProperty(enumClass: string): string | null {
-    const match = enumClass.match(/^([a-z]+)__(.+)$/);
-    if (!match) return null;
-    const [, prefix, className] = match;
-    return `${prefix}__${className}_rank`;
+    const parsed = Namespace.fromPropertyKey(enumClass);
+    if (!parsed) return null;
+    return `${parsed.namespace.prefix}__${parsed.localName}_rank`;
   }
 
   private normalizeClassName(name: string): string {
@@ -123,6 +134,18 @@ export class EnumValueResolver {
     return String(value);
   }
 
+  /**
+   * `prefix__LocalName` → full term IRI, from the shared grammar
+   * (`Namespace.fromPropertyKey` → `Namespace.forPrefix`).
+   *
+   * ⛔ Issue #4353: the `^([a-z]+)__(.+)$` copy this replaces refused a prefix
+   * with a capital, a digit or a hyphen, so `aiKnow__MemoryKind` reached SPARQL
+   * as a bare key inside `<…>`, matched nothing, and the enum rendered EMPTY —
+   * a dropdown with no options, no error anywhere.
+   *
+   * Pass-through on an unparseable name is DELIBERATE (the result is embedded as
+   * the `<…>` term of the query).
+   */
   private toFullIRI(propertyName: string): string {
     if (
       propertyName.startsWith("http://") ||
@@ -131,22 +154,27 @@ export class EnumValueResolver {
       return propertyName;
     }
 
-    const match = propertyName.match(/^([a-z]+)__(.+)$/);
-    if (match) {
-      const [, prefix, localName] = match;
-      return `https://exocortex.my/ontology/${prefix}#${localName}`;
+    const parsed = Namespace.fromPropertyKey(propertyName);
+    if (parsed) {
+      return parsed.namespace.term(parsed.localName).value;
     }
 
     return propertyName;
   }
 
+  /**
+   * Full term IRI → `prefix__LocalName`, the exact inverse of {@link toFullIRI}
+   * derived from the SAME namespace array via `Namespace.fromTermIRI`.
+   *
+   * ⛔ Issue #4353: the regex it replaces refused the same three prefix shapes,
+   * so an enum instance under `…/ontology/aiKnow#` was offered to the user as
+   * the wikilink `[[https://exocortex.my/ontology/aiKnow#KindA]]` — a link that
+   * resolves to nothing and, once written, corrupts the asset's value.
+   */
   private fromFullIRI(iri: string): string {
-    const match = iri.match(
-      /https:\/\/exocortex\.my\/ontology\/([a-z]+)#(.+)$/,
-    );
-    if (match) {
-      const [, prefix, localName] = match;
-      return `${prefix}__${localName}`;
+    const term = Namespace.fromTermIRI(iri);
+    if (term) {
+      return `${term.namespace.prefix}__${term.localName}`;
     }
     return iri;
   }

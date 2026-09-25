@@ -1,4 +1,5 @@
 import { Setting, TFile } from "obsidian";
+import { Namespace } from "@kitelev/exocortex-core";
 import type { ReferencePropertyFieldProps, ValidationResult } from "./types";
 
 /**
@@ -235,15 +236,21 @@ export class ReferencePropertyField {
    * E.g., "https://exocortex.my/ontology/ems#Project" -> "ems__Project"
    */
   private extractClassFromRange(rangeType: string): string | null {
-    // Handle full IRI format
-    const iriMatch = rangeType.match(/https:\/\/exocortex\.my\/ontology\/([a-z]+)#(.+)$/);
-    if (iriMatch) {
-      const [, prefix, localName] = iriMatch;
-      return `${prefix}__${localName}`;
+    // Handle full IRI format — via `Namespace.fromTermIRI`, the shared inverse of
+    // the emission path. ⛔ Issue #4353: the `…/ontology/([a-z]+)#(.+)$` copy this
+    // replaces refused a prefix with a capital, a digit or a hyphen, so a declared
+    // `exo__Property_range` of `…/ontology/aiKnow#Memory` yielded NO class filter
+    // at all — the reference autocomplete then offered every note in the vault
+    // instead of the range's instances, and nothing in the UI said why.
+    const term = Namespace.fromTermIRI(rangeType);
+    if (term) {
+      return `${term.namespace.prefix}__${term.localName}`;
     }
 
-    // Handle prefixed format (ems__Project, exo__Asset, etc.)
-    if (rangeType.match(/^[a-z]+__[A-Za-z_]+$/)) {
+    // Handle prefixed format (ems__Project, exo__Asset, etc.) — prefix half from
+    // the shared grammar, local half kept pinned to its historical shape.
+    const parsed = Namespace.fromPropertyKey(rangeType);
+    if (parsed && /^[A-Za-z_]+$/.test(parsed.localName)) {
       return rangeType;
     }
 
@@ -430,8 +437,10 @@ export class ReferencePropertyField {
    * E.g., "ems__Project" -> "Project"
    */
   private formatClassLabel(className: string): string {
-    // Remove prefix (ems__, exo__, etc.)
-    return className.replace(/^[a-z]+__/, "");
+    // Remove prefix (ems__, exo__, etc.) — shared grammar, issue #4353: the
+    // `^[a-z]+__` copy left `aiKnow__Memory` unstripped in the suggestion badge.
+    const parsed = Namespace.fromPropertyKey(className);
+    return parsed ? parsed.localName : className;
   }
 
   /**

@@ -1,0 +1,50 @@
+{
+  "_doc": "Revert-verify mutants for issue #4353 — the prefix copies in the PropertyDefinition helpers. The issue's table named line 170 (propertyNameToUri); M2-M4 guard its round-trip partner and the label extractor, which carry the SAME grammar in the same file and would otherwise keep the defect alive (the round trip broke, and `extractPropertyLabel` is the one with a production caller).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/domain/types/PropertyDefinition.ts",
+  "harness": "cd \"$(dirname {subject})/../../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/prefix-grammar-4353.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_property_name_to_uri_narrow": {
+      "_note": "Pre-fix propertyNameToUri: a camelCase/hyphenated/digit prefix comes back UNCHANGED, still in `__` form where the caller expects `prefix:Local`.",
+      "from": "  const parsed = Namespace.fromPropertyKey(propertyName);\n  return parsed ? `${parsed.namespace.prefix}:${parsed.localName}` : propertyName;",
+      "to": "  return propertyName.replace(/^([a-z]+)__/, \"$1:\");",
+      "expect": [
+        "A8",
+        "A9"
+      ]
+    },
+    "M2_uri_to_property_name_iri_narrow": {
+      "_note": "Pre-fix uriToPropertyName (full-IRI branch): falls through to the last-segment fallback, which DROPS the namespace.",
+      "from": "    const term = Namespace.fromTermIRI(uri);\n    if (term) {\n      return `${term.namespace.prefix}__${term.localName}`;\n    }",
+      "to": "    const m = uri.match(/\\/([a-z]+)#([A-Za-z0-9_]+)$/);\n    if (m) {\n      return `${m[1]}__${m[2]}`;\n    }",
+      "expect": [
+        "A11"
+      ]
+    },
+    "M3_compact_prefix_narrow": {
+      "_note": "Pre-fix uriToPropertyName (compact branch): `^([a-z]+):` cannot invert the compact form propertyNameToUri now emits.",
+      "from": "  return uri.replace(COMPACT_PREFIX_RE, \"$1__\");",
+      "to": "  return uri.replace(/^([a-z]+):/, \"$1__\");",
+      "expect": [
+        "A9"
+      ]
+    },
+    "M4_extract_label_narrow": {
+      "_note": "Pre-fix extractPropertyLabel: `^[a-z]+__` leaves the prefix in and the formatting turns `aiKnow__Memory_title` into ' Memory title'.",
+      "from": "  const parsed = Namespace.fromPropertyKey(propertyName);\n  const withoutPrefix = parsed ? parsed.localName : propertyName;",
+      "to": "  const withoutPrefix = propertyName.replace(/^[a-z]+__/, \"\");",
+      "expect": [
+        "A10"
+      ]
+    }
+  }
+}

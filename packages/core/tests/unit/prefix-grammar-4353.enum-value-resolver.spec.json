@@ -1,0 +1,45 @@
+{
+  "_doc": "Revert-verify mutants for issue #4353 — the THREE narrow prefix copies in EnumValueResolver (rank-property derivation, forward IRI, inverse IRI). `red_re` anchors on the `● <suite> › [An]` header (§A104).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/EnumValueResolver.ts",
+  "harness": "cd \"$(dirname {subject})/../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/prefix-grammar-4353.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_to_full_iri_narrow": {
+      "_note": "Pre-fix toFullIRI: the enum class reaches SPARQL as a bare key → no binding → EMPTY dropdown.",
+      "from": "    const parsed = Namespace.fromPropertyKey(propertyName);\n    if (parsed) {\n      return parsed.namespace.term(parsed.localName).value;\n    }",
+      "to": "    const m = propertyName.match(/^([a-z]+)__(.+)$/);\n    if (m) {\n      return `https://exocortex.my/ontology/${m[1]}#${m[2]}`;\n    }",
+      "expect": [
+        "A5",
+        "A6"
+      ]
+    },
+    "M2_from_full_iri_narrow": {
+      "_note": "Pre-fix fromFullIRI: an enum instance is offered as the wikilink `[[https://…]]` — a link that resolves to nothing and corrupts the value once written.",
+      "from": "    const term = Namespace.fromTermIRI(iri);\n    if (term) {\n      return `${term.namespace.prefix}__${term.localName}`;\n    }\n    return iri;",
+      "to": "    const m = iri.match(\n      /https:\\/\\/exocortex\\.my\\/ontology\\/([a-z]+)#(.+)$/,\n    );\n    if (m) {\n      return `${m[1]}__${m[2]}`;\n    }\n    return iri;",
+      "expect": [
+        "A5",
+        "A6",
+        "A7"
+      ]
+    },
+    "M3_rank_property_narrow": {
+      "_note": "Pre-fix buildRankProperty: returns null, so the query loses its `OPTIONAL { … _rank }` clause and the values come back ordered by instance IRI instead of the declared rank.",
+      "from": "    const parsed = Namespace.fromPropertyKey(enumClass);\n    if (!parsed) return null;\n    return `${parsed.namespace.prefix}__${parsed.localName}_rank`;",
+      "to": "    const m = enumClass.match(/^([a-z]+)__(.+)$/);\n    if (!m) return null;\n    return `${m[1]}__${m[2]}_rank`;",
+      "expect": [
+        "A5",
+        "A6"
+      ]
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "_doc": "Revert-verify mutants for issue #4353 — the two narrow prefix copies in ClassHierarchyResolver. Each mutant restores the pre-fix `[a-z]+` regex for ONE copy. `red_re` anchors on jest's `● <suite> › [An]` failure header, not on a bare key: jest echoes neighbouring `it(...)` source lines in its diff context (integration-test-revert-verify §A44/§A104).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/ClassHierarchyResolver.ts",
+  "harness": "cd \"$(dirname {subject})/../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/prefix-grammar-4353.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_to_full_iri_narrow": {
+      "_note": "Pre-fix toFullIRI: `^([a-z]+)__` refuses a capital, a digit or a hyphen, so the class name reaches SPARQL as a bare frontmatter key inside `<…>`, nothing binds, and loadHierarchy returns the 2-element fallback.",
+      "from": "    const parsed = Namespace.fromPropertyKey(propertyName);\n    if (parsed) {\n      return parsed.namespace.term(parsed.localName).value;\n    }",
+      "to": "    const m = propertyName.match(/^([a-z]+)__(.+)$/);\n    if (m) {\n      return `https://exocortex.my/ontology/${m[1]}#${m[2]}`;\n    }",
+      "expect": [
+        "A1",
+        "A2",
+        "A3"
+      ]
+    },
+    "M2_from_full_iri_narrow": {
+      "_note": "Pre-fix fromFullIRI: an ancestor IRI whose prefix carries a capital, a digit or a hyphen comes back RAW and enters the returned hierarchy as a full IRI.",
+      "from": "    const term = Namespace.fromTermIRI(iri);\n    if (term) {\n      return `${term.namespace.prefix}__${term.localName}`;\n    }\n    return iri;",
+      "to": "    const m = iri.match(/https:\\/\\/exocortex\\.my\\/ontology\\/([a-z]+)#(.+)$/);\n    if (m) {\n      return `${m[1]}__${m[2]}`;\n    }\n    return iri;",
+      "expect": [
+        "A1",
+        "A2",
+        "A3",
+        "A4"
+      ]
+    }
+  }
+}

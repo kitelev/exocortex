@@ -1,5 +1,5 @@
 import { SPARQLQueryService } from "./SPARQLQueryService";
-import { PropertyFieldType } from "@kitelev/exocortex-core";
+import { Namespace, PropertyFieldType } from "@kitelev/exocortex-core";
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 
 /**
@@ -266,18 +266,16 @@ export class OntologySchemaService {
       return propertyName;
     }
 
-    // Parse prefix (ems__, exo__, etc.)
-    const match = propertyName.match(/^([a-z]+)__(.+)$/);
-    if (match) {
-      const [, prefix, localName] = match;
-      switch (prefix) {
-        case "ems":
-          return `https://exocortex.my/ontology/ems#${localName}`;
-        case "exo":
-          return `https://exocortex.my/ontology/exo#${localName}`;
-        default:
-          return `https://exocortex.my/ontology/${prefix}#${localName}`;
-      }
+    // Prefix shape from the SHARED grammar (`Namespace.fromPropertyKey` →
+    // `Namespace.forPrefix`). ⛔ Issue #4353: the `^([a-z]+)__(.+)$` copy plus
+    // two-case `switch` this replaces refused a prefix with a capital, a digit or
+    // a hyphen, so `aiKnow__Memory_title` was handed to SPARQL as a bare
+    // frontmatter key inside `<…>` — the deprecation/range query matched nothing
+    // and the property silently read as "not deprecated, no declared range".
+    // Both named `switch` cases produced byte-identical output to `default`.
+    const parsed = Namespace.fromPropertyKey(propertyName);
+    if (parsed) {
+      return parsed.namespace.term(parsed.localName).value;
     }
 
     return propertyName;
@@ -350,18 +348,13 @@ export class OntologySchemaService {
       return className;
     }
 
-    // Parse prefix (ems__, exo__, etc.)
-    const match = className.match(/^([a-z]+)__(.+)$/);
-    if (match) {
-      const [, prefix, localName] = match;
-      switch (prefix) {
-        case "ems":
-          return `https://exocortex.my/ontology/ems#${localName}`;
-        case "exo":
-          return `https://exocortex.my/ontology/exo#${localName}`;
-        default:
-          return `https://exocortex.my/ontology/${prefix}#${localName}`;
-      }
+    // Shared grammar — see {@link toPropertyIri} (issue #4353). A class whose
+    // prefix carries a capital, a digit or a hyphen used to reach SPARQL as a
+    // bare name, so `getClassHierarchy`/`getDirectProperties` returned EMPTY for
+    // it: the creation form rendered with no inherited properties at all.
+    const parsed = Namespace.fromPropertyKey(className);
+    if (parsed) {
+      return parsed.namespace.term(parsed.localName).value;
     }
 
     return className;
@@ -369,28 +362,30 @@ export class OntologySchemaService {
 
   /**
    * Convert IRI to class name format.
+   *
+   * ⛔ Issue #4353: the `…/ontology/([a-z]+)#(.+)$` copy this replaces returned
+   * NULL for a prefix with a capital, a digit or a hyphen, so such an ancestor
+   * was dropped from the hierarchy silently.
    */
   private toClassName(iri: string): string | null {
-    const match = iri.match(
-      /https:\/\/exocortex\.my\/ontology\/([a-z]+)#(.+)$/,
-    );
-    if (match) {
-      const [, prefix, localName] = match;
-      return `${prefix}__${localName}`;
+    const term = Namespace.fromTermIRI(iri);
+    if (term) {
+      return `${term.namespace.prefix}__${term.localName}`;
     }
     return null;
   }
 
   /**
    * Convert IRI to property name format.
+   *
+   * ⛔ Issue #4353: the same copy fell through to the last-segment fallback,
+   * which DROPS the namespace — `…/ontology/aiKnow#Memory_title` surfaced as the
+   * form field `uri: "Memory_title"`, a key that resolves to no property.
    */
   private toPropertyName(iri: string): string {
-    const match = iri.match(
-      /https:\/\/exocortex\.my\/ontology\/([a-z]+)#(.+)$/,
-    );
-    if (match) {
-      const [, prefix, localName] = match;
-      return `${prefix}__${localName}`;
+    const term = Namespace.fromTermIRI(iri);
+    if (term) {
+      return `${term.namespace.prefix}__${term.localName}`;
     }
     // Return last segment as fallback
     const lastHash = iri.lastIndexOf("#");
@@ -403,8 +398,13 @@ export class OntologySchemaService {
    * Extract human-readable label from property URI.
    */
   private extractLabel(uri: string): string {
-    // Remove prefix (ems__, exo__, etc.)
-    const withoutPrefix = uri.replace(/^[a-z]+__/, "");
+    // Remove prefix (ems__, exo__, etc.) — shared grammar. ⛔ Issue #4353: the
+    // issue's table counted FOUR copies in this file; this is the fifth, and it
+    // is the one the USER SEES — `^[a-z]+__` left `aiKnow__Memory_title`
+    // unstripped, and the split below rendered the form field label as
+    // " Memory title".
+    const parsed = Namespace.fromPropertyKey(uri);
+    const withoutPrefix = parsed ? parsed.localName : uri;
 
     // Split on underscore (e.g., "Asset_label" -> "Label")
     const parts = withoutPrefix.split("_");

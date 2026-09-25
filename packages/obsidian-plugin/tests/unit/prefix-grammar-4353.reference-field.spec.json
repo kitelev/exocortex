@@ -1,0 +1,42 @@
+{
+  "_doc": "Revert-verify mutants for issue #4353 — ReferencePropertyField. The issue's table named `extractClassFromRange`; M3 guards `formatClassLabel`, the display side of the same value.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/presentation/components/property-fields/ReferencePropertyField.ts",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && node ../../node_modules/jest/bin/jest.js tests/unit/prefix-grammar-4353.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_range_iri_narrow": {
+      "_note": "Pre-fix extractClassFromRange (IRI branch): null → NO class filter, so the autocomplete offers every note in the vault instead of the range's instances.",
+      "from": "    const term = Namespace.fromTermIRI(rangeType);\n    if (term) {\n      return `${term.namespace.prefix}__${term.localName}`;\n    }",
+      "to": "    const m = rangeType.match(/https:\\/\\/exocortex\\.my\\/ontology\\/([a-z]+)#(.+)$/);\n    if (m) {\n      return `${m[1]}__${m[2]}`;\n    }",
+      "expect": [
+        "A40",
+        "A41"
+      ]
+    },
+    "M2_range_prefixed_narrow": {
+      "_note": "Pre-fix extractClassFromRange (prefixed branch): a range already written as `exo003__Alias` is refused.",
+      "from": "    const parsed = Namespace.fromPropertyKey(rangeType);\n    if (parsed && /^[A-Za-z_]+$/.test(parsed.localName)) {\n      return rangeType;\n    }",
+      "to": "    if (rangeType.match(/^[a-z]+__[A-Za-z_]+$/)) {\n      return rangeType;\n    }",
+      "expect": [
+        "A42"
+      ]
+    },
+    "M3_format_class_label_narrow": {
+      "_note": "Pre-fix formatClassLabel: the prefix stays in the suggestion badge.",
+      "from": "    const parsed = Namespace.fromPropertyKey(className);\n    return parsed ? parsed.localName : className;",
+      "to": "    return className.replace(/^[a-z]+__/, \"\");",
+      "expect": [
+        "A43"
+      ]
+    }
+  }
+}
