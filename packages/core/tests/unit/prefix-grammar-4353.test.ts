@@ -192,13 +192,21 @@ describe("prefix grammar #4353 — core", () => {
       expect(propertyNameToUri("aliases")).toBe("aliases");
     });
 
-    it("[A9] uriToPropertyName inverts propertyNameToUri for the compact form", () => {
-      for (const name of [
-        "aiKnow__Memory_title",
-        "tbank-nessy__LessonLearned_note",
-        "exo003__Alias_alias",
-      ]) {
-        expect(uriToPropertyName(propertyNameToUri(name))).toBe(name);
+    it("[A9] the compact round trip goes through the REAL compact form, both ways", () => {
+      // ⛔ The intermediate is pinned on purpose. `expect(uriToPropertyName(
+      // propertyNameToUri(name))).toBe(name)` alone is satisfied by a SYMMETRIC
+      // NO-OP pair: with the narrow forward copy the key comes back unchanged,
+      // the narrow inverse then leaves it alone, and the identity passes — the
+      // axis was green under the mutant that breaks the forward half
+      // (integration-test-revert-verify §A33, measured on this very axis).
+      const cases: Array<[string, string]> = [
+        ["aiKnow__Memory_title", "aiKnow:Memory_title"],
+        ["tbank-nessy__LessonLearned_note", "tbank-nessy:LessonLearned_note"],
+        ["exo003__Alias_alias", "exo003:Alias_alias"],
+      ];
+      for (const [name, compact] of cases) {
+        expect(propertyNameToUri(name)).toBe(compact);
+        expect(uriToPropertyName(compact)).toBe(name);
       }
     });
 
