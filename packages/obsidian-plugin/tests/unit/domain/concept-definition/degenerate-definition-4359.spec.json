@@ -1,0 +1,22 @@
+{
+  "_doc": "Revert-verify mutants for issue #4359 — a template slot that renders to nothing must not yield a \"computed\" definition. M1 restores the pre-fix state verbatim. M2 is the WRONG fix the AC forbids (guard keyed on the literal `differentia` key instead of on the template's slots): it satisfies D1/D2 and fails ONLY on a spec naming another property, which is exactly what D3 exists to catch. Run: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree`/`subject` to YOUR checkout.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": ["node_modules"],
+  "red_re": "● .*\\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/domain/concept-definition/ConceptDefinitionResolver.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../..\" && node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/obsidian-plugin/jest.config.js tests/unit/domain/concept-definition/ConceptDefinitionResolver.test.ts 2>&1",
+  "mutants": {
+    "M1_no_slot_guard": {
+      "_note": "The pre-fix state: the render is returned whenever it trims non-empty, so `\"{{differentia}} {{genus}}\"` with no differentia yields the parent's bare label and shadows the stored narrative.",
+      "from": "    if (!slots || slots.nonEmpty < slots.placeholders) return null;",
+      "to": "    if (false) return null;",
+      "expect": ["D1", "D2", "D3"]
+    },
+    "M2_guard_keyed_on_differentia_name": {
+      "_note": "The wrong fix the AC forbids: keyed on the literal property NAME rather than on the template's slots. D1/D2 stay GREEN (differentia really is the missing key there), so only D3 — whose vault spec names `concept__Concept_scope` instead — can tell the two designs apart. That asymmetry is the whole point of D3.",
+      "from": "    if (!slots || slots.nonEmpty < slots.placeholders) return null;",
+      "to": "    if (!this.resolveWikilinkLabels(metadata[\"concept__Concept_differentia\"]).length) return null;",
+      "expect": ["D3"]
+    }
+  }
+}

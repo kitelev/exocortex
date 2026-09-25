@@ -86,7 +86,8 @@ export class DisplayNameTemplateEngine {
     metadata: Record<string, unknown>,
     basename: string,
     createdDate?: Date,
-    metadataResolver?: MetadataResolver
+    metadataResolver?: MetadataResolver,
+    onPlaceholderStats?: (stats: { placeholders: number; nonEmpty: number }) => void,
   ): string | null {
     if (!this.template || this.template.trim() === "") {
       return null;
@@ -122,6 +123,15 @@ export class DisplayNameTemplateEngine {
         nonEmpty += 1;
       },
     );
+
+    // Hand the SAME pass's counts to a caller that needs a stricter verdict than this method's
+    // own (#4359 wants "EVERY named slot rendered", not "at least one did"). Deliberately
+    // reported from here and NOT recomputed by the caller: a second parse of the template would
+    // be a second opinion on emptiness, which is exactly what renderSegment's docblock warns
+    // against. ⛔ NOT reported on the separator path — that mode drops empty fields BY DESIGN,
+    // so "every slot non-empty" is not a meaningful question there; a caller that needs the
+    // guarantee must treat a missing report as "cannot vouch" rather than as "all present".
+    onPlaceholderStats?.({ placeholders, nonEmpty });
 
     // Separator mode already declines in this situation ("the affixes alone are not a name");
     // this is the same judgement on the plain path, minus ONE case. ⛔ The exception is not
