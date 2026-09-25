@@ -325,6 +325,49 @@ export function validate(
   const violations: Violation[] = [];
   const allSubjects = new Set([...subjectClasses.keys(), ...subjectProps.keys()]);
 
+  // Hoisted out of the per-subject loop below (#4376). `getAllShapes()` is
+  // `Array.from(shapeMap.values())`, and that loop runs once per focus subject — 19 472 of them on
+  // vault-my against 533 shapes. Calling it inside meant 19 472 fresh 533-element arrays per run
+  // for a value that cannot change while the loop runs.
+  const allShapes = registry.getAllShapes();
+
+  /**
+   * Applicable shapes per distinct CLASS SET (#4376).
+   *
+   * `sh:domain` applicability is a function of the subject's classes, not of the subject, and
+   * `if (!appliesToSubject) continue;` is its only consequence — nothing else in the loop body
+   * depends on the shapes it rejects. Thousands of assets share a handful of class combinations
+   * (measured on vault-my: 10 231 classed subjects across **313** distinct class-sets), so the
+   * same (class-set × shape × domain) question was being asked over and over: 19 472 × 533 ≈
+   * 10.4 M applicability tests, which is where the bulk of the 14 220 679 `isSubClassOf` calls
+   * of #4369 came from.
+   *
+   * ⛤ A composite string key rather than nested maps, unlike the memo in #4369: the key here is a
+   * SET, and there is no nested-map shape for that. `\u0000` is safe as a separator because it
+   * cannot occur in an IRI — a constraint the RDF term grammar guarantees, not a convention.
+   * Sorted and de-duplicated so two subjects with the same classes in a different order (or with a
+   * class listed twice) share one entry rather than splitting the cache.
+   */
+  const applicableShapesByClassKey = new Map<string, Shape[]>();
+
+  const applicableShapesFor = (classes: string[]): Shape[] => {
+    const key = [...new Set(classes)].sort().join('\u0000');
+    const cached = applicableShapesByClassKey.get(key);
+    if (cached !== undefined) return cached;
+
+    const applicable = allShapes.filter(
+      (shape) =>
+        shape.domain.length === 0 ||
+        shape.domain.some((domainClass) =>
+          classes.some(
+            (sc) => sc === domainClass || hierarchy.isSubClassOf(sc, domainClass),
+          ),
+        ),
+    );
+    applicableShapesByClassKey.set(key, applicable);
+    return applicable;
+  };
+
   for (const subjectIRI of allSubjects) {
     // Issue #3488 M2: `uid:<uuid>` keys are SYNTHETIC value-class join keys
     // (added above so a cross-vault wikilink value `obsidian://vault/<uid>.md`
@@ -339,16 +382,7 @@ export function validate(
     const classes = subjectClasses.get(subjectIRI) ?? [];
     const props = subjectProps.get(subjectIRI) ?? new Map<string, Array<IRI | Literal>>();
 
-    for (const shape of registry.getAllShapes()) {
-      const appliesToSubject =
-        shape.domain.length === 0 ||
-        shape.domain.some((domainClass) =>
-          classes.some(
-            (sc) => sc === domainClass || hierarchy.isSubClassOf(sc, domainClass),
-          ),
-        );
-      if (!appliesToSubject) continue;
-
+    for (const shape of applicableShapesFor(classes)) {
       const values = props.get(shape.propertyIRI) ?? [];
 
       // sh:minCount check
