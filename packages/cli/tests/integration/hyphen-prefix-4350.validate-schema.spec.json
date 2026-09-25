@@ -1,0 +1,22 @@
+{
+  "_doc": "Revert-verify mutant for issue #4350 — labelToOntologyIRI (SHACL class hierarchy). Core now emits an instance of `tbank-crm__Contact` as `…/tbank-crm#Contact`; with the pre-fix prefix check here that IRI gets no subClassOf edge and every such instance trips a FALSE sh:class (H1). `red_re` anchors on the `● <suite> › [Xn]` failure header, not on a bare key: jest echoes neighbouring `it(...)` source lines in its diff context (integration-test-revert-verify §A44/§A104).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/validate-schema.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/utils/namespace-prefix-parity-4350.test.ts tests/integration/hyphen-namespace-4350.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "M9_hierarchy_keeps_old_shape": {
+      "from": "  if (PREFIX_RE.test(prefix) && !/[\\s()]/.test(local)) {",
+      "to": "  if (/^[a-z][a-zA-Z0-9]*$/.test(prefix) && !/[\\s()]/.test(local)) {",
+      "expect": ["H1"]
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "_doc": "Revert-verify mutants for issue #4350 — the Namespace half. The prefix grammar lived in THREE literal copies (forPrefix, fromPropertyKey, fromTermIRI); each mutant puts ONE entry point back on the pre-fix shape `[a-z][a-zA-Z0-9]*`, so each proves that entry point is wired to the shared PREFIX_PATTERN_SOURCE. N4 is the agreement axis: it reddens exactly when the key grammar and the prefix grammar diverge. `red_re` anchors on the `● <suite> › [Xn]` failure header, not on a bare key: jest echoes neighbouring `it(...)` source lines in its diff context (integration-test-revert-verify §A44/§A104).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/domain/models/rdf/Namespace.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../../../packages/core\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/domain/rdf/Namespace.hyphenPrefix-4350.test.ts tests/unit/services/NoteToRDFConverter.hyphenNamespace-4350.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_shared_grammar_back_to_unhyphenated": {
+      "_note": "The one definition reverts: every hyphen axis reddens, the agreement axis N4 stays green (both halves revert together), the C4 validator axis reddens because the converter reads the same verdict.",
+      "from": "  static readonly PREFIX_PATTERN_SOURCE = \"[a-z][a-zA-Z0-9]*(?:-[a-zA-Z0-9]+)*\";",
+      "to": "  static readonly PREFIX_PATTERN_SOURCE = \"[a-z][a-zA-Z0-9]*\";",
+      "expect": ["N1", "N2", "N3", "C1", "C2", "C3", "C4", "C5"]
+    },
+    "M2_key_grammar_is_its_own_copy": {
+      "_note": "fromPropertyKey keeps a literal pre-fix regex while forPrefix accepts the hyphen — the forward/inverse drift the class docstring warns about. N4 (agreement) and every emission axis redden; N2/N3 stay green.",
+      "from": "    `^(${Namespace.PREFIX_PATTERN_SOURCE})__(.+)$`,",
+      "to": "    `^([a-z][a-zA-Z0-9]*)__(.+)$`,",
+      "expect": ["N1", "N4", "C1", "C2", "C3", "C5"]
+    },
+    "M3_inverse_keeps_old_shape": {
+      "_note": "fromTermIRI keeps the pre-fix check: the hyphenated term IRI no longer inverts (N3) — the de-reification / wikilink-naming path.",
+      "from": "    if (!Namespace.isValidPrefix(prefix)) return null;",
+      "to": "    if (!/^[a-z][a-zA-Z0-9]*$/.test(prefix)) return null;",
+      "expect": ["N3"]
+    },
+    "M4_forPrefix_keeps_old_shape": {
+      "_note": "forPrefix keeps the pre-fix check: fromPropertyKey and fromTermIRI both route through it, so parsing, inversion, agreement and emission all redden. C4 stays green — the converter's validator asks isValidPrefix, not forPrefix.",
+      "from": "    if (!Namespace.isValidPrefix(prefix)) {\n      return null;\n    }",
+      "to": "    if (!/^[a-z][a-zA-Z0-9]*$/.test(prefix)) {\n      return null;\n    }",
+      "expect": ["N1", "N2", "N3", "N4", "C1", "C2", "C3", "C5"]
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "_doc": "Revert-verify mutant for issue #4350 — the CLI copy of the prefix grammar. Reverting the ONE copy must redden the parity axes AND every consumer axis that reads it (injector Q1, SHACL hierarchy H1, find H4, cache H5). H2 stays green (the violation still fires), H3 stays green (the candidate gate's key regex is independent), Q2 stays green (declared-prefix detection is its own regex). `red_re` anchors on the `● <suite> › [Xn]` failure header, not on a bare key: jest echoes neighbouring `it(...)` source lines in its diff context (integration-test-revert-verify §A44/§A104).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/utils/namespacePrefix.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/utils/namespace-prefix-parity-4350.test.ts tests/integration/hyphen-namespace-4350.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "M6_cli_copy_back_to_unhyphenated": {
+      "from": "export const PREFIX_PATTERN_SOURCE = \"[a-z][a-zA-Z0-9]*(?:-[a-zA-Z0-9]+)*\";",
+      "to": "export const PREFIX_PATTERN_SOURCE = \"[a-z][a-zA-Z0-9]*\";",
+      "expect": ["P1", "P2", "Q1", "H1", "H4", "H5"]
+    }
+  }
+}

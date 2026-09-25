@@ -32,9 +32,9 @@ const EXOCORTEX_ONTOLOGY_BASE = "https://exocortex.my/ontology/";
 
 /**
  * RFC `93a0b2ee` Task 1.3 — convert a symbolic predicate IRI to its frontmatter
- * property-key form (`<prefix>__<localName>`) for dedup + grouping. Unlike
- * `Namespace.fromPropertyKey` / `iriToObsidianName`, this handles dash-bearing
- * prefixes (`exo-ims#relatesToConcept` → `exo-ims__relatesToConcept`) since the
+ * property-key form (`<prefix>__<localName>`) for dedup + grouping. It handles
+ * dash-bearing prefixes (`exo-ims#relatesToConcept` → `exo-ims__relatesToConcept`)
+ * — as `Namespace.fromTermIRI` also does since issue #4350 — since the
  * dedup key must canonicalise the inline frontmatter key and the reified
  * predicate IRI to the SAME token. Non-ontology IRIs pass through unchanged.
  */
@@ -558,8 +558,9 @@ export class RelationsRenderer {
     // canonicalises ontology-base IRIs and returns anything else verbatim —
     // correct for a pure function, but `exo__Statement_predicate` resolves to a
     // PATH-form IRI whenever the predicate definition's own label is not itself
-    // parseable as `prefix__Local`, which a DASH-bearing prefix
-    // (`adapter-exo-ims__relatesToConcept`) is not. The raw IRI then reached both
+    // parseable as `prefix__Local` — which, until issue #4350 taught `Namespace`
+    // hyphenated prefixes, a DASH-bearing one (`adapter-exo-ims__relatesToConcept`)
+    // was not; a human-readable label still is not. The raw IRI then reached both
     // the group heading AND the dedup key, so such a relation showed its IRI as a
     // heading and could never match its inline twin (issue #4011).
     //

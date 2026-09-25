@@ -1334,7 +1334,12 @@ export class NoteToRDFConverter {
       const cleaned = this.removeQuotes(candidate);
       const wikilink = this.extractWikilink(cleaned);
       const target = (wikilink ?? cleaned).trim();
-      const looksLikeNamespacedClass = /^[a-z][a-zA-Z0-9]*__/.test(target);
+      // Prefix shape from Namespace (issue #4350: hyphenated prefixes such as
+      // `tbank-nessy__` are namespaced classes too, so `expandClassValue` must
+      // not be the only one of the two to know it).
+      const dunder = target.indexOf("__");
+      const looksLikeNamespacedClass =
+        dunder > 0 && Namespace.isValidPrefix(target.slice(0, dunder));
       if (looksLikeNamespacedClass && /[\s()]/.test(target)) {
         if (!firstInvalid) firstInvalid = { candidate };
       } else {

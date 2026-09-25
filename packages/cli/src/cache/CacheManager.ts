@@ -18,6 +18,7 @@ import {
   type SerializedTriple,
 } from "./tripleSerialization.js";
 import { materializeInferredTriples } from "./materializeInferred.js";
+import { PREFIX_PATTERN_SOURCE } from "../utils/namespacePrefix.js";
 
 // Re-export for callers that previously imported these from CacheManager
 // (kept for backward compatibility within the cli package surface).
@@ -38,8 +39,15 @@ export type { SerializedNode, SerializedTriple };
  * v2 cache would keep serving `"3"^^xsd:decimal` next to freshly converted
  * `"3"^^xsd:integer` for as long as the files' mtimes stay unchanged — the
  * version bump makes every v2 cache "invalid" and rebuilt once.
+ *
+ * #4350 (v4): a hyphenated namespace prefix (`tbank-nessy__`) now parses, so
+ * UNCHANGED files convert differently — such keys emit triples, such labels and
+ * aliases become IRIs, and a `[[uid]]` link to such a class becomes its
+ * symbolic IRI instead of the class's file IRI. A v3 cache would keep serving
+ * the old graph for every file whose mtime did not move, and a delta would mix
+ * the two; the bump makes every v3 cache "invalid" and rebuilt once.
  */
-export const CACHE_FORMAT_VERSION = 3;
+export const CACHE_FORMAT_VERSION = 4;
 
 /**
  * Cache metadata stored alongside the triple cache
@@ -283,9 +291,12 @@ export const STALE_TMP_MAX_AGE_MS = 10 * 60 * 1000;
  * SYMBOLIC ontology IRI for every file that LINKS to the asset
  * (`NoteToRDFConverter.valueToRDFObject` → `expandClassValue`). Same shape as
  * `Namespace.fromPropertyKey` accepts; deliberately prefix-agnostic because
- * the converter derives ad-hoc namespaces for unknown prefixes too.
+ * the converter derives ad-hoc namespaces for unknown prefixes too. The prefix
+ * comes from the shared CLI copy of that grammar (issue #4350: hyphenated
+ * prefixes such as `tbank-nessy__` are TBox form as well — a relabel of one of
+ * those must re-emit its linkers exactly like a relabel of `ems__Task`).
  */
-const TBOX_FORM = /^[a-z][a-zA-Z0-9]*__\S+$/;
+const TBOX_FORM = new RegExp(`^${PREFIX_PATTERN_SOURCE}__\\S+$`);
 
 const ASSET_LABEL_IRI_SUFFIX = "#Asset_label";
 const ASSET_ALIASES_IRI_SUFFIX = "#Asset_aliases";

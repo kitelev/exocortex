@@ -76,12 +76,15 @@ export function detectTermIriCollisions(
     // and three assets in the live vault do exactly this. That particular IRI is
     // used as a predicate 0 times, so the message below ("a join from a predicate
     // to its definition resolves to all of them") would be false for it.
-    // ⚠ Do NOT generalise that to "file IRIs are never predicates" — they can be.
-    // Measured: `adapter-exo-ims__relatesToConcept` has a hyphenated prefix, which
-    // `Namespace.forPrefix` rejects (`^[a-z][a-zA-Z0-9]*$`), so it never gets a term
-    // IRI and is used by FILE IRI in the predicate slot 64× (vault-my) / 102×
-    // (vault-exodev). The guard is therefore justified by that one IRI's measured
-    // 0 predicate uses, not by an invariant about file IRIs.
+    // ⚠ Do NOT generalise that to "file IRIs are never predicates" — they can be:
+    // a reified `exo__Statement_predicate` whose definition's label does not parse
+    // as `prefix__Local` resolves to the definition's FILE IRI, and the logical
+    // edge carries it in the predicate slot. (The measured example used to be
+    // `adapter-exo-ims__relatesToConcept` — 64× vault-my / 102× vault-exodev — but
+    // its label parses since issue #4350 taught `Namespace` hyphenated prefixes, so
+    // it now resolves to the term IRI `…/adapter-exo-ims#relatesToConcept`.) The
+    // guard is therefore justified by that one IRI's measured 0 predicate uses,
+    // not by an invariant about file IRIs.
     // `Namespace.fromTermIRI` is the documented inverse of the forward path
     // `fromPropertyKey` → `term`. ⛔ It is NOT an exact inverse, and claiming so
     // here was false (review round 3, probe P3): `Namespace.term()` will mint an

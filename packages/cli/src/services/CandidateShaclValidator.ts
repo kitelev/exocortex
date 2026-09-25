@@ -228,8 +228,10 @@ export class CandidateShaclValidator {
  * path is not an Exocortex ontology term (a foreign/W3C predicate).
  */
 function iriToFrontmatterKey(iri: string): string {
+  // Hyphen-separated runs admitted (issue #4350): a `tbank-nessy__x` key is now
+  // emitted as `…/ontology/tbank-nessy#x`, and its violation must name that key.
   const match = iri.match(
-    /^https:\/\/exocortex\.my\/ontology\/([A-Za-z][A-Za-z0-9_]*)#(.+)$/,
+    /^https:\/\/exocortex\.my\/ontology\/([A-Za-z][A-Za-z0-9_]*(?:-[A-Za-z0-9_]+)*)#(.+)$/,
   );
   return match ? `${match[1]}__${match[2]}` : iri;
 }

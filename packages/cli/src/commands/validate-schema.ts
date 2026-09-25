@@ -27,6 +27,7 @@ import { VaultNotFoundError } from "../utils/errors/index.js";
 import { ResponseBuilder } from "../responses/index.js";
 import { loadVaultTriples } from "../cache/loadVaultTriples.js";
 import { injectExocortexPrefixes } from "../utils/QueryPrefixInjector.js";
+import { PREFIX_RE } from "../utils/namespacePrefix.js";
 
 /**
  * Non-ontology YAML keys used by Obsidian or convention.
@@ -538,7 +539,10 @@ export function labelToOntologyIRI(label: string): string | null {
   //    local-name guard mirrors NoteToRDFConverter.expandClassValue (which rejects
   //    `[\s()]` local names) so the derived IRI always matches the converter's
   //    emitted rdf:type — never an inert, unmatchable hierarchy entry.
-  if (/^[a-z][a-zA-Z0-9]*$/.test(prefix) && !/[\s()]/.test(local)) {
+  //    Issue #4350: a hyphenated prefix (`tbank-nessy__LessonLearned`) is emitted
+  //    as a symbolic class IRI too, so its subClassOf edge must be derived here
+  //    as well — or every instance of that class trips a false sh:class.
+  if (PREFIX_RE.test(prefix) && !/[\s()]/.test(local)) {
     return `https://exocortex.my/ontology/${prefix}#${local}`;
   }
   return null;

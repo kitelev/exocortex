@@ -1,4 +1,5 @@
 import { SPARQL_PREFIXES } from "@kitelev/exocortex-core";
+import { PREFIX_PATTERN_SOURCE, PREFIX_RE } from "./namespacePrefix.js";
 
 /**
  * Standard Exocortex ontology IRI base used to derive ad-hoc prefix
@@ -9,8 +10,15 @@ import { SPARQL_PREFIXES } from "@kitelev/exocortex-core";
  */
 const EXOCORTEX_ONTOLOGY_BASE = "https://exocortex.my/ontology/";
 
-/** Prefix shape: lowercase letter, then alphanumerics. Mirrors Namespace.forPrefix. */
-const VALID_PREFIX_PATTERN = /^[a-z][a-zA-Z0-9]*$/;
+/**
+ * Prefix shape — see `namespacePrefix.ts` (the CLI copy of core
+ * `Namespace.PREFIX_PATTERN_SOURCE`).
+ *
+ * ⛔ Issue #4350: this used to be `[a-z][a-zA-Z0-9]*`, so in
+ * `?s device-work-macbook:Exercise_chapter ?o` the used-prefix scan matched only
+ * the tail `macbook:` and declared THAT, leaving the real prefix undeclared.
+ */
+const VALID_PREFIX_PATTERN = PREFIX_RE;
 
 /**
  * Well-known Exocortex ontology prefixes that should NOT be treated as vault
@@ -39,7 +47,9 @@ const SHORTHAND_PATTERN = /(<)([a-zA-Z][a-zA-Z0-9]*)__([a-zA-Z][a-zA-Z0-9_]*)(>)
 export function injectExocortexPrefixes(query: string): string {
   // Find all already-declared prefixes
   const declaredPrefixes = new Set<string>();
-  const prefixPattern = /PREFIX\s+(\w+)\s*:/gi;
+  // `[\w-]` so a hand-declared `PREFIX tbank-nessy: <…>` counts as declared and
+  // is not declared a second time below.
+  const prefixPattern = /PREFIX\s+([\w-]+)\s*:/gi;
   let match: RegExpExecArray | null;
   while ((match = prefixPattern.exec(query)) !== null) {
     declaredPrefixes.add(match[1].toLowerCase());
@@ -63,7 +73,14 @@ export function injectExocortexPrefixes(query: string): string {
   // NoteToRDFConverter's runtime auto-extension so cross-namespace SPARQL
   // queries like `?s aiKnow:Memory_aboutConcept ?c` resolve without forcing
   // the user to hand-declare every PREFIX.
-  const usedPrefixPattern = /(?<![:\w])([a-z][a-zA-Z0-9]*):[a-zA-Z_]/g;
+  // `?` / `$` in the lookbehind: a prefix never starts a variable name. Once the
+  // grammar admits `-`, `?n-aiKnow:w` (a minus glued to a variable) would
+  // otherwise scan as the prefix `n-aiKnow` and leave `aiKnow` undeclared
+  // (#4352 review); the scan now starts after the variable, at `aiKnow`.
+  const usedPrefixPattern = new RegExp(
+    `(?<![:\\w?$])(${PREFIX_PATTERN_SOURCE}):[a-zA-Z_]`,
+    "g",
+  );
   const usedPrefixes = new Set<string>();
   let usedMatch: RegExpExecArray | null;
   while ((usedMatch = usedPrefixPattern.exec(query)) !== null) {

@@ -126,13 +126,48 @@ export class Namespace {
   ];
 
   /**
+   * The ONE definition of a namespace-prefix shape: a lowercase letter, then
+   * alphanumerics, optionally continued by hyphen-separated alphanumeric runs
+   * (`ems`, `aiKnow`, `tbank-nessy`, `device-work-macbook`). A hyphen may sit
+   * only BETWEEN runs — never first, last or doubled — which is exactly where
+   * SPARQL's `PN_PREFIX` production allows it, so every prefix accepted here is
+   * also a legal `PREFIX p: <…>` name and a legal IRI path segment.
+   *
+   * ⛔ Issue #4350: this used to be `[a-z][a-zA-Z0-9]*`. A hyphenated prefix
+   * then failed {@link fromPropertyKey}, and `NoteToRDFConverter` drops every
+   * frontmatter key that does not parse — so `device-work-macbook__Exercise_chapter`
+   * emitted NO triple at all, silently, while `devicework__Exercise_chapter` did.
+   *
+   * It is a source string, not a RegExp, so {@link fromPropertyKey} can embed it
+   * in its key pattern: the key grammar and the prefix grammar are one rule.
+   * CLI modules that cannot import this class (their suites mock the core
+   * module) keep a literal copy — each copy names this constant, and
+   * `packages/cli/tests/unit/utils/namespace-prefix-parity-4350.test.ts` holds
+   * them to it.
+   */
+  static readonly PREFIX_PATTERN_SOURCE = "[a-z][a-zA-Z0-9]*(?:-[a-zA-Z0-9]+)*";
+
+  private static readonly PREFIX_RE = new RegExp(
+    `^${Namespace.PREFIX_PATTERN_SOURCE}$`,
+  );
+
+  private static readonly PROPERTY_KEY_RE = new RegExp(
+    `^(${Namespace.PREFIX_PATTERN_SOURCE})__(.+)$`,
+  );
+
+  /** Does `prefix` have the shape of a namespace prefix ({@link PREFIX_PATTERN_SOURCE})? */
+  static isValidPrefix(prefix: string): boolean {
+    return Namespace.PREFIX_RE.test(prefix);
+  }
+
+  /**
    * Resolve a prefix string to a {@link Namespace}, returning the canonical
    * static singleton when the prefix is well-known, otherwise constructing an
    * ad-hoc namespace under {@link EXOCORTEX_ONTOLOGY_BASE}. Returns null for
-   * invalid prefix shape (must start with lowercase letter, then alphanumerics).
+   * invalid prefix shape ({@link PREFIX_PATTERN_SOURCE}).
    */
   static forPrefix(prefix: string): Namespace | null {
-    if (!/^[a-z][a-zA-Z0-9]*$/.test(prefix)) {
+    if (!Namespace.isValidPrefix(prefix)) {
       return null;
     }
     const known = Namespace.KNOWN_NAMESPACES.find((n) => n.prefix === prefix);
@@ -149,7 +184,7 @@ export class Namespace {
   static fromPropertyKey(
     key: string,
   ): { namespace: Namespace; localName: string } | null {
-    const match = /^([a-z][a-zA-Z0-9]*)__(.+)$/.exec(key);
+    const match = Namespace.PROPERTY_KEY_RE.exec(key);
     if (!match) return null;
     const namespace = Namespace.forPrefix(match[1]);
     if (!namespace) return null;
@@ -212,7 +247,7 @@ export class Namespace {
     const hash = rest.indexOf("#");
     if (hash <= 0) return null;
     const prefix = rest.slice(0, hash);
-    if (!/^[a-z][a-zA-Z0-9]*$/.test(prefix)) return null;
+    if (!Namespace.isValidPrefix(prefix)) return null;
     const localName = cleanLocal(rest.slice(hash + 1));
     if (localName === null) return null;
     const namespace = Namespace.forPrefix(prefix);
