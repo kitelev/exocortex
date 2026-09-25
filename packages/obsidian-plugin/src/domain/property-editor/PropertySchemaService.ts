@@ -4,7 +4,9 @@
 // aborts the CT run with "tsyringe requires a reflect polyfill". The subpath
 // imports only `Namespace` (+ `IRI`), no DI. Same shape as the
 // `@kitelev/exocortex-core/domain/constants` import in `PropertySchemas.ts`.
-import { Namespace } from "@kitelev/exocortex-core/domain/models/rdf/Namespace";
+// ⛤ The three sibling files fixed by this PR import the same subpath, so no file
+// this PR touches can re-plant the trap by being pulled into a CT graph later.
+import { Namespace } from "@kitelev/exocortex-core/domain/models/rdf";
 import type {
   PropertySchemaResolver,
   PropertySchema,

@@ -1,4 +1,7 @@
-import { Namespace } from "@kitelev/exocortex-core";
+// Deep subpath, not the barrel: a value import of the core INDEX pulls
+// `CommandResolver` → `tsyringe`, which aborts any Playwright-CT bundle that
+// reaches this file ("requires a reflect polyfill"). See PropertySchemaService.
+import { Namespace } from "@kitelev/exocortex-core/domain/models/rdf";
 import { SPARQLQueryService } from "./SPARQLQueryService";
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 

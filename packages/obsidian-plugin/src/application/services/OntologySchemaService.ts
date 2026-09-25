@@ -1,5 +1,8 @@
 import { SPARQLQueryService } from "./SPARQLQueryService";
-import { Namespace, PropertyFieldType } from "@kitelev/exocortex-core";
+// `Namespace` by deep subpath (the core barrel drags `tsyringe` into a CT bundle —
+// see PropertySchemaService); `PropertyFieldType` is a plain enum from the barrel.
+import { Namespace } from "@kitelev/exocortex-core/domain/models/rdf";
+import { PropertyFieldType } from "@kitelev/exocortex-core";
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 
 /**

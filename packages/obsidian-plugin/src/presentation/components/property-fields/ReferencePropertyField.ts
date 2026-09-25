@@ -1,5 +1,6 @@
 import { Setting, TFile } from "obsidian";
-import { Namespace } from "@kitelev/exocortex-core";
+// Deep subpath, not the barrel — see PropertySchemaService (CT bundle + tsyringe).
+import { Namespace } from "@kitelev/exocortex-core/domain/models/rdf";
 import type { ReferencePropertyFieldProps, ValidationResult } from "./types";
 
 /**
