@@ -1,4 +1,5 @@
 module.exports = {
+  globalSetup: "<rootDir>/../test-utils/src/jest/stripRepoGitEnv.cjs",
   preset: "ts-jest",
   testEnvironment: "jsdom",
   testMatch: [
