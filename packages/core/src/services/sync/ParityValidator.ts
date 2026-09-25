@@ -920,7 +920,16 @@ export function summarizeParityRound(record: ParityRoundRecord): string {
   }
   const skipped = record.repos.length - record.checkedRepos;
   const tail = skipped > 0 ? `, ${skipped} skipped` : "";
+  // #4225 — a pinned path is ACCOUNTED (never in M2), so the green line hid it.
+  // The count sits AFTER the parenthesised repo count on purpose: machine readers
+  // (the vault-quiescent-deliver daemon) parse `(N repo(s) checked[, K skipped])`
+  // and accept anything after the closing parenthesis, but nothing new inside it.
+  const pinned = record.repos.reduce(
+    (n, r) => n + r.discrepancies.filter((d) => d.cls === "quarantine-pinned").length,
+    0,
+  );
+  const pinnedTail = pinned > 0 ? `, ${pinned} pinned` : "";
   return record.ok
-    ? `ExoSync parity: M1=0, M2=∅ (${record.checkedRepos} repo(s) checked${tail})`
-    : `ExoSync parity: M1=${record.m1Total}, M2=${record.m2Total} diff(s) (${record.checkedRepos} repo(s) checked${tail}) — see log`;
+    ? `ExoSync parity: M1=0, M2=∅ (${record.checkedRepos} repo(s) checked${tail})${pinnedTail}`
+    : `ExoSync parity: M1=${record.m1Total}, M2=${record.m2Total} diff(s) (${record.checkedRepos} repo(s) checked${tail})${pinnedTail} — see log`;
 }

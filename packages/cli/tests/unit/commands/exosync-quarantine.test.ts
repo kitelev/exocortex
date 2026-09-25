@@ -267,6 +267,59 @@ describe("exosync quarantine list", () => {
   });
 });
 
+// #4225 — pins that are not conflicts stay out of push until a pull; `list`
+// used to answer «No open conflicts ✅» over them.
+describe("exosync quarantine list — pinned paths that are not conflicts (#4225)", () => {
+  const REQ = "@req:c0b0e8bf-355d-4b03-9512-618c879f0940";
+
+  it(`X1 ${REQ} a pinned local change is counted, named by path, and the remedy is a full sync`, async () => {
+    const base = mdAsset("uid-1", "base");
+    const fx = await makeConflictVault({ base, local: mdAsset("uid-1", "LOCAL edit") });
+    // Remote back to the base content: only the local copy differs ⇒ local-withheld.
+    fx.gh.commitDirect("main", { [CONFLICT]: base }, "back to base");
+    const lines: string[] = [];
+    try {
+      const code = await runQuarantineList({ vault: fx.vault, token: FAKE_PAT }, deps(fx.gh, lines));
+      expect(code).toBe(0);
+      const text = lines.join("\n");
+      expect(text).toMatch(/No open conflicts/);
+      expect(lines).toContain("1 pinned path(s) are not conflicts:");
+      expect(text).toMatch(/\b1 {2}local change, delivered by the next full sync/);
+      expect(lines).toContain(`  ${REPO_KEY}  ${CONFLICT}  [local change, delivered by the next full sync]`);
+      expect(lines).toContain(`Clear with: exosync sync --vault ${fx.vault} --token-from-gh`);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it(`X2 ${REQ} a deferred incoming change is counted as not applied here, and not named as a local change`, async () => {
+    const base = mdAsset("uid-1", "base");
+    const fx = await makeConflictVault({ base, local: base });
+    const lines: string[] = [];
+    try {
+      await runQuarantineList({ vault: fx.vault, token: FAKE_PAT }, deps(fx.gh, lines));
+      const text = lines.join("\n");
+      expect(text).toMatch(/\b1 {2}remote change not applied here yet — this copy is behind/);
+      expect(text).not.toContain("[local change, delivered by the next full sync]");
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it(`X3 ${REQ} --json keeps its shape: the open-conflict array only`, async () => {
+    const base = mdAsset("uid-1", "base");
+    const fx = await makeConflictVault({ base, local: mdAsset("uid-1", "LOCAL edit") });
+    fx.gh.commitDirect("main", { [CONFLICT]: base }, "back to base");
+    const lines: string[] = [];
+    try {
+      await runQuarantineList({ vault: fx.vault, token: FAKE_PAT, json: true }, deps(fx.gh, lines));
+      expect(JSON.parse(lines.join("\n"))).toEqual([]);
+    } finally {
+      fx.cleanup();
+    }
+  });
+});
+
 describe("exosync quarantine resolve", () => {
   it("--take local applies to disk and DEFERS the push to the next sync (offline-first, PR-3b)", async () => {
     const local = mdAsset("uid-1", "LOCAL edit");
