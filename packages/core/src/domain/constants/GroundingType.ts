@@ -46,9 +46,17 @@ export enum GroundingType {
    * interleaved comment dropped every item after it from the READ, and this type
    * wrote the truncation back. `parseObject` now carries such a continuation on
    * the item it belongs to and reads column-0 and flow-style lists as lists, so
-   * co-values survive on every shape measured across the three canonical vaults.
-   * What it still does NOT do is re-emit an interleaved `#` comment: a comment is
-   * not a value, and rewriting the property drops it (as it did before).
+   * co-values survive on the shapes that suite covers: a block-scalar item (with
+   * or without a blank line in its body), a column-0 list, a flow-style array, a
+   * nested map inside an item, and an interleaved `#` comment.
+   *
+   * ⛔ NOT every conceivable shape — the read and `findPropertyLineSpan` still
+   * disagree on a handful (a block scalar nested inside a map item, a `| # note`
+   * header, a COLUMN-0 comment, a bare `-` item, 3-space indentation, a
+   * multi-line flow). All six are pre-existing and carried by 0 live assets;
+   * they are tracked in #4386. What the fix also does not do is re-emit an
+   * interleaved `#` comment: a comment is not a value, so rewriting the property
+   * drops it (as it did before).
    *
    * Reads `targetProperty`,
    * `replaceFromExpression` (the value to find) and `replaceToExpression` (the

@@ -44,8 +44,8 @@
     },
     "M4_flow_sequence_read_as_scalar": {
       "_note": "Flow-style arrays fall through to the scalar branch (pre-#4314): property_append nests the whole flow text inside one item and property_replace refuses the property as 'not a list'.",
-      "from": "      if (value.startsWith(\"[\") && value.endsWith(\"]\")) {",
-      "to": "      if (value.startsWith(\"ZZ_NEVER\") && value.endsWith(\"]\")) {",
+      "from": "        value.startsWith(\"[\") &&",
+      "to": "        value.startsWith(\"ZZ_NEVER\") &&",
       "expect": [
         "P4",
         "W4",
@@ -94,6 +94,14 @@
       "expect": [
         "P9",
         "W8"
+      ]
+    },
+    "M10_unquoted_wikilink_split_as_flow": {
+      "_note": "The regression this PR introduced and then closed (review of #4381): without the `[[` exclusion an unquoted `exo__Instance_class: [[ems__Task]]` satisfies the bracket test, splits to the item `[ems__Task]` — one bracket pair short — and the rewrite puts that on disk, where it is unrecoverable and a second cycle is a stable fixed point. Reddens the round-trip axis only; the quoted flow axes stay green because `[\"...\"]` does not start with `[[`.",
+      "from": "        !value.startsWith(\"[[\")",
+      "to": "        !value.startsWith(\"ZZ_NEVER\")",
+      "expect": [
+        "P10"
       ]
     }
   }

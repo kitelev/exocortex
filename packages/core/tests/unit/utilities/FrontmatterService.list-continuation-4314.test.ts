@@ -19,21 +19,36 @@ import * as yaml from "js-yaml";
  * carries these values" is decided by an independent reader, not by the parser
  * under test (test-fixture-realism).
  *
- * Measured on the three canonical vaults 2026-09-25 (53 591 files, detector
- * canary green), so each axis says whether it guards live data or ratchets
- * against future data:
+ * Measured on the three canonical vaults 2026-09-26 (~53.6 k assets — a LIVE
+ * corpus, so sweeps minutes apart differ by a few files; detector canary green).
+ * Counts are **files on disk**: a shared assetspace is mounted in more than one
+ * vault, so one shared asset counts once per mount. Each axis therefore says
+ * whether it guards live data or ratchets against future data:
  *
- * | shape                                | carriers | pre-fix on disk                       |
- * |--------------------------------------|----------|---------------------------------------|
- * | block-scalar item      (P1/P2/W1/W2) |        0 | body destroyed, co-values dropped     |
- * | 0-indent list          (P3/W3)       |        0 | file UNPARSEABLE (items left dangling)|
- * | flow-style array       (P4/W4/W5)    |       15 | nested array `- ["[[uid]]"]`          |
- * | nested map in an item  (P5)          |        2 | 2nd item dropped                      |
- * | comment between items  (P6/W6)       |       46 | every item after the comment dropped  |
+ * | shape                                     | carrier files | pre-fix on disk                        |
+ * |-------------------------------------------|---------------|----------------------------------------|
+ * | block-scalar item         (P1/P2/W1/W2)   |             0 | body destroyed, co-values dropped      |
+ * | 0-indent list             (P3/W3)         |             0 | file UNPARSEABLE (items left dangling) |
+ * | flow-style array          (P4/W4/W5)      |            15 | nested array `- ["[[uid]]"]`           |
+ * | unquoted `[[uid]]` scalar (P10)           |             0 | (a REGRESSION this PR introduced and   |
+ * |                                           |               |  then closed — see P10)                |
+ * | nested map in an item     (P5)            |             2 | 2nd item dropped                       |
+ * | comment BEFORE first item (P9/W8)         |            30 | property read as `[]` → aliases erased |
+ * | comment BETWEEN items     (P6/W6)         |   the same 30 | items after the comment dropped        |
  *
- * ⛔ A top-level `key: |` block scalar (106 carriers) is deliberately NOT changed
- * here — it is a SCALAR, not in #4314, and flipping what its readers see is a
- * separate unit of work (issue #4379). P7 locks that it still reads as `"|-"`.
+ * ⛔ The last two rows are ONE set of 30 files (76 comment lines: 30 before the
+ * first item, 46 between items) — earlier revisions of this header printed 46 as
+ * if it were a file count and named only the between-items shape, which hid that
+ * the BEFORE-first-item branch is the one every live carrier exercises.
+ *
+ * ⛔ A top-level `key: |` block scalar (106 carrier files) is deliberately NOT
+ * changed here — it is a SCALAR, not in #4314, and flipping what its readers see
+ * is a separate unit of work (issue #4379). P7 locks that it still reads as `"|-"`.
+ *
+ * ⛔ Shapes where the read and `findPropertyLineSpan` still disagree (a nested
+ * block scalar inside a map item, a `| # note` header, a column-0 comment, a bare
+ * `-` item, 3-space indentation, a multi-line flow) are all 0-carrier and
+ * pre-existing — tracked in #4386, NOT closed by this suite.
  */
 
 const UID_A = "[[9a1cf31c-9d41-4ef3-9023-584a8d087d16]]";
@@ -72,7 +87,7 @@ const COMMENT_IN_LIST_FM =
 
 /**
  * Aliases whose FIRST line after the key is a comment — the shape every one of
- * the 33 live carriers actually has (copied from
+ * the 30 live carrier files actually has (copied from
  * `exoas-my/kitelev/96f81711-…`). Kept as a separate fixture from the
  * between-items one on purpose: the array is still EMPTY at the comment, which
  * is a different branch, and a single fixture carrying both would let a mutant
@@ -188,7 +203,7 @@ describe("FrontmatterService.parseObject — list continuation (issue #4314)", (
   });
 
   it("[P9] a comment as the FIRST line under the key does not read the list as empty", () => {
-    // The live shape (33 carriers). Pre-fix this returned `[]` — the array was
+    // The live shape (30 carrier files). Pre-fix this returned `[]` — the array was
     // still empty at the comment, so the terminator hit before any item, and
     // property_append then rewrote the property from scratch.
     expect(fm.parseObject(COMMENT_FIRST_FM)?.aliases).toEqual([
@@ -220,6 +235,29 @@ describe("FrontmatterService.parseObject — list continuation (issue #4314)", (
       key: [],
       other: "1",
     });
+  });
+
+  it("[P10] an UNQUOTED wikilink scalar is not split into a list, and survives a round trip", () => {
+    // Review catch on this PR: `[[ems__Task]]` satisfies "starts with [ and ends
+    // with ]", and splitting it yields `[ems__Task]` — one bracket pair short.
+    // The rewrite puts THAT on disk, the wikilink is unrecoverable, and a second
+    // cycle is a stable fixed point at the corrupted value. `updateProperty`
+    // writes this unquoted form itself, so `property_set` could create the
+    // carrier its own reader destroyed.
+    const doc = `---\nexo__Asset_uid: u1\nexo__Instance_class: [[ems__Task]]\n---\nBody`;
+    expect(fm.parseObject(doc)?.exo__Instance_class).toBe("[[ems__Task]]");
+
+    const parsed = fm.parseObject(doc)!;
+    const out = fm.updateProperty(
+      doc,
+      "exo__Instance_class",
+      parsed.exo__Instance_class,
+    );
+    expect(out).toBe(doc);
+    // …and the property_set path still emits the shape this axis guards.
+    expect(
+      fm.updateProperty("---\nk: 1\n---\nB", "exo__Instance_class", "[[ems__Task]]"),
+    ).toContain("exo__Instance_class: [[ems__Task]]");
   });
 
   it("[P8] a flow value this splitter cannot account for stays an opaque scalar", () => {
@@ -328,7 +366,7 @@ describe("FrontmatterService.parseObject — list continuation (issue #4314)", (
   });
 
   it("[W6] property_append on a comment-interleaved alias list keeps every alias and still dedups", async () => {
-    // The 46-carrier shape: pre-fix the read stopped at the first comment, so a
+    // Pre-fix the read stopped at the first comment, so a
     // re-append of an alias that IS already there wrote it again and the aliases
     // below the comment were erased.
     const { executor, writer } = makeExecutor(COMMENT_IN_LIST_FM);
@@ -351,7 +389,7 @@ describe("FrontmatterService.parseObject — list continuation (issue #4314)", (
 
   it("[W8] property_append on the LIVE alias shape (comment first) keeps every alias", async () => {
     // Pre-fix the property read as `[]`, so this append wrote a one-item list
-    // and the three real aliases were gone from disk. 33 live carriers.
+    // and the three real aliases were gone from disk. 30 live carrier files.
     const { executor, writer } = makeExecutor(COMMENT_FIRST_FM);
     const result = await executor.execute(
       makeGrounding({

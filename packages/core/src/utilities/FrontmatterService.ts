@@ -186,8 +186,9 @@ export class FrontmatterService {
    * `currentKey` to null, so every remaining `  - ` item of the same array was
    * silently dropped from the read — and `property_append` / `property_replace`
    * then wrote the truncated list back to disk. Measured 2026-09-25 on the three
-   * canonical vaults: 46 assets carry an interleaved comment inside a list and 2
-   * carry a nested map, i.e. the loss was live, not hypothetical.
+   * canonical vaults: 30 FILES carry an interleaved comment inside a list (76
+   * comment lines — 30 before the first item, 46 between items) and 2 carry a
+   * nested map, i.e. the loss was live, not hypothetical.
    *
    * NOTE: still deliberately minimal — a nested map or a block-scalar body is
    * carried as opaque text, not structured; quoted-key edge cases are not
@@ -248,8 +249,8 @@ export class FrontmatterService {
 
       // A COMMENT under a key is not part of any value, and must not end the
       // array either. ⛔ The test is `currentArray !== null`, not `openItems`:
-      // measured 2026-09-25, all 46 live carriers put the comment BEFORE the
-      // first item (`aliases:` then `  # Русские`), i.e. while the array is
+      // measured 2026-09-26, each of the 30 live carrier FILES has a comment
+      // BEFORE its first item (`aliases:` then `  # Русские`), i.e. while the array is
       // still EMPTY — treating that as a terminator read the property as `[]`
       // and `property_append` then erased every alias. Inside a block-scalar
       // body `#` is literal text, so that case falls through below.
@@ -286,7 +287,24 @@ export class FrontmatterService {
       // element-wise. Measured 2026-09-25: 15 live assets carry one (all
       // `exo__Instance_class`), and reading them as a scalar made
       // `property_append` write a NESTED array (`- ["[[uid]]"]`).
-      if (value.startsWith("[") && value.endsWith("]")) {
+      //
+      // ⛔ `[[` is excluded, and that exclusion is load-bearing: an UNQUOTED
+      // wikilink (`exo__Instance_class: [[ems__Task]]`) satisfies the bracket
+      // test, and splitting it yields the item `[ems__Task]` — one bracket pair
+      // short. The rewrite then puts that on disk as `- [ems__Task]`, the
+      // wikilink is unrecoverable, and a second read→write cycle is a stable
+      // fixed point at the corrupted value. This is not a hand-editing-only
+      // shape: `updateProperty` itself writes `[[uid]]` unquoted (the
+      // `quoteScalars=false` path), so `property_set` can create the carrier
+      // its own reader would then destroy. Excluding `[[` degrades such a value
+      // to the pre-#4314 reading (an opaque scalar), which preserves its bytes.
+      // A genuine list-of-lists (`[[1,2],[3,4]]`) is excluded with it — same
+      // pre-#4314 behaviour, 0 live carriers, and no bytes lost.
+      if (
+        value.startsWith("[") &&
+        value.endsWith("]") &&
+        !value.startsWith("[[")
+      ) {
         const items = FrontmatterService.splitFlowSequence(
           value.slice(1, -1),
         );
