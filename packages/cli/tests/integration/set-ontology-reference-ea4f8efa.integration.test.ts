@@ -20,7 +20,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { fileURLToPath } from "url";
-import { NoteToRDFConverter } from "@kitelev/exocortex-core";
+import { NoteToRDFConverter, DomainIRI } from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../../src/adapters/FileSystemVaultAdapter.js";
 
 const { applyCommand } = await import("../../src/commands/apply.js");
@@ -115,9 +115,12 @@ describe("req ea4f8efa — apply set-ontology writes a [[uid]] reference", () =>
   }
 
   const movedPath = () => path.join(root, "space-b", `${ASSET}.md`);
+  const originalPath = () => path.join(root, "space-a", `${ASSET}.md`);
+  // Reads whichever copy exists, so a refused run (asset still in space-a)
+  // fails on the VALUE, not on ENOENT. Relocation itself is O3's job.
   const isDefinedByLine = () =>
     fs
-      .readFileSync(movedPath(), "utf-8")
+      .readFileSync(fs.existsSync(movedPath()) ? movedPath() : originalPath(), "utf-8")
       .split("\n")
       .find((l) => l.startsWith("exo__Asset_isDefinedBy:"));
 
@@ -132,10 +135,11 @@ describe("req ea4f8efa — apply set-ontology writes a [[uid]] reference", () =>
     const file = adapter.getAbstractFileByPath(`space-b/${ASSET}.md`);
     expect(file).not.toBeNull();
     const triples = await new NoteToRDFConverter(adapter).convertNote(file as never);
-    const objects = triples
-      .filter((t) => String(t.predicate.value) === IS_DEFINED_BY)
-      .map((t) => String((t.object as { value: unknown }).value));
-    expect(objects).toEqual([`obsidian://vault/space-b/${ONTO_B}.md`]);
+    const objects = triples.filter((t) => String(t.predicate.value) === IS_DEFINED_BY).map((t) => t.object);
+    expect(objects.map((o) => o instanceof DomainIRI)).toEqual([true]);
+    expect(objects.map((o) => String((o as { value: unknown }).value))).toEqual([
+      `obsidian://vault/space-b/${ONTO_B}.md`,
+    ]);
   }, 60_000);
 
   it("O3 control: the asset is relocated into the picked ontology's folder", async () => {
@@ -148,6 +152,20 @@ describe("req ea4f8efa — apply set-ontology writes a [[uid]] reference", () =>
 
   it(`O4 @req:ea4f8efa-805a-4492-ab51-15452d4b66c5 an input already wrapped as [[<B>|alias]] writes the same single reference`, async () => {
     await setOntology(`[[${ONTO_B}|$onto-b]]`);
+    expect(isDefinedByLine()).toBe(`exo__Asset_isDefinedBy: "[[${ONTO_B}]]"`);
+  }, 60_000);
+
+  // The plugin's ReferencePicker commits the quoted form. It worked before this
+  // fix too (verbatim path), so this is a surface control, green under M1.
+  it(`O5 @req:ea4f8efa-805a-4492-ab51-15452d4b66c5 the picker's quoted "[[<B>]]" writes the same single reference`, async () => {
+    await setOntology(`"[[${ONTO_B}]]"`);
+    expect(isDefinedByLine()).toBe(`exo__Asset_isDefinedBy: "[[${ONTO_B}]]"`);
+  }, 60_000);
+
+  // An unquoted [[<B>]] was refused on the verbatim path (req 29e0d1b6); on the
+  // reference path it is normalised — red under M1.
+  it(`O6 @req:ea4f8efa-805a-4492-ab51-15452d4b66c5 an unquoted [[<B>]] writes the same single reference`, async () => {
+    await setOntology(`[[${ONTO_B}]]`);
     expect(isDefinedByLine()).toBe(`exo__Asset_isDefinedBy: "[[${ONTO_B}]]"`);
   }, 60_000);
 });

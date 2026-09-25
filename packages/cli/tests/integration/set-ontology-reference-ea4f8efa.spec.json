@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify for req ea4f8efa (apply set-ontology writes isDefinedBy as a [[uid]] reference; task 43e2e1ed). The subject is the SHIPPED Set Ontology step in the exoas-exocmd submodule; the test copies the submodules into a temp vault and calls the command by slug. Axes O1-O4 in set-ontology-reference-ea4f8efa.integration.test.ts (O3 is the relocation control and must stay green). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout. Needs initialised submodules.",
+  "_doc": "Revert-verify for req ea4f8efa (apply set-ontology writes isDefinedBy as a [[uid]] reference; task 43e2e1ed). The subject is the SHIPPED Set Ontology step in the exoas-exocmd submodule; the test copies the submodules into a temp vault and calls the command by slug. Axes O1-O4 in set-ontology-reference-ea4f8efa.integration.test.ts (O3 relocation control and O5 picker-form control must stay green). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout. Needs initialised submodules.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/exoas-exocmd/exocmd/1585f1cb-7871-4a7c-809c-f89a57444e38.md",
   "symlink_node_modules": [
@@ -13,7 +13,7 @@
     "M1_step_back_to_targetValueSubstitution": {
       "from": "exocmd__Grounding_targetValueRef: $input.ontology\n",
       "to": "exocmd__Grounding_targetValueSubstitution: $input.ontology\n",
-      "expect": ["O1", "O2", "O4"]
+      "expect": ["O1", "O2", "O4", "O6"]
     }
   }
 }
