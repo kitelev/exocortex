@@ -2,6 +2,7 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   setupFiles: ['reflect-metadata'],
+  globalSetup: '<rootDir>/../test-utils/src/jest/stripRepoGitEnv.cjs',
   roots: ['<rootDir>/tests'],
   testMatch: ['**/?(*.)+(spec|test).ts'],
   collectCoverageFrom: [

@@ -1,0 +1,38 @@
+{
+  "_doc": "Revert-verify mutants for #4369 (TripleClassHierarchy.isSubClassOf memo). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/unit/commands/triple-class-hierarchy-memo-4369.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's validate-schema.ts and runs the validate-schema unit suite; `expect` names the axes that MUST go red). Axis keys are the H<N> prefixes of the it() titles — `red_re` reads them, so they stay unique inside this file.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/validate-schema.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/validate-schema.test.ts 2>&1",
+  "red_re": "› (H\\d+) ",
+  "mutants": {
+    "M1_memo_never_hits": {
+      "_note": "Every lookup misses, so the walk runs on every call and the memo is inert. The write path is untouched, so the verdicts stay correct — only the walk-count axes can see this.",
+      "from": "    let byParent = this.subClassMemo.get(child);",
+      "to": "    let byParent = this.subClassMemo.get(child + \"\\u0000never\");",
+      "expect": ["H1", "H2"]
+    },
+    "M2_positive_only_memo": {
+      "_note": "The naive shape the issue warns about: `if (cached)` stores hits and leaves the EXHAUSTIVE false-verdict walk recomputing. H1 stays green under it by construction — that is why H2 exists separately.",
+      "from": "      if (memoised !== undefined) return memoised;",
+      "to": "      if (memoised) return memoised;",
+      "expect": ["H2"]
+    },
+    "M3_lookup_ignores_the_parent": {
+      "_note": "Child-keyed memo: the first verdict cached for a child answers every later parent of that child. H6 joins the set because its cyclic fixture asks several parents of the same child.",
+      "from": "      const memoised = byParent.get(parent);",
+      "to": "      const memoised = byParent.values().next().value;",
+      "expect": ["H3", "H4", "H5", "H6"]
+    },
+    "M4_verdict_inverted_before_caching": {
+      "_note": "Guards H3 against being written as a self-consistency check: a memo that inverts answers consistently, so only ABSOLUTE expectations catch it. H1/H2 are in the measured set too — they redden on their VALUE assertion (`toBe(true)` / `toBe(false)`), which runs before their walk-count assertion, not because they observe the memo.",
+      "from": "    const verdict = this.walkIsSubClassOf(child, parent);",
+      "to": "    const verdict = !this.walkIsSubClassOf(child, parent);",
+      "expect": ["H1", "H2", "H3", "H4", "H5", "H6"]
+    }
+  }
+}
