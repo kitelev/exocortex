@@ -194,9 +194,10 @@ Clarifying existing behavior, adding examples.
 
 Commands and options documented in [CLI_API_REFERENCE.md](docs/CLI_API_REFERENCE.md):
 
-> The `exocortex command <verb>` family was removed: its executors had no CLI
-> entry point, and their code was deleted in the `CommandExecutor` removal
-> (2026-09-25). The live surface for these actions is `exocortex apply <cmd>`.
+> The `exocortex command <verb>` family left the CLI surface in v16.0.0
+> (#3130); the executor code behind it was deleted later, in the
+> `CommandExecutor` removal (2026-09-25). The live surface for these actions
+> is `exocortex apply <cmd>`.
 
 | Command                              | Status      |
 | ------------------------------------ | ----------- |

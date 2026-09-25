@@ -13,7 +13,7 @@
     "M3_RenameToUidService_drops_the_updateLinks_call": {
       "from": "    await this.vault.updateLinks(file.path, newPath, currentBasename);\n",
       "to": "",
-      "expect": ["L1"]
+      "expect": ["L1", "D6"]
     }
   }
 }

@@ -13,7 +13,7 @@
     "M1_apply_dry_run_early_return_removed": {
       "from": "  if (options.dryRun) {\n    // Issue #4298",
       "to": "  if (options.dryRun && false) {\n    // Issue #4298",
-      "expect": ["D1", "D2", "L2"]
+      "expect": ["D1", "D2", "D4", "L2"]
     }
   }
 }
