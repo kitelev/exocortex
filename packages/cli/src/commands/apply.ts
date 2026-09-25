@@ -1,4 +1,9 @@
 import { Command } from "commander";
+import {
+  extractClasses,
+  deriveStoreSymbolicClasses,
+} from "./resolve-buttons.js";
+import { Namespace } from "@kitelev/exocortex-core";
 import { existsSync } from "fs";
 import { resolve, relative, isAbsolute, sep as pathSep } from "path";
 import {
@@ -354,6 +359,62 @@ async function executeOnTarget(
     targetFrontmatter && typeof targetFrontmatter === "object"
       ? (targetFrontmatter as Record<string, unknown>).exo__Asset_uid
       : undefined;
+  // ── Layer A — binding gate (ticket e96eb614) ───────────────────────────────
+  // `apply` resolved a command by its GLOBAL `cliName` and gated it on the
+  // precondition alone, so a command whose CommandBindings declare
+  // `targetClass = ems__Task | ems__Project` still ran against, say, a concept:
+  // every conjunct of its composite precondition is NEGATIVE ("not archived",
+  // "not a prototype", "not terminal"), and a non-Effort target satisfies them
+  // all vacuously. The plugin never had the hole — its button-set comes from
+  // the binding layer (`resolve-buttons` Layer A), which `apply` skipped.
+  //
+  // ⛔ The gate is CONDITIONAL on the command declaring a binding at all.
+  // Measured on vault-exodev: 74 commands carry a `cliName`, 65 have a
+  // CommandBinding, and 11 have NONE (`set-label`, `cold-archive`,
+  // `set-planned-start`, …). An unconditional gate would kill those 11
+  // outright. "No binding declared" means "no declared class scope", not
+  // "scope = nothing".
+  //
+  // Utility commands stay unaffected by construction: `repair-folder`,
+  // `archive`, `rename-to-uid` and `set-ontology` bind to `exo__Asset`, the
+  // root class, so the ancestor walk matches every asset.
+  // ⛔ НЕ `resolver.findBindings()`: он перечисляет биндинги по `rdf:type
+  //    exocmd#CommandBinding`, а этот тип эмитится только когда класс объявлен
+  //    TBox'ом в том же vault. Замер на фикстуре: триплов `CommandBinding_command`
+  //    — 1, а `findBindings()` вернул 0. Предикат — наблюдаемый факт, тип —
+  //    производное от наличия TBox, поэтому гейт ключуется на предикате.
+  const bindingCommandTriples = await tripleStore.match(
+    undefined,
+    Namespace.EXOCMD.term("CommandBinding_command"),
+    undefined,
+  );
+  const commandIsBound = bindingCommandTriples.some((t) =>
+    String(t.object).includes(commandUid),
+  );
+  if (commandIsBound) {
+    const frontmatterClasses = extractClasses(
+      targetFrontmatter as Record<string, unknown> | null,
+    );
+    const storeClasses = await deriveStoreSymbolicClasses(
+      tripleStore,
+      targetIRI,
+    );
+    const assetClasses = [...new Set([...frontmatterClasses, ...storeClasses])];
+    const boundHere = await resolver.resolveForAssetMulti(
+      targetIRI,
+      assetClasses,
+    );
+    if (!boundHere.some((rc) => rc.command.id === commandUid)) {
+      console.error(
+        `❌ "${command.name}" is not bound to the target's class on "${vaultRelative}".`,
+      );
+      console.error(
+        `   Declared classes: ${assetClasses.length > 0 ? assetClasses.join(", ") : "(none)"}.`,
+      );
+      return failed;
+    }
+  }
+
   const evalContext: EvalContext = {
     targetIRI,
     filePath: vaultRelative,

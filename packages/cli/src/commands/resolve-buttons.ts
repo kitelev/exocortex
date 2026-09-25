@@ -147,7 +147,9 @@ function cleanRef(value: unknown): string | null {
  * `exo__Class_superClass` ancestor walk (`getClassAncestors(<uid>)` resolves the
  * class file by UID → walks superClass).
  */
-function extractClasses(frontmatter: Record<string, unknown> | null): string[] {
+export function extractClasses(
+  frontmatter: Record<string, unknown> | null,
+): string[] {
   if (!frontmatter) return [];
   const raw = frontmatter["exo__Instance_class"];
   const out: string[] = [];
@@ -183,7 +185,7 @@ function ontologyIriToSymbolic(value: string): string | null {
  * the label lookup via metadataCache; the CLI reads the already-resolved
  * symbolic instance_class IRIs, which needs no label lookup at all.
  */
-async function deriveStoreSymbolicClasses(
+export async function deriveStoreSymbolicClasses(
   tripleStore: InMemoryTripleStore,
   subjectIRI: string,
 ): Promise<string[]> {
