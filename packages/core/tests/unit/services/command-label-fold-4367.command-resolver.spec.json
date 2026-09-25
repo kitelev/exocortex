@@ -1,0 +1,41 @@
+{
+  "_doc": "Revert-verify mutants for issue #4367 — the six exo__Asset_label reads in CommandResolver now go through readAssetLabel (#4364). One mutant per site that is REACHABLE with an IRI label through the converter (command name, binding label, grounding label by UID) plus the shared helper. The precondition, style and wikilink-alias sites have no mutant: with an IRI label they are unreachable through the converter today (see the test header), so a mutant there would be equivalent. `red_re` anchors on the `● <suite> › [Xn]` failure header (integration-test-revert-verify §A44/§A104).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/CommandResolver.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/services/command-label-fold-4367.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_command_name_raw": {
+      "_note": "loadCommand reads the label with getLiteralValue again (pre-#4367): the button name is the full term IRI.",
+      "from": "      (await this.readAssetLabel(subject)) ?? \"Unknown Command\";",
+      "to": "      (await this.getLiteralValue(subject, Namespace.EXO.term(\"Asset_label\"))) ?? \"Unknown Command\";",
+      "expect": ["C1"]
+    },
+    "M2_binding_label_raw": {
+      "_note": "loadBindingDefinition reads the label raw.",
+      "from": "      (await this.readAssetLabel(subject)) ?? \"\";\n\n    // Load command reference",
+      "to": "      (await this.getLiteralValue(subject, Namespace.EXO.term(\"Asset_label\"))) ?? \"\";\n\n    // Load command reference",
+      "expect": ["B1"]
+    },
+    "M3_grounding_label_raw": {
+      "_note": "loadGroundingDefinition reads the label raw.",
+      "from": "      (await this.readAssetLabel(subject)) ?? \"\";\n    const type = await this.resolveGroundingTypeReference(subject);",
+      "to": "      (await this.getLiteralValue(subject, Namespace.EXO.term(\"Asset_label\"))) ?? \"\";\n    const type = await this.resolveGroundingTypeReference(subject);",
+      "expect": ["G1"]
+    },
+    "M4_helper_no_fold": {
+      "_note": "readAssetLabel stops folding a term IRI: every reachable site returns the raw IRI at once.",
+      "from": "    if (node instanceof IRI) return iriToObsidianName(node.value) ?? node.value;",
+      "to": "    if (node instanceof IRI) return node.value;",
+      "expect": ["B1", "C1", "G1"]
+    }
+  }
+}
