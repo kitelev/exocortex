@@ -308,7 +308,12 @@ describe("nodeLocalBaseShaProvider (#3590 base backfill source)", () => {
 
     const sha = await nodeLocalBaseShaProvider(vault)(spec("assetspaces/o/r"));
     expect(sha).toBe(remoteHead);
-  });
+    // Seven top-level `git` runs (6 in the fixture + the provider's
+    // `submodule status`), one of them a file:// clone via `submodule add`.
+    // The 5 s default is a speed budget this test never
+    // meant to assert; under a loaded pre-commit hook it timed out while the
+    // provider itself was correct (2026-09-25, load average 40-99).
+  }, 30_000);
 
   it("returns null for a path that is NOT a submodule", async () => {
     const vault = path.join(workdir, "plain");
