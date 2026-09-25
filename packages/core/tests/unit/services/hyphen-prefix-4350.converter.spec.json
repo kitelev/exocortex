@@ -1,0 +1,22 @@
+{
+  "_doc": "Revert-verify mutant for issue #4350 — the converter's Instance_class validator kept its own literal prefix regex. Reverting it leaves `tbank-nessy__Lesson Learned` accepted by the validator while expandClassValue refuses it, i.e. the asset loads and its class triple silently disappears. `red_re` anchors on the `● <suite> › [Xn]` failure header, not on a bare key: jest echoes neighbouring `it(...)` source lines in its diff context (integration-test-revert-verify §A44/§A104).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/NoteToRDFConverter.ts",
+  "harness": "cd \"$(dirname {subject})/../../../..//packages/core\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/domain/rdf/Namespace.hyphenPrefix-4350.test.ts tests/unit/services/NoteToRDFConverter.hyphenNamespace-4350.test.ts --verbose 2>&1",
+  "mutants": {
+    "M5_validator_keeps_old_shape": {
+      "from": "        dunder > 0 && Namespace.isValidPrefix(target.slice(0, dunder));",
+      "to": "        dunder > 0 && /^[a-z][a-zA-Z0-9]*$/.test(target.slice(0, dunder));",
+      "expect": ["C4"]
+    }
+  }
+}

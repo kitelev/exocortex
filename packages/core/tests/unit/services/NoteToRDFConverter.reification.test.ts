@@ -24,8 +24,11 @@ import { ExoQLQueryExecutor } from "../../../src/infrastructure/sparql/executors
  *
  * Mirrors the real `$kitelev-class-relations` junction shape (UID `7920028c`
  * exo__Statement, subjects/objects are CLASSES → symbolic IRIs, predicate
- * `adapter-exo-ims__relatesToConcept` has a hyphenated prefix → resolves to a
- * file IRI exactly as the raw `exo__Statement_predicate` triple does).
+ * `adapter-exo-ims__relatesToConcept` has a hyphenated prefix → since issue
+ * #4350 its label parses, so it resolves to the symbolic term IRI
+ * `…/adapter-exo-ims#relatesToConcept` exactly as the raw
+ * `exo__Statement_predicate` triple does). The FILE-IRI predicate shape — a
+ * predicate definition whose label is not `prefix__Local` — is kept by J4.
  */
 
 // Reified statement class — UID + alias as stored in $kitelev-class-relations
@@ -36,8 +39,12 @@ const A_UID = "a1111111-1111-4111-8111-111111111111"; // ims__ConceptA
 const B_UID = "b2222222-2222-4222-8222-222222222222"; // ims__ConceptB
 const C_UID = "c3333333-3333-4333-8333-333333333333"; // ims__ConceptC
 
-// Predicate asset — hyphenated prefix label → NOT symbol-expandable → file IRI
+// Predicate asset — hyphenated prefix label → symbolic term IRI (issue #4350;
+// before it the label did not parse and the predicate resolved to a file IRI)
 const P_UID = "00000000-0000-4000-8000-000000000abc"; // adapter-exo-ims__relatesToConcept
+
+// Predicate asset whose label is NOT `prefix__Local` → stays a FILE IRI
+const Q_UID = "00000000-0000-4000-8000-000000000def";
 
 // Concept INSTANCE object — plain label (not prefix-parseable) → file IRI.
 // Mirrors the real $kitelev-class-relations shape where statement objects are
@@ -62,6 +69,7 @@ const A_FILE = mkFile(A_UID, "assetspaces/ims");
 const B_FILE = mkFile(B_UID, "assetspaces/ims");
 const C_FILE = mkFile(C_UID, "assetspaces/ims");
 const P_FILE = mkFile(P_UID, "assetspaces/adapters");
+const Q_FILE = mkFile(Q_UID, "assetspaces/adapters");
 const J1_FILE = mkFile(J1_UID, "assetspaces/relations");
 const J2_FILE = mkFile(J2_UID, "assetspaces/relations");
 const J3_FILE = mkFile(J3_UID, "assetspaces/relations");
@@ -90,8 +98,13 @@ const FM_BY_PATH: Record<string, IFrontmatter> = {
   },
   [P_FILE.path]: {
     exo__Asset_uid: P_UID,
-    // Hyphenated prefix — fromPropertyKey rejects it → resolves to file IRI
+    // Hyphenated prefix — parses since issue #4350 → symbolic term IRI
     exo__Asset_label: "adapter-exo-ims__relatesToConcept",
+  },
+  [Q_FILE.path]: {
+    exo__Asset_uid: Q_UID,
+    // Human label — not `prefix__Local` → resolves to the definition's file IRI
+    exo__Asset_label: "relates to concept",
   },
   [J1_FILE.path]: {
     exo__Asset_uid: J1_UID,
@@ -133,7 +146,7 @@ const FM_BY_PATH: Record<string, IFrontmatter> = {
     exo__Asset_isDefinedBy: "[[55a0f8b9-e908-45bf-9c16-763589f04f16]]",
     exo__Instance_class: [`[[${STMT_CLASS_UID}|exo__Statement]]`],
     exo__Statement_subject: `[[${A_UID}]]`,
-    exo__Statement_predicate: `[[${P_UID}]]`,
+    exo__Statement_predicate: `[[${Q_UID}]]`,
     exo__Statement_object: `[[${D_UID}]]`,
   },
 };
@@ -143,6 +156,7 @@ const FILE_BY_UID: Record<string, IFile> = {
   [B_UID]: B_FILE,
   [C_UID]: C_FILE,
   [P_UID]: P_FILE,
+  [Q_UID]: Q_FILE,
   [J1_UID]: J1_FILE,
   [J2_UID]: J2_FILE,
   [J3_UID]: J3_FILE,
@@ -185,7 +199,9 @@ describe("NoteToRDFConverter — EKA D5 reified exo__Statement materialization",
   // Expected resolved terms (computed via the converter's own resolution)
   const subjectIRI = () => Namespace.IMS.term("ConceptA");
   const objectIRI = () => Namespace.IMS.term("ConceptB");
-  const predicateIRI = () => converter.notePathToIRI(P_FILE.path);
+  const predicateIRI = () =>
+    new IRI("https://exocortex.my/ontology/adapter-exo-ims#relatesToConcept");
+  const filePredicateIRI = () => converter.notePathToIRI(Q_FILE.path);
 
   function hasTriple(
     triples: Triple[],
@@ -262,12 +278,21 @@ describe("NoteToRDFConverter — EKA D5 reified exo__Statement materialization",
 
     it("materializes a file-IRI object + file-IRI predicate (real production shape)", async () => {
       // Real $kitelev-class-relations objects are concept instances (file IRIs),
-      // and the predicate prefix is hyphenated (file IRI). Pin that the edge's
-      // node identities stay byte-identical to the raw exo__Statement_* triples.
+      // and a predicate definition whose label is not `prefix__Local` resolves to
+      // its file IRI. Pin that the edge's node identities stay byte-identical to
+      // the raw exo__Statement_* triples.
       const triples = await converter.convertNote(J4_FILE);
       const dIRI = converter.notePathToIRI(D_FILE.path);
-      // logical edge present with file-IRI object
-      expect(hasTriple(triples, subjectIRI(), predicateIRI(), dIRI)).toBe(true);
+      // logical edge present with file-IRI object AND file-IRI predicate
+      expect(hasTriple(triples, subjectIRI(), filePredicateIRI(), dIRI)).toBe(true);
+      expect(
+        hasTriple(
+          triples,
+          converter.notePathToIRI(J4_FILE.path),
+          Namespace.EXO.term("Statement_predicate"),
+          filePredicateIRI(),
+        ),
+      ).toBe(true);
       // and the raw object triple uses the SAME file IRI (round-trip consistency)
       expect(
         hasTriple(

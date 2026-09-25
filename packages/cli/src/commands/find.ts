@@ -20,6 +20,7 @@ import {
   transformShorthandNotation,
   filterOntologyPrefixes,
 } from "../utils/QueryPrefixInjector.js";
+import { PREFIX_PATTERN_SOURCE } from "../utils/namespacePrefix.js";
 
 export interface FindOptions {
   vault: string;
@@ -82,7 +83,9 @@ async function resolveAliasFragment(
   return fragments[0];
 }
 
-const SLUG_RE = /^([a-z][a-zA-Z0-9]*)__([A-Za-z0-9_]+)$/;
+// Prefix from the shared CLI copy of the core grammar (issue #4350): a
+// `tbank-nessy__LessonLearned` value binds as the class IRI, not as a literal.
+const SLUG_RE = new RegExp(`^(${PREFIX_PATTERN_SOURCE})__([A-Za-z0-9_]+)$`);
 const ONTOLOGY_BASE = "https://exocortex.my/ontology/";
 
 /**

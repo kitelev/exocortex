@@ -18,6 +18,7 @@ import {
   type SerializedTriple,
 } from "./tripleSerialization.js";
 import { materializeInferredTriples } from "./materializeInferred.js";
+import { PREFIX_PATTERN_SOURCE } from "../utils/namespacePrefix.js";
 
 // Re-export for callers that previously imported these from CacheManager
 // (kept for backward compatibility within the cli package surface).
@@ -283,9 +284,12 @@ export const STALE_TMP_MAX_AGE_MS = 10 * 60 * 1000;
  * SYMBOLIC ontology IRI for every file that LINKS to the asset
  * (`NoteToRDFConverter.valueToRDFObject` → `expandClassValue`). Same shape as
  * `Namespace.fromPropertyKey` accepts; deliberately prefix-agnostic because
- * the converter derives ad-hoc namespaces for unknown prefixes too.
+ * the converter derives ad-hoc namespaces for unknown prefixes too. The prefix
+ * comes from the shared CLI copy of that grammar (issue #4350: hyphenated
+ * prefixes such as `tbank-nessy__` are TBox form as well — a relabel of one of
+ * those must re-emit its linkers exactly like a relabel of `ems__Task`).
  */
-const TBOX_FORM = /^[a-z][a-zA-Z0-9]*__\S+$/;
+const TBOX_FORM = new RegExp(`^${PREFIX_PATTERN_SOURCE}__\\S+$`);
 
 const ASSET_LABEL_IRI_SUFFIX = "#Asset_label";
 const ASSET_ALIASES_IRI_SUFFIX = "#Asset_aliases";

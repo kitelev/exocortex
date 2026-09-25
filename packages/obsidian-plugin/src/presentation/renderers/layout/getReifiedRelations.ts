@@ -150,8 +150,10 @@ export function symbolicIriToPropertyKey(iri: string): string | null {
  * The frontmatter predicate KEY (`<prefix>__<LocalName>`) that a property-
  * definition asset's `exo__Asset_label` triple objects denote — accepting BOTH
  * emitted forms:
- *  - a `Literal` label (plain / hyphen-prefixed names the converter does NOT
- *    turn into an IRI, e.g. `adapter-exo-ims__relatesToConcept`) → the literal;
+ *  - a `Literal` label (a name the converter does NOT turn into an IRI — before
+ *    issue #4350 that included hyphen prefixes such as
+ *    `adapter-exo-ims__relatesToConcept`; a persisted pre-#4350 graph still
+ *    carries them as literals) → the literal;
  *  - a symbolic `IRI` label (a clean `prefix__LocalName`, e.g.
  *    `exo__Asset_relates`, emitted as `…/exo#Asset_relates`) → recovered via
  *    {@link symbolicIriToPropertyKey}.
@@ -186,7 +188,8 @@ export function predicateKeyFromLabelObjects(
  *    is a clean `prefix__LocalName` → recover the key directly via
  *    {@link symbolicIriToPropertyKey} (the def UID is not even needed);
  *  - a **path-form** IRI (`obsidian://…/<uid>.md`) when the def label stays a
- *    Literal (hyphen-prefix, e.g. `adapter-exo-ims__relatesToConcept`) → resolve
+ *    Literal (a label that is not `prefix__Local`; hyphen prefixes such as
+ *    `adapter-exo-ims__relatesToConcept` were this case until issue #4350) → resolve
  *    the def UID and look it up in the reverse map.
  *
  * A symbolic-only OR UID-only lookup silently drops half the predicates: keying
