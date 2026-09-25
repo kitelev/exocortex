@@ -1,0 +1,19 @@
+{
+  "_doc": "Revert-verify for req 91b2c01a, subject = RestPushService.ts, classified as a no-git spawner (gh auth token). A git call appearing there must fail H2. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-sync.test.ts -t 'H[0-9] ' 2>&1",
+  "red_re": "› (H\\d+\\w*) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/services/RestPushService.ts",
+  "mutants": {
+    "M11_no_git_spawner_calls_git": {
+      "from": "        execFileSync(\"gh\", [\"auth\", \"token\"], {\n",
+      "to": "        execFileSync(\"git\", [\"auth\", \"token\"], {\n",
+      "expect": ["H2"]
+    }
+  }
+}
