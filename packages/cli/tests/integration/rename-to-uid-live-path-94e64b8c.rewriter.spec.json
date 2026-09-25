@@ -1,0 +1,19 @@
+{
+  "_doc": "Revert-verify for the re-binding of Active reqs cd33eff0 (dry-run no-mutation) and 8dc90308 (inbound link collapse) to the LIVE `apply rename-to-uid` path (task 94e64b8c). One spec per subject — the driver takes one. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout (both absolute). Axes: D1-D3 (gate-free lookalike) and D4-D6 (the SHIPPED command from the exoas-exo + exoas-exocmd submodules, called by slug) in command-dry-run.integration.test.ts; L1-L2 (lookalike) in rename-to-uid-update-inbound-links.integration.test.ts. D4-D6 need initialised submodules. Recorded runs: see PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/utils/wikilinkRewriter.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/command-dry-run.integration.test.ts tests/integration/rename-to-uid-update-inbound-links.integration.test.ts 2>&1",
+  "red_re": "› ([DL]\\d+\\w*) ",
+  "mutants": {
+    "M2_replaceWikilinks_returns_the_original_link": {
+      "from": "    return `[[${newBasename}${anchor}]]`;",
+      "to": "    return _match;",
+      "expect": ["L1", "D6"]
+    }
+  }
+}

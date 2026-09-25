@@ -11,10 +11,11 @@ import { FrontmatterService } from "../utilities/FrontmatterService";
  *
  * This is the shared (plugin + CLI) implementation behind the
  * `archiveAsset` grounding service (Issue #2867). Semantics mirror the
- * legacy `cli archive` subcommand's `executeArchive`
- * (StatusCommandExecutor): in-place frontmatter mutation, no physical
- * file move. Batch cross-vault archival remains the separate domain of
- * `ArchiveService` / `cli archive`.
+ * since-removed `executeArchive` behind `exocortex command archive`
+ * (`StatusCommandExecutor`; the verb left the CLI in v16.0, #3130, and the
+ * executor code with the dead `CommandExecutor` family, task 94e64b8c):
+ * in-place frontmatter mutation, no physical file move. The batch
+ * cross-vault `ArchiveService` / `cli archive` was removed in #3501.
  *
  * ⛔ TERMINAL AND IRREVERSIBLE — do not reuse for reversible archiving.
  * The `aliases` removal above is DESTRUCTIVE: the values are dropped, not

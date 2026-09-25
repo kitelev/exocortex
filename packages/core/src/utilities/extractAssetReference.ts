@@ -11,8 +11,9 @@
  * Returns `null` for non-string input or an empty result.
  *
  * The single canonical implementation consumed by `FolderRepairService`
- * (plugin/grounding path) and the CLI `FolderRepairExecutor` / folder-repair
- * helpers (audit #3384 finding H4 — was triplicated byte-for-byte).
+ * (plugin/grounding path, and CLI `apply repair-folder`) and the CLI
+ * folder-repair helpers (audit #3384 finding H4 — was triplicated
+ * byte-for-byte; the third copy's consumer, `FolderRepairExecutor`, is gone).
  *
  * NOTE: intentionally distinct from {@link WikiLinkHelpers.normalize}. For a
  * UUID-aliased wikilink `[[uuid|ems__Area]]`, `normalize` keeps the *alias*
