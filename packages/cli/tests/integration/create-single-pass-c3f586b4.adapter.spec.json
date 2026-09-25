@@ -15,8 +15,19 @@
     "M5_content_memo_defeated": {
       "from": "    return this.memo(this.contents, filePath, () => super.readFile(filePath));",
       "to": "    return super.readFile(filePath);",
-      "expect": ["S3", "S6"],
+      "expect": [
+        "S3",
+        "S6"
+      ],
       "_note": "Semantics are preserved (the base class still raises FileNotFoundError); only the memo goes. S3 reddens because the second read of one file now reaches the disk; S6 because the walks stop sharing reads. S1/S2/S4/S5 stay green — the adapter is still the memoising CLASS and the reader is still handed out, it simply no longer remembers anything."
+    },
+    "M8_forget_leaves_content_memo": {
+      "_note": "Added after review of this PR: the reviewer removed `this.contents.clear()` from forget() and THREE suites stayed green (create-single-pass 6/6, create-batch 25/25, create unit 19/19). The safety claim it enforces — a write drops every memo — was an invariant of the CALLERS (planning never writes; the write half uses a separate FileSystemVaultAdapter), not of this class. Axis S7 pins it on the class, so a future refactor of forget() that drops the line reddens instead of shipping silently (integration-test-revert-verify §A8).",
+      "from": "    this.contents.clear();",
+      "to": "    // contents memo deliberately NOT cleared (mutant)",
+      "expect": [
+        "S7"
+      ]
     }
   }
 }

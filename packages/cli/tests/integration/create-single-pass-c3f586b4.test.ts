@@ -142,6 +142,26 @@ describe("c3f586b4: one `create` reads each vault file once", () => {
     expect(spy.mock.calls[0]?.[1]?.readFile).toBeUndefined();
   });
 
+  it("S7: a write through the adapter drops the content memo", async () => {
+    // The PR's safety claim — "nothing memoised can go stale, because the adapter drops every
+    // memo on a mutation" — rests on ONE line in `forget()`. Review found that removing
+    // `this.contents.clear()` left create-single-pass, create-batch and the create unit suite
+    // ALL green: today nothing writes through this adapter (planning never writes; the write half
+    // uses a separate FileSystemVaultAdapter), so the invariant is the CALLERS', not the class's.
+    // This axis pins it on the class itself, where a future refactor of `forget()` would break it.
+    const adapter = new PlanningFsAdapter(vault);
+    const rel = "assetspaces/kitelev/exoas-test/test/aaaa0000-0000-4000-8000-000000000002.md";
+
+    const before = await adapter.readFile(rel);
+    expect(before).toContain("fixture 2");
+
+    await adapter.updateFile(rel, "---\nexo__Asset_uid: rewritten\n---\n\nrewritten body\n");
+
+    const after = await adapter.readFile(rel);
+    expect(after).toContain("rewritten");
+    expect(after).not.toContain("fixture 2");
+  });
+
   it("S6: no vault file is read twice across the collaborators", async () => {
     const ctx = new CreateContext(vault);
     const disk = jest.spyOn(NodeFsAdapter.prototype, "readFile");

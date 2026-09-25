@@ -6,12 +6,17 @@ import { NodeFsAdapter } from "./NodeFsAdapter.js";
  * Read-side memo over {@link NodeFsAdapter} for the READ-ONLY planning phase of
  * `create-batch` (req 1848dff9-bb2e-43a9-95e7-d917d6cef552).
  *
- * Why it exists: one `create` reads every vault file four times (measured
- * 2026-09-25 on vault-exodev, 34,935 files: class index, TBox walk, anchor /
- * status resolution — every lookup walks the vault because `NodeFsAdapter`
- * caches nothing). Planning N items through the same collaborators would read
- * the vault 4×N times. This adapter answers every repeated lookup from memory,
- * so a batch pays each vault pass once.
+ * Why it exists: one `create` reads every vault file several times — class index, TBox walk,
+ * anchor / status resolution — because every lookup walks the vault and `NodeFsAdapter` caches
+ * nothing. Planning N items through the same collaborators would pay that N times over; this
+ * adapter answers every repeated lookup from memory, so a batch pays each vault pass once.
+ *
+ * ⚠ Two measurements of "how many times" live in this package and they do NOT agree, because they
+ * were taken over different corpora: this class's original note said FOUR passes over 34,935 files
+ * on vault-exodev, while {@link CreateContextOptions.fsAdapter} records FIVE passes / 84,618 reads
+ * over 16,923 **markdown** files on vault-bot-kitelev (2026-09-25, #4291). Neither is wrong; the
+ * pass COUNT also grew between them. Treat the figure next to each claim as scoped to the vault and
+ * file population named there, and re-measure before quoting either in a new decision.
  *
  * Correct by construction for the phase it serves: planning never writes, so
  * nothing it memoises can go stale while it runs. The write phase uses a
