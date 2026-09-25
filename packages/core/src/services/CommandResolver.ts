@@ -265,7 +265,9 @@ export class CommandResolver {
    * plugin `warn` is a user-facing toast by default plus a log-file line — one
    * malformed asset would toast on every render (#3186: ~6 MB / 54k lines in
    * two days). A repeated identical text carries no new information, so
-   * dropping it loses nothing. Deliberately NOT cleared by `invalidateCache()`
+   * dropping it loses nothing — which is why every per-entry message names the
+   * ENTRY (`<refSubject>`), not just its grounding: two broken entries are two
+   * texts, two warnings. Deliberately NOT cleared by `invalidateCache()`
    * (same reason as {@link _fallbackWarnedKeys}); fixing the data stops the
    * warning by construction. Bounded by the number of distinct messages the
    * vault can produce.
@@ -2299,7 +2301,7 @@ export class CommandResolver {
       );
       if (!propertyRefUid) {
         this.warnOnce(
-          `Grounding ${contextUid}: PropertyDefault asset missing exocmd__PropertyDefault_property — entry skipped.`,
+          `Grounding ${contextUid}: PropertyDefault asset <${refSubject.value}> missing exocmd__PropertyDefault_property — entry skipped.`,
         );
         continue;
       }
@@ -2579,7 +2581,7 @@ export class CommandResolver {
       );
       if (!sourcePropertyName) {
         this.warnOnce(
-          `Grounding ${groundingUid}: InheritanceRule missing/unresolvable exocmd__InheritanceRule_sourceProperty — entry skipped.`,
+          `Grounding ${groundingUid}: InheritanceRule <${refSubject.value}> missing/unresolvable exocmd__InheritanceRule_sourceProperty — entry skipped.`,
         );
         continue;
       }
@@ -2590,7 +2592,7 @@ export class CommandResolver {
       );
       if (!targetPropertyName) {
         this.warnOnce(
-          `Grounding ${groundingUid}: InheritanceRule missing/unresolvable exocmd__InheritanceRule_targetProperty — entry skipped.`,
+          `Grounding ${groundingUid}: InheritanceRule <${refSubject.value}> missing/unresolvable exocmd__InheritanceRule_targetProperty — entry skipped.`,
         );
         continue;
       }
@@ -2630,7 +2632,7 @@ export class CommandResolver {
         // name (today it already trims to "").
         if (!refName || !refName.trim()) {
           this.warnOnce(
-            `Grounding ${groundingUid}: InheritanceRule has exocmd__InheritanceRule_targetClassCondition triple but ref is unresolvable — entire rule skipped (would otherwise apply unconditionally, broadening scope).`,
+            `Grounding ${groundingUid}: InheritanceRule <${refSubject.value}> has exocmd__InheritanceRule_targetClassCondition triple but ref is unresolvable — entire rule skipped (would otherwise apply unconditionally, broadening scope).`,
           );
           continue;
         }
@@ -2678,7 +2680,7 @@ export class CommandResolver {
       }
       if (exclusionBroken) {
         this.warnOnce(
-          `Grounding ${groundingUid}: InheritanceRule has unresolvable exocmd__InheritanceRule_targetClassExclusion entry — entire rule skipped (would otherwise expand scope by silently dropping the excluded class).`,
+          `Grounding ${groundingUid}: InheritanceRule <${refSubject.value}> has unresolvable exocmd__InheritanceRule_targetClassExclusion entry — entire rule skipped (would otherwise expand scope by silently dropping the excluded class).`,
         );
         continue;
       }

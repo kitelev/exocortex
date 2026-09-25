@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for issue #4382 — every CommandResolver warning goes through warnOnce (once per session per message text). M1 = the dedupe removed; M2–M4 = one named site bypasses it again (S0 is the structural lock: exactly one direct logger.warn, inside warnOnce). `red_re` anchors on the `● <suite> › [Xn]` failure header.",
+  "_doc": "Revert-verify mutants for issue #4382 — every CommandResolver warning goes through warnOnce (once per session per message text). M1 = the dedupe removed; M2–M4 = one named site bypasses it again; M5–M6 = a per-entry message stops naming its entry, so two broken entries collapse into one warning (S0 is the structural lock: exactly one direct logger.warn, inside warnOnce). `red_re` anchors on the `● <suite> › [Xn]` failure header.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -34,8 +34,8 @@
     },
     "M3_propertydefault_site_direct": {
       "_note": "This site calls logger.warn directly again, bypassing the dedupe.",
-      "from": "this.warnOnce(\n          `Grounding ${contextUid}: PropertyDefault asset missing exocmd__PropertyDefault_property",
-      "to": "this.logger.warn(\n          `Grounding ${contextUid}: PropertyDefault asset missing exocmd__PropertyDefault_property",
+      "from": "this.warnOnce(\n          `Grounding ${contextUid}: PropertyDefault asset <${refSubject.value}> missing exocmd__PropertyDefault_property",
+      "to": "this.logger.warn(\n          `Grounding ${contextUid}: PropertyDefault asset <${refSubject.value}> missing exocmd__PropertyDefault_property",
       "expect": [
         "S0",
         "W2"
@@ -43,10 +43,26 @@
     },
     "M4_inheritancerule_site_direct": {
       "_note": "This site calls logger.warn directly again, bypassing the dedupe.",
-      "from": "this.warnOnce(\n          `Grounding ${groundingUid}: InheritanceRule missing/unresolvable exocmd__InheritanceRule_sourceProperty",
-      "to": "this.logger.warn(\n          `Grounding ${groundingUid}: InheritanceRule missing/unresolvable exocmd__InheritanceRule_sourceProperty",
+      "from": "this.warnOnce(\n          `Grounding ${groundingUid}: InheritanceRule <${refSubject.value}> missing/unresolvable exocmd__InheritanceRule_sourceProperty",
+      "to": "this.logger.warn(\n          `Grounding ${groundingUid}: InheritanceRule <${refSubject.value}> missing/unresolvable exocmd__InheritanceRule_sourceProperty",
       "expect": [
         "S0",
+        "W3"
+      ]
+    },
+    "M5_propertydefault_entry_id_dropped": {
+      "_note": "The PropertyDefault message names only its grounding again: two broken entries collapse into ONE warning (review of PR #4389).",
+      "from": "PropertyDefault asset <${refSubject.value}> missing",
+      "to": "PropertyDefault asset missing",
+      "expect": [
+        "W2"
+      ]
+    },
+    "M6_inheritancerule_entry_id_dropped": {
+      "_note": "The InheritanceRule sourceProperty message names only its grounding again: two broken rules collapse into one warning.",
+      "from": "InheritanceRule <${refSubject.value}> missing/unresolvable exocmd__InheritanceRule_sourceProperty",
+      "to": "InheritanceRule missing/unresolvable exocmd__InheritanceRule_sourceProperty",
+      "expect": [
         "W3"
       ]
     }

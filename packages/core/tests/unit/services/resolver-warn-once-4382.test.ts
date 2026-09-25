@@ -35,6 +35,8 @@ const GRD = U(10); // grounding with a malformed default and a malformed rule
 const PD_BAD = U(11); // PropertyDefault without PropertyDefault_property
 const IR_BAD = U(12); // InheritanceRule without InheritanceRule_sourceProperty
 const VAL = U(13);
+const PD_BAD2 = U(14); // a second broken PropertyDefault in the same grounding
+const IR_BAD2 = U(15); // a second broken InheritanceRule in the same grounding
 const CMD = U(20);
 const BIND = U(30); // binding whose style reference does not resolve
 const MISSING_STYLE = U(99); // no such asset
@@ -59,6 +61,16 @@ const FM: Record<string, IFrontmatter> = {
     exo__Asset_label: "Default without a property",
     exocmd__PropertyDefault_value: `[[${VAL}]]`,
   },
+  [PD_BAD2]: {
+    exo__Asset_uid: PD_BAD2,
+    exo__Asset_label: "Second default without a property",
+    exocmd__PropertyDefault_value: `[[${VAL}]]`,
+  },
+  [IR_BAD2]: {
+    exo__Asset_uid: IR_BAD2,
+    exo__Asset_label: "Second rule without a source property",
+    exocmd__InheritanceRule_targetProperty: "ems__Effort_area",
+  },
   [IR_BAD]: {
     exo__Asset_uid: IR_BAD,
     exo__Asset_label: "Rule without a source property",
@@ -69,8 +81,8 @@ const FM: Record<string, IFrontmatter> = {
     exo__Asset_label: "Grounding with malformed entries",
     exocmd__Grounding_type: `[[${GT_CREATE}]]`,
     exocmd__Grounding_targetClass: "ems__Task",
-    exocmd__Grounding_propertyDefault: [`[[${PD_BAD}]]`],
-    exocmd__Grounding_inheritanceRule: [`[[${IR_BAD}]]`],
+    exocmd__Grounding_propertyDefault: [`[[${PD_BAD}]]`, `[[${PD_BAD2}]]`],
+    exocmd__Grounding_inheritanceRule: [`[[${IR_BAD}]]`, `[[${IR_BAD2}]]`],
   },
   [CMD]: {
     exo__Asset_uid: CMD,
@@ -164,12 +176,14 @@ describe("CommandResolver warns once per session, not per render (issue #4382)",
     expect(count("style reference unresolved")).toBe(1);
   });
 
-  it("[W2] the PropertyDefault 'entry skipped' warning fires exactly once", () => {
-    expect(count("missing exocmd__PropertyDefault_property")).toBe(1);
+  // Two broken entries in ONE grounding: once per ENTRY, not once per grounding
+  // (review of PR #4389) and not once per render.
+  it("[W2] each broken PropertyDefault entry warns exactly once — two entries, two warnings", () => {
+    expect(count("missing exocmd__PropertyDefault_property")).toBe(2);
   });
 
-  it("[W3] the InheritanceRule 'entry skipped' warning fires exactly once", () => {
-    expect(count("exocmd__InheritanceRule_sourceProperty")).toBe(1);
+  it("[W3] each broken InheritanceRule entry warns exactly once — two entries, two warnings", () => {
+    expect(count("exocmd__InheritanceRule_sourceProperty")).toBe(2);
   });
 
   it("[S0] every warning in CommandResolver goes through warnOnce — no direct logger.warn left elsewhere", () => {
@@ -177,8 +191,9 @@ describe("CommandResolver warns once per session, not per render (issue #4382)",
       path.join(__dirname, "../../../src/services/CommandResolver.ts"),
       "utf-8",
     );
-    // The single allowed call lives inside warnOnce itself.
-    expect(source.match(/this\.logger\.warn\(/g) ?? []).toHaveLength(1);
+    // The single allowed call lives inside warnOnce itself — in any spelling.
+    expect(source.match(/logger\??\.warn\(/g) ?? []).toHaveLength(1);
+    expect(source.match(/console\.warn\(/g) ?? []).toHaveLength(0);
     expect(source).toMatch(
       /private warnOnce\(message: string\): void \{[^}]*this\.logger\.warn\(message\);/,
     );
