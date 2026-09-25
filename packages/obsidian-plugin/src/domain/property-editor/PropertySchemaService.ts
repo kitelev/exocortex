@@ -1,4 +1,10 @@
-import { Namespace } from "@kitelev/exocortex-core";
+// ⛔ Deep subpath, NOT the package root. This module is in the Playwright-CT
+// bundle graph (`PropertySchemas.ts` → here → `SelectField.spec.tsx`), and a
+// value import of the core INDEX pulls `CommandResolver` → `tsyringe`, which
+// aborts the CT run with "tsyringe requires a reflect polyfill". The subpath
+// imports only `Namespace` (+ `IRI`), no DI. Same shape as the
+// `@kitelev/exocortex-core/domain/constants` import in `PropertySchemas.ts`.
+import { Namespace } from "@kitelev/exocortex-core/domain/models/rdf/Namespace";
 import type {
   PropertySchemaResolver,
   PropertySchema,

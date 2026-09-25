@@ -27,6 +27,11 @@
       "types": "./dist/application/errors/index.d.ts",
       "import": "./dist/application/errors/index.js",
       "require": "./dist/application/errors/index.js"
+    },
+    "./domain/models/rdf/Namespace": {
+      "types": "./dist/domain/models/rdf/Namespace.d.ts",
+      "import": "./dist/domain/models/rdf/Namespace.js",
+      "require": "./dist/domain/models/rdf/Namespace.js"
     }
   },
   "scripts": {
