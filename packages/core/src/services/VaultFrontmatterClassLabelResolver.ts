@@ -13,15 +13,18 @@ import type { ClassLabelToUidResolver } from "./GroundingExecutor";
  * cache rather than via the triple store — and that distinction is **load-
  * bearing**:
  *
- *   `NoteToRDFConverter.valueToRDFObject` (lines 1095-1100) substitutes
+ *   `NoteToRDFConverter.valueToRDFObject` substitutes
  *   class-shaped string literals like `"ems__Task"` with the canonical
  *   class IRI (`<https://exocortex.my/ontology/ems#Task>`) when emitting
  *   triples (Issue #2782/#2959). That substitution applies to predicate
  *   `exo:Asset_label` too, so a class TBox file's own label triple has an
- *   IRI object, not a Literal — meaning `CommandResolver.findUidByLabel`
- *   (#3212) and any other triple-store label lookup returns null for
- *   class-shaped labels. This is the same production gap the plugin's
- *   alias-index resolver was created (#3223) to bridge.
+ *   IRI object, not a Literal — and until #4354 `CommandResolver.findUidByLabel`
+ *   (#3212) matched the Literal form only, so it returned null for every
+ *   class-shaped label emitted as an IRI. #4354 moved it onto `findUidByAssetLabel`, which
+ *   matches both forms; this resolver is still needed because the grounding
+ *   may have been resolved against a store that lacks the class TBox file at
+ *   all (#3220), and because it also matches `aliases`, which the triple-store
+ *   lookup does not. Same gap the plugin's alias-index resolver (#3223) bridges.
  *
  * The CLI must do equivalent work: scan vault frontmatter, find the asset
  * whose `exo__Asset_label` or `aliases` matches the requested label, return

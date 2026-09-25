@@ -1,0 +1,34 @@
+{
+  "_doc": "Revert-verify mutant for issue #4354 — CommandResolver routes its label lookup through the shared helper. The mutant bypasses the helper for every prefix__Local label, i.e. puts CommandResolver alone back on the pre-fix behaviour; the WorkflowResolver axes must stay green. `red_re` anchors on the `● <suite> › [Xn]` failure header, not on a bare key: jest echoes neighbouring `it(...)` source lines in its diff context (integration-test-revert-verify §A44/§A104).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/CommandResolver.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/services/symbolic-label-lookup-4354.test.ts --verbose 2>&1",
+  "mutants": {
+    "M3_command_resolver_bypasses_helper": {
+      "from": "    return findUidByAssetLabel(this.tripleStore, label);\n  }\n\n  private async getLinkedUID(",
+      "to": "    return label.includes(\"__\") ? null : findUidByAssetLabel(this.tripleStore, label);\n  }\n\n  private async getLinkedUID(",
+      "expect": ["A1", "A2", "A3", "A4", "A5", "G1"]
+    },
+    "M5_seed_label_not_folded": {
+      "_note": "Undo the seed-label fold in getClassAncestorsWithDepth: the seed's prefix__Local label stays a term IRI string, the symbolic form never enters `excluded`, and a cyclic chain lists the seed as its own ancestor at depth 2 (A5). Reachable only since #4354 lets the walk past the first symbolic superclass.",
+      "from": "(iriToObsidianName(seedLabelNode.value) ?? seedLabelNode.value)",
+      "to": "(seedLabelNode.value)",
+      "expect": ["A5"]
+    },
+    "M6_seed_label_folded_by_string_shape": {
+      "_note": "Review round 2: fold a LITERAL label too whenever it looks like a URL (the round-1 behaviour). A Literal `https://example.com/page.md` folds to `page` — the basename of the class's real superclass file — which is then excluded (A6).",
+      "from": "          ? seedLabelNode.value\n          : null;",
+      "to": "          ? LOOKS_LIKE_IRI.test(seedLabelNode.value)\n            ? (iriToObsidianName(seedLabelNode.value) ?? seedLabelNode.value)\n            : seedLabelNode.value\n          : null;",
+      "expect": ["A6"]
+    }
+  }
+}

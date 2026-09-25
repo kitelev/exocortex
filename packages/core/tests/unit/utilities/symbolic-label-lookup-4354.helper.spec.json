@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutants for issue #4354 — the shared reverse label lookup. A converter-built store carries a prefix__Local label as a TERM IRI and only other labels as a Literal; each mutant removes one of the two forms. L0 (the converter premise) stays green under both — it is the axis that says the fixture is real. `red_re` anchors on the `● <suite> › [Xn]` failure header, not on a bare key: jest echoes neighbouring `it(...)` source lines in its diff context (integration-test-revert-verify §A44/§A104).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/utilities/assetLabelLookup.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/services/symbolic-label-lookup-4354.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_symbolic_form_ignored": {
+      "_note": "The pre-#4354 behaviour of both copies: only the Literal form is matched. Every symbolic lookup fails — the class walk, the workflow walk and the grounding UID substitution.",
+      "from": "  const term = labelTermIRI(label);",
+      "to": "  const term = labelTermIRI(label) && null;",
+      "expect": ["L1", "A1", "A2", "A3", "A5", "W1", "W2", "G1"]
+    },
+    "M2_literal_form_ignored": {
+      "_note": "The Literal fallback removed: a human label is no longer found (L2), nor a label-less class named by its class-shaped file (L3, A4 — the converter emits that basename label as a Literal; live: vault-my kitelev__ReadArticleTask). Every term-IRI axis stays green.",
+      "from": "      triple.object instanceof Literal &&\n      triple.object.value === label &&",
+      "to": "      triple.object instanceof Literal &&\n      triple.object.value === label + \"\\u0000\" &&",
+      "expect": ["L2", "L3", "A4"]
+    }
+  }
+}
