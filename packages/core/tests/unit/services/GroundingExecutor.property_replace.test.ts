@@ -2,13 +2,18 @@
  * `property_replace` — swap EXACTLY ONE value of an array-typed frontmatter
  * property.
  *
- * ⛔ Two measured qualifications the enum docstring now carries in full, named
- * here so this file is not read as proving more than it does:
- *   - co-values survive for the TWO-SPACE list-item shape only — a block-scalar
- *     item makes `FrontmatterService.parseObject` drop every item after it, and
- *     this type writes back what it read (shared with `property_append`);
+ * ⛔ One measured qualification the enum docstring carries in full, named here so
+ * this file is not read as proving more than it does:
  *   - R4 shows the list SHRINKING by one when `to` is already present — set
  *     semantics, so count is not preserved even though order is.
+ *
+ * ⛤ A second qualification ("co-values survive for the TWO-SPACE list-item shape
+ * only — a block-scalar item makes `FrontmatterService.parseObject` drop every
+ * item after it") was true when this file was written and is **lifted** by issue
+ * #4314. The shapes it named are covered by
+ * `tests/unit/utilities/FrontmatterService.list-continuation-4314.test.ts`,
+ * which drives THIS executor on each of them; the axes below stay on the
+ * two-space shape and say nothing about the others.
  *
  * Requirement `02de55a4-0a07-4347-b434-bb4a48eb0163` (issue #4308).
  *
