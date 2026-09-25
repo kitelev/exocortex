@@ -48,6 +48,7 @@ const CMD_PROTO = "bbbbbbbb-0000-0000-0000-000000000104";
 const BINDING_PROTO = "bbbbbbbb-0000-0000-0000-000000000203";
 const PROTOTYPE = "bbbbbbbb-0000-0000-0000-000000000401";
 const TARGET_PROTO = "bbbbbbbb-0000-0000-0000-000000000304";
+const TARGET_NOCLASS2 = "bbbbbbbb-0000-0000-0000-000000000305";
 
 const NOT_BOUND = /is not bound to the target's class/;
 
@@ -188,6 +189,16 @@ function buildVault(): string {
     ]),
   );
 
+  // ⛔ Ось A6: ВТОРАЯ цель без класса — для фиксации ОБЛАСТИ гварда. Её не
+  //    трогает ни один root-биндинг, она нужна чтобы проверить non-root случай.
+  write(
+    TARGET_NOCLASS2,
+    fm([
+      `exo__Asset_uid: ${TARGET_NOCLASS2}`,
+      `exo__Asset_label: "Second target without a declared class"`,
+    ]),
+  );
+
   return root;
 }
 
@@ -266,6 +277,18 @@ describe("ticket e96eb614 — CLI apply honours the command's binding scope", ()
   //    to resolveForAssetMulti every such command is refused unconditionally.
   it("A5 prototype-bound command on a matching target is not refused", async () => {
     await runApply("bg-proto", TARGET_PROTO);
+    expect(errors()).not.toMatch(NOT_BOUND);
+  });
+
+  // ⛔ A6 фиксирует ОБЛАСТЬ гварда пустых классов как НАМЕРЕННУЮ (MEDIUM round-2).
+  //    Команда привязана к `test__Widget` — НЕ к корню, — и всё равно проходит на
+  //    цели без объявленного класса, потому что гвард отключает гейт целиком.
+  //    Это не «хуже base» (гейта раньше не было), но и не то, что обещает
+  //    обоснование про root-class ⇒ поведение заперто осью, чтобы менялось
+  //    осознанно. ⚠ Если ветку `targetAsset` когда-нибудь вынесут из-под гварда,
+  //    эта ось обязана покраснеть — и это будет верным сигналом, а не поломкой.
+  it("A6 classless target bypasses the gate for a NON-root binding too (documented trade-off)", async () => {
+    await runApply("bg-bound", TARGET_NOCLASS2);
     expect(errors()).not.toMatch(NOT_BOUND);
   });
 });
