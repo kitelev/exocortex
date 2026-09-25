@@ -10,7 +10,10 @@ import { GroundingType } from "../domain/constants/GroundingType";
 import { resolveGroundingTypeFromIRI } from "../domain/constants/GroundingTypeUIDs";
 import { utf8ToBase64 } from "../utilities/base64";
 import { iriToObsidianName } from "../utilities/iriToObsidianName";
-import { findUidByAssetLabel } from "../utilities/assetLabelLookup";
+import {
+  findUidByAssetLabel,
+  labelTermBearers,
+} from "../utilities/assetLabelLookup";
 import {
   COMMAND_VARIANT_VALUES,
   LABEL_CLASS_VALUES,
@@ -244,6 +247,16 @@ export class CommandResolver {
    * the branch simply stops being taken.
    */
   private readonly _fallbackWarnedKeys = new Set<string>();
+
+  /**
+   * Issue #4370 — once-per-session suppression for the ambiguous-label warning
+   * of {@link resolveRefIriSubject}, keyed by the reference IRI. Same reason and
+   * same lifetime as {@link _fallbackWarnedKeys}: the branch re-runs on every
+   * button render and after every `invalidateCache()`, and `warn` is a
+   * user-facing toast by default — undeduped, one ambiguous label would toast
+   * on every render. Deliberately NOT cleared by `invalidateCache()`.
+   */
+  private readonly _ambiguousRefWarnedKeys = new Set<string>();
 
   /**
    * RFC 727572d2 — Universal Default Template singleton cache. Resolved once
@@ -1074,7 +1087,7 @@ export class CommandResolver {
       let styleSubject: IRI | null = null;
 
       if (ref instanceof IRI) {
-        styleSubject = ref;
+        styleSubject = await this.resolveRefIriSubject(ref);
       } else if (ref instanceof Literal) {
         const refUid = this.normalizeWikilink(ref.value);
         styleSubject = await this.findSubjectByUID(refUid);
@@ -1388,7 +1401,7 @@ export class CommandResolver {
   private async resolvePreconditionRef(
     ref: IRI | Literal | unknown,
   ): Promise<IRI | null> {
-    if (ref instanceof IRI) return ref;
+    if (ref instanceof IRI) return this.resolveRefIriSubject(ref);
     if (ref instanceof Literal) {
       const uid = this.normalizeWikilink(ref.value);
       return await this.findSubjectByUID(uid);
@@ -1560,7 +1573,7 @@ export class CommandResolver {
     const queryRef = queryRefTriples[0].object;
     if (queryRef instanceof IRI) {
       const queryUid = await this.getLiteralValue(
-        queryRef,
+        await this.resolveRefIriSubject(queryRef),
         Namespace.EXO.term("Asset_uid"),
       );
       return queryUid ?? undefined;
@@ -1704,7 +1717,7 @@ export class CommandResolver {
   private async resolveGroundingRef(
     ref: IRI | Literal | unknown,
   ): Promise<IRI | null> {
-    if (ref instanceof IRI) return ref;
+    if (ref instanceof IRI) return this.resolveRefIriSubject(ref);
     if (ref instanceof Literal) {
       const uid = this.normalizeWikilink(ref.value);
       return await this.findSubjectByUID(uid);
@@ -2175,7 +2188,7 @@ export class CommandResolver {
       let stepSubject: IRI | null = null;
 
       if (triple.object instanceof IRI) {
-        stepSubject = triple.object;
+        stepSubject = await this.resolveRefIriSubject(triple.object);
       } else if (triple.object instanceof Literal) {
         const uid = this.normalizeWikilink(triple.object.value);
         stepSubject = await this.findSubjectByUID(uid);
@@ -2675,6 +2688,42 @@ export class CommandResolver {
   }
 
   /**
+   * Issue #4370 — map an IRI reference object to the store subject of the asset
+   * it names. A UUID-form wikilink to an asset whose `exo__Asset_label` is
+   * `prefix__Local` is emitted by the converter as that label's TERM IRI, not
+   * as the target's file IRI; the term IRI carries no `exo__Asset_uid` of its
+   * own, so every loader that took it as the subject read nothing (a
+   * precondition then failed OPEN, a grounding took its whole command down).
+   * The term IRI is exactly the target's `exo__Asset_label` object, so the file
+   * subject is the one that bears it as its label. Any other IRI — a file IRI
+   * (already a subject), an unresolved pathless IRI — is returned unchanged.
+   */
+  private async resolveRefIriSubject(ref: IRI): Promise<IRI> {
+    const ownUid = await this.tripleStore.match(
+      ref,
+      Namespace.EXO.term("Asset_uid"),
+      undefined,
+    );
+    if (ownUid.length > 0) return ref;
+    const bearers = await labelTermBearers(this.tripleStore, ref);
+    if (bearers.length > 1) {
+      // Two assets share the label: resolving to whichever was indexed first
+      // would pick by edit history (a grounding could run another asset's
+      // mutation). Keep the pre-#4370 behaviour — the reference loads nothing.
+      if (!this._ambiguousRefWarnedKeys.has(ref.value)) {
+        this._ambiguousRefWarnedKeys.add(ref.value);
+        this.logger.warn(
+          this.capWarning(
+            `Reference <${ref.value}> names a label borne by ${bearers.length} assets (${bearers.map((b) => b.uid).join(", ")}) — left unresolved`,
+          ),
+        );
+      }
+      return ref;
+    }
+    return bearers[0]?.subject ?? ref;
+  }
+
+  /**
    * Helper: given a triple object that points to another asset (IRI or
    * literal wikilink), resolve it to the asset's subject IRI in the store.
    *
@@ -2682,7 +2731,7 @@ export class CommandResolver {
    * Literal (UUID wikilink → `findSubjectByUID`).
    */
   private async resolveRefTripleObject(object: unknown): Promise<IRI | null> {
-    if (object instanceof IRI) return object;
+    if (object instanceof IRI) return this.resolveRefIriSubject(object);
     if (object instanceof Literal) {
       const uid = this.normalizeWikilink(object.value);
       if (!uid) return null;
@@ -3610,7 +3659,7 @@ export class CommandResolver {
     if (obj instanceof IRI) {
       // Try to find UID of the linked asset
       const uidTriples = await this.tripleStore.match(
-        obj,
+        await this.resolveRefIriSubject(obj),
         Namespace.EXO.term("Asset_uid"),
         undefined,
       );
@@ -3642,7 +3691,7 @@ export class CommandResolver {
       const obj = triple.object;
       if (obj instanceof IRI) {
         const uidTriples = await this.tripleStore.match(
-          obj,
+          await this.resolveRefIriSubject(obj),
           Namespace.EXO.term("Asset_uid"),
           undefined,
         );
