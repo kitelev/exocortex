@@ -55,10 +55,15 @@ const GROUNDING = U(12); // create_instance grounding, targetClass "ems__Task"
 const READ = U(13); // file kitelev__ReadArticleTask.md ⊑ ems__Task
 const CYC_A = U(14); // ems__CycA ⊑ ems__CycB
 const CYC_B = U(15); // ems__CycB ⊑ ems__CycA (malformed cyclic TBox)
+const PAGE = U(16); // file page.md, human label "Page"
+const URL_CLS = U(17); // Literal label "https://example.com/page.md" ⊑ PAGE
 const GT_CREATE = GROUNDING_TYPE_UIDS[GroundingType.CREATE_INSTANCE];
 
 /** File basename when it is not the uid (UID-canon is the default). */
-const BASENAME: Record<string, string> = { [READ]: "kitelev__ReadArticleTask" };
+const BASENAME: Record<string, string> = {
+  [READ]: "kitelev__ReadArticleTask",
+  [PAGE]: "page",
+};
 const UID_BY_BASENAME: Record<string, string> = Object.fromEntries(
   Object.entries(BASENAME).map(([uid, base]) => [base, uid]),
 );
@@ -93,6 +98,8 @@ const FM: Record<string, IFrontmatter> = {
   },
   [CYC_A]: cls(CYC_A, "ems__CycA", CYC_B),
   [CYC_B]: cls(CYC_B, "ems__CycB", CYC_A),
+  [PAGE]: cls(PAGE, "Page"),
+  [URL_CLS]: cls(URL_CLS, "https://example.com/page.md", PAGE),
   [GT_CREATE]: {
     exo__Asset_uid: GT_CREATE,
     exo__Asset_label: "exocmd__GroundingTypeCreateInstance",
@@ -241,9 +248,18 @@ describe("symbolic label lookup over a converter-built store (issue #4354)", () 
     const d = depthsOf(
       await new CommandResolver(store).getClassAncestorsWithDepth(CYC_A),
     );
-    expect(d[CYC_B]).toBe(1); // the walk resolved B and went on — the cycle was reached
+    expect(d[CYC_B]).toBe(1); // B resolved; mutant M5 proves the walk continued past it
     expect(d["ems__CycA"]).toBeUndefined();
     expect(d[CYC_A]).toBeUndefined();
+  });
+
+  it("[A6] a Literal label that merely looks like a URL does not exclude a genuine ancestor", async () => {
+    // The seed's label folds (by string shape) to `page` — the basename of its
+    // real superclass file. Folding a Literal would drop that ancestor.
+    const d = depthsOf(
+      await new CommandResolver(store).getClassAncestorsWithDepth(URL_CLS),
+    );
+    expect(d["page"]).toBe(1);
   });
 
   it("[W1] a subclass two hops below Task (through a symbolic intermediate) resolves the Task workflow", async () => {

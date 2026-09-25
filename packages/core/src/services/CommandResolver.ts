@@ -3488,18 +3488,25 @@ export class CommandResolver {
       Namespace.EXO.term("Asset_uid"),
     );
     if (seedUid) excluded.add(seedUid);
-    const seedLabelRaw = await this.getLiteralValue(
-      seedFileIRI,
-      Namespace.EXO.term("Asset_label"),
-    );
-    // A `prefix__Local` label comes back as its term IRI (#4007), while the
-    // walk records ancestors in the symbolic form — fold it, or a cyclic chain
-    // (`A ⊑ B ⊑ A`) surfaces `A` as its own ancestor now that the walk gets
-    // past the first symbolic superclass (#4354).
+    // A `prefix__Local` label is emitted as its term IRI, while the walk records
+    // ancestors in the symbolic form — fold it, or a cyclic chain (`A ⊑ B ⊑ A`)
+    // surfaces `A` as its own ancestor now that the walk gets past the first
+    // symbolic superclass (#4354). Folded by NODE TYPE, not by string shape: a
+    // Literal label that merely looks like a URL (`https://…/page.md`) must stay
+    // as written, or its fold (`page`) would exclude a genuine ancestor.
+    const seedLabelNode = (
+      await this.tripleStore.match(
+        seedFileIRI,
+        Namespace.EXO.term("Asset_label"),
+        undefined,
+      )
+    )[0]?.object;
     const seedLabel =
-      seedLabelRaw && LOOKS_LIKE_IRI.test(seedLabelRaw)
-        ? (iriToObsidianName(seedLabelRaw) ?? seedLabelRaw)
-        : seedLabelRaw;
+      seedLabelNode instanceof IRI
+        ? (iriToObsidianName(seedLabelNode.value) ?? seedLabelNode.value)
+        : seedLabelNode instanceof Literal
+          ? seedLabelNode.value
+          : null;
     if (seedLabel) excluded.add(seedLabel);
 
     // Record an ancestor ref at its nearest depth. BFS first-reach is the

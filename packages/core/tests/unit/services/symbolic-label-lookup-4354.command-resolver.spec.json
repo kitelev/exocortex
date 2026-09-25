@@ -19,10 +19,16 @@
       "expect": ["A1", "A2", "A3", "A4", "A5", "G1"]
     },
     "M5_seed_label_not_folded": {
-      "_note": "Undo the seed-label fold in getClassAncestorsWithDepth: the seed's prefix__Local label comes back as its term IRI, the symbolic form never enters `excluded`, and a cyclic chain lists the seed as its own ancestor at depth 2 (A5). Reachable only since #4354 lets the walk past the first symbolic superclass. Type-preserving: the test argument gets a leading NUL, so the `^scheme://` anchor never matches.",
-      "from": "seedLabelRaw && LOOKS_LIKE_IRI.test(seedLabelRaw)",
-      "to": "seedLabelRaw && LOOKS_LIKE_IRI.test(\"\\u0000\" + seedLabelRaw)",
+      "_note": "Undo the seed-label fold in getClassAncestorsWithDepth: the seed's prefix__Local label stays a term IRI string, the symbolic form never enters `excluded`, and a cyclic chain lists the seed as its own ancestor at depth 2 (A5). Reachable only since #4354 lets the walk past the first symbolic superclass.",
+      "from": "(iriToObsidianName(seedLabelNode.value) ?? seedLabelNode.value)",
+      "to": "(seedLabelNode.value)",
       "expect": ["A5"]
+    },
+    "M6_seed_label_folded_by_string_shape": {
+      "_note": "Review round 2: fold a LITERAL label too whenever it looks like a URL (the round-1 behaviour). A Literal `https://example.com/page.md` folds to `page` — the basename of the class's real superclass file — which is then excluded (A6).",
+      "from": "          ? seedLabelNode.value\n          : null;",
+      "to": "          ? LOOKS_LIKE_IRI.test(seedLabelNode.value)\n            ? (iriToObsidianName(seedLabelNode.value) ?? seedLabelNode.value)\n            : seedLabelNode.value\n          : null;",
+      "expect": ["A6"]
     }
   }
 }
