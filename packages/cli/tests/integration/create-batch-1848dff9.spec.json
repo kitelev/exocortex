@@ -1,0 +1,150 @@
+{
+  "_doc": "Revert-verify mutants for req 1848dff9-bb2e-43a9-95e7-d917d6cef552 (issue #4347, `cli create-batch`), subject = the batch command. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). One mutant per guarantee the command itself carries; the per-item pipeline is create's own planCreate and is locked by create's suites. Expectations written BEFORE the run (§A44).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?)[: ]",
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/create-batch.integration.test.ts 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/create-batch.ts",
+  "mutants": {
+    "M1_context_built_per_item": {
+      "from": "            const { config, label } = await planCreate(\n              item.options,\n              ctx,\n              item.body,\n            );",
+      "to": "            const { config, label } = await planCreate(\n              item.options,\n              new CreateContext(vaultPath, {\n                fsAdapter: new PlanningFsAdapter(vaultPath),\n                warn,\n                pendingUids,\n              }),\n              item.body,\n            );",
+      "expect": ["B6a", "B6b", "B6c", "B6d"],
+      "_note": "The loop-in-one-process that the requirement rules out: every item gets fresh services and a fresh read memo, so every scan runs per item."
+    },
+    "M2_batch_uids_not_handed_to_wikilink_validation": {
+      "from": "        const ctx = new CreateContext(vaultPath, {\n          fsAdapter,\n          warn,\n          pendingUids,\n        });",
+      "to": "        const ctx = new CreateContext(vaultPath, {\n          fsAdapter,\n          warn,\n          pendingUids: pendingUids.size < 0 ? pendingUids : new Set<string>(),\n        });",
+      "expect": ["B4"],
+      "_note": "Type-preserving: pendingUids stays read, the context gets an empty set. B4b stays green — it is refused either way, which is what makes the pair prove B4 passes BECAUSE of the batch."
+    },
+    "M3_all_or_nothing_reduced_to_best_effort": {
+      "from": "        if (failures.length > 0) {\n          reportFailures(failures, total);",
+      "to": "        if (failures.length > 0 && planned.length === 0) {\n          reportFailures(failures, total);",
+      "expect": ["B3", "B4b", "B5b", "B5c", "B5d", "B11", "B17"],
+      "_note": "Writes the valid items of a batch that has invalid ones: every axis whose batch mixes valid and refused items reddens (B5d and B11 joined in review round 1)."
+    },
+    "M4_only_the_first_failure_reported": {
+      "from": "          reportFailures(failures, total);",
+      "to": "          reportFailures(failures.slice(0, 1), total);",
+      "expect": ["B3", "B11"]
+    },
+    "M5_caller_uid_checks_removed": {
+      "from": "        failures.push(...(await checkCallerUids(items, fsAdapter)));",
+      "to": "        failures.push(...(await checkCallerUids([], fsAdapter)));",
+      "expect": ["B5b", "B5c", "B5d"],
+      "_note": "B5a stays green: a malformed uid is refused by the item-shape check, not by checkCallerUids. B5d (frontmatter uid) is refused inside the same function."
+    },
+    "M6_body_expanded_like_inline": {
+      "from": "    body = { text: item.body as string, source: \"file\" };",
+      "to": "    body = { text: item.body as string, source: \"inline\" };",
+      "expect": ["B2"],
+      "_note": "The parity case carries a literal backslash-n; inline expansion turns it into a line break, --body-file does not."
+    },
+    "M7_batch_created_by_default_dropped": {
+      "from": "      createdBy: (item.createdBy as string | undefined) ?? batch.createdBy,",
+      "to": "      createdBy: (item.createdBy as string | undefined) ?? undefined,",
+      "expect": ["B10"]
+    },
+    "M8_multi_value_property_keeps_first_value_only": {
+      "from": "        property.push(`${key}=${String(v)}`);",
+      "to": "        if (values.indexOf(v) === 0) property.push(`${key}=${String(v)}`);",
+      "expect": ["B2"]
+    },
+    "M9_status_false_not_mapped_to_no_status": {
+      "from": "      status = false; // ⇔ --no-status",
+      "to": "      status = undefined; // ⇔ --no-status",
+      "expect": ["B2"]
+    },
+    "M10_stdin_marker_not_recognised": {
+      "from": "        if (file === \"-\") {",
+      "to": "        if (file === \"--stdin\") {",
+      "expect": ["B9", "B9b"],
+      "_note": "B9b reddens too: `-` is then read as a file name and refused as not found, so the terminal refusal's own message never appears."
+    },
+    "M11_dry_run_writes": {
+      "from": "        if (options.dryRun) {",
+      "to": "        if (options.dryRun && planned.length < 0) {",
+      "expect": ["B7"],
+      "_note": "B6* also run with --dry-run; a write after planning adds no read of an existing file, so they are not expected to redden."
+    },
+    "M12_unknown_item_keys_accepted": {
+      "from": "  if (unknownKeys.length > 0) {",
+      "to": "  if (unknownKeys.length < 0) {",
+      "expect": ["B8"]
+    },
+    "M13_empty_batch_accepted": {
+      "from": "  if (doc.length === 0) {",
+      "to": "  if (doc.length < 0) {",
+      "expect": ["B8"]
+    },
+    "M14_in_batch_anchor_not_refused": {
+      "from": "        failures.push(...checkAnchorsExist(items, pendingIndex));",
+      "to": "        failures.push(...checkAnchorsExist(items, new Map<string, number>()));",
+      "expect": ["B11", "B17"],
+      "_note": "Review round 1 HIGH: without the check the anchor passes wikilink validation (it is a pending uid), the range guard and co-location fail open, and the item lands in 01 Inbox with nothing checked. Round 2: B11 also carries the BARE-uid form, which a wikilink-only matcher missed; the check now uses the range guard's own parser (extractAssetReference)."
+    },
+    "M15_frontmatter_uid_ignored": {
+      "from": "      if (normalised) onDisk.add(normalised);",
+      "to": "      if (normalised && normalised.length < 0) onDisk.add(normalised);",
+      "expect": ["B5d"],
+      "_note": "Review round 1 HIGH: the filename-only check let a caller uid equal a label-named asset's frontmatter uid."
+    },
+    "M16_exit_without_flushing": {
+      "from": "          stream.write(\"\", () => flushed());",
+      "to": "          flushed();",
+      "expect": ["B13"],
+      "_note": "Review round 1 CRITICAL: process.exit right after a large write drops what did not fit a macOS pipe buffer (328,892 bytes to a file, 65,536 through | wc -c)."
+    },
+    "M17_unsafe_integer_accepted": {
+      "from": "          !Number.isSafeInteger(v) &&\n          Number.isInteger(v)\n        ) {",
+      "to": "          !Number.isSafeInteger(v) &&\n          Number.isInteger(v) &&\n          key.length < 0\n        ) {",
+      "expect": ["B8"]
+    },
+    "M18_terminal_stdin_not_refused": {
+      "from": "  if (process.stdin.isTTY) {",
+      "to": "  if (process.stdin.isTTY && process.stdin.isTTY !== true) {",
+      "expect": ["B9b"],
+      "_note": "B9b asserts the refusal's own message: without it an empty terminal read still ends in exit 2 (not valid JSON), so a bare exit-code axis would stay green."
+    },
+    "M19_null_not_treated_as_absent": {
+      "from": "    if (item[key] === null) delete item[key];",
+      "to": "    if (item[key] === null && key.length < 0) delete item[key];",
+      "expect": ["B14"]
+    },
+    "M20_bom_not_stripped": {
+      "from": "    doc = JSON.parse(text.replace(/^\\uFEFF/, \"\"));",
+      "to": "    doc = JSON.parse(text);",
+      "expect": ["B14"]
+    },
+    "M21_repeat_summary_dropped": {
+      "from": "          if (raisedBy.length < 2) continue;",
+      "to": "          if (raisedBy.length < 2 || raisedBy.length > 0) continue;",
+      "expect": ["B15"]
+    },
+    "M22_epipe_on_stdio_rethrown": {
+      "from": "      if (error.code !== \"EPIPE\") throw error;",
+      "to": "      throw error;",
+      "expect": ["B16"],
+      "_note": "Review round 2 LOW: a reader closing the pipe early turned a finished batch into exit 1 with an uncaught EPIPE."
+    },
+    "M23_self_anchor_named_as_a_sibling": {
+      "from": "          creator === item.index",
+      "to": "          false",
+      "expect": ["B17"],
+      "_note": "Review round 3 LOW: a self-anchored item (namespace ontology anchored on its own uid) was told 'which item[k] of this same batch creates' with k = itself."
+    },
+    "M24_stdio_guard_not_installed": {
+      "from": "      guardStdioAgainstClosedReader();",
+      "to": "      void 0;",
+      "expect": ["B16"],
+      "_note": "Review round 3 LOW: the guard was installed only inside finish(), so an EPIPE on an early stderr warning (2>&1 | head) was still uncaught; it is now the action's first statement, and this mutant locks that the listener is ours (not one the jest worker happens to register)."
+    }
+  }
+}

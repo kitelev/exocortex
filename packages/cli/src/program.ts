@@ -9,6 +9,7 @@ import { validateCommand } from "./commands/validate.js";
 import { classesCommand } from "./commands/classes.js";
 import { runQueryCommand } from "./commands/run-query.js";
 import { createCommand } from "./commands/create.js";
+import { createBatchCommand } from "./commands/create-batch.js";
 import { setPropertyCommand } from "./commands/set-property.js";
 import { removePropertyCommand } from "./commands/remove-property.js";
 import { setBodyCommand } from "./commands/set-body.js";
@@ -70,6 +71,9 @@ export function createProgram(version?: string): Command {
   // assets).
   program.addCommand(runQueryCommand());
   program.addCommand(createCommand());
+  // req 1848dff9 (issue #4347) — many assets from one JSON file in ONE
+  // invocation: every item through create's own planCreate, all-or-nothing.
+  program.addCommand(createBatchCommand());
   // Issues #3795 / #3848 — generic guarded mutation primitive: set an arbitrary
   // non-guarded frontmatter property (incl. exo__Asset_isDefinedBy repoint) on an
   // existing asset via the CLI, closing the "raw-Edit a property" dogfooding gap.

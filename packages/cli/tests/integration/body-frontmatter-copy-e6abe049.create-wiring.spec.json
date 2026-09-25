@@ -13,20 +13,15 @@
   "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/body-frontmatter-copy-e6abe049.integration.test.ts 2>&1",
   "mutants": {
     "M2_guard_not_wired_into_create": {
-      "from": "        if (body !== undefined) {\n          assertNoFrontmatterCopy(body, \"create\");\n        }\n\n",
+      "from": "  if (body !== undefined) {\n    assertNoFrontmatterCopy(body, \"create\");\n  }\n\n",
       "to": "",
-      "expect": [
-        "Q6",
-        "Q10"
-      ],
+      "expect": ["Q6", "Q10"],
       "_note": "Reddens ONLY Q6 — the set-body axes keep their own call site, so this mutant is what separates the two wirings. Q7 (ordinary body creates fine) stays green under it, which is the control that Q6 fails for the refusal and not because create broke. ⛤ The dry-run axes (Q9/Q10) joined this set when they were added: removing the wiring or emptying the predicate kills the refusal on EVERY path, dry-run included — which is why M8 is still needed to separate 'not wired at all' from 'wired, but skipped under --dry-run'."
     },
     "M8_guard_skipped_under_dry_run": {
-      "from": "        if (body !== undefined) {\n          assertNoFrontmatterCopy(body, \"create\");\n        }",
-      "to": "        if (body !== undefined && !options.dryRun) {\n          assertNoFrontmatterCopy(body, \"create\");\n        }",
-      "expect": [
-        "Q10"
-      ],
+      "from": "  if (body !== undefined) {\n    assertNoFrontmatterCopy(body, \"create\");\n  }",
+      "to": "  if (body !== undefined && !options.dryRun) {\n    assertNoFrontmatterCopy(body, \"create\");\n  }",
+      "expect": ["Q10"],
       "_note": "Wraps the call in `if (!options.dryRun)` — the shape the review used to prove the ORDER was unlocked: on the shipped code the guard sits before BOTH the dry-run branch and the write, yet before Q9/Q10 existed this mutant reddened NOTHING (Q1/Q1b/Q2/Q6 all run without --dry-run). ⚠ Q1 DOES fail under a related mutant that moves the guard past the wikilink validator, but for a DIFFERENT reason (the message becomes the validator's), so it locks 'guard before the link check', not 'guard before dry-run'. Reddens exactly the new dry-run axis of this command."
     }
   }
