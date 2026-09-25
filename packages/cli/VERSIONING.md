@@ -98,7 +98,7 @@ Increment minor version when:
 
    ```bash
    # New: optional flag
-   exocortex sparql query --timeout 30000
+   exocortex query --timeout 30000
    ```
 
 3. **New output format added**
@@ -201,7 +201,7 @@ Commands and options documented in [CLI_API_REFERENCE.md](docs/CLI_API_REFERENCE
 
 | Command                              | Status      |
 | ------------------------------------ | ----------- |
-| `exocortex sparql query`             | **Stable**  |
+| `exocortex query`                    | **Stable**  |
 | `exocortex command start`            | **Removed** |
 | `exocortex command complete`         | **Removed** |
 | `exocortex command trash`            | **Removed** |
@@ -272,7 +272,7 @@ $ exocortex command old-name "path/to/file.md"
 
 Commands established:
 
-- SPARQL query execution (`sparql query`)
+- SPARQL query execution (`query`)
 - Status transitions (`start`, `complete`, `trash`, `archive`, `move-to-*`)
 - Asset creation (`create-task`, `create-meeting`, `create-project`, `create-area`)
 - Property mutations (`rename-to-uid`, `update-label`)
@@ -310,7 +310,7 @@ if (result.exitCode === 0) {
 ### 3. Use JSON Output for Parsing
 
 ```typescript
-const result = await exec('exocortex sparql query "..." --format json');
+const result = await exec('exocortex query "..." --format json');
 const bindings = JSON.parse(result.stdout);
 ```
 
