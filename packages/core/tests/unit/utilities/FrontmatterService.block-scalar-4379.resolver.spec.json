@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutants for issue #4379 — a top-level block scalar read as its RAW text, and the consumers of that read. Mutants are type-preserving (an impossible-but-valid condition / `x || f(x)` keeping the import used), never `if (false)` (integration-test-revert-verify §A36). `red_re` anchors on the `● <suite> › [Xn]` header (§A44/§A104). Subject: SubstitutionResolverRegistry.ts.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/utilities/FrontmatterService.block-scalar-4379.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/SubstitutionResolverRegistry.ts",
+  "mutants": {
+    "M11_resolver_scalar_raw": {
+      "_note": "The `targetProperty` resolver returns the raw text of a scalar block.",
+      "from": "    return decodeYamlBlockScalar(String(v));",
+      "to": "    return String(v) || decodeYamlBlockScalar(String(v));",
+      "expect": ["T1"]
+    },
+    "M12_resolver_items_raw": {
+      "_note": "…and of a block-scalar list item.",
+      "from": "      return v.map((item) => decodeYamlBlockScalar(String(item)));",
+      "to": "      return v.map((item) => String(item) || decodeYamlBlockScalar(String(item)));",
+      "expect": ["T1"]
+    }
+  }
+}

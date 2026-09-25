@@ -23,6 +23,8 @@ import { IRI } from "../domain/models/rdf/IRI";
 import type { WorkflowDefinition } from "../domain/models/WorkflowDefinition";
 import { FrontmatterService } from "../utilities/FrontmatterService";
 import {
+  blockScalarAsSequenceItem,
+  decodeYamlBlockScalar,
   decodeYamlQuotedScalar,
   isCompleteDoubleQuotedScalar,
   quoteYamlString,
@@ -3231,7 +3233,10 @@ export class GroundingExecutor {
     if (UUID_V4_RE.test(value)) {
       return `"[[${value}]]"`;
     }
-    return value;
+    // A block scalar arrives as RAW text (`|-\n  body`, issue #4379); the new
+    // asset's writer quotes whatever it is handed, so copy the VALUE — raw, the
+    // header and the indentation would become part of the inherited text.
+    return decodeYamlBlockScalar(value);
   }
 
   private reformatWikilink(value: string): string {
@@ -3596,10 +3601,14 @@ export class GroundingExecutor {
     );
 
     const existingRaw = targetFrontmatter[grounding.targetProperty];
+    // A scalar becomes the list's first item. A BLOCK scalar's body is
+    // re-indented for that position (issue #4379): verbatim, it would sit at
+    // the indentation of its own `- ` and the whole frontmatter would stop
+    // parsing.
     const existing: string[] = Array.isArray(existingRaw)
       ? existingRaw
       : existingRaw !== undefined
-        ? [String(existingRaw)]
+        ? [blockScalarAsSequenceItem(String(existingRaw))]
         : [];
 
     // The value to append is the string VALUE. `$target.<prop>` already

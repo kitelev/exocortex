@@ -434,6 +434,63 @@ function isCompleteSingleQuotedScalar(value: string): boolean {
 }
 
 /**
+ * A YAML block-scalar HEADER — the whole value of a node: `|` or `>`, with an
+ * optional indentation indicator (`1`-`9`) and/or chomping indicator (`-`/`+`)
+ * in either order. One grammar for the reader (`FrontmatterService.parseObject`)
+ * and for the helpers below that turn its raw text back into a value.
+ */
+export const YAML_BLOCK_SCALAR_HEADER = /^[|>](?:[1-9][-+]?|[-+][1-9]?)?$/;
+
+/**
+ * True when `raw` is a block scalar as `parseObject` carries it: the header on
+ * the first line, the indented body (if any) verbatim on the following lines.
+ */
+function isBlockScalarRaw(raw: string): boolean {
+  const newline = raw.indexOf("\n");
+  const header = newline === -1 ? raw : raw.slice(0, newline);
+  return YAML_BLOCK_SCALAR_HEADER.test(header);
+}
+
+/**
+ * Decode the RAW TEXT of a block scalar (`|-\n  first\n  second`) to its string
+ * VALUE (`first\nsecond`); any other input is returned verbatim (issue #4379).
+ *
+ * The raw text is re-read as the value of a TOP-LEVEL key (`k: <raw>`), which is
+ * where it came from — so the folding (`>`), chomping (`-`/`+`) and an explicit
+ * indentation indicator all mean what they meant on disk. A body js-yaml rejects
+ * is returned verbatim (byte-lossless), as for the quoted forms below.
+ */
+export function decodeYamlBlockScalar(raw: string): string {
+  if (!isBlockScalarRaw(raw)) return raw;
+  try {
+    const loaded = yaml.load(`k: ${raw}`) as { k?: unknown } | null;
+    return typeof loaded?.k === "string" ? loaded.k : raw;
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * The raw text of a SCALAR block scalar, re-indented to stand as a LIST ITEM
+ * (`  - <item>`): every body line moves two columns right (issue #4379).
+ *
+ * ⛔ Written as-is, the top-level body (indented two columns) would sit at the
+ * indentation of the `- ` it hangs from, which js-yaml rejects ("bad
+ * indentation") — the whole frontmatter, not just this property, would stop
+ * parsing. Shifting every body line by the same amount keeps the value: block
+ * scalar indentation is relative to the node, not to column 0. Blank lines stay
+ * empty. Any other input (plain / quoted scalar) is returned verbatim.
+ */
+export function blockScalarAsSequenceItem(raw: string): string {
+  if (!isBlockScalarRaw(raw)) return raw;
+  const [header, ...body] = raw.split("\n");
+  return [
+    header,
+    ...body.map((line) => (line === "" ? line : `  ${line}`)),
+  ].join("\n");
+}
+
+/**
  * Decode the RAW TEXT of a YAML scalar back to its string VALUE (ticket
  * 4f226028) — the read-side counterpart of {@link quoteYamlString}.
  *
@@ -456,12 +513,14 @@ function isCompleteSingleQuotedScalar(value: string): boolean {
  * reads from that line" by construction.
  *
  * - complete double-quoted / single-quoted scalar → `yaml.load(raw)`.
+ * - a block scalar (`|-\n  body`, issue #4379) → {@link decodeYamlBlockScalar}.
  * - a quoted run js-yaml itself REJECTS (`"\q"`, `"\xZZ"`) → returned VERBATIM
  *   (byte-lossless: re-quoting it round-trips the text, nothing is invented).
  * - anything else (a plain scalar, an INCOMPLETE quoted run such as
  *   `"a" and "b"`) → returned verbatim — it IS the value.
  */
 export function decodeYamlQuotedScalar(raw: string): string {
+  if (isBlockScalarRaw(raw)) return decodeYamlBlockScalar(raw);
   if (
     !isCompleteDoubleQuotedScalar(raw) &&
     !isCompleteSingleQuotedScalar(raw)

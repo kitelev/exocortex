@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutants for issue #4379 — a top-level block scalar read as its RAW text, and the consumers of that read. Mutants are type-preserving (an impossible-but-valid condition / `x || f(x)` keeping the import used), never `if (false)` (integration-test-revert-verify §A36). `red_re` anchors on the `● <suite> › [Xn]` header (§A44/§A104). Subject: GroundingExecutor.ts.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/utilities/FrontmatterService.block-scalar-4379.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/GroundingExecutor.ts",
+  "mutants": {
+    "M9_append_writes_raw": {
+      "_note": "`property_append` turns the scalar into a list item verbatim (the regression the read fix alone would introduce).",
+      "from": "        ? [blockScalarAsSequenceItem(String(existingRaw))]",
+      "to": "        ? [String(existingRaw) || blockScalarAsSequenceItem(\"\")]",
+      "expect": ["W1", "W2"]
+    },
+    "M10_inheritance_copies_raw": {
+      "_note": "InheritanceRule copies the raw text; the new asset's writer quotes header and indentation into the value.",
+      "from": "    return decodeYamlBlockScalar(value);\n  }",
+      "to": "    return value || decodeYamlBlockScalar(value);\n  }",
+      "expect": ["I1"]
+    }
+  }
+}

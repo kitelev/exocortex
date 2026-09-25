@@ -1,0 +1,41 @@
+{
+  "_doc": "Revert-verify mutants for issue #4379 — a top-level block scalar read as its RAW text, and the consumers of that read. Mutants are type-preserving (an impossible-but-valid condition / `x || f(x)` keeping the import used), never `if (false)` (integration-test-revert-verify §A36). `red_re` anchors on the `● <suite> › [Xn]` header (§A44/§A104). Subject: yamlScalar.ts.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/utilities/FrontmatterService.block-scalar-4379.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/utilities/yamlScalar.ts",
+  "mutants": {
+    "M5_folded_not_a_header": {
+      "_note": "`>` (63 of 106 live headers) is not recognised as a block scalar.",
+      "from": "export const YAML_BLOCK_SCALAR_HEADER = /^[|>]",
+      "to": "export const YAML_BLOCK_SCALAR_HEADER = /^[|]",
+      "expect": ["P4", "P5", "D1"]
+    },
+    "M6_decode_standalone": {
+      "_note": "The raw text is read as a standalone document instead of a top-level value — an explicit indentation indicator is re-based on column -1.",
+      "from": "    const loaded = yaml.load(`k: ${raw}`) as { k?: unknown } | null;",
+      "to": "    const loaded = { k: yaml.load(raw) } as { k?: unknown } | null;",
+      "expect": ["D2"]
+    },
+    "M7_quoted_decoder_skips_blocks": {
+      "_note": "`decodeYamlQuotedScalar` (the `$target.<prop>` decoder) no longer delegates block scalars.",
+      "from": "  if (isBlockScalarRaw(raw)) return decodeYamlBlockScalar(raw);",
+      "to": "  if (isBlockScalarRaw(raw) && raw.length < 0) return decodeYamlBlockScalar(raw);",
+      "expect": ["D1", "S1"]
+    },
+    "M8_item_not_reindented": {
+      "_note": "The body is written as a list item verbatim — js-yaml rejects the whole frontmatter (`bad indentation`).",
+      "from": "line === \"\" ? line : `  ${line}`",
+      "to": "line === \"\" ? line : line",
+      "expect": ["W1", "W2"]
+    }
+  }
+}
