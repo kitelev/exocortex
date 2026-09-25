@@ -1,0 +1,19 @@
+{
+  "_doc": "Revert-verify for req c0b0e8bf, subject = summarizeParityRound. Axis S1 in ParityValidator.test.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/ParityValidator.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../..\" && NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js tests/unit/services/sync/ParityValidator.test.ts -t 'S1 ' 2>&1",
+  "red_re": "› (S\\d+\\w*) ",
+  "mutants": {
+    "M5_pinned_count_reads_the_wrong_class": {
+      "from": "    (n, r) => n + r.discrepancies.filter((d) => d.cls === \"quarantine-pinned\").length,\n",
+      "to": "    (n, r) => n + r.discrepancies.filter((d) => d.cls === \"format-only-drift\").length,\n",
+      "expect": ["S1"]
+    }
+  }
+}

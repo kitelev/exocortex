@@ -151,6 +151,79 @@ describe("QuarantineResolver.listOpenConflicts", () => {
   });
 });
 
+// #4225 — pins that are NOT conflicts. `listOpenConflicts` omits them by design
+// (no human choice needed), and on a push-only device nothing ever clears them,
+// so they were invisible. Measured 2026-09-26: ~3 070 pins across 9 bot vaults,
+// all but one of them local == base (a deferred incoming change or a remote add).
+describe("QuarantineResolver.classifyPins (#4225)", () => {
+  const REQ = "@req:c0b0e8bf-355d-4b03-9512-618c879f0940";
+
+  it(`P1 ${REQ} a pin with local == base and a changed remote is remote-pending, not a conflict`, async () => {
+    const base = mdAsset("uid-1", "shared");
+    const { spec, resolver } = await makeConflict({
+      base,
+      local: base,
+      remote: mdAsset("uid-1", "REMOTE only"),
+    });
+    const { conflicts, pinned } = await resolver.classifyPins([spec]);
+    expect(conflicts).toEqual([]);
+    expect(pinned).toEqual([{ repoKey: spec.repoKey, path: PATH, kind: "remote-pending" }]);
+  });
+
+  it(`P2 ${REQ} a pin with remote == base and a changed local copy is local-withheld`, async () => {
+    const base = mdAsset("uid-1", "shared");
+    const { spec, resolver } = await makeConflict({
+      base,
+      local: mdAsset("uid-1", "LOCAL only"),
+      remote: base,
+    });
+    const { conflicts, pinned } = await resolver.classifyPins([spec]);
+    expect(conflicts).toEqual([]);
+    expect(pinned).toEqual([{ repoKey: spec.repoKey, path: PATH, kind: "local-withheld" }]);
+  });
+
+  it(`P3 ${REQ} a pin with local == remote is converged`, async () => {
+    const same = mdAsset("uid-1", "both arrived here");
+    const { spec, resolver } = await makeConflict({
+      base: mdAsset("uid-1", "old base"),
+      local: same,
+      remote: same,
+    });
+    const { conflicts, pinned } = await resolver.classifyPins([spec]);
+    expect(conflicts).toEqual([]);
+    expect(pinned).toEqual([{ repoKey: spec.repoKey, path: PATH, kind: "converged" }]);
+  });
+
+  it(`P4 ${REQ} a genuine 3-way conflict stays a conflict and is not duplicated among the pins`, async () => {
+    const { spec, resolver } = await makeConflict();
+    const { conflicts, pinned } = await resolver.classifyPins([spec]);
+    expect(conflicts.map((c) => c.path)).toEqual([PATH]);
+    expect(pinned).toEqual([]);
+    expect(await resolver.listOpenConflicts([spec])).toEqual(conflicts);
+  });
+
+  it(`P5 ${REQ} pins of a file-mode FileSpace are reported unclassified and never listed as conflicts`, async () => {
+    const { spec, resolver } = await makeConflict();
+    const fileSpec: SyncRepoSpec = { ...spec, spaceKind: "file" };
+    const { conflicts, pinned } = await resolver.classifyPins([fileSpec]);
+    expect(conflicts).toEqual([]);
+    expect(pinned).toEqual([{ repoKey: spec.repoKey, path: PATH, kind: "unclassified" }]);
+  });
+
+  it(`P6 ${REQ} a pinned remote ADD (no base, no local copy) is remote-pending`, async () => {
+    const base = mdAsset("uid-1", "shared");
+    const { repo, spec, resolver } = await makeConflict({
+      base,
+      local: base,
+      remote: base,
+      extraPinned: ["gamma.md"],
+    });
+    repo.commitDirect("main", { "gamma.md": mdAsset("uid-2", "added remotely") }, "remote add");
+    const { pinned } = await resolver.classifyPins([spec]);
+    expect(pinned).toContainEqual({ repoKey: spec.repoKey, path: "gamma.md", kind: "remote-pending" });
+  });
+});
+
 describe("QuarantineResolver.loadConflict", () => {
   it("materialises all three versions for the diff view", async () => {
     const { spec, resolver, base, local, remote } = await makeConflict();

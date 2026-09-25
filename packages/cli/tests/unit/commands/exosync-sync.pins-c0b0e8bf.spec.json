@@ -1,0 +1,19 @@
+{
+  "_doc": "Revert-verify for req c0b0e8bf, subject = the `exosync sync|push|pull` Summary line. Axis W1 in exosync-sync.test.ts (drives a real push-only deferral through the engine). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-sync.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-sync.test.ts -t 'W1 ' 2>&1",
+  "red_re": "› (W\\d+\\w*) ",
+  "mutants": {
+    "M9_summary_never_carries_pins": {
+      "from": "      pinnedTotal > 0 ? `, pinned ${pinnedTotal} (see \\`exosync quarantine list\\`)` : \"\";\n",
+      "to": "      false ? `, pinned ${pinnedTotal} (see \\`exosync quarantine list\\`)` : \"\";\n",
+      "expect": ["W1"]
+    }
+  }
+}

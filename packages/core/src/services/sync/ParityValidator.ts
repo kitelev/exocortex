@@ -919,7 +919,15 @@ export function summarizeParityRound(record: ParityRoundRecord): string {
     return `ExoSync parity: VACUOUS — 0 of ${record.repos.length} repo(s) checked (errors / never synced)`;
   }
   const skipped = record.repos.length - record.checkedRepos;
-  const tail = skipped > 0 ? `, ${skipped} skipped` : "";
+  // #4225 — a pinned path is ACCOUNTED (never in M2), so the green line used to
+  // hide it: «M2=∅» read as «nothing pending» while the pin kept the path out of
+  // push. The count now rides in the line itself, not only in per-repo detail.
+  const pinned = record.repos.reduce(
+    (n, r) => n + r.discrepancies.filter((d) => d.cls === "quarantine-pinned").length,
+    0,
+  );
+  const tail =
+    (skipped > 0 ? `, ${skipped} skipped` : "") + (pinned > 0 ? `, ${pinned} pinned` : "");
   return record.ok
     ? `ExoSync parity: M1=0, M2=∅ (${record.checkedRepos} repo(s) checked${tail})`
     : `ExoSync parity: M1=${record.m1Total}, M2=${record.m2Total} diff(s) (${record.checkedRepos} repo(s) checked${tail}) — see log`;

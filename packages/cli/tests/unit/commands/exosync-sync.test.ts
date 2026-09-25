@@ -202,6 +202,31 @@ describe("runExosyncSync — wiring", () => {
     }
   });
 
+  // #4225 — a push-only run defers an incoming change under a pin; the Summary
+  // line must say so, and a pull must clear it.
+  it("W1 @req:c0b0e8bf-355d-4b03-9512-618c879f0940 push leaves a deferred incoming change pinned and the Summary line counts it; pull clears it", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const fx = makeVault({ [FILE_A]: mdAsset("u1") });
+    const run = async (direction: "sync" | "push" | "pull"): Promise<string> => {
+      const lines: string[] = [];
+      const code = await runExosyncSync(
+        direction,
+        { vault: fx.vault, token: FAKE_PAT },
+        { transportFactory: () => gh.transport(), out: (l: string) => lines.push(l), env: {} },
+      );
+      expect(code).toBe(0);
+      return lines.find((l) => l.startsWith("Summary:")) ?? "";
+    };
+    try {
+      expect(await run("sync")).not.toMatch(/pinned/);
+      gh.commitDirect("main", { [FILE_B]: mdAsset("u2", "remote add") }, "device B");
+      expect(await run("push")).toMatch(/, pinned 1 \(see `exosync quarantine list`\)$/);
+      expect(await run("pull")).not.toMatch(/pinned/);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
   it("pull materialises a remote-added file on disk (port → engine → disk)", async () => {
     const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
     const fx = makeVault({ [FILE_A]: mdAsset("u1") });

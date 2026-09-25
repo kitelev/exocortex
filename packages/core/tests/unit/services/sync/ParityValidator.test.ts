@@ -158,6 +158,22 @@ describe("ParityValidator — clean state and pending classifications", () => {
     expect(round.m2Total).toBe(0);
     expect(round.ok).toBe(true);
   });
+
+  // #4225 — the pin is accounted (never M2), so the green line hid it.
+  it("S1 @req:c0b0e8bf-355d-4b03-9512-618c879f0940 the summary line carries the pinned count while staying green", async () => {
+    const h = makeHarness({ [FILE_A]: mdAsset("u1") });
+    await bootstrap(h);
+    const record = h.watermarks.records.get(h.spec.repoKey)!;
+    h.watermarks.records.set(h.spec.repoKey, { ...record, pinnedPaths: [FILE_A] });
+    h.local.files.set(FILE_A, mdAsset("u1", "conflicted local"));
+    h.gh.commitDirect("main", { [FILE_A]: mdAsset("u1", "conflicted remote") }, "B");
+
+    const round = await h.validator.runRound([h.spec], { trigger: "standalone" });
+
+    expect(summarizeParityRound(round)).toBe(
+      "ExoSync parity: M1=0, M2=∅ (1 repo(s) checked, 1 pinned)",
+    );
+  });
 });
 
 describe("ParityValidator — semantic layer (M2 triple-set proxy)", () => {

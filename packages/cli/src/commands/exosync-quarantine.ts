@@ -40,6 +40,8 @@ import {
   findDuplicateUidGroups,
   planDuplicateUidFix,
   type DedupUidFile,
+  type PinnedPath,
+  type PinnedPathKind,
   type ResolveChoice,
   type SyncRepoSpec,
 } from "@kitelev/exocortex-core";
@@ -144,13 +146,17 @@ export async function runQuarantineList(
     return 0;
   }
 
-  const conflicts = await resolver.listOpenConflicts(specs);
+  // One pass classifies every pin: the open conflicts (unchanged) and the pins
+  // that are NOT conflicts but still keep their path out of push (#4225).
+  const { conflicts, pinned } = await resolver.classifyPins(specs);
   if (opts.json === true) {
+    // The open-conflict array, unchanged in shape — machine consumers read it.
     out(JSON.stringify(conflicts, null, 2));
     return 0;
   }
   if (conflicts.length === 0) {
     out("No open conflicts — nothing to resolve. ✅");
+    printPinnedNotConflicting(pinned, vaultPath, out);
     return 0;
   }
   out(`${conflicts.length} open conflict(s):`);
@@ -170,7 +176,44 @@ export async function runQuarantineList(
     "Resolve with: exosync quarantine resolve <path> --take local|remote|file --vault <vault> --token-from-gh",
   );
   out("              (--take file also needs --file <merged-content-path>)");
+  printPinnedNotConflicting(pinned, vaultPath, out);
   return 0;
+}
+
+const PINNED_KIND_TEXT: Record<PinnedPathKind, string> = {
+  "remote-pending": "remote change awaiting pull",
+  "local-withheld": "local edit withheld from push",
+  converged: "converged, clears on the next sync",
+  unclassified: "unclassified (offline, or a file-mode space)",
+};
+
+/**
+ * #4225 — pins that are not conflicts still keep their path OUT of push until a
+ * pull re-derives them, and a push-only vault never pulls. `list` used to say
+ * only «No open conflicts ✅» over hundreds of them. Every local-withheld path is
+ * named: those are local writes that are not reaching the remote.
+ */
+function printPinnedNotConflicting(
+  pinned: readonly PinnedPath[],
+  vaultPath: string,
+  out: (line: string) => void,
+): void {
+  if (pinned.length === 0) return;
+  out("");
+  out(
+    `${pinned.length} pinned path(s) are not conflicts but stay EXCLUDED from push until a pull clears them:`,
+  );
+  for (const kind of Object.keys(PINNED_KIND_TEXT) as PinnedPathKind[]) {
+    const n = pinned.filter((p) => p.kind === kind).length;
+    if (n > 0) out(`  ${String(n).padStart(5)}  ${PINNED_KIND_TEXT[kind]}`);
+  }
+  for (const p of pinned.filter((x) => x.kind === "local-withheld")) {
+    out(`  ${p.repoKey}  ${p.path}  [${PINNED_KIND_TEXT["local-withheld"]}]`);
+  }
+  // ⛔ A pull, never a hand-edit of the watermark: a pin on a deferred incoming
+  //    change keeps the OLD watermark entry, and dropping it without a pull makes
+  //    the next push send the old disk copy over the remote (#4225).
+  out(`Clear with: exosync pull --vault ${vaultPath} --token-from-gh`);
 }
 
 /** `exosync quarantine resolve <path> --take …`. Exit 0 on success, 1 on error. */

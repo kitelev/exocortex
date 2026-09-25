@@ -92,6 +92,42 @@ export interface ResolvableConflict {
   hasRemote: boolean;
 }
 
+/**
+ * Why a pinned path is NOT an open conflict (#4225). A pin excludes its path
+ * from push until a later sync re-derives it; a push-only device never runs
+ * that pull, so these accumulate silently — `listOpenConflicts` omits them by
+ * design (they need no human choice), which made them invisible.
+ *
+ *  - `remote-pending` — local == base, the remote changed or added the path: a
+ *    deferred incoming change (push-only runs pin these, #3473). A pull clears
+ *    it. ⛔ Unpinning it WITHOUT a pull would adopt the new remote tree while the
+ *    disk keeps the old copy, and the next push would send that old copy as a
+ *    "local edit" over the remote — so the remedy is a pull, never a prune.
+ *  - `local-withheld` — remote == base, the local copy changed: a local edit
+ *    that push skips while the path stays pinned.
+ *  - `converged` — local == remote: the pin clears on the next sync.
+ *  - `unclassified` — offline with nothing cached, or a file-mode FileSpace
+ *    (binary, not classified by this text resolver).
+ */
+export type PinnedPathKind =
+  | "remote-pending"
+  | "local-withheld"
+  | "converged"
+  | "unclassified";
+
+/** A pinned path that is not an open conflict, with the reason (#4225). */
+export interface PinnedPath {
+  repoKey: string;
+  path: string;
+  kind: PinnedPathKind;
+}
+
+/** Every pin of the given repos, split into open conflicts and the rest. */
+export interface PinClassification {
+  conflicts: ResolvableConflict[];
+  pinned: PinnedPath[];
+}
+
 /** A conflict with its three versions materialised (for the diff view). */
 export interface ConflictDetail extends ResolvableConflict {
   /** 3-way base; `undefined` ⇒ absent at base OR the blob was GC'd. */
@@ -203,24 +239,41 @@ export class QuarantineResolver {
   async listOpenConflicts(
     specs: readonly SyncRepoSpec[],
   ): Promise<ResolvableConflict[]> {
-    const out: ResolvableConflict[] = [];
-    for (const spec of specs) {
-      out.push(...(await this.listRepoConflicts(spec)));
-    }
-    return out;
+    return (await this.classifyPins(specs)).conflicts;
   }
 
-  private async listRepoConflicts(
-    spec: SyncRepoSpec,
-  ): Promise<ResolvableConflict[]> {
+  /**
+   * Every pin of the given repos in ONE pass: the open conflicts (exactly what
+   * {@link listOpenConflicts} returns) and the pins that are not conflicts,
+   * each with its {@link PinnedPathKind} (#4225). Pins with a pending outbox
+   * entry ("resolved, awaiting push") appear in neither list.
+   */
+  async classifyPins(specs: readonly SyncRepoSpec[]): Promise<PinClassification> {
+    const conflicts: ResolvableConflict[] = [];
+    const pinned: PinnedPath[] = [];
+    for (const spec of specs) {
+      const repo = await this.classifyRepoPins(spec);
+      conflicts.push(...repo.conflicts);
+      pinned.push(...repo.pinned);
+    }
+    return { conflicts, pinned };
+  }
+
+  private async classifyRepoPins(spec: SyncRepoSpec): Promise<PinClassification> {
+    const none: PinClassification = { conflicts: [], pinned: [] };
+    const watermark = await this.deps.watermarkStore.get(spec.repoKey);
+    let pinned = watermark?.pinnedPaths ?? [];
+    if (pinned.length === 0) return none;
     // Asset-mode only: a file-mode FileSpace conflict is opaque binary resolved
     // remote-wins (D18) — the losing local lives in the device-local conflict
     // cache (its binary payload), not here, and a UTF-8 3-way would corrupt it.
-    // Skip the whole spec.
-    if (spec.spaceKind === "file") return [];
-    const watermark = await this.deps.watermarkStore.get(spec.repoKey);
-    let pinned = watermark?.pinnedPaths ?? [];
-    if (pinned.length === 0) return [];
+    // Its pins are reported, unclassified, and never listed as conflicts.
+    if (spec.spaceKind === "file") {
+      return {
+        conflicts: [],
+        pinned: pinned.map((path) => ({ repoKey: spec.repoKey, path, kind: "unclassified" })),
+      };
+    }
 
     // Hide paths with a pending deferred-push outbox entry — they are "resolved,
     // awaiting push" (PR-3b). The path stays pinned until the engine flush pushes
@@ -231,7 +284,7 @@ export class QuarantineResolver {
       if (pendingForRepo.length > 0) {
         const pendingPaths = new Set(pendingForRepo.map((e) => e.path));
         pinned = pinned.filter((p) => !pendingPaths.has(p));
-        if (pinned.length === 0) return [];
+        if (pinned.length === 0) return none;
       }
     }
 
@@ -266,6 +319,7 @@ export class QuarantineResolver {
     const onDisk = new Set(await localFiles.list());
 
     const out: ResolvableConflict[] = [];
+    const others: PinnedPath[] = [];
     for (const path of pinned) {
       const cached = cachedByPath.get(path);
       let baseSha: string;
@@ -280,8 +334,11 @@ export class QuarantineResolver {
             ? await gitBlobSha(cached.baseContent, this.deps.sha1)
             : (baseShaByPath.get(path) ?? ABSENT);
       } else {
-        // Uncached pin: needs the head tree. Offline ⇒ cannot classify it, omit.
-        if (!networkAvailable) continue;
+        // Uncached pin: needs the head tree. Offline ⇒ cannot classify it.
+        if (!networkAvailable) {
+          others.push({ repoKey: spec.repoKey, path, kind: "unclassified" });
+          continue;
+        }
         remoteSha = remoteShaByPath.get(path) ?? ABSENT;
         baseSha = baseShaByPath.get(path) ?? ABSENT;
       }
@@ -299,7 +356,16 @@ export class QuarantineResolver {
         localSha !== remoteSha &&
         localSha !== baseSha &&
         remoteSha !== baseSha;
-      if (!genuine) continue;
+      if (!genuine) {
+        const kind: PinnedPathKind =
+          localSha === remoteSha
+            ? "converged"
+            : localSha === baseSha
+              ? "remote-pending"
+              : "local-withheld";
+        others.push({ repoKey: spec.repoKey, path, kind });
+        continue;
+      }
 
       const uid =
         (localContent !== undefined ? extractAssetUid(localContent) : undefined) ??
@@ -312,7 +378,7 @@ export class QuarantineResolver {
         hasRemote: remoteSha !== ABSENT,
       });
     }
-    return out;
+    return { conflicts: out, pinned: others };
   }
 
   /** Cache records for the given pinned paths (empty when no cache wired). */

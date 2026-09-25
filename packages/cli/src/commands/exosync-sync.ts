@@ -489,9 +489,10 @@ export async function runExosyncSync(
   // git-repo quarantine store was retired — offline-resolution program).
   const quarantine: QuarantinePort = conflictCache;
 
+  const watermarkStore = new FileWatermarkStore(nodeWatermarkFileIO(watermarkPath));
   const engine = new SyncEngine({
     transport,
-    watermarkStore: new FileWatermarkStore(nodeWatermarkFileIO(watermarkPath)),
+    watermarkStore,
     // mtime-manifest local-hash skip (perf) — same IO/store family as the
     // watermark; skips reading+re-hashing unchanged asset files each sync.
     localManifestStore: new FileLocalManifestStore(
@@ -544,8 +545,19 @@ export async function runExosyncSync(
       }),
       { pulled: 0, pushed: 0, merged: 0, quarantined: 0 },
     );
+    // #4225 — a pin keeps its path OUT of push until a pull re-derives it, and a
+    // push-only run is exactly what leaves them behind (deferred incoming
+    // changes). The count rides in the Summary line itself: machine readers
+    // parse that line and skip it as a known form, so the addition stays silent
+    // for them and visible for a human.
+    let pinnedTotal = 0;
+    for (const spec of specs) {
+      pinnedTotal += (await watermarkStore.get(spec.repoKey))?.pinnedPaths?.length ?? 0;
+    }
+    const pinnedTail =
+      pinnedTotal > 0 ? `, pinned ${pinnedTotal} (see \`exosync quarantine list\`)` : "";
     out(
-      `Summary: ${results.length} repo(s) — pulled ${totals.pulled}, pushed ${totals.pushed}, merged ${totals.merged}, quarantined ${totals.quarantined}`,
+      `Summary: ${results.length} repo(s) — pulled ${totals.pulled}, pushed ${totals.pushed}, merged ${totals.merged}, quarantined ${totals.quarantined}${pinnedTail}`,
     );
     // ExoSync Phase 0 (measure-first) — run-total per-phase breakdown so the
     // dominant phase is visible (which optimisation Phase 1 picks).
