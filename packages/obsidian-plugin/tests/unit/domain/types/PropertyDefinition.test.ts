@@ -144,10 +144,15 @@ describe("uriToPropertyName", () => {
       ).toBe("ems__Effort_status");
     });
 
-    it("should extract namespace and property for unknown namespaces", () => {
+    it("should NOT invent a namespace for an unregistered base (#4353)", () => {
+      // ⛔ Issue #4353 CHANGED this expectation, deliberately. The unanchored
+      // regex read ANY host's `…/<lowercase>#<Local>` as a frontmatter key, so a
+      // third-party IRI became `ontology__SomeProperty` — a key that resolves to
+      // nothing. `Namespace.fromTermIRI` resolves only a REGISTERED namespace or
+      // the exocortex ad-hoc convention (see the core twin of this suite).
       expect(
         uriToPropertyName("https://example.org/ontology#SomeProperty"),
-      ).toBe("ontology__SomeProperty");
+      ).toBe("SomeProperty");
     });
 
     it("should handle IRIs with slash separator", () => {

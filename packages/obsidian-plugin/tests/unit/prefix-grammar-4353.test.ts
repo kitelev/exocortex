@@ -181,6 +181,28 @@ describe("prefix grammar #4353 — obsidian-plugin", () => {
       expect(deprecated).toBe(true);
     });
 
+    it("[A35] widening the prefix grammar does NOT turn a W3C datatype into a class", async () => {
+      // The narrow regex filtered non-exocortex IRIs by ACCIDENT; `toClassName`
+      // needs that filter on PURPOSE, because its callers treat the result as a
+      // CLASS. Without it `rdfs:range xsd:string` arrives as the "class"
+      // `xsd__string` and the reference picker filters down to zero notes.
+      const store = mockStore();
+      (store.query as jest.Mock).mockImplementation(async (q: string) =>
+        q.includes(`<${BASE}aiKnow#Memory_source>`)
+          ? [
+              new Map([["range", "http://www.w3.org/2001/XMLSchema#string"]]),
+              new Map([["range", `${BASE}aiKnow#Source`]]),
+            ]
+          : [],
+      );
+
+      const ranges = await new OntologySchemaService(
+        store,
+      ).getPropertyRangeClasses("aiKnow__Memory_source");
+
+      expect(ranges).toEqual(["aiKnow__Source"]);
+    });
+
     it("[A34] labels a hyphenated property from its local name, not its whole key", async () => {
       const store = mockStore();
       (store.query as jest.Mock).mockImplementation(async (q: string) =>

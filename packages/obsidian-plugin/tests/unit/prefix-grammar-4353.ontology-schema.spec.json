@@ -34,12 +34,20 @@
     },
     "M3_to_class_name_narrow": {
       "_note": "Pre-fix toClassName: returns null, so such an ancestor / range class is dropped silently.",
-      "from": "  private toClassName(iri: string): string | null {\n    const term = Namespace.fromTermIRI(iri);\n    if (term) {\n      return `${term.namespace.prefix}__${term.localName}`;\n    }\n    return null;\n  }",
-      "to": "  private toClassName(iri: string): string | null {\n    const m = iri.match(\n      /https:\\/\\/exocortex\\.my\\/ontology\\/([a-z]+)#(.+)$/,\n    );\n    if (m) {\n      return `${m[1]}__${m[2]}`;\n    }\n    return null;\n  }",
+      "from": "    const term = Namespace.fromTermIRI(iri);\n    if (\n      term &&\n      term.namespace.iri.value.startsWith(Namespace.EXOCORTEX_ONTOLOGY_BASE)\n    ) {\n      return `${term.namespace.prefix}__${term.localName}`;\n    }\n    return null;",
+      "to": "    const m = iri.match(\n      /https:\\/\\/exocortex\\.my\\/ontology\\/([a-z]+)#(.+)$/,\n    );\n    if (m) {\n      return `${m[1]}__${m[2]}`;\n    }\n    return null;",
       "expect": [
         "A30",
         "A31",
         "A32"
+      ]
+    },
+    "M6_class_namespace_restriction_dropped": {
+      "_note": "The guard ADDED by this fix: without the exocortex-base restriction a registered W3C term (`xsd:string`) is returned as a CLASS, and the reference picker's class filter matches nothing.",
+      "from": "    if (\n      term &&\n      term.namespace.iri.value.startsWith(Namespace.EXOCORTEX_ONTOLOGY_BASE)\n    ) {",
+      "to": "    if (term) {",
+      "expect": [
+        "A35"
       ]
     },
     "M4_to_property_name_narrow": {

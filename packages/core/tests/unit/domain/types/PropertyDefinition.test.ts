@@ -45,10 +45,26 @@ describe("PropertyDefinition", () => {
       ).toBe("ems__Effort_status");
     });
 
-    it("should handle full IRI without matching hash pattern (fallback to last hash segment)", () => {
+    it("should NOT invent a prefix for an unregistered namespace (#4353)", () => {
+      // ⛔ Issue #4353 CHANGED this expectation, deliberately. The old regex
+      // `\/([a-z]+)#([A-Za-z0-9_]+)$` had no `^` anchor, so it read ANY host's
+      // `…/<lowercase>#<Local>` as a frontmatter key and produced
+      // `ns__SomeProperty` — a property key that resolves to nothing, exactly the
+      // defect `PropertySchemaResolver`'s migration called out (req `38e3f174`).
+      // `Namespace.fromTermIRI` only resolves a REGISTERED namespace or the
+      // exocortex ad-hoc convention, so an unknown base now falls to the
+      // last-segment fallback below instead of fabricating a namespace.
       expect(
         uriToPropertyName("http://example.org/ns#SomeProperty"),
-      ).toBe("ns__SomeProperty");
+      ).toBe("SomeProperty");
+    });
+
+    it("should still resolve a REGISTERED non-exocortex namespace (#4353)", () => {
+      // The other half of the same change: a W3C vocabulary in KNOWN_NAMESPACES
+      // now round-trips instead of losing its namespace to the fallback.
+      expect(
+        uriToPropertyName("http://www.w3.org/2000/01/rdf-schema#label"),
+      ).toBe("rdfs__label");
     });
 
     it("should handle full IRI with no hash or prefix match (fallback to last slash)", () => {

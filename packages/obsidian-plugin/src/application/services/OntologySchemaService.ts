@@ -366,10 +366,24 @@ export class OntologySchemaService {
    * ⛔ Issue #4353: the `…/ontology/([a-z]+)#(.+)$` copy this replaces returned
    * NULL for a prefix with a capital, a digit or a hyphen, so such an ancestor
    * was dropped from the hierarchy silently.
+   *
+   * ⛔ The restriction to EXOCORTEX-DERIVED namespaces is KEPT, and it is
+   * load-bearing — not a leftover of the narrow regex. The old regex filtered by
+   * accident what this method must filter on purpose: its callers treat the
+   * result as a CLASS (`getPropertyRangeClasses` hands it to the reference
+   * field's class filter), and a registered W3C term is not one. Dropping the
+   * restriction let `rdfs:range xsd:string` through as the "class" `xsd__string`,
+   * which filters the picker down to zero notes, and put `owl__Thing` in the
+   * class hierarchy. Both were caught by this file's own suite.
+   * ⛤ {@link toPropertyName} deliberately does NOT restrict: a property KEY in
+   * `rdfs__`/`owl__` form is real (`RDFVocabularyMapper` emits and reads it).
    */
   private toClassName(iri: string): string | null {
     const term = Namespace.fromTermIRI(iri);
-    if (term) {
+    if (
+      term &&
+      term.namespace.iri.value.startsWith(Namespace.EXOCORTEX_ONTOLOGY_BASE)
+    ) {
       return `${term.namespace.prefix}__${term.localName}`;
     }
     return null;
