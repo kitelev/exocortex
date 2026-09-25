@@ -49,24 +49,32 @@ describe("ConceptCreationService", () => {
       expect(mockVault.createFolder).not.toHaveBeenCalled();
     });
 
-    it("should set broader concept reference", async () => {
+    it("[C1] writes the parent as concept__Concept_genus — NOT the retired ims__ prefix and NOT the deprecated concept__Concept_broader", async () => {
       const parentFile = { basename: "ParentConcept" } as IFile;
 
       await service.createNarrowerConcept(parentFile, "narrow", "def", []);
 
+      // The negative half is load-bearing and must be guarded by «a file was
+      // created» — a bare `not.toContain` is vacuously green when nothing was
+      // written at all (integration-test-revert-verify §A63).
+      expect(mockVault.create).toHaveBeenCalledTimes(1);
       const content = mockVault.create.mock.calls[0][1];
-      expect(content).toContain("ims__Concept_broader");
+      expect(content).toContain("concept__Concept_genus");
       expect(content).toContain("[[ParentConcept]]");
+      expect(content).not.toContain("ims__Concept_broader");
+      expect(content).not.toContain("concept__Concept_broader");
     });
 
-    it("should include definition", async () => {
+    it("[C2] writes the definition under the live concept__ namespace, not the retired ims__ one", async () => {
       const parentFile = { basename: "Parent" } as IFile;
 
       await service.createNarrowerConcept(parentFile, "narrow", "My definition text", []);
 
+      expect(mockVault.create).toHaveBeenCalledTimes(1);
       const content = mockVault.create.mock.calls[0][1];
-      expect(content).toContain("ims__Concept_definition");
+      expect(content).toContain("concept__Concept_definition");
       expect(content).toContain("My definition text");
+      expect(content).not.toContain("ims__Concept_definition");
     });
 
     it("should include aliases when provided", async () => {
@@ -107,14 +115,18 @@ describe("ConceptCreationService", () => {
       expect(filePath).not.toContain(".md.md");
     });
 
-    it("should include ims__Concept instance class", async () => {
+    it("[C3] types the created asset as the live concept__Concept class — a retired-namespace class resolves to nothing, so SHACL and the command resolver would both skip the asset", async () => {
       const parentFile = { basename: "Parent" } as IFile;
 
       await service.createNarrowerConcept(parentFile, "narrow", "def", []);
 
+      expect(mockVault.create).toHaveBeenCalledTimes(1);
       const content = mockVault.create.mock.calls[0][1];
       expect(content).toContain("exo__Instance_class");
-      expect(content).toContain("ims__Concept");
+      expect(content).toContain("concept__Concept");
+      // Substring-safe: «concept__Concept» is a prefix of «concept__Concept_genus»,
+      // so assert the retired form is absent rather than counting occurrences.
+      expect(content).not.toContain("ims__Concept");
     });
   });
 });

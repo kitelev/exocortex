@@ -1,0 +1,43 @@
+{
+  "_doc": "Revert-verify mutants for ticket 45895b5f — ConceptCreationService writes the RETIRED `ims__` namespace. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). The negative half of each axis is what these mutants exist for: an axis asserting only the presence of the new key stays green when the OLD key is written alongside it. M2 is the one the ticket calls out explicitly — `concept__Concept_broader` is an `exo__DeprecatedProperty` (useInstead → `concept__Concept_genus`, 06d389ff), so writing it would satisfy a naive «is a concept__ key present» assertion while still being wrong. `red_re` anchors on the `● <suite> › <title>` failure header, NOT on the bare `[Cn]` key: jest echoes the SOURCE LINE of a neighbouring `it(...)` in its diff context, so a key-only pattern reports a green axis as red (integration-test-revert-verify §A44/§A104).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/ConceptCreationService.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/services/ConceptCreationService.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_writes_retired_ims_genus_key": {
+      "_note": "Restores the retired `ims__Concept_broader` key (the pre-fix state). MEASURED red set is [C1,C3], not the predicted [C1] alone: C3 asserts the ABSENCE of the substring `ims__Concept`, and `ims__Concept_broader` contains it as a PREFIX. That is a property of the assertion, not a leak between axes — C3's job is precisely to reject the retired namespace in any form, so it fires on every ims__ key the service could write. Written from the measurement (§A97).",
+      "from": "frontmatter[\"concept__Concept_genus\"] = `\"[[${parentConceptName}]]\"`;",
+      "to": "frontmatter[\"ims__Concept_broader\"] = `\"[[${parentConceptName}]]\"`;",
+      "expect": [
+        "C1",
+        "C3"
+      ]
+    },
+    "M2_writes_DEPRECATED_broader_instead_of_genus": {
+      "_note": "Writes `concept__Concept_broader` — the LIVE namespace but a DEPRECATED property. This is the tempting wrong fix, and an axis that only checks for a `concept__` key would stay green. Predicted: C1. MEASURED [C1] alone — and that is the point of this mutant: `concept__Concept_broader` does NOT contain the `ims__Concept` substring, so C3 stays green and C1 is the ONLY axis standing between this wrong fix and a green suite. Had C1 lacked its negative half, this mutant would have shipped undetected.",
+      "from": "frontmatter[\"concept__Concept_genus\"] = `\"[[${parentConceptName}]]\"`;",
+      "to": "frontmatter[\"concept__Concept_broader\"] = `\"[[${parentConceptName}]]\"`;",
+      "expect": [
+        "C1"
+      ]
+    },
+    "M3_writes_retired_ims_definition_key": {
+      "_note": "Restores the retired `ims__Concept_definition` key. MEASURED [C2,C3] for the same substring reason as M1 — `ims__Concept_definition` carries the `ims__Concept` prefix C3 rejects. Written from the measurement (§A97).",
+      "from": "frontmatter[\"concept__Concept_definition\"] = definition;",
+      "to": "frontmatter[\"ims__Concept_definition\"] = definition;",
+      "expect": [
+        "C2",
+        "C3"
+      ]
+    }
+  }
+}

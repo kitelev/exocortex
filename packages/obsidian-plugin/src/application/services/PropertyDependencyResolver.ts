@@ -154,8 +154,12 @@ export class PropertyDependencyResolver {
       LayoutSection.DAILY_TASKS,
     ],
 
-    // ─── ims__Concept_ namespace ────────────────────────────────────────
-    "ims__Concept_broader": [
+    // ─── concept__Concept_ namespace ────────────────────────────────────
+    // `ims__` was retired by the M2-0 re-prefix (2026-06-14). The genus key is
+    // migrated here because `ConceptCreationService` now writes it; the sibling
+    // `ims__Concept_narrower` / `_related` keys below are NOT produced by any
+    // writer in this repo and are migrated separately (ticket 45895b5f §scope).
+    "concept__Concept_genus": [
       LayoutSection.RELATIONS,
     ],
     "ims__Concept_narrower": [

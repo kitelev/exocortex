@@ -57,8 +57,11 @@ export class ConceptCreationService {
     frontmatter["exo__Asset_uid"] = uid;
     frontmatter["exo__Asset_createdAt"] = timestamp;
     frontmatter["exo__Instance_class"] = [`"[[${AssetClass.CONCEPT}]]"`];
-    frontmatter["ims__Concept_broader"] = `"[[${parentConceptName}]]"`;
-    frontmatter["ims__Concept_definition"] = definition;
+    // `concept__Concept_genus`, NOT `concept__Concept_broader`: the latter is an
+    // `exo__DeprecatedProperty` since 2026-07-26 whose `useInstead` names genus first
+    // (06d389ff). Cardinality is Single, so this is a scalar wikilink, not a list.
+    frontmatter["concept__Concept_genus"] = `"[[${parentConceptName}]]"`;
+    frontmatter["concept__Concept_definition"] = definition;
 
     if (aliases.length > 0) {
       frontmatter["aliases"] = aliases;

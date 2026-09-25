@@ -1,0 +1,26 @@
+{
+  "_doc": "Revert-verify mutant for ticket 45895b5f — the CLASS half. `AssetClass.CONCEPT` named `ims__Concept`, a class in a namespace retired by the M2-0 re-prefix (2026-06-14), so every asset the service created was typed by a class that resolves to nothing: SHACL cannot validate it and the command resolver cannot see it. This is why the ticket's DoD item 4 («the created asset passes validate schema + audit co-location») was unreachable before the class was migrated. The harness runs BOTH suites because the constant is pinned in one and consumed in the other. `red_re` anchors on the `● <suite> › <title>` failure header, NOT on the bare `[Cn]` key: jest echoes the SOURCE LINE of a neighbouring `it(...)` in its diff context, so a key-only pattern reports a green axis as red (integration-test-revert-verify §A44/§A104).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/domain/constants/AssetClass.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../../packages/core\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/domain/constants/AssetClass.test.ts tests/unit/services/ConceptCreationService.test.ts --verbose 2>&1",
+  "mutants": {
+    "M4_class_back_to_retired_namespace": {
+      "_note": "Restores `ims__Concept` as the instance class. Predicted: C3 (the service's typing axis) and C4 (the constant's own pin).",
+      "from": "  CONCEPT = \"concept__Concept\",",
+      "to": "  CONCEPT = \"ims__Concept\",",
+      "expect": [
+        "C3",
+        "C4"
+      ]
+    }
+  }
+}
