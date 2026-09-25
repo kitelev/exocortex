@@ -158,7 +158,9 @@ export class PropertyDependencyResolver {
     // `ims__` was retired by the M2-0 re-prefix (2026-06-14). The genus key is
     // migrated here because `ConceptCreationService` now writes it; the sibling
     // `ims__Concept_narrower` / `_related` keys below are NOT produced by any
-    // writer in this repo and are migrated separately (ticket 45895b5f §scope).
+    // writer in this repo (verified whole-repo: they appear only here and in this
+    // file's own test), so they re-create nothing; their migration is ticket
+    // b2be319b, not this one.
     "concept__Concept_genus": [
       LayoutSection.RELATIONS,
     ],
