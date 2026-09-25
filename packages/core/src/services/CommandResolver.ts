@@ -623,11 +623,7 @@ export class CommandResolver {
     if (typeTriples.length === 0) return null;
 
     // Load command properties
-    const name =
-      (await this.getLiteralValue(
-        subject,
-        Namespace.EXO.term("Asset_label"),
-      )) ?? "Unknown Command";
+    const name = (await this.readAssetLabel(subject)) ?? "Unknown Command";
     const labelTemplate = await this.getLiteralValue(
       subject,
       Namespace.EXOCMD.term("Command_labelTemplate"),
@@ -959,11 +955,7 @@ export class CommandResolver {
     );
     if (!uid) return null;
 
-    const label =
-      (await this.getLiteralValue(
-        subject,
-        Namespace.EXO.term("Asset_label"),
-      )) ?? "";
+    const label = (await this.readAssetLabel(subject)) ?? "";
 
     // Load command reference
     const commandRef = await this.getLinkedUID(
@@ -1135,11 +1127,7 @@ export class CommandResolver {
     );
     if (!uid) return null;
 
-    const label =
-      (await this.getLiteralValue(
-        subject,
-        Namespace.EXO.term("Asset_label"),
-      )) ?? "";
+    const label = (await this.readAssetLabel(subject)) ?? "";
 
     const variantRaw = await this.getLiteralValue(
       subject,
@@ -1438,11 +1426,7 @@ export class CommandResolver {
       subject,
       Namespace.EXO.term("Asset_uid"),
     );
-    const label =
-      (await this.getLiteralValue(
-        subject,
-        Namespace.EXO.term("Asset_label"),
-      )) ?? "";
+    const label = (await this.readAssetLabel(subject)) ?? "";
 
     // Cycle / over-depth guards (fail-closed). Only combinator subjects recurse,
     // but checking here keeps both boundaries in one place. At the top level
@@ -1756,11 +1740,7 @@ export class CommandResolver {
     );
     if (!uid) return null;
 
-    const label =
-      (await this.getLiteralValue(
-        subject,
-        Namespace.EXO.term("Asset_label"),
-      )) ?? "";
+    const label = (await this.readAssetLabel(subject)) ?? "";
     const type = await this.resolveGroundingTypeReference(subject);
     if (!type) return null;
 
@@ -3382,8 +3362,10 @@ export class CommandResolver {
 
   /**
    * An asset's `exo__Asset_label`, read as a NODE — a term IRI folded to its
-   * key form, a Literal as written. The one fold point for
-   * {@link resolveLabelByUID} and the ancestor walk's seed label.
+   * key form, a Literal as written. The one fold point for EVERY
+   * `exo__Asset_label` read in this class: {@link resolveLabelByUID}, the
+   * ancestor walk's seed label, the command / binding / style / precondition /
+   * grounding loaders and the wikilink alias (#4367).
    *
    * ⛔ A label that parses as `prefix__LocalName` — which nearly every class and
    * property definition's label does (`ems__Effort_area`) — is emitted by the
@@ -3774,10 +3756,7 @@ export class CommandResolver {
     const assetSubject = await this.findSubjectByUID(uuid);
     if (!assetSubject) return value;
 
-    const label = await this.getLiteralValue(
-      assetSubject,
-      Namespace.EXO.term("Asset_label"),
-    );
+    const label = await this.readAssetLabel(assetSubject);
     if (!label) return value;
 
     return value.replace(`[[${uuid}]]`, `[[${uuid}|${label}]]`);
