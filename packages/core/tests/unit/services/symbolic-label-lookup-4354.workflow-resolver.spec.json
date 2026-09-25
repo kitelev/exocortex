@@ -1,0 +1,22 @@
+{
+  "_doc": "Revert-verify mutant for issue #4354 — WorkflowResolver routes its label lookup through the shared helper. The mutant bypasses the helper for prefix__Local labels in WorkflowResolver only; the CommandResolver axes must stay green. `red_re` anchors on the `● <suite> › [Xn]` failure header, not on a bare key: jest echoes neighbouring `it(...)` source lines in its diff context (integration-test-revert-verify §A44/§A104).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/WorkflowResolver.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/services/symbolic-label-lookup-4354.test.ts --verbose 2>&1",
+  "mutants": {
+    "M4_workflow_resolver_bypasses_helper": {
+      "from": "    return findUidByAssetLabel(this.tripleStore, label);",
+      "to": "    return label.includes(\"__\") ? null : findUidByAssetLabel(this.tripleStore, label);",
+      "expect": ["W1", "W2"]
+    }
+  }
+}
