@@ -13,21 +13,21 @@
       "expect": ["A1", "A2", "A3"]
     },
     "M2_never_stores": {
-      "_note": "Kills the WRITE half: nothing is ever cached, so the second read still costs a request. Reds WIDER than the read-half mutant on purpose: with nothing stored the two LRU axes (A10/A11) count entries in an empty store, so they red too. Named rather than narrowed.",
+      "_note": "Kills the WRITE half: nothing is ever cached, so the second read still costs a request. Reds WIDER than the read-half mutant on purpose: with nothing stored the two LRU axes (A10/A11) count entries in an empty store, so they red too. Named rather than narrowed. A25 joins for the same reason: with nothing stored there is nothing to evict.",
       "from": "    const resp = await inner(req);\n    await cache.put(ref, resp);\n    return resp;\n",
       "to": "    const resp = await inner(req);\n    return resp;\n",
-      "expect": ["A1", "A2", "A3", "A10", "A11"]
+      "expect": ["A1", "A2", "A3", "A10", "A11", "A25"]
     },
     "M3_blob_integrity_by_declared_sha_only": {
-      "_note": "Downgrades the blob check to the server's own `sha` field — exactly the weaker check that a tampered `content` with an intact `sha` walks through.",
+      "_note": "Downgrades the blob check to the server's own `sha` field. Reds A22 (a DELIBERATE edit with the digest recomputed) — the case only content addressing can answer. It does NOT red A5 any more, and that is correct: A5 is now a torn write (body changed, digest stale), which the digest layer catches first. Two layers, two axes.",
       "from": "    const recomputed = await gitBlobSha(bytes, this.sha1);\n    if (recomputed !== ref.sha) {\n",
       "to": "    const recomputed = ref.sha;\n    if (recomputed !== ref.sha) {\n",
-      "expect": ["A5"]
+      "expect": ["A22"]
     },
     "M4_corrupt_entry_falls_back_to_network": {
       "_note": "Turns the fail-LOUD corruption path into fail-open. The sync would then silently re-fetch instead of reporting the damaged store.",
-      "from": "    let json: unknown;\n    try {\n      json = JSON.parse(raw);\n    } catch {\n      throw integrityError(ref, \"stored payload is not valid JSON\");\n    }\n",
-      "to": "    let json: unknown;\n    try {\n      json = JSON.parse(raw);\n    } catch {\n      return null;\n    }\n",
+      "from": "    let stored: unknown;\n    try {\n      stored = JSON.parse(raw);\n    } catch {\n      throw integrityError(ref, \"stored payload is not valid JSON\");\n    }\n",
+      "to": "    let stored: unknown;\n    try {\n      stored = JSON.parse(raw);\n    } catch {\n      this.counters.misses += 1;\n      return null;\n    }\n",
       "expect": ["A6"]
     },
     "M5_commit_sha_mismatch_accepted": {
@@ -52,13 +52,13 @@
       "_note": "Removes the ceiling: the store grows without bound. A9 reds alongside A10 because the early return is the SAME statement both the direct-evict axis and the through-transport axis reach.",
       "from": "    if (total <= this.maxBytes) return 0;\n",
       "to": "    if (total >= 0) return 0;\n",
-      "expect": ["A9", "A10"]
+      "expect": ["A9", "A10", "A25"]
     },
     "M9_mutable_refs_become_cacheable": {
-      "_note": "Narrows the allow-list instead of widening it. ⛔ The obvious mutant — adding `refs` — reds NOTHING: `git/refs/heads/main` has an extra path segment, so the shape check refuses it before the type is read (double cover, stated in the source). Removing `blobs` is the reachable mutation of the same guard. A11 (the no-eviction control) reds too: with blobs excluded the store holds two entries instead of three, and that control counts them. Named rather than narrowed.",
+      "_note": "Narrows the allow-list instead of widening it. ⛔ The obvious mutant — adding `refs` — reds NOTHING: `git/refs/heads/main` has an extra path segment, so the shape check refuses it before the type is read (double cover, stated in the source). Removing `blobs` is the reachable mutation of the same guard. A11 (the no-eviction control) reds too: with blobs excluded the store holds two entries instead of three, and that control counts them. Named rather than narrowed. A22 joins: it is a blob axis too, and blobs are what the narrowed list drops.",
       "from": "const IMMUTABLE_TYPES: ReadonlySet<string> = new Set([\n  \"commits\",\n  \"trees\",\n  \"blobs\",\n]);\n",
       "to": "const IMMUTABLE_TYPES: ReadonlySet<string> = new Set([\n  \"commits\",\n  \"trees\",\n]);\n",
-      "expect": ["A2", "A3", "A5", "A11"]
+      "expect": ["A2", "A3", "A5", "A11", "A22"]
     },
     "M10_ref_addressed_reads_admitted": {
       "_note": "Drops the hex-SHA gate, so `git/trees/main` (a MUTABLE read) would be cached — and path traversal would stop being structurally impossible. A13 (the through-transport twin) does NOT red under this single mutation and that is correct: `git/trees/main` would be admitted, but the integrity check then refuses to STORE a payload whose `sha` is not `main`, so the second read still goes out. A13 is held by two guards; A16 pins this one directly.",
@@ -73,16 +73,16 @@
       "expect": ["A14"]
     },
     "M12_query_variant_ignored": {
-      "_note": "Collapses `?recursive=1` and the plain tree into one key — two DIFFERENT payloads under one entry.",
+      "_note": "Collapses `?recursive=1` and the plain tree into one key — two DIFFERENT payloads under one entry. A23 joins because the tree axis keys on the `~recursive=1` suffix.",
       "from": "  const variant = normaliseVariant(parsed.search.replace(/^\\?/, \"\"));\n",
       "to": "  const variant = \"\";\n",
-      "expect": ["A15", "A17"]
+      "expect": ["A15", "A17", "A23"]
     },
     "M13_repo_dropped_from_key": {
       "_note": "Keys by SHA alone, so a private repo's object could be served for a different repository. Reds wide because the key is load-bearing for the fixtures too: A5-A7 tamper with a specific stored key, which no longer exists once the repo is dropped. Named rather than narrowed — a key change IS supposed to be visible.",
       "from": "  const key = `${owner}/${repo}/${type}/${sha}${variant ? `~${variant}` : \"\"}`;\n",
       "to": "  const key = `shared/${type}/${sha}${variant ? `~${variant}` : \"\"}`;\n",
-      "expect": ["A4", "A5", "A6", "A7", "A17", "A18"]
+      "expect": ["A4", "A5", "A6", "A7", "A17", "A18", "A21", "A22", "A23"]
     },
     "M14_segment_class_relaxed": {
       "_note": "Owner/repo become anything at all. A19 drives the forms that SURVIVE `new URL`'s dot-segment normalisation (`..%00`, `..;`, `%252e%252e`) — those are the ones this class actually refuses.",
@@ -91,14 +91,14 @@
       "expect": ["A19"]
     },
     "M15_dot_segment_guard_removed": {
-      "_note": "⛔ Expected to red NOTHING, and that is the POINT: `new URL` normalises `.`/`..` away before any segment is read (A20 measures exactly this), so the guard is DEFENSIVE — it exists for a future parser swap. Kept in the matrix so the next reader sees the zero was measured, not overlooked.",
+      "_note": "⛔ Expected to red NOTHING, and that is the POINT: `new URL` normalises `.`/`..` away before any segment is read (A20 measures exactly this), so the guard is DEFENSIVE — it exists for a future parser swap. Kept in the matrix so the next reader sees the zero was measured, not overlooked. The driver prints ⛔ for any empty red-set; here the empty set IS the expectation (`expect: []`) and it is the measurement A20 documents — read the note, not the marker.",
       "from": "  return SAFE_SEGMENT_RE.test(segment) && !isDotSegment(segment);\n",
       "to": "  return SAFE_SEGMENT_RE.test(segment);\n",
       "expect": []
     },
     "M16_sweep_only_by_per_process_counter": {
       "_note": "Restores the reviewed defect: the LRU sweep gated solely on a per-PROCESS byte counter. Every CLI run builds a fresh cache, so a small delta would never sweep and the device-wide store would grow past its advertised ceiling across runs.",
-      "from": "    if (\n      !this.sweptOnce ||\n      this.writtenSinceSweep >= this.sweepIntervalBytes\n    ) {\n      this.sweptOnce = true;\n",
+      "from": "    if (!this.sweptOnce || this.writtenSinceSweep >= this.sweepIntervalBytes) {\n      this.sweptOnce = true;\n",
       "to": "    if (this.writtenSinceSweep >= this.sweepIntervalBytes) {\n      this.sweptOnce = true;\n",
       "expect": ["A25"]
     },

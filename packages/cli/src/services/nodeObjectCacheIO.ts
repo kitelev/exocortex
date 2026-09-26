@@ -64,18 +64,35 @@ function pathToKey(root: string, filePath: string): string | null {
   return rel.slice(0, -".json".length).split(path.sep).join("/");
 }
 
+/**
+ * Depth-first walk yielding file paths.
+ *
+ * ⛔ Deliberately NOT `readdir(..., { withFileTypes: true })`: `packages/cli`
+ * resolves its own `@types/node`, where `Dirent` is generic over the name type
+ * and the inferred `Dirent<string>[]` does not assign to the declared
+ * `Dirent<NonSharedBuffer>[]`. The root `check:types` cannot see it (the CLI is
+ * excluded from the root tsconfig and built with esbuild), so `check-cli-types`
+ * in CI is what catches it. Names + `stat` are portable across both type trees,
+ * and this walk already needs the `stat` for `size`/`mtimeMs` anyway.
+ */
 async function* walk(dir: string): AsyncGenerator<string> {
-  let names: Awaited<ReturnType<typeof fsp.readdir>>;
+  let names: string[];
   try {
-    names = await fsp.readdir(dir, { withFileTypes: true });
+    names = await fsp.readdir(dir);
   } catch {
     return;
   }
-  for (const entry of names) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
+  for (const name of names) {
+    const full = path.join(dir, name);
+    let isDir: boolean;
+    try {
+      isDir = (await fsp.stat(full)).isDirectory();
+    } catch {
+      continue;
+    }
+    if (isDir) {
       yield* walk(full);
-    } else if (entry.isFile()) {
+    } else {
       yield full;
     }
   }
