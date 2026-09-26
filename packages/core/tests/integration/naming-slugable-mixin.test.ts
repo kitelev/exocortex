@@ -9,8 +9,9 @@
  * branch (`valueToRDFObject` → UUID lookup → label → symbolic `.../ontology/exo#<Local>`).
  * The `exo__Class`/`exo__Property` → `exo__Slugable` metaclass-level mixin is thus emitted
  * with the real dual-IRI seam (file-IRI subject ← rdfs:subClassOf → symbolic-IRI object).
- * The subsumption is then resolved by the real {@link ClassHierarchy} (the same BFS
- * `audit ontology-membership` uses).
+ * The subsumption is then resolved by this file's own `isSubClassOf` oracle (see its docblock):
+ * a local, test-only BFS that deliberately mirrors the semantics of the `services/ClassHierarchy`
+ * this test used to borrow before that dead class was removed in #4377.
  *
  * Revert-verify axis = the mixin edge itself (a fixture WITHOUT the
  * `exo__Class → exo__Slugable` superClass link): with the mixin the subsumption
@@ -209,13 +210,33 @@ describe("exo naming-capability TBox layer — exo__Slugable metaclass mixin (@r
     const subs = subclassAlgebraTriples(triples);
     expect(edge(subs, CLASS, "Slugable")).toBeNull();
 
-    // …and not reachable transitively either. This second assertion is what keeps the local
-    // `isSubClassOf` oracle (#4377) from being vacuous: the two positive cases above would pass
-    // against an oracle hard-coded to `true`, so without a negative one the helper proves nothing.
+    // …and not reachable transitively either. This is what keeps the local `isSubClassOf` oracle
+    // (#4377) from being vacuous: the positive cases above would pass against an oracle hard-coded
+    // to `true`, so without a negative one the helper proves nothing.
+    //
+    // ⛔ The target MUST be the SYMBOLIC IRI of exo__Slugable, not its file IRI. In this dual-IRI
+    // graph every rdfs:subClassOf object is symbolic and every subject is a file IRI, so a file-IRI
+    // target is unreachable BY CONSTRUCTION — asserting `false` against it holds with the mixin and
+    // without it, i.e. it is false for a reason that has nothing to do with the mixin. (That was
+    // the shape of this assertion when the PR was first pushed; review caught it.) So the symbolic
+    // form is DERIVED from a with-mixin build rather than hardcoded, and the pair below is asserted
+    // on the SAME target: `true` there, `false` here — the only difference between the two graphs
+    // is the mixin edge.
+    const withMixin = subclassAlgebraTriples(
+      await convertNotes([
+        classNote(SLUGABLE, "exo__Slugable", [ASSET]),
+        classNote(CLASS, "exo__Class", [ASSET, SLUGABLE]),
+        classNote(ASSET, "exo__Asset", []),
+      ]),
+    );
+    const slugableIri = edge(withMixin, CLASS, "Slugable")!.parent;
+
+    const classWith = edge(withMixin, CLASS, "Asset");
+    expect(classWith).not.toBeNull();
+    expect(isSubClassOf(withMixin, classWith!.child, slugableIri)).toBe(true);
+
     const classEdge = edge(subs, CLASS, "Asset");
     expect(classEdge).not.toBeNull();
-    const slugableEdge = edge(subs, SLUGABLE, "Asset");
-    expect(slugableEdge).not.toBeNull();
-    expect(isSubClassOf(subs, classEdge!.child, slugableEdge!.child)).toBe(false);
+    expect(isSubClassOf(subs, classEdge!.child, slugableIri)).toBe(false);
   });
 });

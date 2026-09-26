@@ -588,7 +588,7 @@ subdirectories. Main clusters:
 | **Vault-driven command machinery** | `CommandResolver`, `PreconditionEvaluator`, `GroundingExecutor`, `CommandExecutionFlow`, `WorkflowEngine`/`WorkflowResolver`                                        |
 | **Asset creation**                 | `GenericAssetCreationService`, `AreaCreationService`, `ClassCreationService`, `ConceptCreationService`, `SupervisionCreationService`, `DynamicFrontmatterGenerator` |
 | **Status & effort lifecycle**      | `EffortStatusWorkflow`, `TaskStatusService`, `StatusTimestampService`, `EffortVotingService`, `PlanningService`, `SessionEventService`                              |
-| **RDF & schema resolution**        | `NoteToRDFConverter`, `PrototypeChainMaterializer`, `PropertySchemaResolver`, `InstantiationRuleResolver`, `IRICanonicalizer`, `SourceAnnotator`, `ClassHierarchy`  |
+| **RDF & schema resolution**        | `NoteToRDFConverter`, `PrototypeChainMaterializer`, `PropertySchemaResolver`, `InstantiationRuleResolver`, `IRICanonicalizer`, `SourceAnnotator`                    |
 | **Validation (SHACL-lite)**        | `ShaclLiteValidator`, `ShapeLoader`, `ShapeRegistry`, `ValidatorDaemon`                                                                                             |
 | **Maintenance & repair**           | `FolderRepairService`, `PropertyCleanupService`, `RenameToUidService`, `FixMissingLabelService`, `ArchiveAssetService`                                              |
 | **Profiles & AssetSpaces**         | `services/profile/`, `services/assetspace/` (see [Profiles & AssetSpace Mounting](#profiles--assetspace-mounting))                                                  |
