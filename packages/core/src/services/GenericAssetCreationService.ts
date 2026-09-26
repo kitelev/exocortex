@@ -548,14 +548,32 @@ export class GenericAssetCreationService {
       return config.parentFile.parent.path;
     }
 
-    // Map class names to default folders
+    // Map class names to default folders.
+    //
+    // ⛔ #4365 — the `ims__Concept: "concepts"` entry was REMOVED, not renamed
+    // to the live `concept__Concept`, and that is the whole point:
+    //
+    //  - the key was dead. `ims__` is the retired namespace; the live class is
+    //    `concept__Concept`, so nothing could match it. Measured 2026-09-26
+    //    across all three canonical vaults: 0 assets typed `ims__Concept`,
+    //    canary `concept__Concept` = 3192. A dead key is worse than no key —
+    //    it reads as working and invites a one-word "fix".
+    //  - that one-word fix would reintroduce #4357. Concepts do not live in one
+    //    folder: real ones sit in `exoas-concept/concept`, `exoas-public/concept`
+    //    and `exoas-shared-private/concepts{,-private}`. Hardcoding "concepts"
+    //    here would send them to a root folder that is correct for none of them.
+    //
+    // This map is only reached when the parent gives no folder (the branch
+    // above), i.e. when there IS no parent or it sits at the vault root — the
+    // one situation where no folder is the right answer for a concept either.
+    // Resolving from the anchor the way `ConceptCreationService` now does is
+    // the real fix and belongs where the caller knows the anchor, not here.
     const classFolderMap: Record<string, string> = {
       ems__Task: "tasks",
       ems__Project: "projects",
       ems__Area: "areas",
       ems__Meeting: "meetings",
       exo__Event: "events",
-      ims__Concept: "concepts",
     };
 
     // Check for exact match
