@@ -1651,3 +1651,159 @@ describe('validate — a datatype range entry does not constrain IRI nodes (Issu
     expect(report.violations[0].constraint).toBe('datatype');
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Suite: #4376 — sh:domain applicability is a function of the CLASS SET
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// `if (!appliesToSubject) continue;` was the only consequence of the domain test, and the test
+// itself reads nothing but the subject's classes — so thousands of subjects sharing a handful of
+// class combinations were re-asking the same (class-set × shape × domain) question. Measured on
+// vault-my: 19 471 focus subjects, 533 shapes, **313** distinct class sets, and `isSubClassOf`
+// call count 14 219 637 → 1 085 955.
+
+describe('#4376 shape applicability is computed per class set, not per subject', () => {
+  /** Registry that records how often the shape list is materialised. */
+  function countingRegistry(shapes: Shape[]) {
+    const registry = makeRegistry(shapes);
+    let materialisations = 0;
+    const real = registry.getAllShapes.bind(registry);
+    registry.getAllShapes = () => {
+      materialisations += 1;
+      return real();
+    };
+    return { registry, materialisations: () => materialisations };
+  }
+
+  /** Hierarchy that records every (child, parent) pair it is asked about. */
+  function countingHierarchy(subclassOf: Record<string, string[]> = {}) {
+    const inner = makeHierarchy(subclassOf);
+    const asked: Array<[string, string]> = [];
+    const hierarchy: ClassHierarchy = {
+      isSubClassOf(child: string, parent: string): boolean {
+        asked.push([child, parent]);
+        return inner.isSubClassOf(child, parent);
+      },
+    };
+    return { hierarchy, asked };
+  }
+
+  it('S1 materialises the shape list ONCE per run, not once per focus subject', () => {
+    const shape = makeShape({ propertyIRI: `${EMS}Effort_status`, minCount: 1 });
+    const triples: Triple[] = [];
+    for (let i = 0; i < 25; i += 1) triples.push(typeTriple(`node:S${i}`, `${EMS}Effort`));
+
+    const { registry, materialisations } = countingRegistry([shape]);
+    validate(triples, registry, flatHierarchy);
+
+    expect(materialisations()).toBe(1);
+  });
+
+  it('S2 asks the hierarchy ONCE for a class set, however many subjects share it', () => {
+    // The domain is deliberately a class the subjects are NOT, so `sc === domainClass` cannot
+    // short-circuit and the hierarchy really is consulted — an axis built on a matching domain
+    // would be green whether or not the cache exists.
+    const shape = makeShape({ propertyIRI: `${EMS}Effort_status`, domain: [`${EMS}Task`] });
+    const triples: Triple[] = [];
+    for (let i = 0; i < 20; i += 1) triples.push(typeTriple(`node:S${i}`, `${EMS}Effort`));
+
+    const { hierarchy, asked } = countingHierarchy();
+    validate(triples, makeRegistry([shape]), hierarchy);
+
+    expect(asked).toEqual([[`${EMS}Effort`, `${EMS}Task`]]);
+  });
+
+  it('S3 keeps a DIFFERENT class set from inheriting the previous set’s verdict', () => {
+    const shape = makeShape({
+      propertyIRI: `${EMS}Effort_status`,
+      domain: [`${EMS}Task`],
+      minCount: 1,
+    });
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`), // not a Task → shape must NOT apply
+      typeTriple('node:B', `${EMS}Task`), // is a Task → shape MUST apply → minCount
+    ];
+
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+
+    expect(report.violations.map((v) => v.focusNode)).toEqual(['node:B']);
+  });
+
+  it('S4 treats the same classes in a different ORDER (and a duplicate) as ONE class set', () => {
+    const shape = makeShape({ propertyIRI: `${EMS}Effort_status`, domain: [`${EMS}Task`] });
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      typeTriple('node:A', `${EMS}Note`),
+      typeTriple('node:B', `${EMS}Note`), // same set, reversed
+      typeTriple('node:B', `${EMS}Effort`),
+      typeTriple('node:C', `${EMS}Effort`), // same set, with a duplicate
+      typeTriple('node:C', `${EMS}Note`),
+      typeTriple('node:C', `${EMS}Effort`),
+    ];
+
+    const { hierarchy, asked } = countingHierarchy();
+    validate(triples, makeRegistry([shape]), hierarchy);
+
+    // One computation for {Effort, Note} — two classes against one domain entry. A key that
+    // preserved order or duplicates would split this into three entries and ask seven times.
+    expect(asked).toEqual([
+      [`${EMS}Effort`, `${EMS}Task`],
+      [`${EMS}Note`, `${EMS}Task`],
+    ]);
+  });
+
+  it('S5 applies ONLY domain-less shapes to a subject with no resolvable class', () => {
+    const domainless = makeShape({ propertyIRI: `${EMS}Effort_label`, domain: [], minCount: 1 });
+    const domained = makeShape({
+      propertyIRI: `${EMS}Effort_status`,
+      domain: [`${EMS}Task`],
+      minCount: 1,
+    });
+    // Carries a property but no type triple, so its class set is empty.
+    const triples = [litTriple('node:A', `${EMS}Effort_note`, 'x')];
+
+    const report = validate(triples, makeRegistry([domainless, domained]), flatHierarchy);
+
+    expect(report.violations.map((v) => v.propertyPath)).toEqual([`${EMS}Effort_label`]);
+  });
+
+  it('S7 does not let two class sets collide into one cache entry', () => {
+    // The concrete collision the round-1 review surfaced. An earlier revision keyed the cache as
+    // `sorted.join('\u0000')` and justified it with "an IRI cannot contain NUL — the RDF term
+    // grammar guarantees it". That guarantee does not exist in this codebase: `IRI.isValidIRI`
+    // accepts an embedded U+0000 and `Namespace.PROPERTY_KEY_RE` captures the local name with `.`.
+    // Under a separator key these two sets produce the SAME string:
+    //   {"urn:p\u0000urn:q"}        → "urn:p\u0000urn:q"
+    //   {"urn:p", "urn:q"} sorted    → "urn:p\u0000urn:q"
+    // Length-prefixing makes the key injective for any array of strings, so the question stops
+    // being about what today's writers happen to emit.
+    const P = 'urn:p';
+    const Q = 'urn:q';
+    const PQ = `${P}\u0000${Q}`;
+
+    const shape = makeShape({ propertyIRI: `${EMS}Effort_status`, domain: [Q], minCount: 1 });
+    const triples = [
+      typeTriple('node:A', PQ), // one exotic class — NOT urn:q, so the shape must not apply
+      typeTriple('node:B', P), // two ordinary classes, one of which IS urn:q
+      typeTriple('node:B', Q),
+    ];
+
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+
+    expect(report.violations.map((v) => v.focusNode)).toEqual(['node:B']);
+  });
+
+  it('S6 still matches a subject whose class is a SUBCLASS of the shape domain', () => {
+    const shape = makeShape({
+      propertyIRI: `${EMS}Effort_status`,
+      domain: [`${EMS}Effort`],
+      minCount: 1,
+    });
+    const hierarchy = makeHierarchy({ [`${EMS}Task`]: [`${EMS}Effort`] });
+    const triples = [typeTriple('node:A', `${EMS}Task`)];
+
+    const report = validate(triples, makeRegistry([shape]), hierarchy);
+
+    expect(report.violations.map((v) => v.focusNode)).toEqual(['node:A']);
+  });
+});
