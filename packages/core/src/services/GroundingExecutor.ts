@@ -3674,6 +3674,14 @@ export class GroundingExecutor {
    * - `from` is not among the current values. ⛔ This refusal is load-bearing:
    *   without it the type degenerates into `property_append` on every miss and
    *   silently produces the contradictory two-value state it exists to prevent.
+   * - `from` or `to` RESOLVES to an empty string (#4314). The three guards above
+   *   reject an ABSENT expression and say nothing about one that resolves to
+   *   nothing: an empty `from` matches any empty list element and would rewrite
+   *   an element the author never named, an empty `to` would write one.
+   *   ⚠ Known narrow cost: `$targetFolder` legitimately resolves to "" for an
+   *   asset at the vault root, so such a grounding is refused too. No authored
+   *   grounding uses that combination today, and `property_delete` covers
+   *   intentional removal, so refusing loudly is the safer trade.
    *
    * Comparison is on DECODED forms (as in `executePropertyAppend`): `existing`
    * holds the raw on-disk items, so a stored `"Say \"hi\""` matches a plain
@@ -3733,6 +3741,21 @@ export class GroundingExecutor {
 
     const fromPlain = plainOf(grounding.replaceFromExpression);
     const toPlain = plainOf(grounding.replaceToExpression);
+
+    // #4314 secondary item — the three guards above reject an ABSENT expression
+    // but not one that RESOLVES to nothing. An empty `from` then matches any
+    // empty list element (`- ""`, or a bare `- ` whose capture trims to ""), so
+    // a substitution that silently produced nothing would rewrite an unrelated
+    // element; an empty `to` would write one. Refusing keeps this method's four
+    // guards consistent: it never guesses which element the author meant.
+    if (fromPlain === "" || toPlain === "") {
+      return {
+        success: false,
+        error:
+          `property_replace: ${fromPlain === "" ? "replaceFromExpression" : "replaceToExpression"} ` +
+          `resolved to an empty value — refusing rather than matching an empty list element`,
+      };
+    }
 
     const fromIndex = existing.findIndex(
       (item) => decodeYamlSequenceItem(item) === fromPlain,
