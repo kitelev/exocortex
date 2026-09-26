@@ -9,7 +9,11 @@
  */
 
 import { loadDefaultSpec, orderProperties } from "../services/OrderSpecResolver";
-import { serializeYamlScalar, STRING_SCALAR_PROPERTIES } from "./yamlScalar";
+import {
+  serializeYamlScalar,
+  STRING_SCALAR_PROPERTIES,
+  YAML_BLOCK_SCALAR_HEADER,
+} from "./yamlScalar";
 import { canonicalYamlKey, LEGACY_YAML_KEYS } from "../services/NoteToRDFConverter";
 import type { IFrontmatter } from "../interfaces/IVaultAdapter";
 import { iriToObsidianName } from "./iriToObsidianName";
@@ -104,8 +108,7 @@ export class FrontmatterService {
    * line — `#` included, because inside a block scalar `#` is literal text — is
    * its BODY, not a comment and not a new node.
    */
-  private static readonly BLOCK_SCALAR_HEADER =
-    /^[|>](?:[1-9][-+]?|[-+][1-9]?)?$/;
+  private static readonly BLOCK_SCALAR_HEADER = YAML_BLOCK_SCALAR_HEADER;
 
   /**
    * Split the BODY of a flow-style YAML sequence (`a, "b, c"`) into its items,
@@ -190,6 +193,11 @@ export class FrontmatterService {
    * comment lines — 30 before the first item, 46 between items) and 2 carry a
    * nested map, i.e. the loss was live, not hypothetical.
    *
+   * ⛔ A top-level block scalar (`key: |-` + indented body) is read as its RAW
+   * text, header and body together (issue #4379 — 106 live carrier keys in
+   * 103 files, 84 of them `exocmd__Precondition_sparqlAsk`); decode it with
+   * `decodeYamlQuotedScalar` / `decodeYamlBlockScalar` where the VALUE is needed.
+   *
    * NOTE: still deliberately minimal — a nested map or a block-scalar body is
    * carried as opaque text, not structured; quoted-key edge cases are not
    * covered. This stays a lightweight line parser rather than pulling a full
@@ -208,6 +216,9 @@ export class FrontmatterService {
     // `findPropertyLineSpan`, which decides the same ownership on WRITE — the
     // two halves of this service disagreeing is what #4314 is about.
     let pendingBlanks: string[] = [];
+    // The top-level key whose value is a block-scalar header (`key: |-`) and
+    // whose indented body is still being read (issue #4379).
+    let scalarBodyKey: string | null = null;
 
     const flushArray = (): void => {
       if (currentKey !== null && currentArray !== null) {
@@ -219,6 +230,32 @@ export class FrontmatterService {
     };
 
     for (const line of lines) {
+      // Issue #4379 — the BODY of a top-level block scalar. Checked FIRST: a
+      // body line is literal text even when it looks like a list item
+      // (`  - …`) or a comment (`  # …`) — both shapes are live (a concept
+      // definition written as dashed lines, a validator rule's code comment).
+      // Ownership mirrors `findPropertyLineSpan`: every indented line, and a
+      // blank line only when an indented line follows it. One difference: a
+      // TRAILING whitespace-only line is owned by the write span but not read
+      // here — `updateProperty` drops it, the YAML value is the same.
+      if (scalarBodyKey !== null) {
+        if (line.trim() === "") {
+          pendingBlanks.push(line);
+          continue;
+        }
+        if (/^[ \t]/.test(line)) {
+          result[scalarBodyKey] = [
+            result[scalarBodyKey] as string,
+            ...pendingBlanks,
+            line,
+          ].join("\n");
+          pendingBlanks = [];
+          continue;
+        }
+        scalarBodyKey = null;
+        pendingBlanks = [];
+      }
+
       const arrayItem = FrontmatterService.ARRAY_ITEM_LINE.exec(line);
       if (arrayItem) {
         if (currentKey !== null && currentArray !== null) {
@@ -280,6 +317,18 @@ export class FrontmatterService {
       if (value === "") {
         currentKey = key;
         currentArray = [];
+        continue;
+      }
+
+      // A block-scalar header: the value is the RAW text — header plus the
+      // indented body read above (`|-\n  first\n  second`). Raw, not decoded,
+      // for the same reason as list items: writers put back what they read.
+      // Before issue #4379 the value was the bare header and the body was
+      // skipped, so every reader saw `|-` and `property_append` wrote a list
+      // whose first item had lost its text.
+      if (FrontmatterService.BLOCK_SCALAR_HEADER.test(value)) {
+        result[key] = value;
+        scalarBodyKey = key;
         continue;
       }
 

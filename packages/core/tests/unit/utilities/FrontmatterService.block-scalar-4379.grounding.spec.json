@@ -1,0 +1,47 @@
+{
+  "_doc": "Revert-verify mutants for issue #4379 — a top-level block scalar read as its RAW text, and the consumers of that read. Mutants are type-preserving (an impossible-but-valid condition / `x || f(x)` keeping the import used), never `if (false)` (integration-test-revert-verify §A36). `red_re` anchors on the `● <suite> › [Xn]` header (§A44/§A104). Subject: GroundingExecutor.ts.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/utilities/FrontmatterService.block-scalar-4379.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/GroundingExecutor.ts",
+  "mutants": {
+    "M9_append_writes_raw": {
+      "_note": "`property_append` turns the scalar into a list item verbatim (the regression the read fix alone would introduce).",
+      "from": "        ? [blockScalarAsSequenceItem(String(existingRaw))]",
+      "to": "        ? [String(existingRaw) || blockScalarAsSequenceItem(\"\")]",
+      "expect": ["W1", "W2"]
+    },
+    "M10_inheritance_copies_raw": {
+      "_note": "InheritanceRule copies the raw text; the new asset's writer quotes header and indentation into the value.",
+      "from": "    return decodeYamlBlockScalar(value, asSequenceItem);\n  }",
+      "to": "    return value || decodeYamlBlockScalar(value, asSequenceItem);\n  }",
+      "expect": ["I1"]
+    },
+    "M15_append_dedup_raw_blocks": {
+      "_note": "property_append compares block-scalar list items by their RAW text again — the item's text is appended a second time (review MEDIUM-1).",
+      "from": "    const seen = new Set(existing.map(decodeYamlSequenceItem));",
+      "to": "    const seen = new Set(existing.map((x) => (/^[|>]/.test(x) ? x : decodeYamlSequenceItem(x))));",
+      "expect": ["W3"]
+    },
+    "M16_replace_from_raw_blocks": {
+      "_note": "property_replace matches `from` against the RAW text of block-scalar items — refuses a value that is on disk (review MEDIUM-1).",
+      "from": "      (item) => decodeYamlSequenceItem(item) === fromPlain,",
+      "to": "      (item) => (/^[|>]/.test(item) ? item : decodeYamlSequenceItem(item)) === fromPlain,",
+      "expect": ["R1"]
+    },
+    "M17_replace_to_raw_blocks": {
+      "_note": "property_replace does not see `to` already present as a block-scalar item — writes a duplicate (review MEDIUM-1).",
+      "from": "      (item, i) => i !== fromIndex && decodeYamlSequenceItem(item) === toPlain,",
+      "to": "      (item, i) => i !== fromIndex && (/^[|>]/.test(item) ? item : decodeYamlSequenceItem(item)) === toPlain,",
+      "expect": ["R2"]
+    }
+  }
+}

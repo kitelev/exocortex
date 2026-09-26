@@ -17,6 +17,7 @@
  */
 
 import { DateFormatter } from "../utilities/DateFormatter";
+import { decodeYamlBlockScalar } from "../utilities/yamlScalar";
 
 /**
  * Runtime context made available to resolver functions. Optional fields permit
@@ -489,8 +490,12 @@ export function installDefaultResolvers(): void {
     if (!parameter || !ctx.targetFm) return null;
     const v = ctx.targetFm[parameter];
     if (v === undefined || v === null) return null;
-    if (Array.isArray(v)) return v.map(String);
-    return String(v);
+    // `targetFm` is `parseObject`'s RAW text; a block scalar (`|-\n  body`)
+    // is decoded to its VALUE here, because the default is written into a new
+    // asset by a serializer that quotes what it is given (issue #4379).
+    if (Array.isArray(v))
+      return v.map((item) => decodeYamlBlockScalar(String(item), true));
+    return decodeYamlBlockScalar(String(v));
   });
 
   // req c03f9e3e — per-ontology efforts routing (TWO-HOP dereference).
