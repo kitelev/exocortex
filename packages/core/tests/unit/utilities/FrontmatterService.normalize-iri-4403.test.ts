@@ -39,10 +39,13 @@ describe("FrontmatterService.normalizeIRI — term IRIs only (issue #4403)", () 
   const fm = new FrontmatterService();
 
   it("[N1] updateProperty keeps a value with `#` and a `/<name>.md` tail byte for byte", () => {
-    // `updateProperty` receives an already-serialised scalar, as its writers
-    // hand it one (`serializeYamlScalar`). Free text with ` #` is quoted there,
-    // so on THIS path it was safe; a `#/` URL stays PLAIN and was rewritten.
-    // The 4 live free-text values were exposed on the object path (N2).
+    // Writers that serialise first (`serializeYamlScalar`) quote free text with
+    // ` #`, so for THEM only a `#/` URL (left plain) was rewritten. ⛔ Not every
+    // writer serialises: `PropertyEditorModal` and an undeclared
+    // `property_set` substitution hand RAW text, which main turned into
+    // `[[<name>]]` too — the branch keeps the bytes (what YAML then reads of an
+    // unquoted ` #` is a separate, pre-existing matter). The 4 live values were
+    // also exposed on the object path (N2).
     for (const value of LIVE_SHAPES) {
       const written = fm.updateProperty(
         "---\nexo__Asset_uid: u1\n---\nBody\n",

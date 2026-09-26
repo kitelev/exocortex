@@ -647,7 +647,8 @@ export class FrontmatterService {
     // was rewritten to the wikilink `[[<name>]]` on every write (4 live
     // `sess__LifecycleEvent_detail` values). The vault-URL shape is not this
     // function's to convert: {@link normalizeIRIValue} handles
-    // `obsidian://vault/…` itself, with an anchored regex, before calling here,
+    // `obsidian://vault/<folder>/…/<name>.md` itself, with an anchored regex
+    // (a file at the vault ROOT is not matched — as before), before calling here,
     // and a KEY of that shape must stay untouched (req `38e3f174` Scenario H).
     const term = Namespace.fromTermIRI(property);
     return term ? `${term.namespace.prefix}__${term.localName}` : property;
