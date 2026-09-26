@@ -829,4 +829,68 @@ describe("GitHubRestClient", () => {
       expect(err.message).toMatch(/HTTP 403/);
     });
   });
+  // ⛔ Новая склейка протокола (req af002ec4, #3975): `restRequest()` адаптирует
+  // `RequestUrlResponse` к core-контракту `RestCommitResponse`. Она обслуживает
+  // И `createCommit`, И `restTransport`, то есть ВЕСЬ мобильный путь ExoSync,
+  // и до этого набора не была покрыта в плагине ничем. Desktop↔Mobile Command
+  // Parity требует, чтобы 304-семантика и регистронезависимые заголовки жили
+  // на обеих платформах одинаково — здесь это и запирается.
+  // @req:af002ec4-ec4e-4482-b7b5-77e79dd332df
+  describe("conditional reads through the plugin transport @req:af002ec4-ec4e-4482-b7b5-77e79dd332df", () => {
+    it("E1 a 304 is a SUCCESS when the caller opted in", async () => {
+      requestUrlMock.mockResolvedValue(ok({ status: 304, headers: { ETag: '"v1"' } }));
+      const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
+      const resp = await c.restTransport()({
+        method: "GET",
+        url: "https://api.github.com/x",
+        headers: { "If-None-Match": '"v1"' },
+        acceptNotModified: true,
+      });
+      expect(resp.status).toBe(304);
+      // Никакого тела у 304 нет и быть не должно — иначе вызывающий примет
+      // пустой успех за содержимое.
+      expect(resp.json).toBeUndefined();
+    });
+
+    it("E2 negative control — a 304 WITHOUT the opt-in still throws", async () => {
+      requestUrlMock.mockResolvedValue(ok({ status: 304, text: "" }));
+      const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
+      await expect(
+        c.restTransport()({ method: "GET", url: "https://api.github.com/x" }),
+      ).rejects.toThrow(/HTTP 304/);
+    });
+
+    it.each([
+      ["lowercase", "etag"],
+      ["Header-Case", "ETag"],
+      ["UPPERCASE", "ETAG"],
+    ])("E3 the response header getter resolves ETag from %s casing", async (_l, key) => {
+      requestUrlMock.mockResolvedValue(ok({ json: { ok: true }, headers: { [key]: '"v7"' } }));
+      const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
+      const resp = await c.restTransport()({
+        method: "GET",
+        url: "https://api.github.com/x",
+      });
+      // Обёртка `requestUrl` отдаёт Record, чей регистр РАЗЛИЧАЕТСЯ между
+      // desktop и iOS; core-контракт требует геттера, а не Record.
+      expect(resp.headers?.("etag")).toBe('"v7"');
+      expect(resp.headers?.("ETag")).toBe('"v7"');
+    });
+
+    it("E4 caller headers reach requestUrl but cannot override Authorization", async () => {
+      requestUrlMock.mockResolvedValue(ok({ json: {} }));
+      const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
+      await c.restTransport()({
+        method: "GET",
+        url: "https://api.github.com/x",
+        headers: {
+          "If-None-Match": '"v1"',
+          Authorization: "Bearer attacker-token",
+        },
+      });
+      const sent = requestUrlMock.mock.calls[0][0].headers as Record<string, string>;
+      expect(sent["If-None-Match"]).toBe('"v1"');
+      expect(sent.Authorization).toBe(`Bearer ${FAKE_PAT}`);
+    });
+  });
 });

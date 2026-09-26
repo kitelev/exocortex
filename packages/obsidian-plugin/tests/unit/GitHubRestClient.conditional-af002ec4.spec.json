@@ -1,0 +1,47 @@
+{
+  "_doc": "Revert-verify for req af002ec4 on the PLUGIN side. `restRequest()` is protocol glue INTRODUCED by this PR and it sits on the live plugin path — both `createCommit` (a WRITE to GitHub) and `restTransport` go through it. New uncovered code on a write path is not debt that can be filed as an issue; it is a hole shipped knowingly. Axes E1-E4 in tests/unit/GitHubRestClient.test.ts.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› (E\\d+)",
+  "harness": "cd \"$(dirname {subject})/../../..\" && node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/GitHubRestClient.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/infrastructure/adapters/GitHubRestClient.ts",
+  "mutants": {
+    "M1_opt_in_never_reaches_the_request": {
+      "_note": "The caller's `acceptNotModified` stops being forwarded, so a 304 throws even for a caller that sent If-None-Match — the conditional path becomes unusable on mobile while every other behaviour stays correct. Type-preserving: the parameter keeps its boolean type.",
+      "from": "    const resp = await this.request(req, req.acceptNotModified === true);\n",
+      "to": "    const resp = await this.request(req, false);\n",
+      "expect": ["E1"]
+    },
+    "M2_304_handed_on_with_a_body": {
+      "_note": "Drops the 304 branch: the response is built like any other, so `json` carries whatever the HTTP layer left there and the caller reads an EMPTY SUCCESS as content. Mirror of the core `M4_304_handed_on_as_empty_success`, at the platform adapter.",
+      "from": "    if (resp.status === 304) return { status: 304, headers };\n",
+      "to": "",
+      "expect": ["E1"]
+    },
+    "M3_header_getter_case_sensitive": {
+      "_note": "`requestUrl().headers` is a plain Record whose casing VARIES between desktop and iOS. A case-sensitive read still works on whichever platform the author happened to test — which is exactly why this needs a mutant and not a reading.",
+      "from": "    const headers = caseInsensitiveHeaderGetter(resp.headers);\n",
+      "to": "    const headers = (name: string): string | undefined => resp.headers[name];\n",
+      "expect": ["E3"]
+    },
+    "M4_opt_in_ignored_always_accepting": {
+      "_note": "The opposite direction of M1: every caller silently gets 304-as-success, so a component that never sent If-None-Match would read an empty success instead of the loud failure the informal contract promises.",
+      "from": "    if (resp.status === 304 && acceptNotModified) return resp;\n",
+      "to": "    if (resp.status === 304) return resp;\n",
+      "expect": ["E2"]
+    },
+    "M5_caller_headers_dropped": {
+      "_note": "Caller headers stop reaching `requestUrl` entirely, so `If-None-Match` is never sent and every conditional read silently degrades to an unconditional one — the saving vanishes with no error anywhere. ⛤ Note the OTHER half of E4 (Authorization cannot be overridden) is NOT pinned by this mutant: Authorization is owned by the explicit assignment below the spread, not by the spread ORDER, so moving the spread changes nothing. The source comment above it claims the order is what owns Authorization; measured, the assignment is.",
+      "from": "      ...(param.headers ?? {}),\n",
+      "to": "",
+      "expect": ["E4"]
+    }
+  }
+}
