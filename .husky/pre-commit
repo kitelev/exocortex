@@ -13,6 +13,25 @@ fi
 echo "🚀 Running lint-staged (affected files only)..."
 npx lint-staged || exit 1
 
+# Test-quality ratchets (#4415). The CI `lint` job runs both of these, so a new
+# vacuous assert or a new type error in a test passed pre-commit and failed a
+# full CI cycle later (PR #4413 went red on `toBeGreaterThanOrEqual(0)` and cost
+# a second push plus a second run). Both are whole-tree ratchets — they need no
+# file list — but they only make sense when the commit actually touches tests,
+# so a commit without test files is not slowed down at all.
+#
+# Cost when they do run: ~2s for the anti-pattern guard, ~11s for the type
+# ratchet. That is the price of not discovering the same thing four minutes
+# later in CI.
+STAGED_TESTS=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.test\.tsx?$' || true)
+if [ -n "$STAGED_TESTS" ]; then
+  echo "🧪 Test-quality ratchets (staged test files detected)..."
+  bash scripts/check-test-antipatterns.sh || exit 1
+  node scripts/check-test-types.mjs || exit 1
+else
+  echo "⏭️  Skipping test-quality ratchets (no staged test files)"
+fi
+
 # Run Archgate ADR compliance checks on staged files
 if command -v archgate &> /dev/null; then
   echo "🏛️  Running Archgate ADR compliance checks..."
