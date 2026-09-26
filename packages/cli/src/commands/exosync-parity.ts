@@ -29,6 +29,7 @@ import {
   FileWatermarkStore,
   ParityValidator,
   SpaceSpecAccumulator,
+  CONDITIONAL_STORE_FILENAME,
   WATERMARK_STORE_FILENAME,
   checkParkedStaleness,
   classifySpaceDeclaration,
@@ -44,6 +45,10 @@ import {
 } from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { RestPushService } from "../services/RestPushService.js";
+import {
+  nodeConditionalStoreIO,
+  wireConditionalRequests,
+} from "../services/conditionalRequestTransport.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 
 export interface ExosyncParityOptions {
@@ -54,6 +59,8 @@ export interface ExosyncParityOptions {
   token?: string;
   tokenFromGh?: boolean;
   apiBase?: string;
+  /** `false` from `--no-conditional-requests` (req af002ec4). Default on. */
+  conditionalRequests?: boolean;
 }
 
 /** Injectable dependencies (tests). */
@@ -293,7 +300,7 @@ export async function runExosyncParity(
     token,
     ...(opts.apiBase !== undefined ? { apiBase: opts.apiBase } : {}),
   });
-  const transport =
+  const rawTransport =
     deps.transportFactory?.(token, opts.apiBase) ?? pushService.transport();
 
   const { specs, parked, warnings } = collectVaultSpecs(vaultPath);
@@ -307,6 +314,23 @@ export async function runExosyncParity(
     "exocortex",
     WATERMARK_STORE_FILENAME,
   );
+  // req af002ec4 — conditional Git Data reads. Every request an idle parity
+  // makes (refs + commits + trees) is 304-able, and a 304 costs no primary
+  // quota. Store is device-local, next to the watermark.
+  const etagPath = path.join(
+    vaultPath,
+    configDir,
+    "plugins",
+    "exocortex",
+    CONDITIONAL_STORE_FILENAME,
+  );
+  const { transport } = wireConditionalRequests(rawTransport, {
+    ...(opts.conditionalRequests !== undefined
+      ? { enabled: opts.conditionalRequests }
+      : {}),
+    io: nodeConditionalStoreIO(etagPath),
+  });
+
   // READ-ONLY watermark IO: the live plugin's write chain serialises
   // in-process only — a concurrent CLI write could lose its update.
   const watermarks = new FileWatermarkStore({
@@ -394,6 +418,10 @@ export function exosyncParityCommand(): Command {
     )
     .option("--token-from-gh", "Resolve the PAT via `gh auth token`")
     .option("--api-base <url>", "GitHub API base (testing)")
+    .option(
+      "--no-conditional-requests",
+      "Do not send If-None-Match on Git Data reads (a 304 costs no primary quota)",
+    )
     .action(async (options: ExosyncParityOptions) => {
       try {
         process.exitCode = await runExosyncParity(options);

@@ -29,6 +29,7 @@ import { promises as fsp, existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import * as path from "node:path";
 import {
+  CONDITIONAL_STORE_FILENAME,
   CONFLICT_CACHE_STORE_FILENAME,
   FileWatermarkStore,
   LocalConflictCacheStore,
@@ -55,6 +56,10 @@ import {
   type ExosyncSyncOptions,
 } from "./exosync-sync.js";
 import { RestPushService } from "../services/RestPushService.js";
+import {
+  nodeConditionalStoreIO,
+  wireConditionalRequests,
+} from "../services/conditionalRequestTransport.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 
 export interface QuarantineCliOptions extends ExosyncSyncOptions {
@@ -79,11 +84,26 @@ function buildResolver(
     token,
     ...(opts.apiBase !== undefined ? { apiBase: opts.apiBase } : {}),
   });
-  const transport =
+  const rawTransport =
     deps.transportFactory?.(token, opts.apiBase) ?? pushService.transport();
 
   const { specs, warnings } = collectVaultSpecs(vaultPath);
   const configDir = opts.configDir ?? ".obsidian";
+  // req af002ec4 — same conditional reads as sync/parity; a resolve re-reads
+  // refs and trees the sync that created the conflict already validated.
+  const etagPath = path.join(
+    vaultPath,
+    configDir,
+    "plugins",
+    "exocortex",
+    CONDITIONAL_STORE_FILENAME,
+  );
+  const { transport } = wireConditionalRequests(rawTransport, {
+    ...(opts.conditionalRequests !== undefined
+      ? { enabled: opts.conditionalRequests }
+      : {}),
+    io: nodeConditionalStoreIO(etagPath),
+  });
   const watermarkPath = path.join(
     vaultPath,
     configDir,

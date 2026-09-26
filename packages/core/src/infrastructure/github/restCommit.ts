@@ -46,6 +46,8 @@
  * coordinated retry/locking.
  */
 
+import type { HeaderGetter } from "./rateLimitHeaders";
+
 /** Minimal HTTP request descriptor — transport-agnostic. */
 export interface RestCommitRequest {
   method: "GET" | "POST" | "PATCH";
@@ -54,6 +56,22 @@ export interface RestCommitRequest {
   contentType?: string;
   /** JSON-serialised request body for POST/PATCH. */
   body?: string;
+  /**
+   * Extra request headers — `If-None-Match` for conditional reads (req
+   * af002ec4, #3975). The transport MUST NOT let these override the
+   * `Authorization` it owns.
+   */
+  headers?: Record<string, string>;
+  /**
+   * Opt IN to treating HTTP **304 Not Modified** as a SUCCESS: the transport
+   * returns `{ status: 304 }` instead of throwing.
+   *
+   * ⛔ Off by default on purpose. The transport contract is "throw on any
+   * non-2xx", and every existing caller relies on it — a 304 arriving at a
+   * caller that did not ask for it would look like an empty successful
+   * response. Only a caller that SENT `If-None-Match` can interpret one.
+   */
+  acceptNotModified?: boolean;
 }
 
 /**
@@ -64,6 +82,13 @@ export interface RestCommitResponse {
   status?: number;
   json?: unknown;
   text?: string;
+  /**
+   * Case-insensitive response-header getter — the read side of `ETag`
+   * (req af002ec4). Optional: transports that do not surface headers, and
+   * test fakes, simply omit it, and conditional requests then degrade to
+   * unconditional ones (fail-open).
+   */
+  headers?: HeaderGetter;
 }
 
 /**

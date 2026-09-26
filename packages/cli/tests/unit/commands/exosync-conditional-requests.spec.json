@@ -1,0 +1,26 @@
+{
+  "_doc": "Revert-verify for req af002ec4 at the CLI wiring. Axes D1-D8 in packages/cli/tests/unit/commands/exosync-conditional-requests.test.ts. The core spec proves the mechanism; this one proves a command sends the header at all.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-parity.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-conditional-requests.test.ts 2>&1",
+  "red_re": "› (D\\d+\\w*) ",
+  "mutants": {
+    "M1_parity_wiring_removed": {
+      "_note": "`exosync-parity` keeps a correct but UNCONDITIONAL transport — the header never goes out.",
+      "from": "  const { transport } = wireConditionalRequests(rawTransport, {\n    ...(opts.conditionalRequests !== undefined\n      ? { enabled: opts.conditionalRequests }\n      : {}),\n    io: nodeConditionalStoreIO(etagPath),\n  });\n",
+      "to": "  const transport = rawTransport;\n",
+      "expect": ["D4"]
+    },
+    "M2_parity_flag_ignored": {
+      "_note": "`--no-conditional-requests` stops reaching the wiring, so the opt-out silently does nothing.",
+      "from": "    ...(opts.conditionalRequests !== undefined\n      ? { enabled: opts.conditionalRequests }\n      : {}),\n",
+      "to": "",
+      "expect": ["D5"]
+    }
+  }
+}

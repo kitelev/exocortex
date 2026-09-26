@@ -697,7 +697,20 @@ export {
   extractAssetUid,
   type DetectChangesParams,
 } from "./services/sync/ChangeDetector";
+export { promiseWithDeadline } from "./utilities/promiseWithDeadline";
 export { gitBlobSha } from "./services/sync/gitBlobSha";
+// Conditional GitHub reads (req af002ec4, #3975) — an unchanged resource
+// answers 304, and GitHub does not charge the primary rate limit for it.
+export {
+  CONDITIONAL_STORE_FILENAME,
+  ConditionalRequestCache,
+  conditionalCacheKey,
+  withConditionalRequests,
+  type ConditionalEntry,
+  type ConditionalRequestCacheOptions,
+  type ConditionalRequestStats,
+  type ConditionalStoreIO,
+} from "./services/sync/conditionalRequestCache";
 // dedup-uids (#3477) shared platform-free core (#3676) — report + fix semantics
 // composed by BOTH the CLI `runDedupUids` (Node enumeration) and the in-plugin
 // «Deduplicate uids» command (vault.adapter enumeration). Desktop↔Mobile parity.

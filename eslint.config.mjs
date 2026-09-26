@@ -17,6 +17,22 @@ export default tseslint.config(
   ...obsidianPlugin.configs.recommended,
   prettierConfig,
   {
+    // `promiseWithDeadline` is the one module whose WHOLE POINT is a timer that
+    // works where there is no window: the CLI transport, and the plugin's
+    // production-shape suites that declare `@jest-environment node`.
+    // `obsidianmd/prefer-window-timers` rewrites its `setTimeout` to
+    // `window.setTimeout` on `--fix` (which `lint-staged` runs on commit), and
+    // the result is a ReferenceError surfacing as the useless
+    // "GitHub request failed: window is not defined". The rule's own concern —
+    // a popout window must not use a dead frame's timer — does not apply to a
+    // module that never touches a frame. Measured 2026-09-26, five reverted
+    // commits before the cause was found; see issue link in the module header.
+    files: ['packages/core/src/utilities/promiseWithDeadline.ts'],
+    rules: {
+      'obsidianmd/prefer-window-timers': 'off',
+    },
+  },
+  {
     languageOptions: {
       parser: tseslint.parser,
       parserOptions: {

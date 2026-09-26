@@ -1,0 +1,26 @@
+{
+  "_doc": "Revert-verify for req af002ec4 at the SECOND wiring site: `exosync sync`. Axes D6/D7.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-sync.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-conditional-requests.test.ts 2>&1",
+  "red_re": "› (D\\d+\\w*) ",
+  "mutants": {
+    "M1_sync_wiring_removed": {
+      "_note": "The main command loses the header while every other behaviour stays correct.",
+      "from": "  const { transport: readTransport } = wireConditionalRequests(transport, {\n    ...(opts.conditionalRequests !== undefined\n      ? { enabled: opts.conditionalRequests }\n      : {}),\n    io: nodeConditionalStoreIO(\n      path.join(\n        vaultPath,\n        configDir,\n        \"plugins\",\n        \"exocortex\",\n        CONDITIONAL_STORE_FILENAME,\n      ),\n    ),\n  });\n",
+      "to": "  const readTransport = transport;\n",
+      "expect": ["D6"]
+    },
+    "M2_sync_flag_ignored": {
+      "_note": "`--no-conditional-requests` stops reaching the sync path.",
+      "from": "    ...(opts.conditionalRequests !== undefined\n      ? { enabled: opts.conditionalRequests }\n      : {}),\n    io: nodeConditionalStoreIO(\n",
+      "to": "    io: nodeConditionalStoreIO(\n",
+      "expect": ["D7"]
+    }
+  }
+}

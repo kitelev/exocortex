@@ -51,6 +51,7 @@ import {
   OUTBOX_STORE_FILENAME,
   StructuredMerger,
   SyncEngine,
+  CONDITIONAL_STORE_FILENAME,
   WATERMARK_STORE_FILENAME,
   aggregateTimings,
   formatRepoTimings,
@@ -73,6 +74,10 @@ import {
 import { collectVaultSpecs } from "./exosync-parity.js";
 import { registerQuarantineCommands } from "./exosync-quarantine.js";
 import { RestPushService } from "../services/RestPushService.js";
+import {
+  nodeConditionalStoreIO,
+  wireConditionalRequests,
+} from "../services/conditionalRequestTransport.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { repoIsolatedGitEnv } from "../utils/repoIsolatedGitEnv.js";
 
@@ -84,6 +89,8 @@ export interface ExosyncSyncOptions {
   token?: string;
   tokenFromGh?: boolean;
   apiBase?: string;
+  /** `false` from `--no-conditional-requests` (req af002ec4). Default on. */
+  conditionalRequests?: boolean;
 }
 
 /** Injectable dependencies (tests). */
@@ -490,8 +497,26 @@ export async function runExosyncSync(
   const quarantine: QuarantinePort = conflictCache;
 
   const watermarkStore = new FileWatermarkStore(nodeWatermarkFileIO(watermarkPath));
+  // req af002ec4 — conditional Git Data reads. An unchanged repo answers 304
+  // and GitHub does not charge the primary rate limit for it; an idle run over
+  // 21 repos is 83 requests, ALL of them 304-able. Store sits next to the
+  // watermark (device-local, `.local.` = Sync-excluded).
+  const { transport: readTransport } = wireConditionalRequests(transport, {
+    ...(opts.conditionalRequests !== undefined
+      ? { enabled: opts.conditionalRequests }
+      : {}),
+    io: nodeConditionalStoreIO(
+      path.join(
+        vaultPath,
+        configDir,
+        "plugins",
+        "exocortex",
+        CONDITIONAL_STORE_FILENAME,
+      ),
+    ),
+  });
   const engine = new SyncEngine({
-    transport,
+    transport: readTransport,
     watermarkStore,
     // mtime-manifest local-hash skip (perf) — same IO/store family as the
     // watermark; skips reading+re-hashing unchanged asset files each sync.
@@ -585,7 +610,11 @@ function withSyncOptions(cmd: Command): Command {
     )
     .option("--token-from-gh", "Resolve the PAT via `gh auth token`")
     .option("--json", "Print the full per-repo result array as JSON")
-    .option("--api-base <url>", "GitHub API base (testing)");
+    .option("--api-base <url>", "GitHub API base (testing)")
+    .option(
+      "--no-conditional-requests",
+      "Do not send If-None-Match on Git Data reads (a 304 costs no primary quota)",
+    );
 }
 
 function makeDirectionAction(direction: SyncDirection) {

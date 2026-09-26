@@ -1,0 +1,70 @@
+{
+  "_doc": "Revert-verify for req af002ec4-ec4e-4482-b7b5-77e79dd332df (#3975), subject = the conditional-request core. Axes C1-C15 in packages/core/tests/unit/services/sync/conditionalRequestCache.test.ts.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/conditionalRequestCache.ts",
+  "symlink_node_modules": ["node_modules", "packages/core/node_modules"],
+  "harness": "cd \"$(dirname {subject})/../../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/services/sync/conditionalRequestCache.test.ts 2>&1",
+  "red_re": "› (C\\d+\\w*) ",
+  "mutants": {
+    "M1_never_sends_if_none_match": {
+      "_note": "The header stops going out: every read is a full 200 and the primary quota is spent, which is the whole point of the requirement.",
+      "from": "      headers: { ...(req.headers ?? {}), \"If-None-Match\": etag },\n",
+      "to": "      headers: { ...(req.headers ?? {}) },\n",
+      "expect": ["C1", "C3", "C4"]
+    },
+    "M2_never_remembers_an_etag": {
+      "_note": "Nothing is stored, so nothing can ever be validated.",
+      "from": "  const etag = resp.headers?.(\"etag\");\n  if (typeof etag !== \"string\" || etag.length === 0) return;\n",
+      "to": "  const etag = resp.headers?.(\"etag\");\n  if (typeof etag === \"string\") return;\n",
+      "expect": ["C1", "C3", "C4"]
+    },
+    "M3_write_is_fire_and_forget": {
+      "_note": "Restores a defect the axes caught during implementation: with the store write un-awaited, two reads of the same endpoint with no intervening yield leave the SECOND one unconditional — the validator exists but nobody can see it yet.",
+      "from": "  await cache.remember(key, etag, resp.json).catch(() => undefined);\n",
+      "to": "  void cache.remember(key, etag, resp.json).catch(() => undefined);\n",
+      "expect": ["C1", "C3", "C4"]
+    },
+    "M4_304_handed_on_as_empty_success": {
+      "_note": "A 304 whose body is no longer remembered is passed through instead of re-read: the caller would get an empty success, which is worse than an extra request.",
+      "from": "      return storeFresh(inner, cache, req, key);\n    }\n\n    rememberFrom(cache, key, resp);",
+      "to": "      return resp;\n    }\n\n    rememberFrom(cache, key, resp);",
+      "expect": ["C8"]
+    },
+    "M5_accept_not_modified_not_requested": {
+      "_note": "The transport is not told to accept a 304, so it throws on one — the contract says non-2xx throws unless the caller opted in.",
+      "from": "      acceptNotModified: true,\n",
+      "to": "      acceptNotModified: false,\n",
+      "expect": ["C1", "C3", "C4"]
+    },
+    "M6_key_ignores_the_url": {
+      "_note": "One validator for every endpoint: a ref's ETag would be sent for a tree, and repositories would share entries.",
+      "from": "  return req.url;\n",
+      "to": "  return \"shared\";\n",
+      "expect": ["C9", "C10", "C12"]
+    },
+    "M7_writes_made_conditional": {
+      "_note": "Drops the GET gate — a POST would be given an If-None-Match.",
+      "from": "  if (req.method !== \"GET\") return null;\n",
+      "to": "  if (req.method === \"NEVER_A_METHOD\" as RestCommitRequest[\"method\"]) return null;\n",
+      "expect": ["C11", "C13"]
+    },
+    "M8_unbounded_store": {
+      "_note": "The entry ceiling stops being enforced.",
+      "from": "    if (keys.length <= this.maxEntries) return;\n",
+      "to": "    if (keys.length >= 0) return;\n",
+      "expect": ["C14"]
+    },
+    "M9_oversized_bodies_remembered": {
+      "_note": "A huge body is stored anyway, so the store is bounded by nothing but entry count.",
+      "from": "    if (body.length > this.maxBodyBytes) return;\n",
+      "to": "    if (body.length < 0) return;\n",
+      "expect": ["C15"]
+    },
+    "M10_corrupt_store_is_fatal": {
+      "_note": "Removes the tolerant read: an unparseable store would abort instead of degrading to unconditional reads.",
+      "from": "      const parsed = JSON.parse(raw) as unknown;\n      if (parsed === null || typeof parsed !== \"object\") return {};\n",
+      "to": "      const parsed = JSON.parse(raw) as unknown;\n      if (parsed === null) return {};\n",
+      "expect": ["C7"]
+    }
+  }
+}
