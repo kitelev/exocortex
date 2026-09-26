@@ -1,0 +1,16 @@
+{
+  "_doc": "Revert-verify for req e5e45283-cf8c-45f5-8ad7-5cd08ab5442a — the WIRING half: `SyncEngine.instrumentTransport` hands each SUCCESSFUL response's headers to the timer. Separate spec because the driver applies every mutant to the spec's single `subject`, and this mutant lives in SyncEngine.ts while the parsing axes live against SyncPhaseTimer.ts (SyncPhaseTimer.quota.spec.json). Without this pair a fully-covered parser could ship never having been called. Measured 2026-09-26: control green, M1 reddens exactly A2.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/SyncEngine.ts",
+  "symlink_node_modules": ["node_modules", "packages/core/node_modules"],
+  "harness": "cd \"$(dirname {subject})/../../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/services/sync/SyncPhaseTimer.quota.test.ts 2>&1",
+  "red_re": "› .*?\\b(A\\d+)\\b",
+  "mutants": {
+    "M1_wiring_removed": {
+      "_note": "Движок перестаёт отдавать заголовки таймеру. Краснеет РОВНО A2 — ось, которая драйвит настоящий `syncAll` и читает квоту из его результата; A1/A3/A4/A5 зовут таймер напрямую и остаются зелёными, что и делает их разделение осмысленным (§ПЯТАЯ механика integration-test-revert-verify: «новый код включён в продовый путь» — отдельная ось от «новый код делает, что обещает»).",
+      "from": "        timer.observeQuota(res.headers);\n",
+      "to": "",
+      "expect": ["A2"]
+    }
+  }
+}

@@ -2,8 +2,12 @@
   "_doc": "Revert-verify for req e5e45283-cf8c-45f5-8ad7-5cd08ab5442a on the CLI surface — parity prints cost+budget, and every run journals one line. Axes B1-B5 in packages/cli/tests/unit/commands/exosync-quota-floor.test.ts. Measured 2026-09-26: control green, BAD=0.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-parity.ts",
-  "symlink_node_modules": ["node_modules", "packages/cli/node_modules"],
-  "harness": "cd \"$(dirname {subject})/../../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/commands/exosync-quota-floor.test.ts 2>&1",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-quota-floor.test.ts 2>&1",
   "red_re": "› .*?\\b(B\\d+)\\b",
   "mutants": {
     "N1_quota_line_not_printed": {
