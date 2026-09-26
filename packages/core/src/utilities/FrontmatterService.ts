@@ -16,7 +16,7 @@ import {
 } from "./yamlScalar";
 import { canonicalYamlKey, LEGACY_YAML_KEYS } from "../services/NoteToRDFConverter";
 import type { IFrontmatter } from "../interfaces/IVaultAdapter";
-import { iriToObsidianName } from "./iriToObsidianName";
+import { Namespace } from "../domain/models/rdf/Namespace";
 
 /**
  * Result of frontmatter parsing operation
@@ -612,7 +612,7 @@ export class FrontmatterService {
    * which is why the two failure modes below were silent (`changed: true`, no
    * error) rather than loud. Ticket `c8fc6793`.
    *
-   * ONE source of truth: `iriToObsidianName` → `Namespace.fromTermIRI`, the
+   * ONE source of truth: `Namespace.fromTermIRI`, the
    * shared inverse of the forward emission path (`Namespace.fromPropertyKey` /
    * `Namespace.term`). It resolves EVERY registered W3C vocabulary and EVERY
    * ad-hoc `https://exocortex.my/ontology/<prefix>#` namespace.
@@ -638,16 +638,19 @@ export class FrontmatterService {
    * `38e3f174`.
    */
   static normalizeIRI(property: string): string {
-    // ⛔ LOAD-BEARING, not a micro-optimisation. Besides "no hash ⇒ not a term
-    // IRI", this early return is the only thing keeping `iriToObsidianName`'s
-    // SECOND shape (vault URL → basename) out of the write-key path:
-    // `obsidian://vault/a/b.md` would otherwise become the key `b`. That shape
-    // is consumed by {@link normalizeIRIValue} with its own anchored regex, so
-    // this function must leave it alone. Measured on `origin/main` 0857307b:
-    // deleting this line reddened NOTHING across 132 tests in 4 suites — the
-    // property was true but unlocked; req `38e3f174` Scenario H is its spec.
+    // "No hash ⇒ not a term IRI" — the cheap exit for the common case.
     if (property.lastIndexOf("#") < 0) return property;
-    return iriToObsidianName(property) ?? property;
+    // ⛔ TERM IRIs ONLY (issue #4403). This used to call `iriToObsidianName`,
+    // whose SECOND shape (vault file URL → basename) is an UNANCHORED
+    // `/\/([^/]+)\.md$/`: past the hash check above, any value holding a `#`
+    // and ending in `/<name>.md` — `PR #42 merged, handoff /tmp/notes.md` —
+    // was rewritten to the wikilink `[[<name>]]` on every write (4 live
+    // `sess__LifecycleEvent_detail` values). The vault-URL shape is not this
+    // function's to convert: {@link normalizeIRIValue} handles
+    // `obsidian://vault/…` itself, with an anchored regex, before calling here,
+    // and a KEY of that shape must stay untouched (req `38e3f174` Scenario H).
+    const term = Namespace.fromTermIRI(property);
+    return term ? `${term.namespace.prefix}__${term.localName}` : property;
   }
 
   /**
