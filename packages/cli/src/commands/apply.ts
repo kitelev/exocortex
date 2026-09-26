@@ -64,6 +64,8 @@ import { StderrLogger } from "../infrastructure/StderrLogger";
 import {
   loadVaultTriples,
   cacheLoadNotice,
+  skippedFilesNotice,
+  targetSkippedNotice,
   writeThroughCache,
   writeThroughNotice,
 } from "../cache/loadVaultTriples.js";
@@ -371,10 +373,10 @@ async function executeOnTarget(
   // the binding layer (`resolve-buttons` Layer A), which `apply` skipped.
   //
   // ⛔ The gate is CONDITIONAL on the command declaring a binding at all.
-  // Measured on vault-exodev: 74 commands carry a `cliName`, 65 have a
-  // CommandBinding, and 11 have NONE (`set-label`, `cold-archive`,
-  // `set-planned-start`, …). An unconditional gate would kill those 11
-  // outright. "No binding declared" means "no declared class scope", not
+  // Measured on vault-exodev (re-measured 2026-09-26 by UID): 75 commands carry
+  // a `cliName`, 63 of them have a CommandBinding, and 12 have NONE
+  // (`set-label`, `set-label-keep-alias`, `cold-archive`, `set-planned-start`,
+  // …). An unconditional gate would kill those 12 outright. "No binding declared" means "no declared class scope", not
   // "scope = nothing".
   // ⛔ One exception, accepted (review of PR #4384): a command whose label
   // it SHARES with a bound asset reads as bound (the binding's term-IRI
@@ -744,7 +746,7 @@ export function applyCommand(): Command {
     .option("--yes", "Skip destructive-command confirmation")
     .option(
       "--input <json>",
-      `JSON userInput for a grounding. Value-setting commands need a value key, e.g. set-planned-start / set-scheduled-date: --input '{"value":"<ISO>"}'. A command whose grounding declares its own input key uses THAT key: set-label: --input '{"label":"New label"}'. Asset-reference inputs (set-parent: --input '{"parent":"<uid>"}'; set-blocker: --input '{"blocker":"<uid>"}'; set-ontology: --input '{"ontology":"<uid>"}') take a BARE uid; a copied [[uid]] or [[uid|alias]] is accepted and unwrapped, anything else that still looks like a link is refused. The required key is named in the error if omitted.`,
+      `JSON userInput for a grounding. Value-setting commands need a value key, e.g. set-planned-start / set-scheduled-date: --input '{"value":"<ISO>"}'. A command whose grounding declares its own input key uses THAT key: set-label: --input '{"label":"New label"}' (set-label-keep-alias, which also keeps the previous label as an alias, takes the same key). Asset-reference inputs (set-parent: --input '{"parent":"<uid>"}'; set-blocker: --input '{"blocker":"<uid>"}'; set-ontology: --input '{"ontology":"<uid>"}') take a BARE uid; a copied [[uid]] or [[uid|alias]] is accepted and unwrapped, anything else that still looks like a link is refused. The required key is named in the error if omitted.`,
     )
     .option(
       "--seed <uuid>",
@@ -815,6 +817,12 @@ export function applyCommand(): Command {
           if (useCacheEffective) {
             process.stderr.write(`${cacheLoadNotice(loaded)}\n`);
           }
+          // #4274 — the files the loader dropped, on STDERR (stdout stays one
+          // document under --json). Same text as `query` (req 81cd5d1f).
+          const skippedNotice = skippedFilesNotice(loaded);
+          if (skippedNotice !== null) {
+            process.stderr.write(`${skippedNotice}\n`);
+          }
           const tripleStore = new InMemoryTripleStore();
           await tripleStore.addAll(loaded.triples);
           // #4272 — one index-backed fs adapter for the whole batch, fed the
@@ -870,6 +878,15 @@ export function applyCommand(): Command {
           // the `--json` envelope.
           const allCreated: CreatedAsset[] = [];
           for (const target of targets) {
+            // #4274 — a target the loader dropped has no triples, so its
+            // precondition reads nothing; say so BEFORE the refusal it causes.
+            const targetNotice = targetSkippedNotice(
+              loaded,
+              relative(vaultPath, resolve(vaultPath, target)),
+            );
+            if (targetNotice !== null) {
+              process.stderr.write(`${targetNotice}\n`);
+            }
             const targetResult = await executeOnTarget(
               vaultPath,
               tripleStore,
