@@ -19,8 +19,10 @@
  */
 
 import {
+  ConditionalRequestCache,
   SyncEngine,
   SyncPhaseTimer,
+  withConditionalRequests,
   addTimings,
   emptyTimings,
   formatQuota,
@@ -137,6 +139,85 @@ describe("req e5e45283 — quota read from a successful response", () => {
     expect(addTimings(newer.snapshot(), older.snapshot()).quota?.remaining).toBe(
       800,
     );
+  });
+
+  it("@req:e5e45283-cf8c-45f5-8ad7-5cd08ab5442a A6 a 304 served from the conditional cache still carries the quota headers", async () => {
+    // ⛔ The axis that matters most in practice. #4416 made 304 the DOMINANT
+    // path of an idle run ("83 requests, all of them 304-able"), and the
+    // conditional layer used to hand the body on as a synthetic 200 with no
+    // headers — so the run spent N real round-trips and reported `quota n/a`.
+    // Driving the REAL `withConditionalRequests` is the point: a stub
+    // transport can never produce this shape.
+    let content: string | null = null;
+    const store = {
+      read: async (): Promise<string | null> => content,
+      writeAtomic: async (next: string): Promise<void> => {
+        content = next;
+      },
+    };
+    const cache = new ConditionalRequestCache({ io: store });
+    const url = "https://api.github.com/repos/o/r/git/refs/heads/main";
+    const etag = 'W/"abc"';
+    const quotaHeaders = getterFor({
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4100",
+      "x-ratelimit-used": "900",
+      "x-ratelimit-reset": "1790440000",
+    });
+
+    // First pass: a normal 200 that issues the validator.
+    let phase: "fresh" | "notModified" = "fresh";
+    const remote: RestCommitTransport = async () =>
+      phase === "fresh"
+        ? {
+            status: 200,
+            json: { object: { sha: "a".repeat(40) } },
+            headers: (n: string): string | null =>
+              n.toLowerCase() === "etag" ? etag : quotaHeaders(n),
+          }
+        : { status: 304, headers: quotaHeaders };
+
+    const transport = withConditionalRequests(remote, cache);
+    await transport({ method: "GET", url });
+    phase = "notModified";
+    const res = await transport({ method: "GET", url });
+
+    expect(res.headers).toBeDefined();
+    expect(res.headers?.("x-ratelimit-remaining")).toBe("4100");
+
+    // And the timer turns that into a real reading rather than `n/a`.
+    const timer = new SyncPhaseTimer(() => 1);
+    timer.observeQuota(res.headers);
+    expect(timer.snapshot().quota?.remaining).toBe(4100);
+  });
+
+  it("@req:e5e45283-cf8c-45f5-8ad7-5cd08ab5442a A7 within one window the MORE DEPLETED reading wins, whatever the arrival order", () => {
+    // Blob fetches run through a bounded worker pool, so responses do not
+    // arrive in the order GitHub served them. A request issued first can
+    // resolve last carrying a HIGHER remaining; taking it because it was
+    // observed later would report headroom that does not exist.
+    let clock = 0;
+    const timer = new SyncPhaseTimer(() => ++clock);
+    const at = (remaining: string) =>
+      getterFor({
+        "x-ratelimit-limit": "5000",
+        "x-ratelimit-remaining": remaining,
+        "x-ratelimit-reset": "1790440000",
+      });
+
+    timer.observeQuota(at("4000")); // the truer, more depleted reading
+    timer.observeQuota(at("4200")); // an older response, observed later
+    expect(timer.snapshot().quota?.remaining).toBe(4000);
+
+    // A new window (the reset rolled over) legitimately replaces it.
+    timer.observeQuota(
+      getterFor({
+        "x-ratelimit-limit": "5000",
+        "x-ratelimit-remaining": "4999",
+        "x-ratelimit-reset": "1790443600",
+      }),
+    );
+    expect(timer.snapshot().quota?.remaining).toBe(4999);
   });
 
   it("@req:e5e45283-cf8c-45f5-8ad7-5cd08ab5442a A5 absence prints `quota n/a` and both lines carry it", () => {

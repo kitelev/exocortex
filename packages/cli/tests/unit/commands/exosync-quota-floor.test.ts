@@ -19,6 +19,7 @@ import { tmpdir } from "node:os";
 import * as path from "node:path";
 import type { RestCommitTransport } from "@kitelev/exocortex-core";
 import { runExosyncParity } from "../../../src/commands/exosync-parity.js";
+import { runExosyncSync } from "../../../src/commands/exosync-sync.js";
 import {
   RUN_LOG_FILENAME,
   runLogEntry,
@@ -175,6 +176,74 @@ describe("req e5e45283 — CLI diagnostic floor", () => {
       expect(readFileSync(logPath, "utf-8").trim().split("\n")).toHaveLength(2);
     } finally {
       fx.cleanup();
+    }
+  });
+
+  it("@req:e5e45283-cf8c-45f5-8ad7-5cd08ab5442a B7 `sync` journals its vacuous exit too, not just parity", async () => {
+    // Scenario 3 says ANY finished run of EITHER command. Parity's vacuous
+    // branch was covered from the start; sync's was not, so "how many runs
+    // happened today" was answerable for only one of the two commands.
+    const vault = mkdtempSync(path.join(tmpdir(), "quota-vacuous-"));
+    try {
+      mkdirSync(path.join(vault, ".obsidian", "plugins", "exocortex"), {
+        recursive: true,
+      });
+      const lines: string[] = [];
+      const code = await runExosyncSync(
+        "sync",
+        { vault, token: FAKE_PAT },
+        { out: (l) => lines.push(l), env: {} },
+      );
+      expect(code).toBe(2);
+      expect(lines.join("\n")).toMatch(/Nothing to sync/);
+
+      const logPath = path.join(
+        vault,
+        ".obsidian",
+        "plugins",
+        "exocortex",
+        RUN_LOG_FILENAME,
+      );
+      expect(existsSync(logPath)).toBe(true);
+      const entry = JSON.parse(
+        readFileSync(logPath, "utf-8").trim(),
+      ) as Record<string, unknown>;
+      expect(entry.command).toBe("sync");
+      expect(entry.exitCode).toBe(2);
+      expect(entry.restCalls).toBe(0);
+    } finally {
+      rmSync(vault, { recursive: true, force: true });
+    }
+  });
+
+  it("@req:e5e45283-cf8c-45f5-8ad7-5cd08ab5442a B6 the journal directory is created when the vault has none", async () => {
+    // A vault the CLI made itself has no plugin directory, and `appendFile`
+    // answers ENOENT — which the fail-open catch swallows, losing the line
+    // silently. The two sibling stores (watermark, ETag) both mkdir first.
+    const vault = mkdtempSync(path.join(tmpdir(), "quota-nodir-"));
+    try {
+      const logPath = path.join(
+        vault,
+        ".obsidian",
+        "plugins",
+        "exocortex",
+        RUN_LOG_FILENAME,
+      );
+      expect(existsSync(path.dirname(logPath))).toBe(false);
+      const ok = await appendSyncRunLog(
+        logPath,
+        runLogEntry({
+          command: "sync",
+          vault,
+          restCalls: 0,
+          quota: undefined,
+          exitCode: 2,
+        }),
+      );
+      expect(ok).toBe(true);
+      expect(readFileSync(logPath, "utf-8").trim().split("\n")).toHaveLength(1);
+    } finally {
+      rmSync(vault, { recursive: true, force: true });
     }
   });
 

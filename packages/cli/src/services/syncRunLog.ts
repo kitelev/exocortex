@@ -72,10 +72,17 @@ export function runLogPathFor(vaultPath: string, configDir: string): string {
 export async function appendSyncRunLog(
   logPath: string,
   entry: SyncRunLogEntry,
-  io: { appendFile?: typeof fsp.appendFile } = {},
+  io: { appendFile?: typeof fsp.appendFile; mkdir?: typeof fsp.mkdir } = {},
 ): Promise<boolean> {
   const append = io.appendFile ?? fsp.appendFile;
+  const mkdir = io.mkdir ?? fsp.mkdir;
   try {
+    // A vault the CLI created itself may not have the plugin directory yet, and
+    // `appendFile` answers ENOENT — which the catch below would swallow, losing
+    // the line silently. `mkdir -p` is idempotent, so this is NOT the
+    // stat-then-write race the docstring warns about; the two sibling stores
+    // (watermark, ETag) do exactly the same before their writes.
+    await mkdir(path.dirname(logPath), { recursive: true });
     await append(logPath, `${JSON.stringify(entry)}\n`, "utf-8");
     return true;
   } catch {

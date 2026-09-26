@@ -213,13 +213,13 @@ export class SyncPhaseTimer {
     const resetEpoch = num("x-ratelimit-reset");
     // Nothing numeric arrived → keep the last real observation.
     if (limit === null && remaining === null && used === null) return;
-    this.quota = {
+    this.quota = pickQuota(this.quota, {
       limit,
       remaining,
       used,
       resetEpoch,
       observedAt: this.now(),
-    };
+    });
   }
 
   /** Immutable copy of the accumulated state at the moment of call. */
@@ -266,14 +266,49 @@ export function addTimings(
   };
 }
 
-/** The later of two quota observations (either may be absent). */
+/**
+ * Choose between two quota observations (either may be absent).
+ *
+ * ⛔ NOT simply "the later one". Requests run concurrently — the engine fetches
+ * blobs through a bounded worker pool — so the order responses ARRIVE is not
+ * the order GitHub served them. A request issued first can resolve last and
+ * carry a HIGHER remaining, and taking it because it was observed later would
+ * report more headroom than actually exists.
+ *
+ * Within one window (same `resetEpoch`) the quota only ever drains, so the
+ * more-depleted reading is the truer one — and erring toward less headroom is
+ * the safe direction for a number people use to decide whether to run more
+ * work. Across windows (the reset rolled over) the later observation wins,
+ * because the older one describes a window that no longer exists.
+ */
 function fresherQuota(
   a: RateLimitSnapshot | undefined,
   b: RateLimitSnapshot | undefined,
 ): RateLimitSnapshot | undefined {
   if (a === undefined) return b;
   if (b === undefined) return a;
-  return b.observedAt >= a.observedAt ? b : a;
+  return pickQuota(a, b);
+}
+
+/** Same rule as {@link fresherQuota}, for two present observations. */
+function pickQuota(
+  prev: RateLimitSnapshot | undefined,
+  next: RateLimitSnapshot,
+): RateLimitSnapshot {
+  if (prev === undefined) return next;
+  const sameWindow =
+    prev.resetEpoch !== null &&
+    next.resetEpoch !== null &&
+    prev.resetEpoch === next.resetEpoch;
+  if (sameWindow) {
+    if (prev.remaining !== null && next.remaining !== null) {
+      return next.remaining <= prev.remaining ? next : prev;
+    }
+    if (prev.used !== null && next.used !== null) {
+      return next.used >= prev.used ? next : prev;
+    }
+  }
+  return next.observedAt >= prev.observedAt ? next : prev;
 }
 
 /**

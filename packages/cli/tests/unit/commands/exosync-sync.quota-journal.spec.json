@@ -1,0 +1,20 @@
+{
+  "_doc": "Revert-verify for req e5e45283-cf8c-45f5-8ad7-5cd08ab5442a — `exosync sync` journals its VACUOUS exit as well. Axis B7 in packages/cli/tests/unit/commands/exosync-quota-floor.test.ts. Own spec because the driver applies mutants to the spec's single `subject` (exosync-sync.ts). Found by code review of PR #4419 (HIGH): parity's vacuous branch was journalled from the start, sync's was not — so scenario 3 («ANY finished run of EITHER command») held for only one of the two.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-sync.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-quota-floor.test.ts 2>&1",
+  "red_re": "› .*?\\b(B\\d+)\\b",
+  "mutants": {
+    "M1_vacuous_exit_not_journalled": {
+      "_note": "Возврат к до-ревьюной форме: вакуумный выход `sync` молчит. Краснеет РОВНО B7 — единственная ось, драйвящая `runExosyncSync` на vault без материализованных ассетспейсов; остальные оси гоняют parity.",
+      "from": "    await appendSyncRunLog(\n      runLogPathFor(vaultPath, opts.configDir ?? \".obsidian\"),\n      runLogEntry({\n        command: \"sync\",\n        vault: vaultPath,\n        restCalls: 0,\n        quota: undefined,\n        exitCode: 2,\n      }),\n    );\n",
+      "to": "",
+      "expect": ["B7"]
+    }
+  }
+}

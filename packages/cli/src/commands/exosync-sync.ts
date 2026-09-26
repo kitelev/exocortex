@@ -455,6 +455,20 @@ export async function runExosyncSync(
     out(
       "Nothing to sync — no materialized AssetSpaces with a GitHub source found in this vault.",
     );
+    // req e5e45283 — a finished run is journalled even when it did nothing.
+    // `parity` already covers its own vacuous branch; leaving this one silent
+    // would make "how many runs happened today" answerable only for one of the
+    // two commands, which is the question the journal exists to answer.
+    await appendSyncRunLog(
+      runLogPathFor(vaultPath, opts.configDir ?? ".obsidian"),
+      runLogEntry({
+        command: "sync",
+        vault: vaultPath,
+        restCalls: 0,
+        quota: undefined,
+        exitCode: 2,
+      }),
+    );
     return 2;
   }
 
