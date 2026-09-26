@@ -55,9 +55,16 @@ describe("formatPropertyValue", () => {
       expect(result).toBe("\n");
     });
 
-    it("should format array with wikilinks", () => {
+    // #4405 changed this expectation, and the reason is a measurement, not a
+    // preference: `- [[Page1]]` is not a wikilink to YAML, it is a flow
+    // sequence inside a flow sequence, and js-yaml reads the item back as the
+    // nested array `[["Page1"]]` — never as the string the editor wrote. The
+    // quoted form round-trips to `"[[Page1]]"`, which is also how every writer
+    // in this codebase (and `quoteRelationValueForYaml` right next to the
+    // editor's own call sites) already stores relation values.
+    it("should format array with wikilinks, quoted so they read back as strings", () => {
       const result = formatPropertyValue(["[[Page1]]", "[[Page2]]"]);
-      expect(result).toBe("\n  - [[Page1]]\n  - [[Page2]]");
+      expect(result).toBe('\n  - "[[Page1]]"\n  - "[[Page2]]"');
     });
   });
 
@@ -70,8 +77,10 @@ describe("formatPropertyValue", () => {
       expect(formatPropertyValue("")).toBe("");
     });
 
-    it("should return string with special characters", () => {
-      expect(formatPropertyValue("[[wikilink]]")).toBe("[[wikilink]]");
+    // Same measurement as the array case above: bare `[[wikilink]]` reads back
+    // as `[["wikilink"]]`, so "as-is" was never what the file actually held.
+    it("should quote a wikilink so it reads back as a string", () => {
+      expect(formatPropertyValue("[[wikilink]]")).toBe('"[[wikilink]]"');
     });
   });
 
