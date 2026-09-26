@@ -251,6 +251,39 @@ export function skippedFilesNotice(loaded: LoadVaultTriplesResult): string | nul
   );
 }
 
+/**
+ * #4274 (req b6eef8ef) — the ONE line that says the TARGET of a command is
+ * itself a file the loader dropped. `apply` answered «Precondition not
+ * satisfied» and `resolve-buttons` listed every command as hidden for such a
+ * target, with nothing pointing at the cause: the target has no triples, so
+ * every precondition and `$target` read sees nothing.
+ *
+ * `vaultRelative` must be the path in the form the loader records
+ * (vault-relative, as `apply`/`resolve-buttons` canonicalise it). Returns null
+ * when the target contributed triples. Like {@link skippedFilesNotice}, the
+ * cache path names NO cause: the cache does not record one.
+ */
+export function targetSkippedNotice(
+  loaded: LoadVaultTriplesResult,
+  vaultRelative: string,
+): string | null {
+  const skipped = loaded.skippedFiles;
+  if (skipped !== undefined) {
+    const hit = skipped.find((f) => f.path === vaultRelative);
+    if (hit === undefined) return null;
+    return (
+      `⚠️  "${vaultRelative}" itself was skipped by the vault loader, so it has no ` +
+      `triples — preconditions and $target reads see nothing: ${hit.reason}`
+    );
+  }
+  if (!loaded.zeroTriplePaths.includes(vaultRelative)) return null;
+  return (
+    `ℹ️  "${vaultRelative}" contributed no triples, so preconditions and $target reads ` +
+    `see nothing; the triple cache does not record WHY — re-run without --use-cache ` +
+    `to see the reason`
+  );
+}
+
 /** #4264 — a write-through that did not throw, or the reason it could not run. */
 export type WriteThroughOutcome =
   | WriteThroughResult

@@ -778,7 +778,16 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create, write-through o
     const r0 = await runResolve(root, [REL.otherTask, "--json"]);
     const c0 = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 plain", "--validate", "--dry-run"]);
     expect(allNotices(a0).concat(allNotices(r0), allNotices(c0))).toEqual([]);
-    expect(a0.stderr).toBe("");
+    // req b6eef8ef (#4274): the full-parse path now names the files the loader
+    // skipped (this fixture's TBox stubs carry no exo__Instance_class). That
+    // block is the ONLY stderr allowed without the flag — cb707868 AC1 pins
+    // stdout / exit code / written files, and the cache lines are allNotices
+    // above; anything else on stderr still fails here.
+    const residue = a0.stderr.replace(
+      /^⚠️ {2}\d+ file\(s\) skipped by the vault loader[^\n]*\n(?: {3}- [^\n]*\n {5}[^\n]*\n)*(?: {3}… and \d+ more[^\n]*\n)?/u,
+      "",
+    );
+    expect(residue).toBe("");
   });
 
   // -------------------------------------------------------------------------
