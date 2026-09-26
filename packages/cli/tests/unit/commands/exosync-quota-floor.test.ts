@@ -14,7 +14,15 @@
  * механика: the wiring is a separate axis from the thing being wired).
  */
 
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  promises as fsp,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import type { RestCommitTransport } from "@kitelev/exocortex-core";
@@ -248,19 +256,36 @@ describe("req e5e45283 — CLI diagnostic floor", () => {
   });
 
   it("@req:e5e45283-cf8c-45f5-8ad7-5cd08ab5442a B4 journalling never fails the run", async () => {
-    // An unwritable path must cost a journal line, never the command: the run
-    // has already done its real work by the time this is called.
-    const ok = await appendSyncRunLog(
-      "/proc/definitely/not/writable/runs.jsonl",
-      runLogEntry({
-        command: "parity",
-        vault: "/tmp/x",
-        restCalls: 1,
-        quota: undefined,
-        exitCode: 0,
+    // A failing write must cost a journal line, never the command: the run has
+    // already done its real work by the time this is called.
+    //
+    // ⛔ The failure is INJECTED, not conjured from a path that happens to be
+    // unwritable on this OS. The first version used `/proc/…`, which does not
+    // exist on macOS (instant ENOENT) but does on Linux, where `mkdir -p` into
+    // it HANGS — the axis passed locally and timed out in CI. "Unwritable" is a
+    // property of the platform; "throws" is a property of the contract, and the
+    // contract is what this axis is about.
+    const boom = async (): Promise<never> => {
+      throw new Error("EACCES: simulated");
+    };
+    const entryForFailure = runLogEntry({
+      command: "parity",
+      vault: "/tmp/x",
+      restCalls: 1,
+      quota: undefined,
+      exitCode: 0,
+    });
+    expect(
+      await appendSyncRunLog("/anywhere/runs.jsonl", entryForFailure, {
+        mkdir: boom as unknown as typeof fsp.mkdir,
       }),
-    );
-    expect(ok).toBe(false);
+    ).toBe(false);
+    expect(
+      await appendSyncRunLog("/anywhere/runs.jsonl", entryForFailure, {
+        mkdir: (async () => undefined) as unknown as typeof fsp.mkdir,
+        appendFile: boom as unknown as typeof fsp.appendFile,
+      }),
+    ).toBe(false);
 
     const entry = runLogEntry({
       command: "sync",
