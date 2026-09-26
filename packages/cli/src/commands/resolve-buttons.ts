@@ -26,6 +26,8 @@ import { StderrLogger } from "../infrastructure/StderrLogger";
 import {
   loadVaultTriples,
   cacheLoadNotice,
+  skippedFilesNotice,
+  targetSkippedNotice,
 } from "../cache/loadVaultTriples.js";
 
 /**
@@ -75,7 +77,8 @@ export interface ResolveButtonsLoadOptions {
   useCache?: boolean;
   /**
    * Receives the one-line cache notice (`cacheLoadNotice`) when `useCache` is
-   * set. Kept out of {@link ResolveButtonsResult} on purpose: that object IS the
+   * set, and (#4274) the loader's skipped-files notice plus the line naming the
+   * target when the target itself was skipped — on either load path. Kept out of {@link ResolveButtonsResult} on purpose: that object IS the
    * `--json` stdout document and must stay byte-identical with and without the
    * flag — the command routes this to stderr.
    */
@@ -285,6 +288,13 @@ export async function resolveButtons(
   if (useCache) {
     load.log?.(cacheLoadNotice(loaded));
   }
+  // #4274 — the files the loader dropped, and whether the TARGET is one of
+  // them (then every command reads as hidden for a reason the buttons can't
+  // show). Through `load.log` = stderr: `--json` stdout stays one document.
+  const skippedNotice = skippedFilesNotice(loaded);
+  if (skippedNotice !== null) load.log?.(skippedNotice);
+  const targetNotice = targetSkippedNotice(loaded, vaultRelative);
+  if (targetNotice !== null) load.log?.(targetNotice);
   const tripleStore = new InMemoryTripleStore();
   await tripleStore.addAll(loaded.triples);
 

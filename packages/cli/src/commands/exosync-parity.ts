@@ -49,6 +49,7 @@ import {
   nodeConditionalStoreIO,
   wireConditionalRequests,
 } from "../services/conditionalRequestTransport.js";
+import { wireObjectCache } from "../services/objectCacheTransport.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 
 export interface ExosyncParityOptions {
@@ -61,6 +62,8 @@ export interface ExosyncParityOptions {
   apiBase?: string;
   /** `false` from `--no-conditional-requests` (req af002ec4). Default on. */
   conditionalRequests?: boolean;
+  /** `false` from `--no-object-cache` (req 086df113). Default on. */
+  objectCache?: boolean;
 }
 
 /** Injectable dependencies (tests). */
@@ -324,12 +327,27 @@ export async function runExosyncParity(
     "exocortex",
     CONDITIONAL_STORE_FILENAME,
   );
-  const { transport } = wireConditionalRequests(rawTransport, {
-    ...(opts.conditionalRequests !== undefined
-      ? { enabled: opts.conditionalRequests }
-      : {}),
-    io: nodeConditionalStoreIO(etagPath),
-  });
+  // req af002ec4 × req 086df113 — ORDER MATTERS and the two do not overlap.
+  // The SHA cache sits OUTSIDE: an immutable object it already holds costs no
+  // request at all, so it must answer before a conditional request is even
+  // built. Conditional reads sit INSIDE, for what the cache cannot serve —
+  // mutable `git/refs`, and a SHA it has not seen.
+  const { transport: conditionalTransport } = wireConditionalRequests(
+    rawTransport,
+    {
+      ...(opts.conditionalRequests !== undefined
+        ? { enabled: opts.conditionalRequests }
+        : {}),
+      io: nodeConditionalStoreIO(etagPath),
+    },
+  );
+  const { transport, cache: objectCache } = wireObjectCache(
+    conditionalTransport,
+    {
+      ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),
+      sha1: nodeSha1,
+    },
+  );
 
   // READ-ONLY watermark IO: the live plugin's write chain serialises
   // in-process only — a concurrent CLI write could lose its update.
@@ -386,6 +404,13 @@ export async function runExosyncParity(
   });
 
   out(`ExoSync parity check: ${specs.length} repo(s), vault ${vaultPath}`);
+  const reportObjectCache = (): void => {
+    const stats = objectCache?.stats();
+    if (stats === undefined || stats.hits + stats.stores === 0) return;
+    out(
+      `[ExoSync objects] ${stats.hits} served from cache, ${stats.misses} fetched, ${stats.stores} stored${stats.evictions > 0 ? `, ${stats.evictions} evicted` : ""}`,
+    );
+  };
   const record = await validator.runRound(specs, { trigger: "standalone" });
 
   if (opts.json === true) {
@@ -395,6 +420,8 @@ export async function runExosyncParity(
   } else {
     printHumanReport(record, out);
   }
+
+  reportObjectCache();
 
   if (record.vacuous) return 2;
   return record.ok ? 0 : 1;
@@ -421,6 +448,10 @@ export function exosyncParityCommand(): Command {
     .option(
       "--no-conditional-requests",
       "Do not send If-None-Match on Git Data reads (a 304 costs no primary quota)",
+    )
+    .option(
+      "--no-object-cache",
+      "Do not serve immutable git objects (commits/trees/blobs) from the local cache",
     )
     .action(async (options: ExosyncParityOptions) => {
       try {

@@ -78,6 +78,7 @@ import {
   nodeConditionalStoreIO,
   wireConditionalRequests,
 } from "../services/conditionalRequestTransport.js";
+import { wireObjectCache } from "../services/objectCacheTransport.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { repoIsolatedGitEnv } from "../utils/repoIsolatedGitEnv.js";
 
@@ -91,6 +92,8 @@ export interface ExosyncSyncOptions {
   apiBase?: string;
   /** `false` from `--no-conditional-requests` (req af002ec4). Default on. */
   conditionalRequests?: boolean;
+  /** `false` from `--no-object-cache` (req 086df113). Default on. */
+  objectCache?: boolean;
 }
 
 /** Injectable dependencies (tests). */
@@ -437,8 +440,9 @@ export async function runExosyncSync(
     token,
     ...(opts.apiBase !== undefined ? { apiBase: opts.apiBase } : {}),
   });
-  const transport =
+  const rawTransport =
     deps.transportFactory?.(token, opts.apiBase) ?? pushService.transport();
+  const transport = rawTransport;
 
   const { specs, warnings } = collectVaultSpecs(vaultPath);
   for (const w of warnings) out(`warn: ${w}`);
@@ -501,20 +505,35 @@ export async function runExosyncSync(
   // and GitHub does not charge the primary rate limit for it; an idle run over
   // 21 repos is 83 requests, ALL of them 304-able. Store sits next to the
   // watermark (device-local, `.local.` = Sync-excluded).
-  const { transport: readTransport } = wireConditionalRequests(transport, {
-    ...(opts.conditionalRequests !== undefined
-      ? { enabled: opts.conditionalRequests }
-      : {}),
-    io: nodeConditionalStoreIO(
-      path.join(
-        vaultPath,
-        configDir,
-        "plugins",
-        "exocortex",
-        CONDITIONAL_STORE_FILENAME,
+  // req af002ec4 × req 086df113 — ORDER MATTERS and the two do not overlap.
+  // The SHA cache sits OUTSIDE: an immutable object it already holds costs no
+  // request at all, so it must answer before a conditional request is even
+  // built. Conditional reads sit INSIDE, for what the cache cannot serve —
+  // mutable `git/refs`, and a SHA it has not seen.
+  const { transport: conditionalTransport } = wireConditionalRequests(
+    transport,
+    {
+      ...(opts.conditionalRequests !== undefined
+        ? { enabled: opts.conditionalRequests }
+        : {}),
+      io: nodeConditionalStoreIO(
+        path.join(
+          vaultPath,
+          configDir,
+          "plugins",
+          "exocortex",
+          CONDITIONAL_STORE_FILENAME,
+        ),
       ),
-    ),
-  });
+    },
+  );
+  const { transport: readTransport, cache: objectCache } = wireObjectCache(
+    conditionalTransport,
+    {
+      ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),
+      sha1: nodeSha1,
+    },
+  );
   const engine = new SyncEngine({
     transport: readTransport,
     watermarkStore,
@@ -590,6 +609,15 @@ export async function runExosyncSync(
     // dominant phase is visible (which optimisation Phase 1 picks).
     const aggTimings = aggregateTimings(results);
     if (totalMs(aggTimings) > 0) out(formatTimingsLine(aggTimings));
+    // req 086df113 — make the saving OBSERVABLE. Without this line the cache
+    // is invisible in normal use, and "did it help?" has no answer short of
+    // counting packets.
+    const objectStats = objectCache?.stats();
+    if (objectStats !== undefined && objectStats.hits + objectStats.stores > 0) {
+      out(
+        `[ExoSync objects] ${objectStats.hits} served from cache, ${objectStats.misses} fetched, ${objectStats.stores} stored${objectStats.evictions > 0 ? `, ${objectStats.evictions} evicted` : ""}`,
+      );
+    }
   }
 
   return results.some((r) => isFailureStatus(r.status)) ? 1 : 0;
@@ -614,6 +642,10 @@ function withSyncOptions(cmd: Command): Command {
     .option(
       "--no-conditional-requests",
       "Do not send If-None-Match on Git Data reads (a 304 costs no primary quota)",
+    )
+    .option(
+      "--no-object-cache",
+      "Do not serve immutable git objects (commits/trees/blobs) from the local cache",
     );
 }
 

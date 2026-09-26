@@ -60,6 +60,7 @@ import {
   nodeConditionalStoreIO,
   wireConditionalRequests,
 } from "../services/conditionalRequestTransport.js";
+import { wireObjectCache } from "../services/objectCacheTransport.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 
 export interface QuarantineCliOptions extends ExosyncSyncOptions {
@@ -98,11 +99,23 @@ function buildResolver(
     "exocortex",
     CONDITIONAL_STORE_FILENAME,
   );
-  const { transport } = wireConditionalRequests(rawTransport, {
-    ...(opts.conditionalRequests !== undefined
-      ? { enabled: opts.conditionalRequests }
-      : {}),
-    io: nodeConditionalStoreIO(etagPath),
+  // req af002ec4 × req 086df113 — ORDER MATTERS and the two do not overlap.
+  // The SHA cache sits OUTSIDE: an immutable object it already holds costs no
+  // request at all, so it must answer before a conditional request is even
+  // built. Conditional reads sit INSIDE, for what the cache cannot serve —
+  // mutable `git/refs`, and a SHA it has not seen.
+  const { transport: conditionalTransport } = wireConditionalRequests(
+    rawTransport,
+    {
+      ...(opts.conditionalRequests !== undefined
+        ? { enabled: opts.conditionalRequests }
+        : {}),
+      io: nodeConditionalStoreIO(etagPath),
+    },
+  );
+  const { transport } = wireObjectCache(conditionalTransport, {
+    ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),
+    sha1: nodeSha1,
   });
   const watermarkPath = path.join(
     vaultPath,
