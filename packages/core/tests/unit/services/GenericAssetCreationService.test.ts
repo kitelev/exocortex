@@ -357,7 +357,12 @@ describe("GenericAssetCreationService", () => {
         ems__Area: "areas",
         ems__Meeting: "meetings",
         exo__Event: "events",
-        ims__Concept: "concepts",
+        // #4365 — `ims__Concept` used to expect "concepts". That entry was a
+        // DEAD key (the retired namespace; the live class is
+        // `concept__Concept`, 0 carriers across all three vaults), so this
+        // table was pinning a mapping nothing could ever reach. It now falls
+        // to the generic default like any other unrecognised class.
+        ims__Concept: "assets",
         unknown__Class: "assets",
       };
 
@@ -1203,6 +1208,42 @@ describe("GenericAssetCreationService", () => {
         const path = mockVault.create.mock.calls[0][0];
         expect(path).toMatch(/^tasks\//);
       });
+
+      // ── #4365: the retired ims__ key must not decide placement ────────────
+      it("F2 the retired ims__Concept key no longer decides placement", async () => {
+        // The load-bearing axis. The map carried `ims__Concept: "concepts"` —
+        // a key from the retired namespace that nothing can be typed as any
+        // more (measured: 0 carriers across all three canonical vaults, canary
+        // `concept__Concept` = 3192). A dead key reads as working and invites
+        // a one-word rename that would reintroduce #4357, so it is gone.
+        const config = { className: "ims__Concept" };
+        await service.createAsset(config);
+        const path = mockVault.create.mock.calls[0][0];
+        expect(path).not.toMatch(/^concepts\//);
+        expect(path).toMatch(/^assets\//);
+      });
+
+      it("F1 documents that the LIVE concept class has no folder entry either", async () => {
+        // ⚠ Not an axis on the fix — it is green before and after, because the
+        // map never knew `concept__Concept`. It is here to record the state
+        // plainly: concepts reach this fallback, and giving them a literal
+        // folder here would be wrong (they live in three different
+        // assetspaces, #4357). Resolving from the anchor is the real fix and
+        // belongs with the caller that knows it.
+        const config = { className: "concept__Concept" };
+        await service.createAsset(config);
+        const path = mockVault.create.mock.calls[0][0];
+        expect(path).toMatch(/^assets\//);
+      });
+
+      // ⛤ No F3 control here on purpose: "the surviving map entries still
+      // place their classes" is exactly what the pre-existing
+      // "should map class prefixes to correct default folders" table asserts,
+      // and duplicating it would give two axes with one predicate rather than
+      // two independent guarantees. That table is this change's control — it
+      // was updated in the same diff (its `ims__Concept` row now expects the
+      // generic default), so a mutant restoring the dead key reddens both it
+      // and F2.
 
       it("should default to assets folder for unknown class", async () => {
         const config = { className: "custom__Unknown" };

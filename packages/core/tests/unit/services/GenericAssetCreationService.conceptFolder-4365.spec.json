@@ -1,0 +1,16 @@
+{
+  "_doc": "Revert-verify for #4365: the retired `ims__Concept` key must not decide placement in `GenericAssetCreationService.getDefaultFolderPath`. Axes F1 / F2 in packages/core/tests/unit/services/GenericAssetCreationService.test.ts; the pre-existing 'should map class prefixes to correct default folders' table is the control for the surviving entries and was updated in the same diff. Measured 2026-09-26: control 106/106 green. ⛤ The key was REMOVED rather than renamed to the live `concept__Concept`: 0 assets are typed `ims__Concept` across all three canonical vaults (canary `concept__Concept` = 3192), and hardcoding \"concepts\" would reintroduce #4357 — real concepts live in three different assetspaces. ⛤ F1 is documentation, not an axis on the fix: it is green before and after, because the map never knew the live class. Saying so here is cheaper than letting a future reader count it as coverage.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/GenericAssetCreationService.ts",
+  "symlink_node_modules": ["node_modules", "packages/core/node_modules"],
+  "harness": "cd \"$(dirname {subject})/../../../..\" && CI=true node ./node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/services/GenericAssetCreationService.test.ts 2>&1",
+  "red_re": "› .*?\\b(F\\d+\\w*)\\b",
+  "mutants": {
+    "M1_retired_key_restored": {
+      "_note": "Возвращает мёртвый ключ в карту. Краснеет F2 — retired-ключ снова решает размещение. ⛤ Вторым носителем краснеет и пред-существующий табличный тест ('should map class prefixes…', его строка `ims__Concept` обновлена этим же диффом), но его имя ПРОЗАИЧЕСКОЕ и в `red_re` не попадает — драйвер покажет только F2 (класс §A104). Это названо здесь, чтобы следующий читатель не счёл одиночную красноту признаком слабой защиты: носителей два, видим один.",
+      "from": "      exo__Event: \"events\",\n    };\n",
+      "to": "      exo__Event: \"events\",\n      ims__Concept: \"concepts\",\n    };\n",
+      "expect": ["F2"]
+    }
+  }
+}
