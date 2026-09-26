@@ -41,7 +41,7 @@ import * as yaml from "js-yaml";
  * if it were a file count and named only the between-items shape, which hid that
  * the BEFORE-first-item branch is the one every live carrier exercises.
  *
- * ⛔ A top-level `key: |` block scalar (106 carrier files) was deliberately NOT
+ * ⛔ A top-level `key: |` block scalar (106 carrier keys in 103 files) was deliberately NOT
  * changed here — it is a SCALAR, not in #4314. Issue #4379 then made it read as
  * its RAW text (header + body); P7 locks that reading, and the axes that drive
  * its consumers live in `FrontmatterService.block-scalar-4379.test.ts`.
