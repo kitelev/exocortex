@@ -1,0 +1,24 @@
+{
+  "_doc": "Revert-verify for req c0b0e8bf, subject = the engine behind the local-withheld kind text: a plain push DELIVERS a pinned local edit with remote == base AND clears that pin (axis X4 in exosync-quarantine.test.ts). If either mutant stops turning X4 red, the CLI/plugin text «not pushed yet — the next push or sync delivers it» is no longer derived from the engine. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/SyncEngine.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-quarantine.test.ts -t 'X4 ' 2>&1",
+  "red_re": "› (X\\d+\\w*) ",
+  "mutants": {
+    "M12_push_withholds_local_edits": {
+      "from": "      if (content !== undefined) pushFilesAll.set(c.path, content);\n",
+      "to": "      if (content !== undefined && c.path === \"__never__\") pushFilesAll.set(c.path, content);\n",
+      "expect": ["X4"]
+    },
+    "M13_push_never_clears_pins": {
+      "from": "      ...(pinnedPaths.size > 0 ? { pinnedPaths: [...pinnedPaths] } : {}),\n",
+      "to": "      ...(pinnedPaths.size > 0 || (previous.pinnedPaths?.length ?? 0) > 0 ? { pinnedPaths: [...new Set([...pinnedPaths, ...(previous.pinnedPaths ?? [])])] } : {}),\n",
+      "expect": ["X4"]
+    }
+  }
+}

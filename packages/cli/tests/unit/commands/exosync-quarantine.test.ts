@@ -329,12 +329,21 @@ describe("exosync quarantine list — pinned paths that are not conflicts (#4225
     const fx = await makeConflictVault({ base, local });
     fx.gh.commitDirect("main", { [CONFLICT]: base }, "back to base");
     const lines: string[] = [];
+    const pinSection = "1 pinned path(s) are not conflicts:";
     try {
-      // Same predicate before the push is false: the axis discriminates.
+      // Same predicates before the push are false: the axis discriminates.
       expect(fx.gh.headFiles().get(CONFLICT)).toBe(base);
+      const before: string[] = [];
+      await runQuarantineList({ vault: fx.vault, token: FAKE_PAT }, deps(fx.gh, before));
+      expect(before).toContain(pinSection);
       const code = await runExosyncSync("push", { vault: fx.vault, token: FAKE_PAT }, deps(fx.gh, lines));
       expect(code).toBe(0);
       expect(fx.gh.headFiles().get(CONFLICT)).toBe(local);
+      // ...and the plain push clears the pin itself: nothing is left to reconcile.
+      const after: string[] = [];
+      await runQuarantineList({ vault: fx.vault, token: FAKE_PAT }, deps(fx.gh, after));
+      expect(after).not.toContain(pinSection);
+      expect(after.join("\n")).toMatch(/No open conflicts/);
     } finally {
       fx.cleanup();
     }
