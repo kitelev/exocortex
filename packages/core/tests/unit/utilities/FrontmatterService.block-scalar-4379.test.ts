@@ -9,6 +9,7 @@ import {
   blockScalarAsSequenceItem,
   decodeYamlBlockScalar,
   decodeYamlQuotedScalar,
+  decodeYamlSequenceItem,
 } from "../../../src/utilities/yamlScalar";
 import {
   clearResolvers,
@@ -23,7 +24,7 @@ import * as yaml from "js-yaml";
  * so every consumer of the read saw the indicator instead of the text.
  *
  * Measured on the three canonical vaults 2026-09-26 (53 648 files scanned):
- * **106** carrier files — headers `>` 63, `|-` 32, `|` 11; no explicit
+ * **106** carrier keys in **103** files — headers `>` 63, `|-` 32, `|` 11; no explicit
  * indentation indicator, no `|+`; body indentation 2 in all of them. Keys:
  * `exocmd__Precondition_sparqlAsk` 84, `concept__Concept_definition` 10,
  * `lit__WebPage_url` 5, `exo__ValidatorRule_customCode` / `_autoFix` 3 + 3,
@@ -43,6 +44,9 @@ import * as yaml from "js-yaml";
  * | S1   | `$target.<prop>` substitution                         | the text `|-`                      |
  * | I1   | InheritanceRule copy into a new asset                 | the text `|-`                      |
  * | T1   | `targetProperty` PropertyDefault resolver             | the text `|-`                      |
+ * | W3-4 | `property_append` dedup over block-scalar LIST ITEMS   | duplicate / (review LOW-1) false   |
+ * |      |                                                       | dedup of a re-based value          |
+ * | R1-2 | `property_replace` match over block-scalar LIST ITEMS  | refused / duplicate                |
  *
  * ⛔ W1 guards against a regression the read fix alone would have INTRODUCED:
  * the raw body (indented two columns) written verbatim as a list item sits at
@@ -77,6 +81,10 @@ const FOLDED_SPARQL_FM =
 const DEFINITION_FM =
   "---\nexo__Asset_uid: u1\nconcept__Concept_definition: |-\n" +
   '  first line\n  second line\naliases:\n  - "Alpha"\n---\nBody\n';
+
+/** A list whose first item is a block scalar (#4314 shape; 0 live carriers). */
+const BLOCK_ITEM_LIST_FM =
+  '---\nexo__Asset_uid: u1\nk:\n  - |-\n    Alpha\n  - "Beta"\n---\nBody\n';
 
 function createMockWriter() {
   return {
@@ -205,6 +213,22 @@ describe("FrontmatterService — top-level block scalar (issue #4379)", () => {
     expect(blockScalarAsSequenceItem("plain")).toBe("plain");
   });
 
+  it("[D4] a LIST ITEM with an indentation indicator stays raw; without one it decodes", () => {
+    // The indicator is relative to the list's indentation, which the raw item
+    // no longer carries — decoding would re-base it (PR #4400 review LOW-1).
+    expect(decodeYamlBlockScalar("|2\n      x", true)).toBe("|2\n      x");
+    expect(decodeYamlBlockScalar("|\n    body", true)).toBe("body\n");
+    expect(decodeYamlSequenceItem("|-\n    Alpha")).toBe("Alpha");
+    expect(decodeYamlSequenceItem('"A"')).toBe("A");
+  });
+
+  it("[D5] a body js-yaml rejects is returned verbatim, not emptied", () => {
+    // `parseObject` absorbs a tab-indented body line (`/^[ \t]/`); js-yaml
+    // rejects tab indentation — the raw text must survive, byte for byte.
+    expect(decodeYamlBlockScalar("|\n\tx")).toBe("|\n\tx");
+    expect(decodeYamlQuotedScalar("|\n\tx")).toBe("|\n\tx");
+  });
+
   // ─── U / W / S: through the real writers ─────────────────────────────────
 
   it("[U1] read → updateProperty (the canonicalizeLegacyKeys round trip) keeps the value on disk", () => {
@@ -254,6 +278,76 @@ describe("FrontmatterService — top-level block scalar (issue #4379)", () => {
       "- Разделение системы на уровни\n- Вид классификации по уровням",
       "Третье",
     ]);
+  });
+
+  it("[W3] property_append does not duplicate the text of a block-scalar LIST ITEM", async () => {
+    const { executor, writer } = makeExecutor(BLOCK_ITEM_LIST_FM);
+    const result = await executor.execute(
+      makeGrounding({
+        type: GroundingType.PROPERTY_APPEND,
+        targetProperty: "k",
+        appendExpression: '"Alpha"',
+      }),
+      TARGET_IRI,
+      FILE_PATH,
+    );
+    expect(result.success).toBe(true);
+    const written = yamlOf(writer.updateFile.mock.calls[0][1] as string);
+    expect(written.k).toEqual(["Alpha", "Beta"]);
+  });
+
+  it("[W4] an item with an indentation indicator is not falsely deduped against a re-based value", async () => {
+    // On disk the item is `"  x\n"`; `"    x\n"` is a DIFFERENT value and must
+    // be appended (PR #4400 review LOW-1: the top-level decode matched it).
+    const { executor, writer } = makeExecutor(
+      '---\nexo__Asset_uid: u1\nk:\n  - |2\n      x\n  - "B"\n---\nBody\n',
+    );
+    const result = await executor.execute(
+      makeGrounding({
+        type: GroundingType.PROPERTY_APPEND,
+        targetProperty: "k",
+        appendExpression: '"    x\\n"',
+      }),
+      TARGET_IRI,
+      FILE_PATH,
+    );
+    expect(result.success).toBe(true);
+    const written = yamlOf(writer.updateFile.mock.calls[0][1] as string);
+    expect(written.k).toEqual(["  x\n", "B", "    x\n"]);
+  });
+
+  it("[R1] property_replace finds `from` in a block-scalar LIST ITEM", async () => {
+    const { executor, writer } = makeExecutor(BLOCK_ITEM_LIST_FM);
+    const result = await executor.execute(
+      makeGrounding({
+        type: GroundingType.PROPERTY_REPLACE,
+        targetProperty: "k",
+        replaceFromExpression: '"Alpha"',
+        replaceToExpression: '"Gamma"',
+      }),
+      TARGET_IRI,
+      FILE_PATH,
+    );
+    expect(result.success).toBe(true);
+    const written = yamlOf(writer.updateFile.mock.calls[0][1] as string);
+    expect(written.k).toEqual(["Gamma", "Beta"]);
+  });
+
+  it("[R2] property_replace sees `to` already present as a block-scalar item and drops `from`", async () => {
+    const { executor, writer } = makeExecutor(BLOCK_ITEM_LIST_FM);
+    const result = await executor.execute(
+      makeGrounding({
+        type: GroundingType.PROPERTY_REPLACE,
+        targetProperty: "k",
+        replaceFromExpression: '"Beta"',
+        replaceToExpression: '"Alpha"',
+      }),
+      TARGET_IRI,
+      FILE_PATH,
+    );
+    expect(result.success).toBe(true);
+    const written = yamlOf(writer.updateFile.mock.calls[0][1] as string);
+    expect(written.k).toEqual(["Alpha"]);
   });
 
   it("[S1] `$target.<prop>` substitutes the TEXT of a block scalar, not its header", async () => {

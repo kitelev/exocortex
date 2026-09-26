@@ -21,8 +21,8 @@
     },
     "M12_resolver_items_raw": {
       "_note": "…and of a block-scalar list item.",
-      "from": "      return v.map((item) => decodeYamlBlockScalar(String(item)));",
-      "to": "      return v.map((item) => String(item) || decodeYamlBlockScalar(String(item)));",
+      "from": "      return v.map((item) => decodeYamlBlockScalar(String(item), true));",
+      "to": "      return v.map((item) => String(item) || decodeYamlBlockScalar(String(item), true));",
       "expect": ["T1"]
     }
   }

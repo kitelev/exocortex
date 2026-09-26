@@ -20,10 +20,10 @@
       "expect": ["P4", "P5", "D1"]
     },
     "M6_decode_standalone": {
-      "_note": "The raw text is read as a standalone document instead of a top-level value — an explicit indentation indicator is re-based on column -1.",
+      "_note": "The raw text is read as a standalone document instead of a top-level value — an explicit indentation indicator is re-based on column -1. It also reddens D5: standalone, js-yaml ACCEPTS a tab-indented body (`|\\n\\tx` → `\\tx\\n`) that it rejects as a key's value — the wrapper is what makes the rejected body come back verbatim.",
       "from": "    const loaded = yaml.load(`k: ${raw}`) as { k?: unknown } | null;",
       "to": "    const loaded = { k: yaml.load(raw) } as { k?: unknown } | null;",
-      "expect": ["D2"]
+      "expect": ["D2", "D5"]
     },
     "M7_quoted_decoder_skips_blocks": {
       "_note": "`decodeYamlQuotedScalar` (the `$target.<prop>` decoder) no longer delegates block scalars.",
@@ -36,6 +36,18 @@
       "from": "line === \"\" ? line : `  ${line}`",
       "to": "line === \"\" ? line : line",
       "expect": ["W1", "W2"]
+    },
+    "M13_item_indicator_decoded": {
+      "_note": "A list item's explicit indentation indicator is decoded in top-level context — re-based, so a different value falsely dedups (PR #4400 review LOW-1).",
+      "from": "  if (asSequenceItem && /^[|>][^\\n]*[1-9]/.test(raw)) return raw;",
+      "to": "  if (asSequenceItem && /^[|>][^\\n]*[1-9]/.test(raw) && raw.length < 0) return raw;",
+      "expect": ["D4", "W4"]
+    },
+    "M14_rejected_body_emptied": {
+      "_note": "A body js-yaml rejects is emptied instead of returned verbatim (PR #4400 review LOW-4).",
+      "from": "    return typeof loaded?.k === \"string\" ? loaded.k : raw;\n  } catch {\n    return raw;\n  }",
+      "to": "    return typeof loaded?.k === \"string\" ? loaded.k : raw;\n  } catch {\n    return \"\";\n  }",
+      "expect": ["D5"]
     }
   }
 }

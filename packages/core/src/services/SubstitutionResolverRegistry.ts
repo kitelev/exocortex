@@ -494,7 +494,7 @@ export function installDefaultResolvers(): void {
     // is decoded to its VALUE here, because the default is written into a new
     // asset by a serializer that quotes what it is given (issue #4379).
     if (Array.isArray(v))
-      return v.map((item) => decodeYamlBlockScalar(String(item)));
+      return v.map((item) => decodeYamlBlockScalar(String(item), true));
     return decodeYamlBlockScalar(String(v));
   });
 

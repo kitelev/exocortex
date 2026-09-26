@@ -194,8 +194,8 @@ export class FrontmatterService {
    * nested map, i.e. the loss was live, not hypothetical.
    *
    * ⛔ A top-level block scalar (`key: |-` + indented body) is read as its RAW
-   * text, header and body together (issue #4379 — 106 live carrier files, 84
-   * of them `exocmd__Precondition_sparqlAsk`); decode it with
+   * text, header and body together (issue #4379 — 106 live carrier keys in
+   * 103 files, 84 of them `exocmd__Precondition_sparqlAsk`); decode it with
    * `decodeYamlQuotedScalar` / `decodeYamlBlockScalar` where the VALUE is needed.
    *
    * NOTE: still deliberately minimal — a nested map or a block-scalar body is
@@ -235,7 +235,9 @@ export class FrontmatterService {
       // (`  - …`) or a comment (`  # …`) — both shapes are live (a concept
       // definition written as dashed lines, a validator rule's code comment).
       // Ownership mirrors `findPropertyLineSpan`: every indented line, and a
-      // blank line only when an indented line follows it.
+      // blank line only when an indented line follows it. One difference: a
+      // TRAILING whitespace-only line is owned by the write span but not read
+      // here — `updateProperty` drops it, the YAML value is the same.
       if (scalarBodyKey !== null) {
         if (line.trim() === "") {
           pendingBlanks.push(line);

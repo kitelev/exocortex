@@ -456,18 +456,43 @@ function isBlockScalarRaw(raw: string): boolean {
  * VALUE (`first\nsecond`); any other input is returned verbatim (issue #4379).
  *
  * The raw text is re-read as the value of a TOP-LEVEL key (`k: <raw>`), which is
- * where it came from — so the folding (`>`), chomping (`-`/`+`) and an explicit
- * indentation indicator all mean what they meant on disk. A body js-yaml rejects
- * is returned verbatim (byte-lossless), as for the quoted forms below.
+ * where a scalar came from — so the folding (`>`), chomping (`-`/`+`) and an
+ * explicit indentation indicator all mean what they meant on disk. A body
+ * js-yaml rejects is returned verbatim (byte-lossless), as for the quoted forms
+ * below.
+ *
+ * ⛔ `asSequenceItem`: a LIST ITEM's explicit indentation indicator (`- |2`) is
+ * relative to the list's own indentation, which the raw text no longer carries
+ * (a list may sit at column 0 or 2), so decoding it would re-base the indicator
+ * and invent leading spaces. Such an item is returned RAW — what every reader
+ * saw before #4379 (0 live carriers: no list item in the three vaults is a
+ * block scalar). Without an indicator the indentation is auto-detected and the
+ * item decodes like a scalar.
  */
-export function decodeYamlBlockScalar(raw: string): string {
+export function decodeYamlBlockScalar(
+  raw: string,
+  asSequenceItem = false,
+): string {
   if (!isBlockScalarRaw(raw)) return raw;
+  if (asSequenceItem && /^[|>][^\n]*[1-9]/.test(raw)) return raw;
   try {
     const loaded = yaml.load(`k: ${raw}`) as { k?: unknown } | null;
     return typeof loaded?.k === "string" ? loaded.k : raw;
   } catch {
     return raw;
   }
+}
+
+/**
+ * Decode one RAW LIST ITEM as `parseObject` returns it: a block-scalar item via
+ * {@link decodeYamlBlockScalar} in list context, anything else via
+ * {@link decodeYamlQuotedScalar}. The comparison form of `property_append`'s
+ * dedup and `property_replace`'s match (issue #4379).
+ */
+export function decodeYamlSequenceItem(raw: string): string {
+  return isBlockScalarRaw(raw)
+    ? decodeYamlBlockScalar(raw, true)
+    : decodeYamlQuotedScalar(raw);
 }
 
 /**
