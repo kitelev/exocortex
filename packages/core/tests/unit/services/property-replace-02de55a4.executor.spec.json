@@ -14,10 +14,22 @@
   "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/services/GroundingExecutor.property_replace.test.ts --verbose 2>&1",
   "mutants": {
     "M1_dispatch_case_removed": {
-      "_note": "The type exists in the enum and the executor method is written, but `execute()` never routes to it — the shape a half-landed migration takes. Predicted R1 R2 R3 R4 R5 R6 R7 R9 (R8 green).",
+      "_note": "The type exists in the enum and the executor method is written, but `execute()` never routes to it — the shape a half-landed migration takes. Predicted R1 R2 R3 R4 R5 R6 R7 R9 (R8 green). ⛤ #4314: R10-R12 добавлены к ожиданию — снятие всей ветки диспетчера роняет и новые оси пустого выражения. Расширение внесла ЭТА правка, поэтому оно записано здесь, а не оставлено расходиться молча.",
       "from": "        case GroundingType.PROPERTY_REPLACE:\n          return await this.executePropertyReplace(\n            grounding,\n            targetIRI,\n            targetFilePath,\n            userInput,\n          );\n\n",
       "to": "",
-      "expect": ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R9"]
+      "expect": [
+        "R1",
+        "R2",
+        "R3",
+        "R4",
+        "R5",
+        "R6",
+        "R7",
+        "R9",
+        "R10",
+        "R11",
+        "R12"
+      ]
     },
     "M2_target_property_guard_accepts": {
       "_note": "The guard still runs (its narrowing is what keeps the file compiling) but stops refusing. Predicted R9.",
@@ -56,10 +68,16 @@
       "expect": ["R4"]
     },
     "M8_whole_value_replace": {
-      "_note": "Exactly the defect the type exists to prevent: the property is replaced as a WHOLE, so co-values are dropped. Predicted R1 only — R2 stays green BY CONSTRUCTION, because on a single-element list a whole-value replace and an element swap are the same write, which is what R2 is for.",
+      "_note": "Exactly the defect the type exists to prevent: the property is replaced as a WHOLE, so co-values are dropped. Predicted R1 only — R2 stays green BY CONSTRUCTION, because on a single-element list a whole-value replace and an element swap are the same write, which is what R2 is for. ⛤ #4314: R12 добавлена к ожиданию, и это УСИЛЕНИЕ мутанта, а не шум: новый контроль «обычная замена в списке с пустым элементом» замечает подмену всего значения там, где прежний набор её не видел.",
       "from": "        ? existing.map((item, i) =>\n            i === fromIndex ? quoteYamlString(toPlain) : item,\n          )\n",
       "to": "        ? [quoteYamlString(toPlain)]\n",
-      "expect": ["R1"]
+      "expect": ["R1", "R12"]
+    },
+    "M9_empty_resolution_guard_removed": {
+      "_note": "#4314 secondary item. Снимает отказ на выражении, которое РАЗРЕШИЛОСЬ в пустую строку (guards выше ловят только ОТСУТСТВУЮЩЕЕ выражение). Краснеют R10 и R11 — обе половины, и это по построению: у пустого `from` и пустого `to` разные последствия (первый матчит чужой пустой элемент, второй пишет пустой), но один и тот же guard. R12 остаётся зелёной и это несущий контроль: она доказывает, что отказ ключуется на ПУСТОМ ВЫРАЖЕНИИ, а не на наличии пустого элемента в списке — иначе guard сломал бы обычную замену.",
+      "from": "    if (fromPlain === \"\" || toPlain === \"\") {\n",
+      "to": "    if (false) {\n",
+      "expect": ["R10", "R11"]
     }
   }
 }

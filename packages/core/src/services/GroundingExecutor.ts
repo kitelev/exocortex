@@ -3734,6 +3734,21 @@ export class GroundingExecutor {
     const fromPlain = plainOf(grounding.replaceFromExpression);
     const toPlain = plainOf(grounding.replaceToExpression);
 
+    // #4314 secondary item — the three guards above reject an ABSENT expression
+    // but not one that RESOLVES to nothing. An empty `from` then matches any
+    // empty list element (`- ""`, or a bare `- ` whose capture trims to ""), so
+    // a substitution that silently produced nothing would rewrite an unrelated
+    // element; an empty `to` would write one. Refusing keeps this method's four
+    // guards consistent: it never guesses which element the author meant.
+    if (fromPlain === "" || toPlain === "") {
+      return {
+        success: false,
+        error:
+          `property_replace: ${fromPlain === "" ? "replaceFromExpression" : "replaceToExpression"} ` +
+          `resolved to an empty value — refusing rather than matching an empty list element`,
+      };
+    }
+
     const fromIndex = existing.findIndex(
       (item) => decodeYamlSequenceItem(item) === fromPlain,
     );

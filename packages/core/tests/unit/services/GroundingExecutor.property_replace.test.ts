@@ -278,4 +278,76 @@ describe("GroundingExecutor.property_replace (@req:02de55a4-0a07-4347-b434-bb4a4
     expect(result.success).toBe(true);
     expect(writtenList(writer, "aliases")).toEqual(["Bar", "Foo"]);
   });
+
+  // ── #4314 secondary item: an expression that RESOLVES to nothing ──────────
+  // The `=== undefined` guards reject an ABSENT expression; they say nothing
+  // about one that resolves to "". An empty `from` matches any empty list item
+  // (`- ""`, or a bare `- ` whose capture trims to ""), so the method would
+  // rewrite an element the author never named.
+
+  it("R10 an empty `from` is REFUSED rather than matching an empty list element", async () => {
+    const { executor, writer } = makeExecutor(
+      `---\nexo__Instance_class:\n  - ""\n  - "${OBJECT_PROPERTY}"\n---\nBody`,
+    );
+
+    const result = await executor.execute(
+      makeGrounding({
+        targetProperty: "exo__Instance_class",
+        replaceFromExpression: '""',
+        replaceToExpression: `"${DATATYPE_PROPERTY}"`,
+      }),
+      TARGET_IRI,
+      FILE_PATH,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/replaceFromExpression.*empty/);
+    // The refusal must be total — a guard that reports failure after writing
+    // would be worse than none.
+    expect(writer.updateFile).not.toHaveBeenCalled();
+  });
+
+  it("R11 an empty `to` is REFUSED rather than writing an empty element", async () => {
+    const { executor, writer } = makeExecutor(
+      `---\nexo__Instance_class:\n  - "${OBJECT_PROPERTY}"\n---\nBody`,
+    );
+
+    const result = await executor.execute(
+      makeGrounding({
+        targetProperty: "exo__Instance_class",
+        replaceFromExpression: `"${OBJECT_PROPERTY}"`,
+        replaceToExpression: '""',
+      }),
+      TARGET_IRI,
+      FILE_PATH,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/replaceToExpression.*empty/);
+    expect(writer.updateFile).not.toHaveBeenCalled();
+  });
+
+  it("R12 control — a NON-empty replace on a list that CONTAINS an empty element still works", async () => {
+    // Without this, refusing every list that has an empty element anywhere
+    // would pass R10/R11 while breaking the ordinary case.
+    const { executor, writer } = makeExecutor(
+      `---\nexo__Instance_class:\n  - ""\n  - "${OBJECT_PROPERTY}"\n---\nBody`,
+    );
+
+    const result = await executor.execute(
+      makeGrounding({
+        targetProperty: "exo__Instance_class",
+        replaceFromExpression: `"${OBJECT_PROPERTY}"`,
+        replaceToExpression: `"${DATATYPE_PROPERTY}"`,
+      }),
+      TARGET_IRI,
+      FILE_PATH,
+    );
+
+    expect(result.success).toBe(true);
+    expect(writtenList(writer, "exo__Instance_class")).toEqual([
+      "",
+      DATATYPE_PROPERTY,
+    ]);
+  });
 });
