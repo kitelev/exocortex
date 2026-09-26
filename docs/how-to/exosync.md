@@ -267,10 +267,14 @@ loss and are visible cross-device. Design points:
   whose body is no longer remembered all fall back to an ordinary
   unconditional read — a 304 is never handed on as an empty success. Disable
   with `--no-conditional-requests` or `EXOCORTEX_EXOSYNC_CONDITIONAL=0`.
-  ⛤ Composes with the cache below as `conditional → cache → engine`: the
-  cache answers first, because an object it already holds costs no request at
-  all, and only what it cannot serve (mutable refs, an unseen SHA) is worth a
-  conditional round trip.
+  ⛤ Composes with the cache below. Written as the path a REQUEST takes:
+  `engine → object cache → conditional request → GitHub`. The cache answers
+  first, because an object it already holds costs no request at all; only
+  what it cannot serve (mutable refs, an unseen SHA) is worth a conditional
+  round trip. (Stating the direction matters: the wrapping order is the
+  mirror image — `wireConditionalRequests` wraps the raw transport and
+  `wireObjectCache` wraps that — so an arrow diagram with no direction named
+  reads correctly either way and therefore says nothing.)
 - **Immutable-object cache** (#4410) — `git/commits/{sha}`, `git/trees/{sha}`
   and `git/blobs/{sha}` are content-addressed, so a SHA that has been read once
   is served from a local store and costs **no request at all** on any later
