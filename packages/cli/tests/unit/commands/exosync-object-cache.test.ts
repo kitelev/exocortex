@@ -334,21 +334,25 @@ describe("the SAME wiring is pinned at every call site @req:086df113-16bb-4912-b
     const remote = countingRemote({ [FILE_A]: CONTENT_A });
     const pinned = makeVault({ pinnedPaths: [FILE_A] });
     try {
-      // Prime the store through the sync path, then assert the quarantine
-      // command reuses it rather than re-reading the same SHAs.
-      await runExosyncSync(
-        "pull",
-        { vault: pinned.vault, token: FAKE_PAT },
-        { transportFactory: () => remote, out: () => undefined, env: {} },
-      );
-      const afterSync = remote.objectCalls().length;
-      expect(afterSync).toBeGreaterThan(0);
+      // ⛔ Ось НЕ греет хранилище через `sync`: замерено, что прогон quarantine
+      // ПОСЛЕ синка не делает НИ ОДНОГО запроса вовсе, и тогда
+      // `objectCalls() === afterSync` удовлетворяется нулём — ось была зелёной
+      // и с проводкой, и без неё (мутант M1_quarantine_wiring_removed не
+      // краснил ничего). Третья точка сборки обязана судиться СВОИМИ
+      // прогонами, иначе ось меряет чужую проводку.
+      const list = async (): Promise<number> =>
+        runQuarantineList(
+          { vault: pinned.vault, token: FAKE_PAT },
+          { transportFactory: () => remote, out: () => undefined, env: {} },
+        );
 
-      await runQuarantineList(
-        { vault: pinned.vault, token: FAKE_PAT },
-        { transportFactory: () => remote, out: () => undefined, env: {} },
-      );
-      expect(remote.objectCalls()).toHaveLength(afterSync);
+      await list();
+      const afterFirst = remote.objectCalls().length;
+      expect(afterFirst).toBeGreaterThan(0); // канарейка: прогон реально читал объекты
+
+      await list();
+      // Второй прогон не платит за те же неизменяемые объекты повторно.
+      expect(remote.objectCalls()).toHaveLength(afterFirst);
     } finally {
       pinned.cleanup();
     }

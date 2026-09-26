@@ -256,6 +256,12 @@ export class ConditionalRequestCache {
       const raw = await this.io.read();
       if (raw === null) return {};
       const parsed = JSON.parse(raw) as unknown;
+      // ⛤ DEFENSIVE, замерено: снятие `typeof parsed !== "object"` не
+      // меняет исход НИ НА ОДНОМ входе — у примитива `.entries` даёт
+      // `undefined`, и строка ниже всё равно возвращает `{}`. Мутанта на
+      // него нет намеренно: различающего входа не существует, поэтому
+      // ось была бы вакуумной. Проверяемое решение — `catch` ниже
+      // (мутант M10_corrupt_store_is_fatal), оно и запирает терпимое чтение.
       if (parsed === null || typeof parsed !== "object") return {};
       const entries = (parsed as StoreShape).entries;
       return entries !== null && typeof entries === "object" ? entries : {};

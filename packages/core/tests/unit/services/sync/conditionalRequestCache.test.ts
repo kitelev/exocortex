@@ -221,6 +221,11 @@ describe("a missing ETag never breaks the sync (fail-open) @req:af002ec4-ec4e-44
     const stored = JSON.parse(io.raw() ?? "{}") as {
       entries: Record<string, { etag: string; body: string }>;
     };
+    // ⛔ Конъюнкт «вход построен» ПЕРЕД порчей: без него мутант, отключающий
+    // запоминание валидаторов, роняет эту ось по TypeError на несуществующей
+    // записи — и текст красноты обвиняет предмет, хотя строить было нечего
+    // (положительное зеркало вакуумной оси-отрицания).
+    expect(stored.entries[refUrl()]).toBeDefined();
     stored.entries[refUrl()].body = "{not json";
     await io.writeAtomic(JSON.stringify(stored));
 

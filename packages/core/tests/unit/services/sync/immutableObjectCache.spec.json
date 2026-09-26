@@ -90,12 +90,6 @@
       "to": "const SAFE_SEGMENT_RE = /^.+$/;\n",
       "expect": ["A19"]
     },
-    "M15_dot_segment_guard_removed": {
-      "_note": "⛔ Expected to red NOTHING, and that is the POINT: `new URL` normalises `.`/`..` away before any segment is read (A20 measures exactly this), so the guard is DEFENSIVE — it exists for a future parser swap. Kept in the matrix so the next reader sees the zero was measured, not overlooked. The driver prints ⛔ for any empty red-set; here the empty set IS the expectation (`expect: []`) and it is the measurement A20 documents — read the note, not the marker.",
-      "from": "  return SAFE_SEGMENT_RE.test(segment) && !isDotSegment(segment);\n",
-      "to": "  return SAFE_SEGMENT_RE.test(segment);\n",
-      "expect": []
-    },
     "M16_sweep_only_by_per_process_counter": {
       "_note": "Restores the reviewed defect: the LRU sweep gated solely on a per-PROCESS byte counter. Every CLI run builds a fresh cache, so a small delta would never sweep and the device-wide store would grow past its advertised ceiling across runs.",
       "from": "    if (!this.sweptOnce || this.writtenSinceSweep >= this.sweepIntervalBytes) {\n      this.sweptOnce = true;\n",
@@ -107,6 +101,15 @@
       "from": "    const digest = await this.digestOf(stored.body);\n    if (digest !== stored.digest) {\n",
       "to": "    const digest = stored.digest;\n    if (digest !== stored.digest) {\n",
       "expect": ["A5", "A23"]
+    }
+  },
+  "_defensive": {
+    "_doc": "⛔ ЗАМЕРЕННО-DEFENSIVE гварды: мутация на них НЕ краснит ничего, и это ПРАВИЛЬНЫЙ исход, а не пробел. Хранятся ЗДЕСЬ, а не в `mutants`, по механической причине: драйвер возвращает rc=2 на ЛЮБОМ мутанте с пустым набором красных — `expect: []` он не чтит. Спека с таким мутантом была бы ВЕЧНО красной у раннера, то есть ровно тем гейтом, который нельзя удовлетворить, и его перестали бы читать. Запись сохраняет провенанс: ноль был ЗАМЕРЕН, а не пропущен.",
+    "M15_dot_segment_guard_removed": {
+      "_note": "⛔ Expected to red NOTHING, and that is the POINT: `new URL` normalises `.`/`..` away before any segment is read (A20 measures exactly this), so the guard is DEFENSIVE — it exists for a future parser swap. Kept in the matrix so the next reader sees the zero was measured, not overlooked. The driver prints ⛔ for any empty red-set; here the empty set IS the expectation (`expect: []`) and it is the measurement A20 documents — read the note, not the marker.",
+      "from": "  return SAFE_SEGMENT_RE.test(segment) && !isDotSegment(segment);\n",
+      "to": "  return SAFE_SEGMENT_RE.test(segment);\n",
+      "expect": []
     }
   }
 }

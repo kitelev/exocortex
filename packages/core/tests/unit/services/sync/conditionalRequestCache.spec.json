@@ -13,16 +13,16 @@
       "expect": ["C1", "C3", "C4"]
     },
     "M2_never_remembers_an_etag": {
-      "_note": "Nothing is stored, so nothing can ever be validated.",
-      "from": "  const etag = resp.headers?.(\"etag\");\n  if (typeof etag !== \"string\" || etag.length === 0) return;\n",
-      "to": "  const etag = resp.headers?.(\"etag\");\n  if (typeof etag === \"string\") return;\n",
-      "expect": ["C1", "C3", "C4"]
+      "_note": "Ни один валидатор не сохраняется, поэтому вторая читка снова безусловна. ⛤ Мутант TYPE-PRESERVING по ДВУМ прошлым отказам, а не по одному: (1) инверсия гварда (`typeof etag === \"string\"`) сужала тип до `undefined` и роняла компиляцию; (2) подстановка литерала (`const etag: string | undefined = undefined`) сужалась TS до литерального `undefined`, и `etag.length` в ПРАВОМ операнде `||` становился `never` — TS2339. Оба раза драйвер печатал BROKEN, то есть ОТСУТСТВИЕ замера, неотличимое от «ось не различает» (§A36/§A97). Рабочая форма меняет только АРГУМЕНТ: заголовок с таким именем не отдаёт никто, тип выражения (`string | undefined`) и форма сохранены. ⛤ C8 в ожидании — по замеру: её сценарий («валидатор пережил тело») СТРОИТСЯ из сохранённой записи, поэтому мутант, отменяющий запоминание, делает вход непостроимым. Ось краснеет законно, и с добавленным конъюнктом `expect(entry).toBeDefined()` она теперь говорит об этом прямо, а не обвиняет предмет.",
+      "from": "  const etag = resp.headers?.(\"etag\");\n",
+      "to": "  const etag = resp.headers?.(\"x-no-such-header\");\n",
+      "expect": ["C1", "C3", "C4", "C8"]
     },
     "M3_write_is_fire_and_forget": {
-      "_note": "Restores a defect the axes caught during implementation: with the store write un-awaited, two reads of the same endpoint with no intervening yield leave the SECOND one unconditional — the validator exists but nobody can see it yet.",
+      "_note": "Запись валидатора перестаёт быть дождана: следующее чтение того же эндпоинта может опередить её. ⛤ Краснеет РОВНО C4, и это прочитано из механизма, а не подогнано под факт: C1/C3 перечитывают ТОТ ЖЕ ETag, поэтому потерянная запись им не видна — они зелены и при исправной, и при сломанной записи. Гонку наблюдает только ось, где валидатор ДОЛЖЕН СМЕНИТЬСЯ между чтениями (C4: head уехал, третья читка обязана предъявить НОВЫЙ ETag). Прежнее ожидание ['C1','C3','C4'] выведено из ТЕМЫ мутанта, а не из того, какие оси вообще способны его увидеть (§A44).",
       "from": "  await cache.remember(key, etag, resp.json).catch(() => undefined);\n",
       "to": "  void cache.remember(key, etag, resp.json).catch(() => undefined);\n",
-      "expect": ["C1", "C3", "C4"]
+      "expect": ["C4"]
     },
     "M4_304_handed_on_as_empty_success": {
       "_note": "304, чьё тело больше не помнится, отдаётся как есть вместо перечитывания: вызывающий получил бы ПУСТОЙ успех, что хуже лишнего запроса. ⛤ Якорь сжат до одной строки: прежняя редакция захватывала хвост с `rememberFrom(...)`, а починка гонки (M3) добавила туда `await` ⇒ count стал 0. Строка `return storeFresh(...)` с шестью пробелами уникальна (у строки 284 отступ 4).",
@@ -61,10 +61,10 @@
       "expect": ["C15"]
     },
     "M10_corrupt_store_is_fatal": {
-      "_note": "Removes the tolerant read: an unparseable store would abort instead of degrading to unconditional reads.",
-      "from": "      const parsed = JSON.parse(raw) as unknown;\n      if (parsed === null || typeof parsed !== \"object\") return {};\n",
-      "to": "      const parsed = JSON.parse(raw) as unknown;\n      if (parsed === null) return {};\n",
-      "expect": ["C7"]
+      "_note": "Снимает терпимое чтение: неразбираемое хранилище роняло бы синк вместо деградации до безусловных чтений. ⛤ Прежняя редакция мутировала конъюнкт `typeof parsed !== \"object\"` и не краснила НИЧЕГО — он доказанно DEFENSIVE (у примитива `.entries` = undefined, и следующая строка всё равно даёт `{}`), то есть различающего входа не существует (§A35). Мутируется НАБЛЮДАЕМОЕ РЕШЕНИЕ — сам `catch`, через который и проходит фикстура C7 (`JSON.parse` на `{not json` БРОСАЕТ и до конъюнкта не доходит вовсе). ⛤ Краснеют ДВЕ оси, и это замер, а не подгонка: C6 (нечитаемое хранилище) и C7 (неразбираемое) обе проходят через ОДИН `catch` — он и есть единственное решение «терпеть», поэтому мутант на него обязан ронять обе.",
+      "from": "    } catch {\n      return {};\n    }\n",
+      "to": "    } catch (e) {\n      throw e;\n    }\n",
+      "expect": ["C6", "C7"]
     }
   }
 }
