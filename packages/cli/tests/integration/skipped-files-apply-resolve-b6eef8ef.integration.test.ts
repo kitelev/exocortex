@@ -129,7 +129,7 @@ const present = SUBMODULES.every((m) => fs.existsSync(path.join(PACKAGES, m)));
     await run(applyCommand(), ["apply", "start-effort", SKIPPED_REL, "--vault", root, "--yes"]);
     const e = err();
     const at = e.indexOf(itselfSkipped(SKIPPED_REL));
-    expect(at).toBeGreaterThanOrEqual(0);
+    expect(at).not.toBe(-1);
     expect(e).toMatch(/present but empty/);
     const refusal = e.indexOf("❌", at);
     expect(refusal).toBeGreaterThan(at);
