@@ -210,9 +210,19 @@ describe("exo naming-capability TBox layer — exo__Slugable metaclass mixin (@r
     const subs = subclassAlgebraTriples(triples);
     expect(edge(subs, CLASS, "Slugable")).toBeNull();
 
-    // …and not reachable transitively either. This is what keeps the local `isSubClassOf` oracle
-    // (#4377) from being vacuous: the positive cases above would pass against an oracle hard-coded
-    // to `true`, so without a negative one the helper proves nothing.
+    // …and the oracle says so too. What this buys is NOT a second failure class: for this
+    // predicate's triple shape it is logically equivalent to the `toBeNull()` above, reached by an
+    // independently-coded path. Its job is to keep the local `isSubClassOf` oracle (#4377) from
+    // being vacuous — the positive cases would pass against an oracle hard-coded to `true`, so
+    // without a negative one the helper proves nothing.
+    //
+    // ⚠ Do NOT read this as a transitive-reachability guarantee. Every rdfs:subClassOf triple this
+    // converter emits has a FILE-IRI subject and a SYMBOLIC-IRI object, and no triple ever has a
+    // symbolic IRI as a subject — so the BFS structurally cannot walk past hop 1 here, whatever the
+    // graph contains (verified by probe on a synthetic CLASS → MID → Slugable chain). That is
+    // inherited unchanged from the deleted `services/ClassHierarchy`, whose BFS had the same shape;
+    // real multi-hop subsumption in production is bridged by `ClassHierarchyResolvingStore`, which
+    // this test deliberately does not exercise (see the Scope note in the file docblock).
     //
     // ⛔ The target MUST be the SYMBOLIC IRI of exo__Slugable, not its file IRI. In this dual-IRI
     // graph every rdfs:subClassOf object is symbolic and every subject is a file IRI, so a file-IRI
