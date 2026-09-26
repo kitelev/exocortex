@@ -1,0 +1,41 @@
+{
+  "_doc": "Revert-verify for req e5e45283-cf8c-45f5-8ad7-5cd08ab5442a — ExoSync reads the GitHub quota from a SUCCESSFUL response. Axes A1-A5 in packages/core/tests/unit/services/sync/SyncPhaseTimer.quota.test.ts. Measured 2026-09-26: control green, BAD=0, every mutant reddens exactly its expected set.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/SyncPhaseTimer.ts",
+  "symlink_node_modules": ["node_modules", "packages/core/node_modules"],
+  "harness": "cd \"$(dirname {subject})/../../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/services/sync/SyncPhaseTimer.quota.test.ts 2>&1",
+  "red_re": "› .*?\\b(A\\d+)\\b",
+  "mutants": {
+    "M1_wiring_removed": {
+      "_note": "⛤ Мутант живёт в ДРУГОМ файле (SyncEngine.ts) намеренно: он снимает ПРОВОДКУ, а не парсер. Краснеет РОВНО A2 — то есть ось на «движок отдаёт заголовки таймеру» не вакуумна и отделена от осей на разбор. Без такой пары «100% покрытый» парсер мог бы приехать в прод ни разу не вызванным (§ПЯТАЯ механика integration-test-revert-verify).",
+      "file": "packages/core/src/services/sync/SyncEngine.ts",
+      "from": "        timer.observeQuota(res.headers);\n",
+      "to": "",
+      "expect": ["A2"]
+    },
+    "M2_limit_unparsed": {
+      "_note": "⛤ TYPE-PRESERVING с ТРЕТЬЕЙ попытки, и обе неудачные стоит знать. (1) `if (true) return;` сделал тело мёртвым кодом; (2) инверсия гварда (`headers !== undefined`) сузила тип `headers` до `undefined`, и вызов `headers(name)` перестал компилироваться. Оба раза драйвер печатал пустой набор красных — то есть ОТСУТСТВИЕ замера, неотличимое от «ось не различает» (§A97, §A36). Рабочая форма убивает разбор ОДНОГО поля: типы целы, блок достижим, семантика меняется наблюдаемо.",
+      "from": "    const limit = num(\"x-ratelimit-limit\");\n",
+      "to": "    const limit = null;\n",
+      "expect": ["A1", "A2", "A5"]
+    },
+    "M3_quota_summed": {
+      "_note": "Агрегация начинает СКЛАДЫВАТЬ остатки вместо выбора свежего. Это и есть ошибка, против которой написана A4: квота — СОСТОЯНИЕ, и сумма двух наблюдений даёт число, которого GitHub не присылал (900 + 800 = 1700 при настоящем остатке 800).",
+      "from": "  return b.observedAt >= a.observedAt ? b : a;\n",
+      "to": "  return { ...b, remaining: (a.remaining ?? 0) + (b.remaining ?? 0) };\n",
+      "expect": ["A4"]
+    },
+    "M4_na_omitted": {
+      "_note": "Отсутствие данных печатается пустой строкой вместо «quota n/a». Ось краснеет потому, что пустая строка НЕОТЛИЧИМА от «остатка много» — ровно то прочтение, которое дало неверный диагноз инцидента 2026-09-26.",
+      "from": "  if (q === undefined) return \"quota n/a\";\n",
+      "to": "  if (q === undefined) return \"\";\n",
+      "expect": ["A5"]
+    },
+    "M5_absent_clears": {
+      "_note": "Снят гвард «ничего числового не пришло — сохранить прошлое наблюдение». Тогда попадание в кэш объектов (запроса нет ⇒ заголовков нет) СТИРАЕТ последнее настоящее показание, и прогон заканчивается с «quota n/a» при живых данных.",
+      "from": "    if (limit === null && remaining === null && used === null) return;\n",
+      "to": "",
+      "expect": ["A3"]
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "_doc": "Revert-verify for req e5e45283-cf8c-45f5-8ad7-5cd08ab5442a on the CLI surface — parity prints cost+budget, and every run journals one line. Axes B1-B5 in packages/cli/tests/unit/commands/exosync-quota-floor.test.ts. Measured 2026-09-26: control green, BAD=0.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-parity.ts",
+  "symlink_node_modules": ["node_modules", "packages/cli/node_modules"],
+  "harness": "cd \"$(dirname {subject})/../../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/commands/exosync-quota-floor.test.ts 2>&1",
+  "red_re": "› .*?\\b(B\\d+)\\b",
+  "mutants": {
+    "N1_quota_line_not_printed": {
+      "_note": "Строка сводки исчезает из обычного пути. Краснеет B1/B2/B5 — все три читают именно её; ранняя ветка («nothing to check») печатает СВОИМ вызовом и здесь не задета, поэтому мутант адресен.",
+      "from": "  reportQuota();\n\n  const exitCode",
+      "to": "\n  const exitCode",
+      "expect": ["B1", "B2", "B5"]
+    },
+    "N2_wiring_removed": {
+      "_note": "⛤ Снимает ПРОВОДКУ наблюдения в CLI (ядро имеет свою — M1 в SyncPhaseTimer.quota.spec.json). Краснеет РОВНО B5: остальные оси читают наличие строки и счётчик запросов, а не числа квоты, поэтому именно B5 отличает «прочитали заголовки» от «напечатали n/a». Без неё декоратор мог бы приехать в прод, ни разу не заглянув в ответ.",
+      "from": "    runTimer.observeQuota(res.headers);\n",
+      "to": "",
+      "expect": ["B5"]
+    },
+    "N3_run_not_journalled": {
+      "_note": "Журнал не пишется на обычном пути — постфактум-диагностика снова невозможна. Краснеет B3 (файла нет / строк не прибавилось).",
+      "from": "  await journalRun(exitCode);\n",
+      "to": "",
+      "expect": ["B3"]
+    },
+    "N4_counter_not_bumped": {
+      "_note": "Декоратор перестаёт считать вызовы: строка печатается, но всегда «0 REST». Краснеет B2 — единственная ось, читающая ЧИСЛО запросов, а не факт строки.",
+      "from": "    runTimer.bumpRest();\n",
+      "to": "",
+      "expect": ["B2"]
+    }
+  }
+}
