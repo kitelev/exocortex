@@ -11,101 +11,118 @@
  * failed: window is not defined"), because lint-staged restores the tree and the
  * rewritten file is gone before anyone can look at it.
  *
- * These axes assert the ACTUAL autofix through the real ESLint API rather than
- * reading the config: `calculateConfigForFile` would tell us what severity is
- * configured, which is one inference away from what `--fix` does to the file.
- * `lintText` runs the same code path lint-staged runs, and writes nothing to
- * disk, so no fixture files are created or cleaned up.
+ * ⛔ ESLint runs as a SUBPROCESS here, not through its Node API. Two reasons,
+ * the first measured the hard way:
+ *  - `eslint.config.mjs` is ESM, so the API loads it by dynamic import, which
+ *    inside jest needs `--experimental-vm-modules`. The local one-suite command
+ *    passes that flag and the CI script does not, so an API-based version was
+ *    green locally and red in CI on every axis. The subprocess has no such
+ *    dependency on how jest was invoked.
+ *  - It is also the more faithful path: lint-staged shells out to `eslint --fix`
+ *    exactly like this.
+ *
+ * The probe files are real files in real directories, created and removed around
+ * the single ESLint call. An invented path would NOT do: type-aware linting
+ * resolves it against the tsconfig project and yields a `ruleId: null` parse
+ * error instead of running any rule, so "no rewrite" would be true for the wrong
+ * reason — which is exactly how the first version of these axes was vacuous.
  */
 
-import { ESLint } from "eslint";
+import { execFileSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 
 const REPO_ROOT = path.resolve(__dirname, "../../../../..");
 
 /** One timer call — the smallest input the rule is documented to rewrite. */
-const SOURCE = "export function t(): void {\n  setTimeout(() => {}, 1);\n}\n";
+const SOURCE = "export function zzProbe(): void {\n  setTimeout(() => {}, 1);\n}\n";
 
-/**
- * Run the autofix exactly as `lint-staged` would, for a file AT THIS PATH.
- * Returns the fixed text, or null when the fixer left the source alone.
- *
- * ⛔ `relPath` must be a file that EXISTS. Type-aware linting resolves the path
- * against the ESLint tsconfig project, and an invented path (`zz-probe.ts`)
- * produces a `ruleId: null`, severity-2 parser error instead of running any
- * rule — so the fixer leaves the text alone and "no rewrite" becomes true for
- * the wrong reason. The first version of these axes did exactly that: three of
- * them were green while measuring nothing (caught by the A2 control, which was
- * red for the same reason). {@link assertLinted} keeps that from recurring.
- */
-async function autofix(relPath: string): Promise<{
-  output: string | null;
-  configErrors: string[];
-}> {
-  const abs = path.join(REPO_ROOT, relPath);
-  if (!fs.existsSync(abs)) {
-    throw new Error(`fixture path does not exist: ${relPath}`);
-  }
-  const eslint = new ESLint({ cwd: REPO_ROOT, fix: true });
-  const [result] = await eslint.lintText(SOURCE, {
-    filePath: abs,
-    warnIgnored: false,
-  });
-  return {
-    output: result?.output ?? null,
-    // A rule-less error is a config/parse failure, never a rule verdict.
-    configErrors: (result?.messages ?? [])
-      .filter((m) => m.ruleId === null)
-      .map((m) => m.message),
-  };
+/** Directories whose package config decides the verdict, one probe each. */
+const ZONES: Array<{ why: string; dir: string }> = [
+  { why: "core — storage-agnostic, testEnvironment node", dir: "packages/core/src" },
+  {
+    why: "services — shared grounding factories, testEnvironment node",
+    dir: "packages/services/src",
+  },
+  {
+    why: "test-utils — test infrastructure, testEnvironment node",
+    dir: "packages/test-utils/src",
+  },
+  {
+    why: "plugin transport adapters — CLI-parity / mobile REST, exercised headless",
+    dir: "packages/obsidian-plugin/src/infrastructure/adapters",
+  },
+];
+const RENDERER_DIR = "packages/obsidian-plugin/src/presentation";
+
+interface LintResult {
+  filePath: string;
+  output?: string;
+  messages: Array<{ ruleId: string | null; message: string }>;
 }
 
-/** The canary: linting actually ran, so a null output means "rule off". */
-function assertLinted(res: { configErrors: string[] }): void {
-  expect(res.configErrors).toEqual([]);
+/** Probe name carries a run-unique token so a parallel run cannot collide. */
+const TOKEN = `zz-timer-scope-${process.pid}-${Date.now()}`;
+
+let results: Map<string, LintResult>;
+
+beforeAll(() => {
+  const written: string[] = [];
+  try {
+    for (const dir of [...ZONES.map((z) => z.dir), RENDERER_DIR]) {
+      const p = path.join(REPO_ROOT, dir, `${TOKEN}.ts`);
+      fs.writeFileSync(p, SOURCE);
+      written.push(p);
+    }
+    // ⛔ `--fix-dry-run`: report what `--fix` WOULD write, touching nothing.
+    const raw = execFileSync(
+      "npx",
+      ["eslint", "--fix-dry-run", "--format", "json", ...written],
+      { cwd: REPO_ROOT, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
+    );
+    results = new Map(
+      (JSON.parse(raw) as LintResult[]).map((r) => [
+        path.relative(REPO_ROOT, r.filePath),
+        r,
+      ]),
+    );
+  } finally {
+    for (const p of written) fs.rmSync(p, { force: true });
+  }
+}, 120_000);
+
+/** The canary: linting actually ran, so a missing output means "rule off". */
+function resultFor(dir: string): LintResult {
+  const key = path.join(dir, `${TOKEN}.ts`);
+  const res = results.get(key);
+  expect(res).toBeDefined();
+  // A rule-less message is a config/parse failure, never a rule verdict — the
+  // exact shape that made the first version of these axes vacuous.
+  expect((res as LintResult).messages.filter((m) => m.ruleId === null)).toEqual([]);
+  return res as LintResult;
 }
 
 describe("#4417 prefer-window-timers is scoped to code that HAS a window", () => {
-  // Each headless package is listed on its own row rather than folded into one
-  // assert: they are separate `testEnvironment: 'node'` declarations, so a
-  // single failure names the package whose scope regressed.
-  it.each([
-    [
-      "core — storage-agnostic, testEnvironment node",
-      "packages/core/src/services/GroundingExecutor.ts",
-    ],
-    [
-      "services — shared grounding factories, testEnvironment node",
-      "packages/services/src/prototype-subtree-instantiator.ts",
-    ],
-    [
-      "test-utils — test infrastructure, testEnvironment node",
-      "packages/test-utils/src/types.ts",
-    ],
-    [
-      "plugin transport adapters — CLI-parity / mobile REST, exercised headless",
-      "packages/obsidian-plugin/src/infrastructure/adapters/GitHubRestClient.ts",
-    ],
-  ])("A1 %s keeps its bare setTimeout", async (_why, relPath) => {
-    const res = await autofix(relPath);
-    assertLinted(res);
-    expect(res.output).toBeNull();
-  });
+  // Each headless package is a row of its own rather than one folded assert:
+  // they are separate `testEnvironment: 'node'` declarations, so a single
+  // failure names the package whose scope regressed.
+  it.each(ZONES.map((z) => [z.why, z.dir] as const))(
+    "A1 %s keeps its bare setTimeout",
+    (_why, dir) => {
+      expect(resultFor(dir).output).toBeUndefined();
+    },
+  );
 
-  it("A2 renderer code is STILL rewritten — the rule keeps its teeth where a window exists", async () => {
+  it("A2 renderer code is STILL rewritten — the rule keeps its teeth where a window exists", () => {
     // Control for A1. Without this, turning the rule off repo-wide would pass
     // every row above while removing the protection the rule exists for.
-    const res = await autofix(
-      "packages/obsidian-plugin/src/presentation/body/BodyLinkPatch.ts",
-    );
-    assertLinted(res);
-    expect(res.output).not.toBeNull();
+    const res = resultFor(RENDERER_DIR);
+    expect(res.output).toBeDefined();
     expect(res.output).toContain("window.setTimeout");
   });
 
   it("A3 every plugin module exercised by a headless suite sits inside the off-scope", () => {
-    // The scope above says "all ten @jest-environment node suites exercise
+    // The scope says "all ten @jest-environment node suites exercise
     // infrastructure/adapters and nothing else". That was measured once; this
     // axis keeps it true. A new headless suite importing, say, a presentation
     // module reddens here instead of reintroducing the defect months later.
@@ -114,7 +131,11 @@ describe("#4417 prefer-window-timers is scoped to code that HAS a window", () =>
     const walk = (dir: string): string[] =>
       fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
         const p = path.join(dir, e.name);
-        return e.isDirectory() ? walk(p) : p.endsWith(".ts") || p.endsWith(".tsx") ? [p] : [];
+        return e.isDirectory()
+          ? walk(p)
+          : p.endsWith(".ts") || p.endsWith(".tsx")
+            ? [p]
+            : [];
       });
 
     const headlessSuites = walk(testsRoot).filter((p) =>
@@ -128,9 +149,10 @@ describe("#4417 prefer-window-timers is scoped to code that HAS a window", () =>
     // would let the two drift: narrowing the config would leave this axis green
     // while the headless suites started being linted again.
     const config = fs.readFileSync(path.join(REPO_ROOT, "eslint.config.mjs"), "utf8");
-    const block = /files:\s*\[([^\]]*)\][^}]*?'obsidianmd\/prefer-window-timers':\s*'off'/s.exec(
-      config,
-    );
+    const block =
+      /files:\s*\[([^\]]*)\][^}]*?'obsidianmd\/prefer-window-timers':\s*'off'/s.exec(
+        config,
+      );
     expect(block).not.toBeNull();
     const pluginGlobs = [...(block as RegExpExecArray)[1].matchAll(/'([^']+)'/g)]
       .map((m) => m[1])
@@ -144,8 +166,6 @@ describe("#4417 prefer-window-timers is scoped to code that HAS a window", () =>
           .replace("packages/obsidian-plugin/", "")
           .replace(/\*+$/, ""),
       );
-    // Canary: no plugin glob means every plugin module is in scope, and the
-    // loop below would report every import — a red for the wrong reason.
     expect(pluginGlobs.length).toBeGreaterThan(0);
 
     const OFF_SCOPE = new RegExp(
