@@ -6806,56 +6806,24 @@ if (rule) {
 
 ---
 
-## Cross-Vault SPARQL Pattern
+## Cross-Vault SPARQL Pattern (removed — superseded by AssetSpace mounting)
 
-**When to use**: Querying across multiple Obsidian vaults (e.g., active + archive) in a single SPARQL query
+> ⛔ **Removed in #3646 (RFC eacf04c0 v2, POST-3).** The repeatable `--also <path>` flag
+> (PR #2332, March 2026) merged extra vaults into the query store. It predated AssetSpace
+> mount/unmount and profiles, and was hard-removed together with its dead code
+> (`CombinedCacheManager`, the cross-vault resolvers). No CLI command accepts `--also` today.
 
-### CLI Usage
+**What to do instead** — a vault is an environment, and its profile decides which AssetSpaces
+are mounted and therefore queryable. Data that has to be queried together lives in AssetSpaces
+mounted in one vault. To query an AssetSpace your working vault does not mount (for example a
+cold archive), run the command against a vault whose profile mounts it:
 
 ```bash
-# Query active vault only (default)
-npx @kitelev/exocortex-cli query --vault /path/to/active "SELECT ?s WHERE { ?s a ems:Task }"
-
-# Query active + archive vault together
-npx @kitelev/exocortex-cli query \
-  --vault /path/to/active \
-  --also /path/to/archive \
+npx @kitelev/exocortex-cli query --vault /path/to/vault-with-archive \
   "SELECT ?s ?label WHERE { ?s exo:Asset_label ?label }"
-
-# Multiple --also flags for 3+ vaults
-npx @kitelev/exocortex-cli query \
-  --vault /main \
-  --also /archive-2024 \
-  --also /archive-2025 \
-  "SELECT (COUNT(*) AS ?total) WHERE { ?s a ems:Task }"
 ```
 
-### Implementation
-
-The `--also` flag is repeatable. Each additional vault is converted to RDF triples and merged into the same in-memory triple store before query execution.
-
-```typescript
-// In sparql-query.ts:
-const alsoVaults = options.also || [];
-for (const alsoPath of alsoVaults) {
-  const alsoAdapter = new FileSystemVaultAdapter(resolvedPath);
-  const alsoTriples = await new NoteToRDFConverter(alsoAdapter).convertVault();
-  triples = triples.concat(alsoTriples);
-}
-```
-
-### Key Considerations
-
-- **Namespace conflicts**: Both vaults must use compatible ontologies (same `exo__Ontology_url`)
-- **Performance**: Each `--also` vault adds conversion time; use `--timeout` for large vaults
-- **Duplicate detection**: Assets with same UUID in multiple vaults appear once per vault in results
-- **Use case**: Analytics spanning archived and active data (e.g., yearly productivity reports)
-
-### Key File
-
-- `packages/cli/src/commands/sparql-query.ts` (lines 221-233: flag definition; lines 357-374: vault loading)
-
-**Reference**: PR #2332 - Cross-Vault SPARQL Query Support (March 2026)
+**Reference**: PR #2332 (introduced), #3646 (removed)
 
 ---
 

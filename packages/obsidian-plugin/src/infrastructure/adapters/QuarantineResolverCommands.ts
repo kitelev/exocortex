@@ -249,7 +249,7 @@ export class QuarantineResolverCommands {
 
 const PINNED_KIND_TEXT: Record<PinnedPathKind, string> = {
   "remote-pending": "remote change(s) not applied here yet",
-  "local-withheld": "local change(s) pending a full Sync",
+  "local-withheld": "local change(s) not pushed yet",
   converged: "converged",
   unclassified: "unclassified",
 };

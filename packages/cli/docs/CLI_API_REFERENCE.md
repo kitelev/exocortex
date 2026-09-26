@@ -136,7 +136,7 @@ Most commands accept:
 | `--help`          | boolean | —                                                     | Show help for command                                      |
 | `--version`       | boolean | —                                                     | Show CLI version                                           |
 
-Per-command flags (including `--format`, `--dry-run`, `--also`, `--use-cache`) are documented in the [README](../README.md) — defaults vary by command.
+Per-command flags (including `--format`, `--dry-run`, `--use-cache`) are documented in the [README](../README.md) — defaults vary by command.
 
 ---
 
