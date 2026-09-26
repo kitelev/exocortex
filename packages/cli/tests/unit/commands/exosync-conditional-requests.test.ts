@@ -22,6 +22,7 @@ import {
 
 import { runExosyncParity } from "../../../src/commands/exosync-parity.js";
 import { runExosyncSync } from "../../../src/commands/exosync-sync.js";
+import { runQuarantineList } from "../../../src/commands/exosync-quarantine.js";
 import { wireConditionalRequests } from "../../../src/services/conditionalRequestTransport.js";
 
 const OWNER = "kitelev";
@@ -119,7 +120,10 @@ function conditionalRemote(
   });
 }
 
-function makeVault(): { vault: string; cleanup: () => void } {
+function makeVault(opts: { pinnedPaths?: string[] } = {}): {
+  vault: string;
+  cleanup: () => void;
+} {
   const vault = mkdtempSync(path.join(tmpdir(), "exosync-etag-"));
   writeFileSync(
     path.join(vault, "space-decl.md"),
@@ -139,6 +143,13 @@ function makeVault(): { vault: string; cleanup: () => void } {
           lastSyncedSha: HEAD,
           rootTreeSha: TREE,
           files: [{ path: FILE_A, blobSha: gitBlobShaSync(CONTENT_A) }],
+          // Закреплённый путь — то, ради чего `quarantine list` вообще
+          // обращается к remote. Без него он классифицирует по локальному
+          // состоянию, не делает НИ ОДНОГО запроса, и ось D9 стала бы
+          // вакуумной (зелёной при любом состоянии проводки).
+          ...(opts.pinnedPaths !== undefined
+            ? { pinnedPaths: opts.pinnedPaths }
+            : {}),
         },
       },
     }),
@@ -296,5 +307,79 @@ describe("the wiring is pinned at the command level @req:af002ec4-ec4e-4482-b7b5
     } finally {
       second.cleanup();
     }
+  });
+  it("D9 `exosync quarantine list` goes through the same wiring", async () => {
+    const remote = conditionalRemote({ [FILE_A]: CONTENT_A });
+    const pinned = makeVault({ pinnedPaths: [FILE_A] });
+    try {
+      const list = async (over = {}): Promise<number> =>
+        runQuarantineList(
+          { vault: pinned.vault, token: FAKE_PAT, ...over },
+          { transportFactory: () => remote, out: () => undefined, env: {} },
+        );
+
+      // Третья точка сборки судится СВОИМИ прогонами, без sync: иначе ось
+      // меряла бы чужую проводку. Первый прогон только запоминает валидаторы.
+      await list();
+      const seenAfterFirst = remote.seen.length;
+      expect(seenAfterFirst).toBeGreaterThan(0);
+      const condAfterFirst = remote.conditional().length;
+
+      await list();
+      expect(remote.seen.length).toBeGreaterThan(seenAfterFirst);
+      expect(remote.conditional().length).toBeGreaterThan(condAfterFirst);
+      expect(remote.notModified()).toBeGreaterThan(0);
+    } finally {
+      pinned.cleanup();
+    }
+  });
+
+  it("D10 negative control — `exosync quarantine list` with the flag off validates nothing", async () => {
+    const remote = conditionalRemote({ [FILE_A]: CONTENT_A });
+    const pinned = makeVault({ pinnedPaths: [FILE_A] });
+    try {
+      const list = async (): Promise<number> =>
+        runQuarantineList(
+          { vault: pinned.vault, token: FAKE_PAT, conditionalRequests: false },
+          { transportFactory: () => remote, out: () => undefined, env: {} },
+        );
+      await list();
+      await list();
+      expect(remote.seen.length).toBeGreaterThan(0);
+      expect(remote.conditional()).toHaveLength(0);
+      expect(remote.notModified()).toBe(0);
+    } finally {
+      pinned.cleanup();
+    }
+  });
+  it("D11 the saving is REPORTED, not only achieved", async () => {
+    // ⛔ Отдельная ось, потому что достигнутая экономия и НАБЛЮДАЕМАЯ — разные
+    // величины: SyncPhaseTimer.restCalls инкрементится и на 304, и на hit кэша
+    // (bumpRest в SyncEngine.instrumentTransport стоит СНАРУЖИ всей цепочки),
+    // поэтому «помогло ли» из штатного вывода не читается ничем, кроме этого
+    // счётчика. Критерий приёмки №2 требования переписан ровно на него.
+    const remote = conditionalRemote({ [FILE_A]: CONTENT_A });
+    const lines: string[] = [];
+    const pull = async (): Promise<number> =>
+      runExosyncSync(
+        "pull",
+        { vault: fixture.vault, token: FAKE_PAT },
+        {
+          transportFactory: () => remote,
+          out: (l) => lines.push(l),
+          env: {},
+        },
+      );
+    await pull();
+    lines.length = 0;
+    await pull();
+
+    const line = lines.find((l) => l.startsWith("[ExoSync conditional]"));
+    expect(line).toBeDefined();
+    const notModified = Number(/\] (\d+) not modified/.exec(line ?? "")?.[1]);
+    expect(notModified).toBeGreaterThan(0);
+    // Напечатанное обязано совпасть с фактом на проводе, иначе строка —
+    // подпись, а не производная механизма.
+    expect(notModified).toBe(remote.notModified());
   });
 });

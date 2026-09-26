@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify for req af002ec4 at the CLI wiring. Axes D1-D8 in packages/cli/tests/unit/commands/exosync-conditional-requests.test.ts. The core spec proves the mechanism; this one proves a command sends the header at all.",
+  "_doc": "Revert-verify for req af002ec4 at the CLI wiring. Axes D1-D8 in packages/cli/tests/unit/commands/exosync-conditional-requests.test.ts. The core spec proves the mechanism; this one proves a command sends the header at all. Якоря переписаны 2026-09-26 после ревью: см. _note мутантов.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-parity.ts",
   "symlink_node_modules": [
@@ -11,14 +11,14 @@
   "red_re": "› (D\\d+\\w*) ",
   "mutants": {
     "M1_parity_wiring_removed": {
-      "_note": "`exosync-parity` keeps a correct but UNCONDITIONAL transport — the header never goes out.",
-      "from": "  const { transport } = wireConditionalRequests(rawTransport, {\n    ...(opts.conditionalRequests !== undefined\n      ? { enabled: opts.conditionalRequests }\n      : {}),\n    io: nodeConditionalStoreIO(etagPath),\n  });\n",
-      "to": "  const transport = rawTransport;\n",
+      "_note": "`exosync-parity` keeps a correct but UNCONDITIONAL transport — the header never goes out. Вызов остаётся на месте как void-выражение, поэтому мутант type-preserving: ни одна переменная не становится неиспользуемой. ⛤ Якорь — ТОЛЬКО строка деструктуризации, БЕЗ аргумента. Прежняя редакция захватывала вызов целиком вместе с первым аргументом, и соседняя фича (req af002ec4) сменила именно аргумент (rawTransport → conditionalTransport) плюс reflow prettier ⇒ count стал 0 МОЛЧА, при исправных осях. Аргумент — то, что меняет следующий декоратор; строка деструктуризации — нет. ⚠ Якорь вынужденно захватывает и аргумент: prettier схлопывает вызов в `wireConditionalRequests(rawTransport, {`, отдельной строки без аргумента больше нет.",
+      "from": "  const { transport: conditionalTransport, cache: conditionalCache } =\n    wireConditionalRequests(rawTransport, {\n",
+      "to": "  const conditionalTransport = rawTransport;\n  const conditionalCache = null;\n  void wireConditionalRequests(rawTransport, {\n",
       "expect": ["D4"]
     },
     "M2_parity_flag_ignored": {
-      "_note": "`--no-conditional-requests` stops reaching the wiring, so the opt-out silently does nothing.",
-      "from": "    ...(opts.conditionalRequests !== undefined\n      ? { enabled: opts.conditionalRequests }\n      : {}),\n",
+      "_note": "`--no-conditional-requests` перестаёт доезжать до проводки, то есть opt-out молча ничего не делает.",
+      "from": "      ...(opts.conditionalRequests !== undefined\n        ? { enabled: opts.conditionalRequests }\n        : {}),\n",
       "to": "",
       "expect": ["D5"]
     }

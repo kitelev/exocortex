@@ -25,9 +25,9 @@
       "expect": ["C1", "C3", "C4"]
     },
     "M4_304_handed_on_as_empty_success": {
-      "_note": "A 304 whose body is no longer remembered is passed through instead of re-read: the caller would get an empty success, which is worse than an extra request.",
-      "from": "      return storeFresh(inner, cache, req, key);\n    }\n\n    rememberFrom(cache, key, resp);",
-      "to": "      return resp;\n    }\n\n    rememberFrom(cache, key, resp);",
+      "_note": "304, чьё тело больше не помнится, отдаётся как есть вместо перечитывания: вызывающий получил бы ПУСТОЙ успех, что хуже лишнего запроса. ⛤ Якорь сжат до одной строки: прежняя редакция захватывала хвост с `rememberFrom(...)`, а починка гонки (M3) добавила туда `await` ⇒ count стал 0. Строка `return storeFresh(...)` с шестью пробелами уникальна (у строки 284 отступ 4).",
+      "from": "      return storeFresh(inner, cache, req, key);\n",
+      "to": "      return resp;\n",
       "expect": ["C8"]
     },
     "M5_accept_not_modified_not_requested": {

@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify for req 086df113 at the THIRD wiring site: `exosync quarantine`. Axis B11 in exosync-object-cache.test.ts.",
+  "_doc": "Revert-verify for req 086df113 at the THIRD wiring site: `exosync quarantine`. Axis B11 in exosync-object-cache.test.ts. ⛔ Якоря починены 2026-09-26: их сломал НЕ дрейф времени, а СОСЕДНЯЯ ветка (req af002ec4, conditional requests) — она сменила первый аргумент wireObjectCache с rawTransport на conditionalTransport. spec-anchor-sweep.py показывал count 0, jest-оси при этом были зелены: отказал слой ДОКАЗАТЕЛЬСТВА, не защита.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-quarantine.ts",
   "symlink_node_modules": [
@@ -11,9 +11,9 @@
   "red_re": "› (B\\d+\\w*) ",
   "mutants": {
     "M1_quarantine_wiring_removed": {
-      "_note": "The quarantine resolver re-reads blobs the sync that created the conflict already fetched — without the wiring it pays for them twice.",
-      "from": "  const { transport } = wireObjectCache(rawTransport, {\n    ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),\n    sha1: nodeSha1,\n  });\n",
-      "to": "  const transport = rawTransport;\n",
+      "_note": "Резолвер карантина перечитывает блобы, которые уже получил породивший конфликт sync — без проводки он платит за них дважды. ⚠ Здесь аргумент остаётся в якоре: вызов однострочный, отделить строку деструктуризации от аргумента нельзя.",
+      "from": "  const { transport } = wireObjectCache(conditionalTransport, {\n",
+      "to": "  const transport = conditionalTransport;\n  void wireObjectCache(conditionalTransport, {\n",
       "expect": ["B11"]
     }
   }

@@ -442,7 +442,6 @@ export async function runExosyncSync(
   });
   const rawTransport =
     deps.transportFactory?.(token, opts.apiBase) ?? pushService.transport();
-  const transport = rawTransport;
 
   const { specs, warnings } = collectVaultSpecs(vaultPath);
   for (const w of warnings) out(`warn: ${w}`);
@@ -510,9 +509,8 @@ export async function runExosyncSync(
   // request at all, so it must answer before a conditional request is even
   // built. Conditional reads sit INSIDE, for what the cache cannot serve —
   // mutable `git/refs`, and a SHA it has not seen.
-  const { transport: conditionalTransport } = wireConditionalRequests(
-    transport,
-    {
+  const { transport: conditionalTransport, cache: conditionalCache } =
+    wireConditionalRequests(rawTransport, {
       ...(opts.conditionalRequests !== undefined
         ? { enabled: opts.conditionalRequests }
         : {}),
@@ -525,8 +523,7 @@ export async function runExosyncSync(
           CONDITIONAL_STORE_FILENAME,
         ),
       ),
-    },
-  );
+    });
   const { transport: readTransport, cache: objectCache } = wireObjectCache(
     conditionalTransport,
     {
@@ -616,6 +613,21 @@ export async function runExosyncSync(
     if (objectStats !== undefined && objectStats.hits + objectStats.stores > 0) {
       out(
         `[ExoSync objects] ${objectStats.hits} served from cache, ${objectStats.misses} fetched, ${objectStats.stores} stored${objectStats.evictions > 0 ? `, ${objectStats.evictions} evicted` : ""}`,
+      );
+    }
+    // req af002ec4 — сделать экономию НАБЛЮДАЕМОЙ. Без этой строки 304 не
+    // отличим от 200 ни в одном пользовательском выводе: SyncPhaseTimer
+    // считает ЛОГИЧЕСКИЕ вызовы транспорта (bumpRest срабатывает и на 304,
+    // и на hit кэша), то есть «сколько запросов попросил алгоритм», а не
+    // «сколько потрачено квоты». Счётчик самого механизма — единственная
+    // величина, которая отвечает на вопрос «помогло ли».
+    const condStats = conditionalCache?.stats();
+    if (
+      condStats !== undefined &&
+      condStats.conditional + condStats.stored > 0
+    ) {
+      out(
+        `[ExoSync conditional] ${condStats.notModified} not modified (304 — primary quota not spent) of ${condStats.conditional} validated, ${condStats.stored} validator(s) stored`,
       );
     }
   }

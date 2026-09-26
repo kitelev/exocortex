@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify for req 086df113-16bb-4912-bb09-3a13ee187043 (#4410), subject = the CLI WIRING of the cache (`exosync-parity`). Axes B1-B8 in packages/cli/tests/unit/commands/exosync-object-cache.test.ts. The core spec proves the cache behaves; THIS one proves a command actually calls it — deleting the wiring line reds B4 and nothing in the core suite.",
+  "_doc": "Revert-verify for req 086df113-16bb-4912-bb09-3a13ee187043 (#4410), subject = the CLI WIRING of the cache (`exosync-parity`). Axes B1-B8 in packages/cli/tests/unit/commands/exosync-object-cache.test.ts. The core spec proves the cache behaves; THIS one proves a command actually calls it — deleting the wiring line reds B4 and nothing in the core suite. ⛔ Якоря починены 2026-09-26: их сломал НЕ дрейф времени, а СОСЕДНЯЯ ветка (req af002ec4, conditional requests) — она сменила первый аргумент wireObjectCache с rawTransport на conditionalTransport. spec-anchor-sweep.py показывал count 0, jest-оси при этом были зелены: отказал слой ДОКАЗАТЕЛЬСТВА, не защита.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-parity.ts",
   "symlink_node_modules": [
@@ -11,9 +11,9 @@
   "red_re": "› (B\\d+\\w*) ",
   "mutants": {
     "M1_wiring_removed": {
-      "_note": "The call site itself: the command keeps a correct transport, just an UNCACHED one. If nothing reds, the cache is shipped unreachable. Also reds B14: with no cache there is nothing to report, which is the correct consequence.",
-      "from": "  const { transport, cache: objectCache } = wireObjectCache(rawTransport, {\n    ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),\n    sha1: nodeSha1,\n  });\n",
-      "to": "  const transport = rawTransport;\n  const objectCache = null;\n",
+      "_note": "Сама точка вызова: команда сохраняет корректный транспорт, просто НЕкэширующий. Ничего не покраснело ⇒ кэш отгружен недостижимым. Также краснит B14: без кэша сообщать нечего, и это верное следствие. ⛤ Якорь — ТОЛЬКО строка деструктуризации, БЕЗ аргумента. Прежняя редакция захватывала вызов целиком вместе с первым аргументом, и соседняя фича (req af002ec4) сменила именно аргумент (rawTransport → conditionalTransport) плюс reflow prettier ⇒ count стал 0 МОЛЧА, при исправных осях. Аргумент — то, что меняет следующий декоратор; строка деструктуризации — нет.",
+      "from": "  const { transport, cache: objectCache } = wireObjectCache(\n",
+      "to": "  const transport = conditionalTransport;\n  const objectCache = null;\n  void wireObjectCache(\n",
       "expect": ["B4", "B14"]
     },
     "M2_flag_ignored": {

@@ -332,15 +332,13 @@ export async function runExosyncParity(
   // request at all, so it must answer before a conditional request is even
   // built. Conditional reads sit INSIDE, for what the cache cannot serve —
   // mutable `git/refs`, and a SHA it has not seen.
-  const { transport: conditionalTransport } = wireConditionalRequests(
-    rawTransport,
-    {
+  const { transport: conditionalTransport, cache: conditionalCache } =
+    wireConditionalRequests(rawTransport, {
       ...(opts.conditionalRequests !== undefined
         ? { enabled: opts.conditionalRequests }
         : {}),
       io: nodeConditionalStoreIO(etagPath),
-    },
-  );
+    });
   const { transport, cache: objectCache } = wireObjectCache(
     conditionalTransport,
     {
@@ -411,6 +409,17 @@ export async function runExosyncParity(
       `[ExoSync objects] ${stats.hits} served from cache, ${stats.misses} fetched, ${stats.stores} stored${stats.evictions > 0 ? `, ${stats.evictions} evicted` : ""}`,
     );
   };
+  // req af002ec4 — сделать экономию НАБЛЮДАЕМОЙ, тем же доводом, что у кэша
+  // объектов строкой выше: SyncPhaseTimer считает ЛОГИЧЕСКИЕ вызовы
+  // транспорта (304 инкрементит так же, как 200), поэтому ЕДИНСТВЕННАЯ
+  // величина, отвечающая «помогло ли», — счётчик самого механизма.
+  const reportConditional = (): void => {
+    const stats = conditionalCache?.stats();
+    if (stats === undefined || stats.conditional + stats.stored === 0) return;
+    out(
+      `[ExoSync conditional] ${stats.notModified} not modified (304 — primary quota not spent) of ${stats.conditional} validated, ${stats.stored} validator(s) stored`,
+    );
+  };
   const record = await validator.runRound(specs, { trigger: "standalone" });
 
   if (opts.json === true) {
@@ -422,6 +431,7 @@ export async function runExosyncParity(
   }
 
   reportObjectCache();
+  reportConditional();
 
   if (record.vacuous) return 2;
   return record.ok ? 0 : 1;
