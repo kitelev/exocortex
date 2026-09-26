@@ -1,0 +1,36 @@
+{
+  "_doc": "Revert-verify mutants for issue #4353 — SPARQLErrorEnhancer's two prefix readers. The issue's table named `extractUnknownPrefix`; M2 guards `extractDeclaredPrefixes`, which feeds the SAME diagnostic sentence — leaving it on `\\w+` makes the fixed reader name a prefix and then omit it from 'Available prefixes'.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/utils/SPARQLErrorEnhancer.ts",
+  "harness": "cd \"$(dirname {subject})/../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/utils/prefix-grammar-4353.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_unknown_prefix_narrow": {
+      "_note": "Pre-fix extractUnknownPrefix: `(\\w+)` stops at the hyphen, so the message blames 'tbank' — a prefix the query never used.",
+      "from": "    new RegExp(`unknown prefix[:\\\\s]+['\"]?${PREFIX_CAPTURE}['\"]?`, \"i\"),\n    new RegExp(`prefix\\\\s+['\"]?${PREFIX_CAPTURE}['\"]?\\\\s+not\\\\s+defined`, \"i\"),\n    new RegExp(`undefined\\\\s+prefix[:\\\\s]+['\"]?${PREFIX_CAPTURE}['\"]?`, \"i\"),",
+      "to": "    /unknown prefix[:\\s]+['\"]?(\\w+)['\"]?/i,\n    /prefix\\s+['\"]?(\\w+)['\"]?\\s+not\\s+defined/i,\n    /undefined\\s+prefix[:\\s]+['\"]?(\\w+)['\"]?/i,",
+      "expect": [
+        "A50",
+        "A51",
+        "A52"
+      ]
+    },
+    "M2_declared_prefixes_narrow": {
+      "_note": "Pre-fix extractDeclaredPrefixes: `PREFIX\\s+(\\w+):` never matches a hyphenated declaration, so a prefix the query DOES declare is missing from 'Available prefixes' and from the did-you-mean candidates.",
+      "from": "  const prefixRegex = new RegExp(`PREFIX\\\\s+${PREFIX_CAPTURE}:\\\\s*<`, \"gi\");",
+      "to": "  const prefixRegex = /PREFIX\\s+(\\w+):\\s*</gi;",
+      "expect": [
+        "A51",
+        "A52"
+      ]
+    }
+  }
+}

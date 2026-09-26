@@ -195,7 +195,7 @@ describe("ClassHierarchyResolver", () => {
       );
     });
 
-    it("should handle ancestor with non-exocortex IRI", async () => {
+    it("should name a REGISTERED non-exocortex ancestor by its prefix (#4353)", async () => {
       mockSparqlService.query.mockResolvedValue([
         new Map<string, unknown>([
           ["ancestor", "http://www.w3.org/2002/07/owl#Thing"],
@@ -204,8 +204,29 @@ describe("ClassHierarchyResolver", () => {
 
       const hierarchy = await resolver.resolve("ems__Task");
 
-      expect(hierarchy).toContain("http://www.w3.org/2002/07/owl#Thing");
+      // ⛔ Issue #4353 CHANGED this expectation, deliberately. `fromFullIRI` now
+      // uses `Namespace.fromTermIRI`, whose resolution order is the whitelist
+      // FIRST — so a REGISTERED W3C vocabulary resolves to its prefix instead of
+      // staying a raw IRI. That is the same inverse `iriToObsidianName`,
+      // `PropertySchemaResolver.fromFullIRI` and the plugin's reified-relation
+      // reader already apply (req `aceaa2cc`), and it is what the forward path
+      // emits: `RDFVocabularyMapper` maps `rdfs__Class` ↔ the W3C IRI.
+      expect(hierarchy).toContain("owl__Thing");
       expect(hierarchy).toContain("exo__Asset");
+    });
+
+    it("should leave an UNREGISTERED namespace's ancestor IRI raw (#4353)", async () => {
+      mockSparqlService.query.mockResolvedValue([
+        new Map<string, unknown>([
+          ["ancestor", "http://example.org/vocab#Thing"],
+        ]),
+      ]);
+
+      const hierarchy = await resolver.resolve("ems__Task");
+
+      // The narrowing has a floor: an IRI in a namespace the system does not know
+      // is NOT invented into a `vocab__Thing` key nobody can resolve.
+      expect(hierarchy).toContain("http://example.org/vocab#Thing");
     });
   });
 

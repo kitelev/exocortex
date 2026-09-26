@@ -23,7 +23,10 @@ import { IRI } from "../domain/models/rdf/IRI";
 import type { WorkflowDefinition } from "../domain/models/WorkflowDefinition";
 import { FrontmatterService } from "../utilities/FrontmatterService";
 import {
+  blockScalarAsSequenceItem,
+  decodeYamlBlockScalar,
   decodeYamlQuotedScalar,
+  decodeYamlSequenceItem,
   isCompleteDoubleQuotedScalar,
   quoteYamlString,
   scalarTypingForRange,
@@ -3219,19 +3222,22 @@ export class GroundingExecutor {
     value: string | string[],
   ): string | string[] {
     if (Array.isArray(value)) {
-      return value.map((item) => this.formatInheritedScalar(String(item)));
+      return value.map((item) => this.formatInheritedScalar(String(item), true));
     }
-    return this.formatInheritedScalar(String(value));
+    return this.formatInheritedScalar(String(value), false);
   }
 
-  private formatInheritedScalar(value: string): string {
+  private formatInheritedScalar(value: string, asSequenceItem: boolean): string {
     if (/^"?\[\[.+\]\]"?$/.test(value)) {
       return this.reformatWikilink(value);
     }
     if (UUID_V4_RE.test(value)) {
       return `"[[${value}]]"`;
     }
-    return value;
+    // A block scalar arrives as RAW text (`|-\n  body`, issue #4379); the new
+    // asset's writer quotes whatever it is handed, so copy the VALUE — raw, the
+    // header and the indentation would become part of the inherited text.
+    return decodeYamlBlockScalar(value, asSequenceItem);
   }
 
   private reformatWikilink(value: string): string {
@@ -3596,10 +3602,14 @@ export class GroundingExecutor {
     );
 
     const existingRaw = targetFrontmatter[grounding.targetProperty];
+    // A scalar becomes the list's first item. A BLOCK scalar's body is
+    // re-indented for that position (issue #4379): verbatim, it would sit at
+    // the indentation of its own `- ` and the whole frontmatter would stop
+    // parsing.
     const existing: string[] = Array.isArray(existingRaw)
       ? existingRaw
       : existingRaw !== undefined
-        ? [String(existingRaw)]
+        ? [blockScalarAsSequenceItem(String(existingRaw))]
         : [];
 
     // The value to append is the string VALUE. `$target.<prop>` already
@@ -3616,7 +3626,7 @@ export class GroundingExecutor {
     const plain = isCompleteDoubleQuotedScalar(resolvedValue)
       ? decodeYamlQuotedScalar(resolvedValue)
       : resolvedValue;
-    const seen = new Set(existing.map(decodeYamlQuotedScalar));
+    const seen = new Set(existing.map(decodeYamlSequenceItem));
     let merged: string[];
     if (seen.has(plain)) {
       merged = existing;
@@ -3725,7 +3735,7 @@ export class GroundingExecutor {
     const toPlain = plainOf(grounding.replaceToExpression);
 
     const fromIndex = existing.findIndex(
-      (item) => decodeYamlQuotedScalar(item) === fromPlain,
+      (item) => decodeYamlSequenceItem(item) === fromPlain,
     );
     if (fromIndex === -1) {
       return {
@@ -3739,7 +3749,7 @@ export class GroundingExecutor {
     // Idempotence: when `to` is ALREADY present elsewhere in the list, drop the
     // `from` item instead of writing a duplicate.
     const toIndexElsewhere = existing.findIndex(
-      (item, i) => i !== fromIndex && decodeYamlQuotedScalar(item) === toPlain,
+      (item, i) => i !== fromIndex && decodeYamlSequenceItem(item) === toPlain,
     );
     const merged =
       toIndexElsewhere === -1

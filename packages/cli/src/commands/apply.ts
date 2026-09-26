@@ -37,6 +37,7 @@ import {
   findInputSchemaViolation,
   vaultPathToIRI,
   IRI,
+  labelTermBearers,
   liveClock,
   frozenClock,
   liveUidGenerator,
@@ -375,6 +376,12 @@ async function executeOnTarget(
   // `set-planned-start`, …). An unconditional gate would kill those 11
   // outright. "No binding declared" means "no declared class scope", not
   // "scope = nothing".
+  // ⛔ One exception, accepted (review of PR #4384): a command whose label
+  // it SHARES with a bound asset reads as bound (the binding's term-IRI
+  // reference cannot tell the two bearers apart), and is then refused on every
+  // classed target — the resolver cannot link an ambiguous reference either,
+  // so the plugin shows no button for it. Live radius 0: every term label is
+  // unique in the three vaults. Axis A10.
   //
   // Utility commands stay unaffected by construction: `repair-folder`,
   // `archive`, `rename-to-uid` and `set-ontology` bind to `exo__Asset`, the
@@ -393,9 +400,32 @@ async function executeOnTarget(
     Namespace.EXOCMD.term("CommandBinding_command"),
     undefined,
   );
-  const commandIsBound = bindingCommandTriples.some((t) =>
-    String(t.object).includes(commandUid),
-  );
+  // #4378 — match the binding's command reference by IDENTITY, not by IRI
+  // substring. A `[[uid]]` to a command whose label is `prefix__Local` is
+  // emitted as that label's term IRI, which carries no uid: the substring test
+  // missed it and the gate was skipped (fail-OPEN). A term IRI names this
+  // command iff the command bears it as its `exo__Asset_label`. An ambiguous
+  // label (another asset bears it too) still counts as bound — the gate then
+  // fails CLOSED, in step with the resolver, which leaves an ambiguous
+  // reference unlinked (#4373).
+  let commandIsBound = false;
+  // uids bearing the command's label when the binding names it only through
+  // an AMBIGUOUS term IRI — reported if the gate then refuses (#4378).
+  let ambiguousBearers: string[] = [];
+  for (const t of bindingCommandTriples) {
+    if (String(t.object).includes(commandUid)) {
+      commandIsBound = true;
+      break;
+    }
+    if (t.object instanceof IRI) {
+      const bearers = await labelTermBearers(tripleStore, t.object);
+      if (bearers.some((b) => b.uid === commandUid)) {
+        commandIsBound = true;
+        if (bearers.length > 1) ambiguousBearers = bearers.map((b) => b.uid);
+        break;
+      }
+    }
+  }
   if (commandIsBound) {
     const frontmatterClasses = extractClasses(
       targetFrontmatter as Record<string, unknown> | null,
@@ -447,6 +477,11 @@ async function executeOnTarget(
         console.error(
           `   Declared classes: ${assetClasses.join(", ")}.`,
         );
+        if (ambiguousBearers.length > 0) {
+          console.error(
+            `   The command's label is ambiguous — borne by ${ambiguousBearers.join(", ")} — so its binding reference cannot be resolved.`,
+          );
+        }
         return failed;
       }
     }
@@ -709,7 +744,7 @@ export function applyCommand(): Command {
     .option("--yes", "Skip destructive-command confirmation")
     .option(
       "--input <json>",
-      `JSON userInput for a grounding. Value-setting commands need a value key, e.g. set-planned-start / set-scheduled-date: --input '{"value":"<ISO>"}'. A command whose grounding declares its own input key uses THAT key: set-label: --input '{"label":"New label"}'. Asset-reference inputs (set-parent: --input '{"parent":"<uid>"}'; set-blocker: --input '{"blocker":"<uid>"}') take a BARE uid; a copied [[uid]] or [[uid|alias]] is accepted and unwrapped, anything else that still looks like a link is refused. The required key is named in the error if omitted.`,
+      `JSON userInput for a grounding. Value-setting commands need a value key, e.g. set-planned-start / set-scheduled-date: --input '{"value":"<ISO>"}'. A command whose grounding declares its own input key uses THAT key: set-label: --input '{"label":"New label"}'. Asset-reference inputs (set-parent: --input '{"parent":"<uid>"}'; set-blocker: --input '{"blocker":"<uid>"}'; set-ontology: --input '{"ontology":"<uid>"}') take a BARE uid; a copied [[uid]] or [[uid|alias]] is accepted and unwrapped, anything else that still looks like a link is refused. The required key is named in the error if omitted.`,
     )
     .option(
       "--seed <uuid>",

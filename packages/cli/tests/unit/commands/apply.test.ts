@@ -84,5 +84,6 @@ describe("CLI v16 — apply command (RFC 8e83442b T1.2)", () => {
     );
     expect(help).toContain(`set-parent: --input '{"parent":"<uid>"}'`);
     expect(help).toContain(`set-blocker: --input '{"blocker":"<uid>"}'`);
+    expect(help).toContain(`set-ontology: --input '{"ontology":"<uid>"}'`);
   });
 });

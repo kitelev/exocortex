@@ -6,6 +6,7 @@
  * The Modal is only used in button click handlers which are not tested here.
  */
 module.exports = {
+  globalSetup: "<rootDir>/../test-utils/src/jest/stripRepoGitEnv.cjs",
   preset: "jest-environment-obsidian",
   roots: ["<rootDir>/tests/ui"],
   testMatch: ["**/?(*.)+(ui|integration).test.ts"],

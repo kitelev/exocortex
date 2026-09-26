@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify for req 40e26259 (plugin «Resolve sync conflicts» names pinned paths instead of ✅ — UI parity of c0b0e8bf, issue #4392). Axes Y1-Y2 in QuarantineResolverCommands.test.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/infrastructure/adapters/QuarantineResolverCommands.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../..\" && node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/sync/QuarantineResolverCommands.test.ts -t 'Y[0-9] ' 2>&1",
+  "red_re": "› (Y\\d+\\w*) ",
+  "mutants": {
+    "M1_check_mark_over_pins_again": {
+      "from": "          : pinned.length > 0\n",
+      "to": "          : false\n",
+      "expect": ["Y1"]
+    },
+    "M2_counts_ignore_the_kind": {
+      "from": "    .map((kind) => [kind, pinned.filter((p) => p.kind === kind).length] as const)\n",
+      "to": "    .map((kind) => [kind, pinned.length] as const)\n",
+      "expect": ["Y1"]
+    },
+    "M3_pins_outrank_duplicate_uids": {
+      "from": "        dupCount > 0\n",
+      "to": "        dupCount > 0 && pinned.length === 0\n",
+      "expect": ["Y2"]
+    }
+  }
+}

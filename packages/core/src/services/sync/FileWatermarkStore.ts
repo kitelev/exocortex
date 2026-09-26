@@ -60,6 +60,20 @@ export class FileWatermarkStore implements WatermarkStorePort {
     return isWatermarkRecord(record) ? record : null;
   }
 
+  /**
+   * Every valid record in ONE read. `get` re-reads and re-parses the whole file
+   * per key — measured 2026-09-26 at ~0.48 s for 37 repos over an 8 MB
+   * watermark, which a caller summing over all repos would pay per run.
+   */
+  async getAll(): Promise<Record<string, WatermarkRecord>> {
+    const repos = await this.readRepos();
+    const out: Record<string, WatermarkRecord> = {};
+    for (const [key, record] of Object.entries(repos)) {
+      if (isWatermarkRecord(record)) out[key] = record;
+    }
+    return out;
+  }
+
   async set(repoKey: string, record: WatermarkRecord): Promise<void> {
     const task = this.writeChain.then(async () => {
       const repos = await this.readRepos();

@@ -157,6 +157,7 @@ export {
 } from "./services/NamedQueryRunner";
 export type { ExoQLEvalResult } from "./exoql/evaluateWithExoEval";
 export { iriToObsidianName } from "./utilities/iriToObsidianName";
+export { labelTermBearers } from "./utilities/assetLabelLookup";
 export { extractSparqlBlock, stripFrontmatter } from "./utilities/sparqlBlock";
 export {
   CommandExecutionFlow,
@@ -768,6 +769,9 @@ export {
   QuarantineResolver,
   backupPathFor,
   type ConflictDetail,
+  type PinClassification,
+  type PinnedPath,
+  type PinnedPathKind,
   type QuarantineResolverDeps,
   type ResolvableConflict,
   type ResolveChoice,

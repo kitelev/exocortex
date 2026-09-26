@@ -1,5 +1,6 @@
 /** @type {import('ts-jest').JestConfigWithTsJest} */
 module.exports = {
+  globalSetup: "<rootDir>/src/jest/stripRepoGitEnv.cjs",
   preset: "ts-jest",
   testEnvironment: "node",
   roots: ["<rootDir>/tests"],

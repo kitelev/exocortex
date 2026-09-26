@@ -9,10 +9,14 @@
  */
 
 import { loadDefaultSpec, orderProperties } from "../services/OrderSpecResolver";
-import { serializeYamlScalar, STRING_SCALAR_PROPERTIES } from "./yamlScalar";
+import {
+  serializeYamlScalar,
+  STRING_SCALAR_PROPERTIES,
+  YAML_BLOCK_SCALAR_HEADER,
+} from "./yamlScalar";
 import { canonicalYamlKey, LEGACY_YAML_KEYS } from "../services/NoteToRDFConverter";
 import type { IFrontmatter } from "../interfaces/IVaultAdapter";
-import { iriToObsidianName } from "./iriToObsidianName";
+import { Namespace } from "../domain/models/rdf/Namespace";
 
 /**
  * Result of frontmatter parsing operation
@@ -92,18 +96,112 @@ export class FrontmatterService {
   }
 
   /**
+   * A list item's own line, at the writer's two-space indentation OR at column
+   * 0 — both are valid YAML for the same sequence (issue #4314 shape 2).
+   */
+  private static readonly ARRAY_ITEM_LINE = /^ {0,2}- (.*)$/;
+
+  /**
+   * A block-scalar HEADER, i.e. the whole value of the node: `|`, `>`, with an
+   * optional indentation indicator (`1`-`9`) and/or chomping indicator (`-`/`+`)
+   * in either order. When an item is one of these, every following more-indented
+   * line — `#` included, because inside a block scalar `#` is literal text — is
+   * its BODY, not a comment and not a new node.
+   */
+  private static readonly BLOCK_SCALAR_HEADER = YAML_BLOCK_SCALAR_HEADER;
+
+  /**
+   * Split the BODY of a flow-style YAML sequence (`a, "b, c"`) into its items,
+   * keeping each item's RAW text (quotes included) — `parseObject` is a textual
+   * reader, and a decoded `[[uid]]` item would be re-emitted unquoted, where a
+   * leading `[` opens a flow sequence and makes the file unparseable.
+   *
+   * Returns `null` for input this splitter cannot account for (unterminated
+   * quote or unbalanced bracket), so the caller keeps the pre-#4314 behaviour of
+   * treating the value as an opaque scalar rather than inventing items.
+   */
+  private static splitFlowSequence(inner: string): string[] | null {
+    const items: string[] = [];
+    let buffer = "";
+    let quote: '"' | "'" | null = null;
+    let depth = 0;
+
+    for (let i = 0; i < inner.length; i++) {
+      const ch = inner[i];
+      if (quote !== null) {
+        buffer += ch;
+        if (ch === "\\" && quote === '"') {
+          // A double-quoted scalar's escape: the next char is data, never a
+          // closing quote.
+          buffer += inner[++i] ?? "";
+          continue;
+        }
+        if (ch === quote) quote = null;
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        quote = ch;
+        buffer += ch;
+        continue;
+      }
+      if (ch === "[" || ch === "{") {
+        depth++;
+        buffer += ch;
+        continue;
+      }
+      if (ch === "]" || ch === "}") {
+        depth--;
+        if (depth < 0) return null;
+        buffer += ch;
+        continue;
+      }
+      if (ch === "," && depth === 0) {
+        items.push(buffer.trim());
+        buffer = "";
+        continue;
+      }
+      buffer += ch;
+    }
+    if (quote !== null || depth !== 0) return null;
+
+    const tail = buffer.trim();
+    // `[]` is the empty sequence; `[a, ]`'s trailing comma is not an item.
+    if (tail !== "") items.push(tail);
+    return items;
+  }
+
+  /**
    * Parse frontmatter into a key/value object.
    *
-   * Handles `key: value` scalar lines and `key:\n  - item` two-space-indented
-   * YAML arrays — the two shapes Exocortex ассеты actually use. Returns null
-   * when no frontmatter block is present. Used by callers that need to read
+   * Handles `key: value` scalar lines, `key:\n  - item` YAML arrays (two-space
+   * OR column-0 item indentation) and `key: [a, b]` flow-style arrays. Returns
+   * null when no frontmatter block is present. Used by callers that need to read
    * another asset's properties (e.g. copy-from-target in create_instance),
    * where `parse()` (which returns the raw YAML string) is insufficient.
    *
-   * NOTE: deliberately minimal — does NOT cover inline `[a, b]` arrays, block
-   * scalars, nested maps, or quoted-key edge cases. Match the existing
-   * lightweight parser in ShapeLoader so behaviour is consistent vault-wide
-   * without pulling in a heavyweight YAML dependency.
+   * ⛤ Every value is RAW text, quotes and block-scalar indicators included —
+   * `GroundingExecutor`'s list primitives write back exactly what they read, so
+   * a decoded value would change the bytes on disk.
+   *
+   * ⛔ A line that CONTINUES the item above it (a block-scalar body, a plain
+   * scalar's second line, a nested map's further keys) is kept VERBATIM on that
+   * item instead of ending the array. Before issue #4314 such a line reset
+   * `currentKey` to null, so every remaining `  - ` item of the same array was
+   * silently dropped from the read — and `property_append` / `property_replace`
+   * then wrote the truncated list back to disk. Measured 2026-09-25 on the three
+   * canonical vaults: 30 FILES carry an interleaved comment inside a list (76
+   * comment lines — 30 before the first item, 46 between items) and 2 carry a
+   * nested map, i.e. the loss was live, not hypothetical.
+   *
+   * ⛔ A top-level block scalar (`key: |-` + indented body) is read as its RAW
+   * text, header and body together (issue #4379 — 106 live carrier keys in
+   * 103 files, 84 of them `exocmd__Precondition_sparqlAsk`); decode it with
+   * `decodeYamlQuotedScalar` / `decodeYamlBlockScalar` where the VALUE is needed.
+   *
+   * NOTE: still deliberately minimal — a nested map or a block-scalar body is
+   * carried as opaque text, not structured; quoted-key edge cases are not
+   * covered. This stays a lightweight line parser rather than pulling a full
+   * YAML engine into every read path.
    */
   parseObject(content: string): Record<string, string | string[]> | null {
     const parsed = this.parse(content);
@@ -113,6 +211,14 @@ export class FrontmatterService {
     const lines = parsed.content.split(/\r?\n/);
     let currentKey: string | null = null;
     let currentArray: string[] | null = null;
+    // Blank lines held back: a blank line belongs to the current item only when
+    // an indented line follows it (legal inside a block scalar). This mirrors
+    // `findPropertyLineSpan`, which decides the same ownership on WRITE — the
+    // two halves of this service disagreeing is what #4314 is about.
+    let pendingBlanks: string[] = [];
+    // The top-level key whose value is a block-scalar header (`key: |-`) and
+    // whose indented body is still being read (issue #4379).
+    let scalarBodyKey: string | null = null;
 
     const flushArray = (): void => {
       if (currentKey !== null && currentArray !== null) {
@@ -120,14 +226,84 @@ export class FrontmatterService {
       }
       currentKey = null;
       currentArray = null;
+      pendingBlanks = [];
     };
 
     for (const line of lines) {
-      const arrayItem = /^ {2}- (.*)$/.exec(line);
+      // Issue #4379 — the BODY of a top-level block scalar. Checked FIRST: a
+      // body line is literal text even when it looks like a list item
+      // (`  - …`) or a comment (`  # …`) — both shapes are live (a concept
+      // definition written as dashed lines, a validator rule's code comment).
+      // Ownership mirrors `findPropertyLineSpan`: every indented line, and a
+      // blank line only when an indented line follows it. One difference: a
+      // TRAILING whitespace-only line is owned by the write span but not read
+      // here — `updateProperty` drops it, the YAML value is the same.
+      if (scalarBodyKey !== null) {
+        if (line.trim() === "") {
+          pendingBlanks.push(line);
+          continue;
+        }
+        if (/^[ \t]/.test(line)) {
+          result[scalarBodyKey] = [
+            result[scalarBodyKey] as string,
+            ...pendingBlanks,
+            line,
+          ].join("\n");
+          pendingBlanks = [];
+          continue;
+        }
+        scalarBodyKey = null;
+        pendingBlanks = [];
+      }
+
+      const arrayItem = FrontmatterService.ARRAY_ITEM_LINE.exec(line);
       if (arrayItem) {
         if (currentKey !== null && currentArray !== null) {
           currentArray.push(arrayItem[1].trim());
         }
+        pendingBlanks = [];
+        continue;
+      }
+
+      // The item a continuation line would attach to — null when we are not
+      // inside a list that already has one.
+      const openItems =
+        currentArray !== null && currentArray.length > 0 ? currentArray : null;
+      const inBlockScalarBody =
+        openItems !== null &&
+        FrontmatterService.BLOCK_SCALAR_HEADER.test(
+          openItems[openItems.length - 1].split("\n", 1)[0],
+        );
+
+      if (line.trim() === "") {
+        if (openItems !== null) {
+          pendingBlanks.push(line);
+          continue;
+        }
+        flushArray();
+        continue;
+      }
+
+      // A COMMENT under a key is not part of any value, and must not end the
+      // array either. ⛔ The test is `currentArray !== null`, not `openItems`:
+      // measured 2026-09-26, each of the 30 live carrier FILES has a comment
+      // BEFORE its first item (`aliases:` then `  # Русские`), i.e. while the array is
+      // still EMPTY — treating that as a terminator read the property as `[]`
+      // and `property_append` then erased every alias. Inside a block-scalar
+      // body `#` is literal text, so that case falls through below.
+      if (
+        currentArray !== null &&
+        !inBlockScalarBody &&
+        /^[ \t]+#/.test(line)
+      ) {
+        pendingBlanks = [];
+        continue;
+      }
+
+      if (openItems !== null && /^[ \t]/.test(line)) {
+        const last = openItems.length - 1;
+        openItems[last] = [openItems[last], ...pendingBlanks, line].join("\n");
+        pendingBlanks = [];
         continue;
       }
 
@@ -141,9 +317,52 @@ export class FrontmatterService {
       if (value === "") {
         currentKey = key;
         currentArray = [];
-      } else {
-        result[key] = value;
+        continue;
       }
+
+      // A block-scalar header: the value is the RAW text — header plus the
+      // indented body read above (`|-\n  first\n  second`). Raw, not decoded,
+      // for the same reason as list items: writers put back what they read.
+      // Before issue #4379 the value was the bare header and the body was
+      // skipped, so every reader saw `|-` and `property_append` wrote a list
+      // whose first item had lost its text.
+      if (FrontmatterService.BLOCK_SCALAR_HEADER.test(value)) {
+        result[key] = value;
+        scalarBodyKey = key;
+        continue;
+      }
+
+      // Flow-style sequence — a list the same callers must be able to edit
+      // element-wise. Measured 2026-09-25: 15 live assets carry one (all
+      // `exo__Instance_class`), and reading them as a scalar made
+      // `property_append` write a NESTED array (`- ["[[uid]]"]`).
+      //
+      // ⛔ `[[` is excluded, and that exclusion is load-bearing: an UNQUOTED
+      // wikilink (`exo__Instance_class: [[ems__Task]]`) satisfies the bracket
+      // test, and splitting it yields the item `[ems__Task]` — one bracket pair
+      // short. The rewrite then puts that on disk as `- [ems__Task]`, the
+      // wikilink is unrecoverable, and a second read→write cycle is a stable
+      // fixed point at the corrupted value. This is not a hand-editing-only
+      // shape: `updateProperty` itself writes `[[uid]]` unquoted (the
+      // `quoteScalars=false` path), so `property_set` can create the carrier
+      // its own reader would then destroy. Excluding `[[` degrades such a value
+      // to the pre-#4314 reading (an opaque scalar), which preserves its bytes.
+      // A genuine list-of-lists (`[[1,2],[3,4]]`) is excluded with it — same
+      // pre-#4314 behaviour, 0 live carriers, and no bytes lost.
+      if (
+        value.startsWith("[") &&
+        value.endsWith("]") &&
+        !value.startsWith("[[")
+      ) {
+        const items = FrontmatterService.splitFlowSequence(
+          value.slice(1, -1),
+        );
+        if (items !== null) {
+          result[key] = items;
+          continue;
+        }
+      }
+      result[key] = value;
     }
 
     flushArray();
@@ -393,7 +612,7 @@ export class FrontmatterService {
    * which is why the two failure modes below were silent (`changed: true`, no
    * error) rather than loud. Ticket `c8fc6793`.
    *
-   * ONE source of truth: `iriToObsidianName` → `Namespace.fromTermIRI`, the
+   * ONE source of truth: `Namespace.fromTermIRI`, the
    * shared inverse of the forward emission path (`Namespace.fromPropertyKey` /
    * `Namespace.term`). It resolves EVERY registered W3C vocabulary and EVERY
    * ad-hoc `https://exocortex.my/ontology/<prefix>#` namespace.
@@ -419,16 +638,20 @@ export class FrontmatterService {
    * `38e3f174`.
    */
   static normalizeIRI(property: string): string {
-    // ⛔ LOAD-BEARING, not a micro-optimisation. Besides "no hash ⇒ not a term
-    // IRI", this early return is the only thing keeping `iriToObsidianName`'s
-    // SECOND shape (vault URL → basename) out of the write-key path:
-    // `obsidian://vault/a/b.md` would otherwise become the key `b`. That shape
-    // is consumed by {@link normalizeIRIValue} with its own anchored regex, so
-    // this function must leave it alone. Measured on `origin/main` 0857307b:
-    // deleting this line reddened NOTHING across 132 tests in 4 suites — the
-    // property was true but unlocked; req `38e3f174` Scenario H is its spec.
+    // "No hash ⇒ not a term IRI" — the cheap exit for the common case.
     if (property.lastIndexOf("#") < 0) return property;
-    return iriToObsidianName(property) ?? property;
+    // ⛔ TERM IRIs ONLY (issue #4403). This used to call `iriToObsidianName`,
+    // whose SECOND shape (vault file URL → basename) is an UNANCHORED
+    // `/\/([^/]+)\.md$/`: past the hash check above, any value holding a `#`
+    // and ending in `/<name>.md` — `PR #42 merged, handoff /tmp/notes.md` —
+    // was rewritten to the wikilink `[[<name>]]` on every write (4 live
+    // `sess__LifecycleEvent_detail` values). The vault-URL shape is not this
+    // function's to convert: {@link normalizeIRIValue} handles
+    // `obsidian://vault/<folder>/…/<name>.md` itself, with an anchored regex
+    // (a file at the vault ROOT is not matched — as before), before calling here,
+    // and a KEY of that shape must stay untouched (req `38e3f174` Scenario H).
+    const term = Namespace.fromTermIRI(property);
+    return term ? `${term.namespace.prefix}__${term.localName}` : property;
   }
 
   /**
@@ -702,6 +925,13 @@ export class FrontmatterService {
    * - **block scalars** — `key: |-` / `key: |` / `key: >` followed by an
    *   indented body (any indentation, not just two spaces)
    *
+   * ⛤ A COLUMN-0 list item (`key:\n- value`) is owned too (issue #4314). It is
+   * not indented, so the previous implementation ended the span at the key line
+   * and spliced the new value in ABOVE the old items, leaving them dangling at
+   * column 0 — which made the whole document unparseable (measured: js-yaml
+   * "end of the stream or a document separator is expected"). Since `parseObject`
+   * now READS that shape, the write side has to own it or the round-trip breaks.
+   *
    * The previous implementation matched `(?:\n {2}- .*)*`, i.e. list items ONLY.
    * A block scalar's body therefore survived the rewrite as dangling indented
    * lines under the new value, which makes the whole frontmatter unparseable —
@@ -731,8 +961,10 @@ export class FrontmatterService {
     let end = start + 1;
     for (let i = start + 1; i < lines.length; i++) {
       const line = lines[i];
-      if (/^[ \t]/.test(line)) {
-        // Indented → owned by this key. Absorbs any blank lines skipped above.
+      if (/^[ \t]/.test(line) || /^-(?: |$)/.test(line)) {
+        // Indented, or a column-0 list item → owned by this key. Absorbs any
+        // blank lines skipped above. `-(?: |$)` requires the space, so a key
+        // that merely STARTS with a dash (`-foo: bar`) still ends the span.
         end = i + 1;
         continue;
       }
