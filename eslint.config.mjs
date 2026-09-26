@@ -17,17 +17,38 @@ export default tseslint.config(
   ...obsidianPlugin.configs.recommended,
   prettierConfig,
   {
-    // `promiseWithDeadline` is the one module whose WHOLE POINT is a timer that
-    // works where there is no window: the CLI transport, and the plugin's
-    // production-shape suites that declare `@jest-environment node`.
-    // `obsidianmd/prefer-window-timers` rewrites its `setTimeout` to
-    // `window.setTimeout` on `--fix` (which `lint-staged` runs on commit), and
-    // the result is a ReferenceError surfacing as the useless
-    // "GitHub request failed: window is not defined". The rule's own concern —
-    // a popout window must not use a dead frame's timer — does not apply to a
-    // module that never touches a frame. Measured 2026-09-26, five reverted
-    // commits before the cause was found; see issue link in the module header.
-    files: ['packages/core/src/utilities/promiseWithDeadline.ts'],
+    // #4417 — `obsidianmd/prefer-window-timers` is a WARNING, but `--fix`
+    // applies warnings too, and `lint-staged` runs `--fix` on every commit. So
+    // it silently rewrites `setTimeout` → `window.setTimeout` (and even a bare
+    // `globalThis` → `window`) in code that also runs where there is no window,
+    // and the commit comes back reverted with an unrelated test failure:
+    // "GitHub request failed: window is not defined". It cost five reverted
+    // commits before the cause was visible, because lint-staged restores the
+    // tree on failure — the rewritten file you would inspect is already gone.
+    //
+    // The scope below is DERIVED, not hand-picked: a package's own
+    // `jest.config.js` already declares whether its code runs in a renderer.
+    // `core`, `services` and `test-utils` all set `testEnvironment: 'node'`
+    // (measured 2026-09-26) — they have no window BY CONTRACT, so a rule that
+    // makes them reach for one is not merely useless there, it pushes a
+    // browser global into a storage-agnostic package. Only
+    // `obsidian-plugin` sets `jsdom`, and that is where the rule keeps its
+    // teeth. `cli` and `req-audit` are outside the lint-staged autofix glob
+    // already.
+    //
+    // The one exception inside the plugin is `infrastructure/adapters/**`: it
+    // is the CLI-parity / mobile-REST transport, and all TEN of the plugin
+    // suites that declare `@jest-environment node` exercise modules from that
+    // directory and nothing else (measured 2026-09-26). The axes in
+    // `tests/unit/lint-scope/timerRuleScope.test.ts` hold that statement true —
+    // a new headless suite reaching outside this directory reddens them rather
+    // than reintroducing the defect.
+    files: [
+      'packages/core/**',
+      'packages/services/**',
+      'packages/test-utils/**',
+      'packages/obsidian-plugin/src/infrastructure/adapters/**',
+    ],
     rules: {
       'obsidianmd/prefer-window-timers': 'off',
     },
