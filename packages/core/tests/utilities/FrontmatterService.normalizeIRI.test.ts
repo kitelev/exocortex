@@ -113,10 +113,13 @@ describe("FrontmatterService.normalizeIRI — every namespace, or nothing (ticke
     ).toBeUndefined();
   });
 
-  it("IV12 the hash early-return keeps the vault-URL shape OUT of the write-key path @req:38e3f174-4a05-4743-a2f4-c7ec2c711202", () => {
+  it("IV12 the vault-URL shape stays OUT of the write-key path @req:38e3f174-4a05-4743-a2f4-c7ec2c711202", () => {
     // `iriToObsidianName` has a SECOND shape: `…/<basename>.md` → `<basename>`.
     // `normalizeIRIValue` consumes that shape with its own anchored regex, so
     // `normalizeIRI` — which forms the PHYSICAL key — must leave it alone.
+    // ⛔ Since #4403 this holds because `normalizeIRI` converts TERM IRIs only
+    // (`Namespace.fromTermIRI`); the hash early-return is a cheap exit and no
+    // longer carries it. Locked by `normalize-iri-4403.spec.json` M1 (axis N4).
     const vaultUrl = "obsidian://vault/ems/ems__EffortStatusDoing.md";
     expect(iriToObsidianName(vaultUrl)).toBe("ems__EffortStatusDoing");
     expect(FrontmatterService.normalizeIRI(vaultUrl)).toBe(vaultUrl);
