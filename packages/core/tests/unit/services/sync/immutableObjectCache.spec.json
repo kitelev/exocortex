@@ -55,10 +55,10 @@
       "expect": ["A9", "A10"]
     },
     "M9_mutable_refs_become_cacheable": {
-      "_note": "Narrows the allow-list instead of widening it. ⛔ The obvious mutant — adding `refs` — reds NOTHING: `git/refs/heads/main` has an extra path segment, so the shape check refuses it before the type is read (double cover, stated in the source). Removing `blobs` is the reachable mutation of the same guard.",
+      "_note": "Narrows the allow-list instead of widening it. ⛔ The obvious mutant — adding `refs` — reds NOTHING: `git/refs/heads/main` has an extra path segment, so the shape check refuses it before the type is read (double cover, stated in the source). Removing `blobs` is the reachable mutation of the same guard. A11 (the no-eviction control) reds too: with blobs excluded the store holds two entries instead of three, and that control counts them. Named rather than narrowed.",
       "from": "const IMMUTABLE_TYPES: ReadonlySet<string> = new Set([\n  \"commits\",\n  \"trees\",\n  \"blobs\",\n]);\n",
       "to": "const IMMUTABLE_TYPES: ReadonlySet<string> = new Set([\n  \"commits\",\n  \"trees\",\n]);\n",
-      "expect": ["A2", "A3", "A5"]
+      "expect": ["A2", "A3", "A5", "A11"]
     },
     "M10_ref_addressed_reads_admitted": {
       "_note": "Drops the hex-SHA gate, so `git/trees/main` (a MUTABLE read) would be cached — and path traversal would stop being structurally impossible. A13 (the through-transport twin) does NOT red under this single mutation and that is correct: `git/trees/main` would be admitted, but the integrity check then refuses to STORE a payload whose `sha` is not `main`, so the second read still goes out. A13 is held by two guards; A16 pins this one directly.",
