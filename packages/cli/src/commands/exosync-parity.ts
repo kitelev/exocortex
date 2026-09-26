@@ -44,6 +44,7 @@ import {
 } from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { RestPushService } from "../services/RestPushService.js";
+import { wireObjectCache } from "../services/objectCacheTransport.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 
 export interface ExosyncParityOptions {
@@ -54,6 +55,8 @@ export interface ExosyncParityOptions {
   token?: string;
   tokenFromGh?: boolean;
   apiBase?: string;
+  /** `false` from `--no-object-cache` (req 086df113). Default on. */
+  objectCache?: boolean;
 }
 
 /** Injectable dependencies (tests). */
@@ -293,8 +296,14 @@ export async function runExosyncParity(
     token,
     ...(opts.apiBase !== undefined ? { apiBase: opts.apiBase } : {}),
   });
-  const transport =
+  const rawTransport =
     deps.transportFactory?.(token, opts.apiBase) ?? pushService.transport();
+  // req 086df113 — content-addressed cache for commits/trees/blobs. In an idle
+  // parity 42 of 83 requests are exactly those, and a hit costs no request.
+  const { transport, cache: objectCache } = wireObjectCache(rawTransport, {
+    ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),
+    sha1: nodeSha1,
+  });
 
   const { specs, parked, warnings } = collectVaultSpecs(vaultPath);
   for (const w of warnings) out(`warn: ${w}`);
@@ -362,6 +371,13 @@ export async function runExosyncParity(
   });
 
   out(`ExoSync parity check: ${specs.length} repo(s), vault ${vaultPath}`);
+  const reportObjectCache = (): void => {
+    const stats = objectCache?.stats();
+    if (stats === undefined || stats.hits + stats.stores === 0) return;
+    out(
+      `[ExoSync objects] ${stats.hits} served from cache, ${stats.misses} fetched, ${stats.stores} stored${stats.evictions > 0 ? `, ${stats.evictions} evicted` : ""}`,
+    );
+  };
   const record = await validator.runRound(specs, { trigger: "standalone" });
 
   if (opts.json === true) {
@@ -371,6 +387,8 @@ export async function runExosyncParity(
   } else {
     printHumanReport(record, out);
   }
+
+  reportObjectCache();
 
   if (record.vacuous) return 2;
   return record.ok ? 0 : 1;
@@ -394,6 +412,10 @@ export function exosyncParityCommand(): Command {
     )
     .option("--token-from-gh", "Resolve the PAT via `gh auth token`")
     .option("--api-base <url>", "GitHub API base (testing)")
+    .option(
+      "--no-object-cache",
+      "Do not serve immutable git objects (commits/trees/blobs) from the local cache",
+    )
     .action(async (options: ExosyncParityOptions) => {
       try {
         process.exitCode = await runExosyncParity(options);

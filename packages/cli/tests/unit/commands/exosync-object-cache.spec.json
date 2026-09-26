@@ -1,0 +1,32 @@
+{
+  "_doc": "Revert-verify for req 086df113-16bb-4912-bb09-3a13ee187043 (#4410), subject = the CLI WIRING of the cache (`exosync-parity`). Axes B1-B8 in packages/cli/tests/unit/commands/exosync-object-cache.test.ts. The core spec proves the cache behaves; THIS one proves a command actually calls it — deleting the wiring line reds B4 and nothing in the core suite.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-parity.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-object-cache.test.ts 2>&1",
+  "red_re": "› (B\\d+\\w*) ",
+  "mutants": {
+    "M1_wiring_removed": {
+      "_note": "The call site itself: the command keeps a correct transport, just an UNCACHED one. If nothing reds, the cache is shipped unreachable. Also reds B14: with no cache there is nothing to report, which is the correct consequence.",
+      "from": "  const { transport, cache: objectCache } = wireObjectCache(rawTransport, {\n    ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),\n    sha1: nodeSha1,\n  });\n",
+      "to": "  const transport = rawTransport;\n  const objectCache = null;\n",
+      "expect": ["B4", "B14"]
+    },
+    "M2_flag_ignored": {
+      "_note": "`--no-object-cache` stops reaching the wiring, so the opt-out silently does nothing.",
+      "from": "    ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),\n",
+      "to": "",
+      "expect": ["B5"]
+    },
+    "M3_saving_not_reported": {
+      "_note": "The cache still works, it just stops saying so — which is how a cache becomes unverifiable in normal use.",
+      "from": "  reportObjectCache();\n",
+      "to": "",
+      "expect": ["B14"]
+    }
+  }
+}

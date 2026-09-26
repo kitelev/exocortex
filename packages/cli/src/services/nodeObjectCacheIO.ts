@@ -1,0 +1,161 @@
+/**
+ * Node adapter for the platform-free {@link ObjectCacheIO} port (req
+ * `086df113-16bb-4912-bb09-3a13ee187043`, issue #4410).
+ *
+ * One file per cached git object, laid out as
+ * `<root>/<owner>/<repo>/<type>/<sha>[~<variant>].json`. The key's segments are
+ * already refused by the core unless they match `[A-Za-z0-9._-]` (and the SHA
+ * is hex), so the path is safe by construction rather than by sanitising here.
+ *
+ * ⛤ The root is DEVICE-wide, not per-vault, and that is the point: the same
+ * AssetSpace is mounted in several vaults (35 of 81 mounts are duplicates),
+ * so the second and third vault of a serial sync reuse the first vault's
+ * objects instead of re-downloading `exoas-public`'s 751 files each time.
+ *
+ * `lastUsedMs` is the file mtime, refreshed by {@link markUsed} via `utimes`
+ * — `atime` alone is unreliable (`noatime` mounts do not update it).
+ */
+
+import { randomUUID } from "node:crypto";
+import fsp from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+import type { ObjectCacheEntry, ObjectCacheIO } from "@kitelev/exocortex-core";
+
+/** Cache-root resolution, in precedence order. */
+export function resolveObjectCacheRoot(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const explicit = env.EXOCORTEX_EXOSYNC_CACHE_DIR;
+  if (explicit !== undefined && explicit.length > 0) return explicit;
+  const xdg = env.XDG_CACHE_HOME;
+  if (xdg !== undefined && xdg.length > 0) {
+    return path.join(xdg, "exocortex", "exosync-objects");
+  }
+  return path.join(os.homedir(), ".cache", "exocortex", "exosync-objects");
+}
+
+/**
+ * `256 MiB` default ceiling, overridable for constrained devices.
+ *
+ * `0` is HONOURED as "store nothing" (every write is evicted immediately) —
+ * it is a meaningful setting, and silently promoting it to the 256 MiB
+ * default would do the opposite of what it says. Junk and negatives fall back
+ * to the default, since there is no sensible reading of them.
+ */
+export function resolveObjectCacheMaxBytes(
+  env: NodeJS.ProcessEnv = process.env,
+): number | undefined {
+  const raw = env.EXOCORTEX_EXOSYNC_CACHE_MAX_BYTES;
+  if (raw === undefined || raw.length === 0) return undefined;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
+function keyToPath(root: string, key: string): string {
+  return `${path.join(root, ...key.split("/"))}.json`;
+}
+
+function pathToKey(root: string, filePath: string): string | null {
+  const rel = path.relative(root, filePath);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
+  if (!rel.endsWith(".json")) return null;
+  return rel.slice(0, -".json".length).split(path.sep).join("/");
+}
+
+/**
+ * Depth-first walk yielding file paths.
+ *
+ * ⛔ Deliberately NOT `readdir(..., { withFileTypes: true })`: `packages/cli`
+ * resolves its own `@types/node`, where `Dirent` is generic over the name type
+ * and the inferred `Dirent<string>[]` does not assign to the declared
+ * `Dirent<NonSharedBuffer>[]`. The root `check:types` cannot see it (the CLI is
+ * excluded from the root tsconfig and built with esbuild), so `check-cli-types`
+ * in CI is what catches it. Names + `stat` are portable across both type trees,
+ * and this walk already needs the `stat` for `size`/`mtimeMs` anyway.
+ */
+async function* walk(dir: string): AsyncGenerator<string> {
+  let names: string[];
+  try {
+    names = await fsp.readdir(dir);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    const full = path.join(dir, name);
+    let isDir: boolean;
+    try {
+      isDir = (await fsp.stat(full)).isDirectory();
+    } catch {
+      continue;
+    }
+    if (isDir) {
+      yield* walk(full);
+    } else {
+      yield full;
+    }
+  }
+}
+
+export function nodeObjectCacheIO(root: string): ObjectCacheIO {
+  return {
+    async read(key: string): Promise<string | null> {
+      // read-then-catch (not exists-then-read): a stat/read pair on the same
+      // path is a `js/file-system-race` (CodeQL), and ENOENT is the normal miss.
+      try {
+        return await fsp.readFile(keyToPath(root, key), "utf-8");
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === "ENOENT" || code === "EISDIR" || code === "ENOTDIR") {
+          return null;
+        }
+        throw err;
+      }
+    },
+
+    async write(key: string, content: string): Promise<void> {
+      const target = keyToPath(root, key);
+      await fsp.mkdir(path.dirname(target), { recursive: true });
+      // temp+rename: a crash mid-write must not leave a torn entry that would
+      // later fail its integrity check and fail that repo's cycle.
+      //
+      // ⛔ The temp name must be unique per CALL, not per process. The engine
+      // already fetches blobs through a bounded pool (`BLOB_FETCH_CONCURRENCY`
+      // = 6) and does not dedupe by blob SHA, so two vault paths with
+      // byte-identical content are fetched concurrently BY THE SAME PROCESS
+      // and land on the same cache key. With a pid-only temp name both writers
+      // opened the same file with truncate semantics and could leave a torn
+      // entry — which the integrity check would then correctly, and uselessly,
+      // report as corruption of a disk this feature had corrupted itself.
+      const tmp = `${target}.${process.pid}-${randomUUID()}.tmp`;
+      await fsp.writeFile(tmp, content, "utf-8");
+      await fsp.rename(tmp, target);
+    },
+
+    async remove(key: string): Promise<void> {
+      await fsp.rm(keyToPath(root, key), { force: true });
+    },
+
+    async list(): Promise<ObjectCacheEntry[]> {
+      const out: ObjectCacheEntry[] = [];
+      for await (const filePath of walk(root)) {
+        if (filePath.endsWith(".tmp")) continue;
+        const key = pathToKey(root, filePath);
+        if (key === null) continue;
+        try {
+          const st = await fsp.stat(filePath);
+          out.push({ key, size: st.size, lastUsedMs: st.mtimeMs });
+        } catch {
+          continue;
+        }
+      }
+      return out;
+    },
+
+    async markUsed(key: string): Promise<void> {
+      const now = new Date();
+      await fsp.utimes(keyToPath(root, key), now, now);
+    },
+  };
+}
