@@ -26,11 +26,9 @@ import {
   formatQuota,
   formatRepoTimings,
   formatTimingsLine,
-  type LocalFilesPort,
   type RestCommitRequest,
   type RestCommitResponse,
   type RestCommitTransport,
-  type SyncEngineDeps,
 } from "../../../../src";
 import {
   FakeGitHubRepo,
