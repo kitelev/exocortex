@@ -54,6 +54,7 @@ import {
   CONDITIONAL_STORE_FILENAME,
   WATERMARK_STORE_FILENAME,
   aggregateTimings,
+  formatQuota,
   formatRepoTimings,
   formatTimingsLine,
   orderChildrenFirst,
@@ -74,6 +75,11 @@ import {
 import { collectVaultSpecs } from "./exosync-parity.js";
 import { registerQuarantineCommands } from "./exosync-quarantine.js";
 import { RestPushService } from "../services/RestPushService.js";
+import {
+  appendSyncRunLog,
+  runLogEntry,
+  runLogPathFor,
+} from "../services/syncRunLog.js";
 import {
   nodeConditionalStoreIO,
   wireConditionalRequests,
@@ -449,6 +455,20 @@ export async function runExosyncSync(
     out(
       "Nothing to sync — no materialized AssetSpaces with a GitHub source found in this vault.",
     );
+    // req e5e45283 — a finished run is journalled even when it did nothing.
+    // `parity` already covers its own vacuous branch; leaving this one silent
+    // would make "how many runs happened today" answerable only for one of the
+    // two commands, which is the question the journal exists to answer.
+    await appendSyncRunLog(
+      runLogPathFor(vaultPath, opts.configDir ?? ".obsidian"),
+      runLogEntry({
+        command: "sync",
+        vault: vaultPath,
+        restCalls: 0,
+        quota: undefined,
+        exitCode: 2,
+      }),
+    );
     return 2;
   }
 
@@ -572,6 +592,10 @@ export async function runExosyncSync(
           out(`[ExoSync] ${event.repoKey}: ${syncProgressPhaseText(event)}`);
         };
   const results = await engine.syncAll(ordered, direction, onProgress);
+  // Aggregated once and reused by BOTH the human summary and the run journal
+  // (req e5e45283) — the journal must record the same numbers the user saw,
+  // and recomputing them invites the two to drift.
+  const aggTimings = aggregateTimings(results);
 
   if (opts.json === true) {
     out(JSON.stringify(results, null, 2));
@@ -604,7 +628,6 @@ export async function runExosyncSync(
     );
     // ExoSync Phase 0 (measure-first) — run-total per-phase breakdown so the
     // dominant phase is visible (which optimisation Phase 1 picks).
-    const aggTimings = aggregateTimings(results);
     if (totalMs(aggTimings) > 0) out(formatTimingsLine(aggTimings));
     // req 086df113 — make the saving OBSERVABLE. Without this line the cache
     // is invisible in normal use, and "did it help?" has no answer short of
@@ -630,9 +653,30 @@ export async function runExosyncSync(
         `[ExoSync conditional] ${condStats.notModified} not modified (304 — primary quota not spent) of ${condStats.conditional} validated, ${condStats.stored} validator(s) stored`,
       );
     }
+    // req e5e45283 — cost AND remaining budget on one line, printed
+    // unconditionally. The timings line above appears only when something was
+    // timed, and the two lines above only when their mechanism did something —
+    // so on a fast no-op run the quota would otherwise never be shown, which
+    // is exactly the run whose spending nobody notices accumulating.
+    out(
+      `[ExoSync quota] ${aggTimings.counts.restCalls} REST | ${formatQuota(
+        aggTimings.quota,
+      )}`,
+    );
   }
 
-  return results.some((r) => isFailureStatus(r.status)) ? 1 : 0;
+  const exitCode = results.some((r) => isFailureStatus(r.status)) ? 1 : 0;
+  await appendSyncRunLog(
+    runLogPathFor(vaultPath, configDir),
+    runLogEntry({
+      command: "sync",
+      vault: vaultPath,
+      restCalls: aggTimings.counts.restCalls,
+      quota: aggTimings.quota,
+      exitCode,
+    }),
+  );
+  return exitCode;
 }
 
 /** Shared option wiring for the three direction subcommands. */

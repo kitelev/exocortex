@@ -29,6 +29,8 @@ import {
   FileWatermarkStore,
   ParityValidator,
   SpaceSpecAccumulator,
+  SyncPhaseTimer,
+  formatQuota,
   CONDITIONAL_STORE_FILENAME,
   WATERMARK_STORE_FILENAME,
   checkParkedStaleness,
@@ -45,6 +47,11 @@ import {
 } from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { RestPushService } from "../services/RestPushService.js";
+import {
+  appendSyncRunLog,
+  runLogEntry,
+  runLogPathFor,
+} from "../services/syncRunLog.js";
 import {
   nodeConditionalStoreIO,
   wireConditionalRequests,
@@ -347,6 +354,47 @@ export async function runExosyncParity(
     },
   );
 
+  // req e5e45283 — parity is the most expensive ExoSync operation (83 requests
+  // for 21 mounts, ≈210 for 37) and until now it printed NO numbers at all,
+  // while `exosync sync` printed both. One counting decorator over the fully
+  // assembled chain covers every consumer below (parked staleness AND the
+  // validator), and reads the quota GitHub reports on each successful response.
+  //
+  // ⛔ It wraps the chain from OUTSIDE on purpose: `restCalls` then counts
+  // LOGICAL reads (a cache hit or a 304 counts too), which is the honest
+  // measure of what the run asked for. The quota number next to it is what the
+  // wire actually reported, so the two together show cost AND budget.
+  const runTimer = new SyncPhaseTimer(() => Date.now());
+  const countedTransport: RestCommitTransport = async (req) => {
+    runTimer.bumpRest();
+    const res = await transport(req);
+    runTimer.observeQuota(res.headers);
+    return res;
+  };
+
+  // req e5e45283 — durable record of what this run spent. Written on EVERY
+  // exit path, including the early "nothing to check" one: a run that made
+  // requests and then bailed still spent budget, and a journal that silently
+  // skips those understates the day's spending.
+  const reportQuota = (): void => {
+    const t = runTimer.snapshot();
+    out(`[ExoSync quota] ${t.counts.restCalls} REST | ${formatQuota(t.quota)}`);
+  };
+
+  const journalRun = async (exitCode: number): Promise<void> => {
+    const t = runTimer.snapshot();
+    await appendSyncRunLog(
+      runLogPathFor(vaultPath, configDir),
+      runLogEntry({
+        command: "parity",
+        vault: vaultPath,
+        restCalls: t.counts.restCalls,
+        quota: t.quota,
+        exitCode,
+      }),
+    );
+  };
+
   // READ-ONLY watermark IO: the live plugin's write chain serialises
   // in-process only — a concurrent CLI write could lose its update.
   const watermarks = new FileWatermarkStore({
@@ -369,7 +417,7 @@ export async function runExosyncParity(
   for (const spec of parked) {
     parkedVerdicts.push(
       await checkParkedStaleness(spec, {
-        transport,
+        transport: countedTransport,
         watermarks: { get: (repoKey) => watermarks.get(repoKey) },
         redact: (m) => pushService.redact(m),
         ...(opts.apiBase !== undefined ? { baseURL: opts.apiBase } : {}),
@@ -385,11 +433,15 @@ export async function runExosyncParity(
     out(
       "Nothing to check — no materialized AssetSpaces with a GitHub source found in this vault.",
     );
+    // Parked-staleness above may already have spent requests — report and
+    // journal them. An early exit is still a run that touched the budget.
+    reportQuota();
+    await journalRun(2);
     return 2;
   }
 
   const validator = new ParityValidator({
-    transport,
+    transport: countedTransport,
     sha1: nodeSha1,
     localFilesFor: (spec) =>
       nodeLocalFilesPort(path.join(vaultPath, spec.localPath)),
@@ -432,9 +484,11 @@ export async function runExosyncParity(
 
   reportObjectCache();
   reportConditional();
+  reportQuota();
 
-  if (record.vacuous) return 2;
-  return record.ok ? 0 : 1;
+  const exitCode = record.vacuous ? 2 : record.ok ? 0 : 1;
+  await journalRun(exitCode);
+  return exitCode;
 }
 
 export function exosyncParityCommand(): Command {

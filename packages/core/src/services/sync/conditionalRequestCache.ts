@@ -301,7 +301,17 @@ export function withConditionalRequests(
       if (body !== null) {
         cache.countNotModified();
         await cache.touch(key).catch(() => undefined);
-        return { status: 200, json: body };
+        // req e5e45283 — carry the REAL response's headers through. The body is
+        // served from the store, but the round-trip did happen, and its
+        // `x-ratelimit-*` are the freshest quota reading available. Dropping
+        // them made the quota invisible on exactly the path this cache makes
+        // dominant: on a second idle sync every request 304s, so the run would
+        // report `quota n/a` while having spent N real round-trips.
+        return {
+          status: 200,
+          json: body,
+          ...(resp.headers === undefined ? {} : { headers: resp.headers }),
+        };
       }
       // The validator outlived the body it validates (store trimmed between
       // the two reads). A 304 handed on as-is would look like an empty

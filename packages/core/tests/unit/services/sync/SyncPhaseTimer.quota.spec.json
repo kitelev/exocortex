@@ -1,0 +1,40 @@
+{
+  "_doc": "Revert-verify for req e5e45283-cf8c-45f5-8ad7-5cd08ab5442a — the PARSING half: the timer turns x-ratelimit-* into a snapshot, aggregates it as state, and prints `quota n/a` when absent. Axes A1-A5 in packages/core/tests/unit/services/sync/SyncPhaseTimer.quota.test.ts. ⛤ The WIRING half lives in SyncEngine.quota-wiring.spec.json — the driver applies every mutant to this spec's single `subject`, so a mutant in another file needs its own spec (the two together are what make A2 non-vacuous). Measured 2026-09-26: control green, BAD=0.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/SyncPhaseTimer.ts",
+  "symlink_node_modules": ["node_modules", "packages/core/node_modules"],
+  "harness": "cd \"$(dirname {subject})/../../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/services/sync/SyncPhaseTimer.quota.test.ts 2>&1",
+  "red_re": "› .*?\\b(A\\d+)\\b",
+  "mutants": {
+    "M2_limit_unparsed": {
+      "_note": "⛤ TYPE-PRESERVING с ТРЕТЬЕЙ попытки, и обе неудачные стоит знать. (1) `if (true) return;` сделал тело мёртвым кодом; (2) инверсия гварда (`headers !== undefined`) сузила тип `headers` до `undefined`, и вызов `headers(name)` перестал компилироваться. Оба раза драйвер печатал пустой набор красных — то есть ОТСУТСТВИЕ замера, неотличимое от «ось не различает» (§A97, §A36). Рабочая форма убивает разбор ОДНОГО поля: типы целы, блок достижим, семантика меняется наблюдаемо.",
+      "from": "    const limit = num(\"x-ratelimit-limit\");\n",
+      "to": "    const limit = null;\n",
+      "expect": ["A1", "A2", "A5"]
+    },
+    "M3_quota_summed": {
+      "_note": "Агрегация начинает СКЛАДЫВАТЬ остатки вместо выбора одного наблюдения. Это и есть ошибка, против которой написана A4: квота — СОСТОЯНИЕ, и сумма двух наблюдений даёт число, которого GitHub не присылал (900 + 800 = 1700 при настоящем остатке 800). ⛤ Якорь переехал на `pickQuota` вместе с правкой гонки (ревью PR #4419 MEDIUM-2): прежний `return b.observedAt >= a.observedAt ? b : a;` из `fresherQuota` исчез, и мутант молча протух бы (§A71).",
+      "from": "  return next.observedAt >= prev.observedAt ? next : prev;\n",
+      "to": "  return { ...next, remaining: (prev.remaining ?? 0) + (next.remaining ?? 0) };\n",
+      "expect": ["A4", "A7"]
+    },
+    "M6_stale_reading_wins": {
+      "_note": "Снят консервативный выбор внутри одного окна — побеждает просто последнее наблюдение. Под конкурентным пулом блобов ответы приходят не в порядке выдачи, поэтому поздно пришедший СТАРЫЙ ответ (с бо́льшим остатком) перезаписал бы свежий, и прогон отчитался бы о большем запасе, чем есть. Краснеет РОВНО A7: остальные оси наблюдают по одному значению за окно. ⛤ TYPE-PRESERVING со второй попытки — `if (false)` сделал ветвь мёртвым кодом, сьют не скомпилировался, и драйвер напечатал BROKEN, то есть ОТСУТСТВИЕ замера (§A36/§A97). Форма ниже меняет только ВЫБОР, сохраняя и типы, и достижимость.",
+      "from": "      return next.remaining <= prev.remaining ? next : prev;\n",
+      "to": "      return next;\n",
+      "expect": ["A7"]
+    },
+    "M4_na_omitted": {
+      "_note": "Отсутствие данных печатается пустой строкой вместо «quota n/a». Ось краснеет потому, что пустая строка НЕОТЛИЧИМА от «остатка много» — ровно то прочтение, которое дало неверный диагноз инцидента 2026-09-26.",
+      "from": "  if (q === undefined) return \"quota n/a\";\n",
+      "to": "  if (q === undefined) return \"\";\n",
+      "expect": ["A5"]
+    },
+    "M5_absent_clears": {
+      "_note": "Снят гвард «ничего числового не пришло — сохранить прошлое наблюдение». Тогда попадание в кэш объектов (запроса нет ⇒ заголовков нет) СТИРАЕТ последнее настоящее показание, и прогон заканчивается с «quota n/a» при живых данных.",
+      "from": "    if (limit === null && remaining === null && used === null) return;\n",
+      "to": "",
+      "expect": ["A3"]
+    }
+  }
+}

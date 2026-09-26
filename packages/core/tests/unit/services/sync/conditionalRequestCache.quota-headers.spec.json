@@ -1,0 +1,16 @@
+{
+  "_doc": "Revert-verify for req e5e45283-cf8c-45f5-8ad7-5cd08ab5442a — the 304 half. A conditional hit is a REAL round-trip, so its `x-ratelimit-*` are the freshest quota reading; the layer used to hand the stored body on as a synthetic 200 with no headers. Axis A6 in packages/core/tests/unit/services/sync/SyncPhaseTimer.quota.test.ts drives the real `withConditionalRequests`. Own spec because the driver applies mutants to the spec's single `subject`, and this one lives in conditionalRequestCache.ts. Found by code review of PR #4419 (CRITICAL): #4416 made 304 the DOMINANT path of an idle run, so the requirement was unmet exactly where it matters most — an idle sync would print `quota n/a` after N real round-trips.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/conditionalRequestCache.ts",
+  "symlink_node_modules": ["node_modules", "packages/core/node_modules"],
+  "harness": "cd \"$(dirname {subject})/../../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/services/sync/SyncPhaseTimer.quota.test.ts 2>&1",
+  "red_re": "› .*?\\b(A\\d+)\\b",
+  "mutants": {
+    "M1_304_drops_headers": {
+      "_note": "Возврат к до-фиксной форме: тело отдаётся, заголовки реального 304-ответа теряются. Краснеет РОВНО A6 — единственная ось, гоняющая настоящую условную цепочку; остальные используют прямой транспорт и 304 не производят вовсе, что и было причиной, по которой дефект прожил до ревью.",
+      "from": "        return {\n          status: 200,\n          json: body,\n          ...(resp.headers === undefined ? {} : { headers: resp.headers }),\n        };\n",
+      "to": "        return { status: 200, json: body };\n",
+      "expect": ["A6"]
+    }
+  }
+}

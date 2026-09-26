@@ -784,9 +784,11 @@ export {
   fmtMs,
   formatTimingsLine,
   formatRepoTimings,
+  formatQuota,
   type SyncPhase,
   type SyncPhaseCounts,
   type SyncPhaseTimings,
+  type RateLimitSnapshot,
   type NowFn,
 } from "./services/sync/SyncPhaseTimer";
 // ExoSync quarantine resolver (finding a0a3d1d6) — the user-facing reconcile
