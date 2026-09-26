@@ -1,0 +1,32 @@
+{
+  "_doc": "Revert-verify for #4417: `obsidianmd/prefer-window-timers` must stay ON in renderer code and OFF where there is no window. Subject is eslint.config.mjs — the scope itself is the deliverable. Axes A1 (four headless zones keep a bare setTimeout) / A2 (renderer is still rewritten — the control that stops a repo-wide 'off' from passing) / A3 (every plugin module a @jest-environment-node suite imports sits inside the off-scope, READ FROM THE CONFIG so the two cannot drift) in packages/obsidian-plugin/tests/unit/lint-scope/timerRuleScope.test.ts. Measured 2026-09-26: control 6/6 green. ⛤ The first version of A1 used invented fixture paths and was VACUOUS — an unknown path yields a ruleId:null parse error, the fixer leaves the text alone, and 'no rewrite' is true for the wrong reason; `assertLinted` is the canary that keeps that from returning.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/eslint.config.mjs",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/packages/obsidian-plugin\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/lint-scope/timerRuleScope.test.ts 2>&1",
+  "red_re": "› .*?\\b(A\\d+\\w*)\\b",
+  "mutants": {
+    "M1_core_back_in_scope": {
+      "_note": "Снимает из off-зоны storage-agnostic core — ровно тот пакет, чей jest объявляет testEnvironment node. Краснеет A1: его строка про core снова получает window.setTimeout. Остальные зоны не затронуты, то есть мутант адресен.",
+      "from": "      'packages/core/**',\n",
+      "to": "",
+      "expect": ["A1"]
+    },
+    "M2_adapters_back_in_scope": {
+      "_note": "Снимает транспортные адаптеры плагина. Краснеют ДВЕ оси, и это по построению: A1 (адаптер снова переписывается) и A3 (off-зона, прочитанная из конфига, перестаёт покрывать модули, которые упражняют headless-сьюты). Пара красных и есть доказательство, что A3 производна от конфига, а не повторяет его своим литералом.",
+      "from": "      'packages/obsidian-plugin/src/infrastructure/adapters/**',\n",
+      "to": "",
+      "expect": ["A1", "A3"]
+    },
+    "M3_rule_off_repo_wide": {
+      "_note": "Противоположная ошибка: выключить правило целиком по плагину. A1 остаётся зелёной — и именно поэтому нужен контроль A2, который краснеет: renderer перестал защищаться, ради чего правило и существует.",
+      "from": "      'packages/obsidian-plugin/src/infrastructure/adapters/**',\n",
+      "to": "      'packages/obsidian-plugin/**',\n",
+      "expect": ["A2"]
+    }
+  }
+}
