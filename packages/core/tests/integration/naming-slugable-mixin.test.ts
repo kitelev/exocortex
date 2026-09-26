@@ -25,7 +25,6 @@
 import "reflect-metadata";
 import { NoteToRDFConverter } from "../../src/services/NoteToRDFConverter";
 import type { IVaultAdapter, IFile, IFrontmatter } from "../../src/interfaces/IVaultAdapter";
-import { ClassHierarchy } from "../../src/services/ClassHierarchy";
 import { Triple, type Subject, type Object as RdfObject } from "../../src/domain/models/rdf/Triple";
 import { IRI } from "../../src/domain/models/rdf/IRI";
 import type { Triple as AlgebraTriple } from "../../src/infrastructure/sparql/algebra/AlgebraOperation";
@@ -106,6 +105,42 @@ function iriValue(el: Subject | RdfObject): string | null {
   return el instanceof IRI ? el.value : null;
 }
 
+/**
+ * Transitive `rdfs:subClassOf*` over the triples above — a LOCAL oracle (#4377).
+ *
+ * This used to borrow `src/services/ClassHierarchy`, a class with no production caller whose
+ * public alias `TripleClassHierarchy` collided with the live, unrelated CLI class of that name
+ * (that collision mis-routed #4369). The class is gone; the two assertions below only ever needed
+ * "is `parent` reachable from `child` over these edges", which is twelve lines and belongs with
+ * the test rather than in the shipped surface.
+ *
+ * Mirrors the deleted class's semantics deliberately — same predicate filter, same IRI-typed
+ * subject/object requirement, same cycle-safe visited set — so the axis is not weakened by the
+ * move. (`subclassAlgebraTriples` has already applied that filter, so the guard here is belt and
+ * braces against a future caller passing a wider set.)
+ */
+function isSubClassOf(edges: AlgebraTriple[], child: string, parent: string): boolean {
+  const adjacency = new Map<string, Set<string>>();
+  for (const t of edges) {
+    if (t.predicate.type !== "iri" || t.predicate.value !== RDFS_SUBCLASS_OF) continue;
+    if (t.subject.type !== "iri" || t.object.type !== "iri") continue;
+    const parents = adjacency.get(t.subject.value) ?? new Set<string>();
+    parents.add(t.object.value);
+    adjacency.set(t.subject.value, parents);
+  }
+
+  const visited = new Set<string>();
+  const queue = [child];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (current === parent) return true;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    for (const p of adjacency.get(current) ?? []) queue.push(p);
+  }
+  return false;
+}
+
 function subclassAlgebraTriples(triples: Triple[]): AlgebraTriple[] {
   const out: AlgebraTriple[] = [];
   for (const t of triples) {
@@ -149,8 +184,7 @@ describe("exo naming-capability TBox layer — exo__Slugable metaclass mixin (@r
     const subs = subclassAlgebraTriples(triples);
     const e = edge(subs, CLASS, "Slugable");
     expect(e).not.toBeNull();
-    const h = new ClassHierarchy(subs);
-    expect(h.isSubClassOf(e!.child, e!.parent)).toBe(true);
+    expect(isSubClassOf(subs, e!.child, e!.parent)).toBe(true);
   });
 
   it("@req:ec019a32-4116-4709-a652-fab3842fb5c1 exo__Property subsumes exo__Slugable via the metaclass-level superClass mixin", async () => {
@@ -162,8 +196,7 @@ describe("exo naming-capability TBox layer — exo__Slugable metaclass mixin (@r
     const subs = subclassAlgebraTriples(triples);
     const e = edge(subs, PROPERTY, "Slugable");
     expect(e).not.toBeNull();
-    const h = new ClassHierarchy(subs);
-    expect(h.isSubClassOf(e!.child, e!.parent)).toBe(true);
+    expect(isSubClassOf(subs, e!.child, e!.parent)).toBe(true);
   });
 
   it("@req:ec019a32-4116-4709-a652-fab3842fb5c1 REVERT-VERIFY: without the mixin, exo__Class has NO superClass edge to exo__Slugable", async () => {
@@ -175,5 +208,14 @@ describe("exo naming-capability TBox layer — exo__Slugable metaclass mixin (@r
     ]);
     const subs = subclassAlgebraTriples(triples);
     expect(edge(subs, CLASS, "Slugable")).toBeNull();
+
+    // …and not reachable transitively either. This second assertion is what keeps the local
+    // `isSubClassOf` oracle (#4377) from being vacuous: the two positive cases above would pass
+    // against an oracle hard-coded to `true`, so without a negative one the helper proves nothing.
+    const classEdge = edge(subs, CLASS, "Asset");
+    expect(classEdge).not.toBeNull();
+    const slugableEdge = edge(subs, SLUGABLE, "Asset");
+    expect(slugableEdge).not.toBeNull();
+    expect(isSubClassOf(subs, classEdge!.child, slugableEdge!.child)).toBe(false);
   });
 });

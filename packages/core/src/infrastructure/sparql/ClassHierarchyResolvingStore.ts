@@ -76,7 +76,8 @@ export class SymbolicClassAmbiguityError extends Error {
  *
  * truncates at the first symbolic node: `match(<symbolic-class>, Class_superClass,
  * undefined)` returns nothing because the edges live on the file IRI. TS consumers
- * (`CommandResolver.getClassAncestorsWithDepth`, SHACL `TripleClassHierarchy`)
+ * (`CommandResolver.getClassAncestorsWithDepth`, and the CLI's own `TripleClassHierarchy`
+ * in `packages/cli/src/commands/validate-schema.ts`)
  * bridge this internally; vault-declared pure-SPARQL preconditions / Competency
  * Queries / analytics cannot.
  *
