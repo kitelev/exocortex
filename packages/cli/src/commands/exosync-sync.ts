@@ -73,6 +73,7 @@ import {
 import { collectVaultSpecs } from "./exosync-parity.js";
 import { registerQuarantineCommands } from "./exosync-quarantine.js";
 import { RestPushService } from "../services/RestPushService.js";
+import { wireObjectCache } from "../services/objectCacheTransport.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { repoIsolatedGitEnv } from "../utils/repoIsolatedGitEnv.js";
 
@@ -84,6 +85,8 @@ export interface ExosyncSyncOptions {
   token?: string;
   tokenFromGh?: boolean;
   apiBase?: string;
+  /** `false` from `--no-object-cache` (req 086df113). Default on. */
+  objectCache?: boolean;
 }
 
 /** Injectable dependencies (tests). */
@@ -430,8 +433,15 @@ export async function runExosyncSync(
     token,
     ...(opts.apiBase !== undefined ? { apiBase: opts.apiBase } : {}),
   });
-  const transport =
+  const rawTransport =
     deps.transportFactory?.(token, opts.apiBase) ?? pushService.transport();
+  // req 086df113 — content-addressed cache for commits/trees/blobs. The cache
+  // root is DEVICE-wide, so a shared AssetSpace mounted in several vaults is
+  // fetched over the network once, not once per vault.
+  const { transport } = wireObjectCache(rawTransport, {
+    ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),
+    sha1: nodeSha1,
+  });
 
   const { specs, warnings } = collectVaultSpecs(vaultPath);
   for (const w of warnings) out(`warn: ${w}`);
@@ -585,7 +595,11 @@ function withSyncOptions(cmd: Command): Command {
     )
     .option("--token-from-gh", "Resolve the PAT via `gh auth token`")
     .option("--json", "Print the full per-repo result array as JSON")
-    .option("--api-base <url>", "GitHub API base (testing)");
+    .option("--api-base <url>", "GitHub API base (testing)")
+    .option(
+      "--no-object-cache",
+      "Do not serve immutable git objects (commits/trees/blobs) from the local cache",
+    );
 }
 
 function makeDirectionAction(direction: SyncDirection) {

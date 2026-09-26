@@ -257,6 +257,18 @@ loss and are visible cross-device. Design points:
 - **Rate limits** — every transport call is wrapped in exponential backoff
   with jitter (default 3 retries, 1 s base) on HTTP 429 / 403-rate-limit.
   After the retries the repo's cycle fails warn-not-block.
+- **Immutable-object cache** (#4410) — `git/commits/{sha}`, `git/trees/{sha}`
+  and `git/blobs/{sha}` are content-addressed, so a SHA that has been read once
+  is served from a local store and costs **no request at all** on any later
+  read. The store is **device-wide**
+  (`$EXOCORTEX_EXOSYNC_CACHE_DIR`, else `$XDG_CACHE_HOME/exocortex/…`, else
+  `~/.cache/exocortex/exosync-objects`), so an AssetSpace mounted in several
+  vaults is downloaded once rather than once per vault. Measured on an idle
+  21-repo parity: 42 of its 83 requests are those commits+trees.
+  Mutable `git/refs` is never cached. Bounded by LRU
+  (`$EXOCORTEX_EXOSYNC_CACHE_MAX_BYTES`, default 256 MiB); a stored entry whose
+  content no longer hashes to its SHA aborts the sync loudly rather than being
+  applied. Disable with `--no-object-cache` or `EXOCORTEX_EXOSYNC_CACHE=0`.
 - **`full-conflict`** — first sync over a diverged tree, or a watermark
   whose base commit no longer matches the remote. Nothing is touched;
   align the local tree with the remote (or clear the watermark file) and
@@ -284,6 +296,7 @@ loss and are visible cross-device. Design points:
 | `services/sync/CredentialStore.ts`                             | PAT port contract + auth-failure detection                                                |
 | `services/sync/secretScan.ts` / `transportBackoff.ts`          | push refusal on secrets / rate-limit backoff                                              |
 | `services/sync/githubRepoReader.ts`                            | Git Data API read helpers                                                                 |
+| `services/sync/immutableObjectCache.ts`                        | content-addressed cache for commits/trees/blobs (#4410)                                   |
 | `services/sync/spaceSpecCore.ts`                               | shared sync-unit classification (plugin + CLI, one parser)                                |
 | `services/sync/ParityValidator.ts` + `assetSemanticCompare.ts` | Phase E M1/M2 parity harness ([parallel-run doc](../explanation/exosync-parallel-run.md)) |
 | `services/FileSpaceDiscovery.ts`                               | FileSpace → indexer-exclusion prefixes                                                    |

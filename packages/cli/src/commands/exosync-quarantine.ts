@@ -55,6 +55,7 @@ import {
   type ExosyncSyncOptions,
 } from "./exosync-sync.js";
 import { RestPushService } from "../services/RestPushService.js";
+import { wireObjectCache } from "../services/objectCacheTransport.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 
 export interface QuarantineCliOptions extends ExosyncSyncOptions {
@@ -79,8 +80,14 @@ function buildResolver(
     token,
     ...(opts.apiBase !== undefined ? { apiBase: opts.apiBase } : {}),
   });
-  const transport =
+  const rawTransport =
     deps.transportFactory?.(token, opts.apiBase) ?? pushService.transport();
+  // req 086df113 — same content-addressed cache as sync/parity; a quarantine
+  // resolve re-reads the very blobs the sync that created it already fetched.
+  const { transport } = wireObjectCache(rawTransport, {
+    ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),
+    sha1: nodeSha1,
+  });
 
   const { specs, warnings } = collectVaultSpecs(vaultPath);
   const configDir = opts.configDir ?? ".obsidian";

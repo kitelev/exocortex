@@ -698,6 +698,21 @@ export {
   type DetectChangesParams,
 } from "./services/sync/ChangeDetector";
 export { gitBlobSha } from "./services/sync/gitBlobSha";
+// Content-addressed cache for IMMUTABLE git objects (req 086df113, #4410) —
+// a `commits`/`trees`/`blobs` read by SHA can never change, so a hit costs no
+// network request at all. Mutable `git/refs` is deliberately NOT cached (that
+// class is served by conditional requests, #3975).
+export {
+  ImmutableObjectCache,
+  parseImmutableObjectUrl,
+  withImmutableObjectCache,
+  type ImmutableObjectCacheOptions,
+  type ImmutableObjectRef,
+  type ImmutableObjectType,
+  type ObjectCacheEntry,
+  type ObjectCacheIO,
+  type ObjectCacheStats,
+} from "./services/sync/immutableObjectCache";
 // dedup-uids (#3477) shared platform-free core (#3676) — report + fix semantics
 // composed by BOTH the CLI `runDedupUids` (Node enumeration) and the in-plugin
 // «Deduplicate uids» command (vault.adapter enumeration). Desktop↔Mobile parity.
