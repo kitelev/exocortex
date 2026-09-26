@@ -29,6 +29,7 @@ import {
   FileWatermarkStore,
   ParityValidator,
   SpaceSpecAccumulator,
+  CONDITIONAL_STORE_FILENAME,
   WATERMARK_STORE_FILENAME,
   checkParkedStaleness,
   classifySpaceDeclaration,
@@ -44,6 +45,10 @@ import {
 } from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { RestPushService } from "../services/RestPushService.js";
+import {
+  nodeConditionalStoreIO,
+  wireConditionalRequests,
+} from "../services/conditionalRequestTransport.js";
 import { wireObjectCache } from "../services/objectCacheTransport.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 
@@ -55,6 +60,8 @@ export interface ExosyncParityOptions {
   token?: string;
   tokenFromGh?: boolean;
   apiBase?: string;
+  /** `false` from `--no-conditional-requests` (req af002ec4). Default on. */
+  conditionalRequests?: boolean;
   /** `false` from `--no-object-cache` (req 086df113). Default on. */
   objectCache?: boolean;
 }
@@ -298,12 +305,6 @@ export async function runExosyncParity(
   });
   const rawTransport =
     deps.transportFactory?.(token, opts.apiBase) ?? pushService.transport();
-  // req 086df113 — content-addressed cache for commits/trees/blobs. In an idle
-  // parity 42 of 83 requests are exactly those, and a hit costs no request.
-  const { transport, cache: objectCache } = wireObjectCache(rawTransport, {
-    ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),
-    sha1: nodeSha1,
-  });
 
   const { specs, parked, warnings } = collectVaultSpecs(vaultPath);
   for (const w of warnings) out(`warn: ${w}`);
@@ -316,6 +317,36 @@ export async function runExosyncParity(
     "exocortex",
     WATERMARK_STORE_FILENAME,
   );
+  // req af002ec4 — conditional Git Data reads. Every request an idle parity
+  // makes (refs + commits + trees) is 304-able, and a 304 costs no primary
+  // quota. Store is device-local, next to the watermark.
+  const etagPath = path.join(
+    vaultPath,
+    configDir,
+    "plugins",
+    "exocortex",
+    CONDITIONAL_STORE_FILENAME,
+  );
+  // req af002ec4 × req 086df113 — ORDER MATTERS and the two do not overlap.
+  // The SHA cache sits OUTSIDE: an immutable object it already holds costs no
+  // request at all, so it must answer before a conditional request is even
+  // built. Conditional reads sit INSIDE, for what the cache cannot serve —
+  // mutable `git/refs`, and a SHA it has not seen.
+  const { transport: conditionalTransport, cache: conditionalCache } =
+    wireConditionalRequests(rawTransport, {
+      ...(opts.conditionalRequests !== undefined
+        ? { enabled: opts.conditionalRequests }
+        : {}),
+      io: nodeConditionalStoreIO(etagPath),
+    });
+  const { transport, cache: objectCache } = wireObjectCache(
+    conditionalTransport,
+    {
+      ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),
+      sha1: nodeSha1,
+    },
+  );
+
   // READ-ONLY watermark IO: the live plugin's write chain serialises
   // in-process only — a concurrent CLI write could lose its update.
   const watermarks = new FileWatermarkStore({
@@ -378,6 +409,17 @@ export async function runExosyncParity(
       `[ExoSync objects] ${stats.hits} served from cache, ${stats.misses} fetched, ${stats.stores} stored${stats.evictions > 0 ? `, ${stats.evictions} evicted` : ""}`,
     );
   };
+  // req af002ec4 — сделать экономию НАБЛЮДАЕМОЙ, тем же доводом, что у кэша
+  // объектов строкой выше: SyncPhaseTimer считает ЛОГИЧЕСКИЕ вызовы
+  // транспорта (304 инкрементит так же, как 200), поэтому ЕДИНСТВЕННАЯ
+  // величина, отвечающая «помогло ли», — счётчик самого механизма.
+  const reportConditional = (): void => {
+    const stats = conditionalCache?.stats();
+    if (stats === undefined || stats.conditional + stats.stored === 0) return;
+    out(
+      `[ExoSync conditional] ${stats.notModified} not modified (304 — primary quota not spent) of ${stats.conditional} validated, ${stats.stored} validator(s) stored`,
+    );
+  };
   const record = await validator.runRound(specs, { trigger: "standalone" });
 
   if (opts.json === true) {
@@ -389,6 +431,7 @@ export async function runExosyncParity(
   }
 
   reportObjectCache();
+  reportConditional();
 
   if (record.vacuous) return 2;
   return record.ok ? 0 : 1;
@@ -412,6 +455,10 @@ export function exosyncParityCommand(): Command {
     )
     .option("--token-from-gh", "Resolve the PAT via `gh auth token`")
     .option("--api-base <url>", "GitHub API base (testing)")
+    .option(
+      "--no-conditional-requests",
+      "Do not send If-None-Match on Git Data reads (a 304 costs no primary quota)",
+    )
     .option(
       "--no-object-cache",
       "Do not serve immutable git objects (commits/trees/blobs) from the local cache",

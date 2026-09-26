@@ -257,6 +257,24 @@ loss and are visible cross-device. Design points:
 - **Rate limits** — every transport call is wrapped in exponential backoff
   with jitter (default 3 retries, 1 s base) on HTTP 429 / 403-rate-limit.
   After the retries the repo's cycle fails warn-not-block.
+- **Conditional reads** (#3975) — `git/refs`, `git/commits` and `git/trees`
+  are re-read with `If-None-Match`; an unchanged resource answers **304**, and
+  GitHub does not charge the primary rate limit for one. Measured 2026-09-26:
+  25 conditional requests moved `x-ratelimit-used` by +7 (background noise)
+  against +24 for the same 25 unconditional ones. The ETag store sits beside
+  the watermark (`exosync-etags.local.json`, device-local, Sync-excluded).
+  Fail-open throughout: no ETag, an unreadable or corrupt store, or a 304
+  whose body is no longer remembered all fall back to an ordinary
+  unconditional read — a 304 is never handed on as an empty success. Disable
+  with `--no-conditional-requests` or `EXOCORTEX_EXOSYNC_CONDITIONAL=0`.
+  ⛤ Composes with the cache below. Written as the path a REQUEST takes:
+  `engine → object cache → conditional request → GitHub`. The cache answers
+  first, because an object it already holds costs no request at all; only
+  what it cannot serve (mutable refs, an unseen SHA) is worth a conditional
+  round trip. (Stating the direction matters: the wrapping order is the
+  mirror image — `wireConditionalRequests` wraps the raw transport and
+  `wireObjectCache` wraps that — so an arrow diagram with no direction named
+  reads correctly either way and therefore says nothing.)
 - **Immutable-object cache** (#4410) — `git/commits/{sha}`, `git/trees/{sha}`
   and `git/blobs/{sha}` are content-addressed, so a SHA that has been read once
   is served from a local store and costs **no request at all** on any later
@@ -300,6 +318,7 @@ loss and are visible cross-device. Design points:
 | `services/sync/secretScan.ts` / `transportBackoff.ts`          | push refusal on secrets / rate-limit backoff                                              |
 | `services/sync/githubRepoReader.ts`                            | Git Data API read helpers                                                                 |
 | `services/sync/immutableObjectCache.ts`                        | content-addressed cache for commits/trees/blobs (#4410)                                   |
+| `services/sync/conditionalRequestCache.ts`                     | If-None-Match / ETag on refs, commits, trees (#3975)                                      |
 | `services/sync/spaceSpecCore.ts`                               | shared sync-unit classification (plugin + CLI, one parser)                                |
 | `services/sync/ParityValidator.ts` + `assetSemanticCompare.ts` | Phase E M1/M2 parity harness ([parallel-run doc](../explanation/exosync-parallel-run.md)) |
 | `services/FileSpaceDiscovery.ts`                               | FileSpace → indexer-exclusion prefixes                                                    |

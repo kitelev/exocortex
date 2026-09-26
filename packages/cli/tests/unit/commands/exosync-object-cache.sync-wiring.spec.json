@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify for req 086df113 at the SECOND wiring site: `exosync sync`. The parity spec pins only its own call site, so deleting the wiring from the MAIN command would red nothing without this file (review finding on WIP 1281b62b). Axes B9/B10 in exosync-object-cache.test.ts.",
+  "_doc": "Revert-verify for req 086df113 at the SECOND wiring site: `exosync sync`. The parity spec pins only its own call site, so deleting the wiring from the MAIN command would red nothing without this file (review finding on WIP 1281b62b). Axes B9/B10 in exosync-object-cache.test.ts. ⛔ Якоря починены 2026-09-26: их сломал НЕ дрейф времени, а СОСЕДНЯЯ ветка (req af002ec4, conditional requests) — она сменила первый аргумент wireObjectCache с rawTransport на conditionalTransport. spec-anchor-sweep.py показывал count 0, jest-оси при этом были зелены: отказал слой ДОКАЗАТЕЛЬСТВА, не защита.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-sync.ts",
   "symlink_node_modules": [
@@ -11,9 +11,9 @@
   "red_re": "› (B\\d+\\w*) ",
   "mutants": {
     "M1_sync_wiring_removed": {
-      "_note": "`exosync sync` keeps a correct but UNCACHED transport.",
-      "from": "  const { transport, cache: objectCache } = wireObjectCache(rawTransport, {\n    ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),\n    sha1: nodeSha1,\n  });\n",
-      "to": "  const transport = rawTransport;\n  const objectCache = null;\n",
+      "_note": "`exosync sync` сохраняет корректный, но НЕкэширующий транспорт. ⛤ Якорь — ТОЛЬКО строка деструктуризации, БЕЗ аргумента. Прежняя редакция захватывала вызов целиком вместе с первым аргументом, и соседняя фича (req af002ec4) сменила именно аргумент (rawTransport → conditionalTransport) плюс reflow prettier ⇒ count стал 0 МОЛЧА, при исправных осях. Аргумент — то, что меняет следующий декоратор; строка деструктуризации — нет.",
+      "from": "  const { transport: readTransport, cache: objectCache } = wireObjectCache(\n",
+      "to": "  const readTransport = conditionalTransport;\n  const objectCache = null;\n  void wireObjectCache(\n",
       "expect": ["B9"]
     },
     "M2_sync_flag_ignored": {

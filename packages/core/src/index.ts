@@ -697,7 +697,20 @@ export {
   extractAssetUid,
   type DetectChangesParams,
 } from "./services/sync/ChangeDetector";
+export { promiseWithDeadline } from "./utilities/promiseWithDeadline";
 export { gitBlobSha } from "./services/sync/gitBlobSha";
+// Conditional GitHub reads (req af002ec4, #3975) — an unchanged resource
+// answers 304, and GitHub does not charge the primary rate limit for it.
+export {
+  CONDITIONAL_STORE_FILENAME,
+  ConditionalRequestCache,
+  conditionalCacheKey,
+  withConditionalRequests,
+  type ConditionalEntry,
+  type ConditionalRequestCacheOptions,
+  type ConditionalRequestStats,
+  type ConditionalStoreIO,
+} from "./services/sync/conditionalRequestCache";
 // Content-addressed cache for IMMUTABLE git objects (req 086df113, #4410) —
 // a `commits`/`trees`/`blobs` read by SHA can never change, so a hit costs no
 // network request at all. Mutable `git/refs` is deliberately NOT cached (that

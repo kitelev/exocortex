@@ -1,0 +1,32 @@
+{
+  "_doc": "Revert-verify for req af002ec4 at the SECOND wiring site: `exosync sync`. Axes D6/D7. Якоря переписаны 2026-09-26 после ревью: см. _note мутантов.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-sync.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-conditional-requests.test.ts 2>&1",
+  "red_re": "› (D\\d+\\w*) ",
+  "mutants": {
+    "M1_sync_wiring_removed": {
+      "_note": "Главная команда теряет заголовок, всё остальное поведение корректно. ⛤ Якорь — ТОЛЬКО строка деструктуризации, БЕЗ аргумента. Прежняя редакция захватывала вызов целиком вместе с первым аргументом, и соседняя фича (req af002ec4) сменила именно аргумент (rawTransport → conditionalTransport) плюс reflow prettier ⇒ count стал 0 МОЛЧА, при исправных осях. Аргумент — то, что меняет следующий декоратор; строка деструктуризации — нет. ⚠ Якорь вынужденно захватывает и аргумент: prettier схлопывает вызов в `wireConditionalRequests(rawTransport, {`, отдельной строки без аргумента больше нет.",
+      "from": "  const { transport: conditionalTransport, cache: conditionalCache } =\n    wireConditionalRequests(rawTransport, {\n",
+      "to": "  const conditionalTransport = rawTransport;\n  const conditionalCache = null;\n  void wireConditionalRequests(rawTransport, {\n",
+      "expect": ["D6"]
+    },
+    "M2_sync_flag_ignored": {
+      "_note": "`--no-conditional-requests` перестаёт доезжать до sync-пути.",
+      "from": "      ...(opts.conditionalRequests !== undefined\n        ? { enabled: opts.conditionalRequests }\n        : {}),\n",
+      "to": "",
+      "expect": ["D7"]
+    },
+    "M3_saving_not_reported": {
+      "_note": "Механизм продолжает работать, он просто перестаёт об этом говорить — а именно так экономия становится непроверяемой в обычной эксплуатации. Зеркало M3_saving_not_reported кэша объектов.",
+      "from": "    const condStats = conditionalCache?.stats();\n",
+      "to": "    const condStats = undefined;\n",
+      "expect": ["D11"]
+    }
+  }
+}

@@ -51,6 +51,7 @@ import {
   OUTBOX_STORE_FILENAME,
   StructuredMerger,
   SyncEngine,
+  CONDITIONAL_STORE_FILENAME,
   WATERMARK_STORE_FILENAME,
   aggregateTimings,
   formatRepoTimings,
@@ -73,6 +74,10 @@ import {
 import { collectVaultSpecs } from "./exosync-parity.js";
 import { registerQuarantineCommands } from "./exosync-quarantine.js";
 import { RestPushService } from "../services/RestPushService.js";
+import {
+  nodeConditionalStoreIO,
+  wireConditionalRequests,
+} from "../services/conditionalRequestTransport.js";
 import { wireObjectCache } from "../services/objectCacheTransport.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { repoIsolatedGitEnv } from "../utils/repoIsolatedGitEnv.js";
@@ -85,6 +90,8 @@ export interface ExosyncSyncOptions {
   token?: string;
   tokenFromGh?: boolean;
   apiBase?: string;
+  /** `false` from `--no-conditional-requests` (req af002ec4). Default on. */
+  conditionalRequests?: boolean;
   /** `false` from `--no-object-cache` (req 086df113). Default on. */
   objectCache?: boolean;
 }
@@ -435,13 +442,6 @@ export async function runExosyncSync(
   });
   const rawTransport =
     deps.transportFactory?.(token, opts.apiBase) ?? pushService.transport();
-  // req 086df113 — content-addressed cache for commits/trees/blobs. The cache
-  // root is DEVICE-wide, so a shared AssetSpace mounted in several vaults is
-  // fetched over the network once, not once per vault.
-  const { transport, cache: objectCache } = wireObjectCache(rawTransport, {
-    ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),
-    sha1: nodeSha1,
-  });
 
   const { specs, warnings } = collectVaultSpecs(vaultPath);
   for (const w of warnings) out(`warn: ${w}`);
@@ -500,8 +500,39 @@ export async function runExosyncSync(
   const quarantine: QuarantinePort = conflictCache;
 
   const watermarkStore = new FileWatermarkStore(nodeWatermarkFileIO(watermarkPath));
+  // req af002ec4 — conditional Git Data reads. An unchanged repo answers 304
+  // and GitHub does not charge the primary rate limit for it; an idle run over
+  // 21 repos is 83 requests, ALL of them 304-able. Store sits next to the
+  // watermark (device-local, `.local.` = Sync-excluded).
+  // req af002ec4 × req 086df113 — ORDER MATTERS and the two do not overlap.
+  // The SHA cache sits OUTSIDE: an immutable object it already holds costs no
+  // request at all, so it must answer before a conditional request is even
+  // built. Conditional reads sit INSIDE, for what the cache cannot serve —
+  // mutable `git/refs`, and a SHA it has not seen.
+  const { transport: conditionalTransport, cache: conditionalCache } =
+    wireConditionalRequests(rawTransport, {
+      ...(opts.conditionalRequests !== undefined
+        ? { enabled: opts.conditionalRequests }
+        : {}),
+      io: nodeConditionalStoreIO(
+        path.join(
+          vaultPath,
+          configDir,
+          "plugins",
+          "exocortex",
+          CONDITIONAL_STORE_FILENAME,
+        ),
+      ),
+    });
+  const { transport: readTransport, cache: objectCache } = wireObjectCache(
+    conditionalTransport,
+    {
+      ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),
+      sha1: nodeSha1,
+    },
+  );
   const engine = new SyncEngine({
-    transport,
+    transport: readTransport,
     watermarkStore,
     // mtime-manifest local-hash skip (perf) — same IO/store family as the
     // watermark; skips reading+re-hashing unchanged asset files each sync.
@@ -584,6 +615,21 @@ export async function runExosyncSync(
         `[ExoSync objects] ${objectStats.hits} served from cache, ${objectStats.misses} fetched, ${objectStats.stores} stored${objectStats.evictions > 0 ? `, ${objectStats.evictions} evicted` : ""}`,
       );
     }
+    // req af002ec4 — сделать экономию НАБЛЮДАЕМОЙ. Без этой строки 304 не
+    // отличим от 200 ни в одном пользовательском выводе: SyncPhaseTimer
+    // считает ЛОГИЧЕСКИЕ вызовы транспорта (bumpRest срабатывает и на 304,
+    // и на hit кэша), то есть «сколько запросов попросил алгоритм», а не
+    // «сколько потрачено квоты». Счётчик самого механизма — единственная
+    // величина, которая отвечает на вопрос «помогло ли».
+    const condStats = conditionalCache?.stats();
+    if (
+      condStats !== undefined &&
+      condStats.conditional + condStats.stored > 0
+    ) {
+      out(
+        `[ExoSync conditional] ${condStats.notModified} not modified (304 — primary quota not spent) of ${condStats.conditional} validated, ${condStats.stored} validator(s) stored`,
+      );
+    }
   }
 
   return results.some((r) => isFailureStatus(r.status)) ? 1 : 0;
@@ -605,6 +651,10 @@ function withSyncOptions(cmd: Command): Command {
     .option("--token-from-gh", "Resolve the PAT via `gh auth token`")
     .option("--json", "Print the full per-repo result array as JSON")
     .option("--api-base <url>", "GitHub API base (testing)")
+    .option(
+      "--no-conditional-requests",
+      "Do not send If-None-Match on Git Data reads (a 304 costs no primary quota)",
+    )
     .option(
       "--no-object-cache",
       "Do not serve immutable git objects (commits/trees/blobs) from the local cache",

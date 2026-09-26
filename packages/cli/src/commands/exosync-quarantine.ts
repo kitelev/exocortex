@@ -29,6 +29,7 @@ import { promises as fsp, existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import * as path from "node:path";
 import {
+  CONDITIONAL_STORE_FILENAME,
   CONFLICT_CACHE_STORE_FILENAME,
   FileWatermarkStore,
   LocalConflictCacheStore,
@@ -55,6 +56,10 @@ import {
   type ExosyncSyncOptions,
 } from "./exosync-sync.js";
 import { RestPushService } from "../services/RestPushService.js";
+import {
+  nodeConditionalStoreIO,
+  wireConditionalRequests,
+} from "../services/conditionalRequestTransport.js";
 import { wireObjectCache } from "../services/objectCacheTransport.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 
@@ -82,15 +87,36 @@ function buildResolver(
   });
   const rawTransport =
     deps.transportFactory?.(token, opts.apiBase) ?? pushService.transport();
-  // req 086df113 — same content-addressed cache as sync/parity; a quarantine
-  // resolve re-reads the very blobs the sync that created it already fetched.
-  const { transport } = wireObjectCache(rawTransport, {
-    ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),
-    sha1: nodeSha1,
-  });
 
   const { specs, warnings } = collectVaultSpecs(vaultPath);
   const configDir = opts.configDir ?? ".obsidian";
+  // req af002ec4 — same conditional reads as sync/parity; a resolve re-reads
+  // refs and trees the sync that created the conflict already validated.
+  const etagPath = path.join(
+    vaultPath,
+    configDir,
+    "plugins",
+    "exocortex",
+    CONDITIONAL_STORE_FILENAME,
+  );
+  // req af002ec4 × req 086df113 — ORDER MATTERS and the two do not overlap.
+  // The SHA cache sits OUTSIDE: an immutable object it already holds costs no
+  // request at all, so it must answer before a conditional request is even
+  // built. Conditional reads sit INSIDE, for what the cache cannot serve —
+  // mutable `git/refs`, and a SHA it has not seen.
+  const { transport: conditionalTransport } = wireConditionalRequests(
+    rawTransport,
+    {
+      ...(opts.conditionalRequests !== undefined
+        ? { enabled: opts.conditionalRequests }
+        : {}),
+      io: nodeConditionalStoreIO(etagPath),
+    },
+  );
+  const { transport } = wireObjectCache(conditionalTransport, {
+    ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),
+    sha1: nodeSha1,
+  });
   const watermarkPath = path.join(
     vaultPath,
     configDir,
