@@ -9,7 +9,13 @@
  */
 
 import { createHash, webcrypto } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 
@@ -22,6 +28,8 @@ import type {
 } from "@kitelev/exocortex-core";
 
 import { runExosyncParity } from "../../../src/commands/exosync-parity.js";
+import { runExosyncSync } from "../../../src/commands/exosync-sync.js";
+import { runQuarantineList } from "../../../src/commands/exosync-quarantine.js";
 import { wireObjectCache } from "../../../src/services/objectCacheTransport.js";
 import {
   nodeObjectCacheIO,
@@ -122,7 +130,10 @@ function countingRemote(files: Record<string, string>): RestCommitTransport & {
   });
 }
 
-function makeVault(): { vault: string; cleanup: () => void } {
+function makeVault(opts: { pinnedPaths?: string[] } = {}): {
+  vault: string;
+  cleanup: () => void;
+} {
   const vault = mkdtempSync(path.join(tmpdir(), "exosync-objcache-"));
   writeFileSync(
     path.join(vault, "space-decl.md"),
@@ -142,6 +153,12 @@ function makeVault(): { vault: string; cleanup: () => void } {
           lastSyncedSha: HEAD,
           rootTreeSha: TREE,
           files: [{ path: FILE_A, blobSha: gitBlobShaSync(CONTENT_A) }],
+          // A pinned path is what makes `quarantine list` consult the remote
+          // at all — without one it classifies from local state and issues no
+          // request, which would make the wiring axis vacuous.
+          ...(opts.pinnedPaths !== undefined
+            ? { pinnedPaths: opts.pinnedPaths }
+            : {}),
         },
       },
     }),
@@ -241,6 +258,215 @@ describe("B2 `exosync-parity` serves immutable objects from the cache @req:086df
     const afterFirst = remote.objectCalls().length;
     await parity(remote, { objectCache: false });
     expect(remote.objectCalls().length).toBe(afterFirst * 2);
+  });
+});
+
+/**
+ * ⛔ The wiring lives at THREE call sites and B4/B5 pin only `exosync-parity`.
+ * Deleting the `wireObjectCache(...)` line from `exosync-sync.ts` — the main
+ * command — or from `exosync-quarantine.ts` would red NOTHING without these.
+ * (Found by review on the WIP commit, not by the axes.)
+ */
+describe("the SAME wiring is pinned at every call site @req:086df113-16bb-4912-bb09-3a13ee187043", () => {
+  let fixture: { vault: string; cleanup: () => void };
+  let cacheRoot: string;
+  const saved = { ...process.env };
+
+  beforeEach(() => {
+    fixture = makeVault();
+    cacheRoot = mkdtempSync(path.join(tmpdir(), "exosync-objcache-site-"));
+    process.env.EXOCORTEX_EXOSYNC_CACHE = "1";
+    process.env.EXOCORTEX_EXOSYNC_CACHE_DIR = cacheRoot;
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+    rmSync(cacheRoot, { recursive: true, force: true });
+    process.env.EXOCORTEX_EXOSYNC_CACHE = saved.EXOCORTEX_EXOSYNC_CACHE;
+    process.env.EXOCORTEX_EXOSYNC_CACHE_DIR = saved.EXOCORTEX_EXOSYNC_CACHE_DIR;
+  });
+
+  it("B9 a SECOND vault's `exosync sync` reuses the first vault's objects", async () => {
+    // ⛔ NOT "the same vault twice": a second pull at an unmoved head reads no
+    // objects at all, so that pair is green with and without the cache — the
+    // first draft of this axis was vacuous, and B10 is what exposed it.
+    const remote = countingRemote({ [FILE_A]: CONTENT_A });
+    const second = makeVault();
+    try {
+      const pull = async (vault: string, over = {}): Promise<number> =>
+        runExosyncSync(
+          "pull",
+          { vault, token: FAKE_PAT, ...over },
+          { transportFactory: () => remote, out: () => undefined, env: {} },
+        );
+
+      await pull(fixture.vault);
+      const afterFirstVault = remote.objectCalls().length;
+      expect(afterFirstVault).toBeGreaterThan(0);
+
+      await pull(second.vault);
+      expect(remote.objectCalls()).toHaveLength(afterFirstVault);
+    } finally {
+      second.cleanup();
+    }
+  });
+
+  it("B10 negative control — with --no-object-cache the second vault re-reads them", async () => {
+    const remote = countingRemote({ [FILE_A]: CONTENT_A });
+    const second = makeVault();
+    try {
+      const pull = async (vault: string): Promise<number> =>
+        runExosyncSync(
+          "pull",
+          { vault, token: FAKE_PAT, objectCache: false },
+          { transportFactory: () => remote, out: () => undefined, env: {} },
+        );
+      await pull(fixture.vault);
+      const afterFirstVault = remote.objectCalls().length;
+      await pull(second.vault);
+      expect(remote.objectCalls().length).toBeGreaterThan(afterFirstVault);
+    } finally {
+      second.cleanup();
+    }
+  });
+
+  it("B11 `exosync quarantine list` goes through the same wiring", async () => {
+    const remote = countingRemote({ [FILE_A]: CONTENT_A });
+    const pinned = makeVault({ pinnedPaths: [FILE_A] });
+    try {
+      // Prime the store through the sync path, then assert the quarantine
+      // command reuses it rather than re-reading the same SHAs.
+      await runExosyncSync(
+        "pull",
+        { vault: pinned.vault, token: FAKE_PAT },
+        { transportFactory: () => remote, out: () => undefined, env: {} },
+      );
+      const afterSync = remote.objectCalls().length;
+      expect(afterSync).toBeGreaterThan(0);
+
+      await runQuarantineList(
+        { vault: pinned.vault, token: FAKE_PAT },
+        { transportFactory: () => remote, out: () => undefined, env: {} },
+      );
+      expect(remote.objectCalls()).toHaveLength(afterSync);
+    } finally {
+      pinned.cleanup();
+    }
+  });
+
+  it("B12 a SECOND vault on the same device reuses the first vault's objects", async () => {
+    const remote = countingRemote({ [FILE_A]: CONTENT_A });
+    const second = makeVault();
+    try {
+      await runExosyncParity(
+        { vault: fixture.vault, token: FAKE_PAT },
+        { transportFactory: () => remote, out: () => undefined, env: {} },
+      );
+      const afterFirstVault = remote.objectCalls().length;
+      expect(afterFirstVault).toBeGreaterThan(0);
+
+      await runExosyncParity(
+        { vault: second.vault, token: FAKE_PAT },
+        { transportFactory: () => remote, out: () => undefined, env: {} },
+      );
+      // The store is DEVICE-wide, so the second vault pays nothing for the
+      // objects the first already fetched — the cross-vault half of the req.
+      expect(remote.objectCalls()).toHaveLength(afterFirstVault);
+    } finally {
+      second.cleanup();
+    }
+  });
+
+  it("B14 the saving is reported, not invisible", async () => {
+    const remote = countingRemote({ [FILE_A]: CONTENT_A });
+    const lines: string[] = [];
+    const parityWith = async (out: (l: string) => void): Promise<number> =>
+      runExosyncParity(
+        { vault: fixture.vault, token: FAKE_PAT },
+        { transportFactory: () => remote, out, env: {} },
+      );
+
+    await parityWith(() => undefined);
+    await parityWith((l) => lines.push(l));
+
+    const report = lines.find((l) => l.startsWith("[ExoSync objects]"));
+    expect(report).toBeDefined();
+    expect(report).toMatch(/[1-9]\d* served from cache/);
+  });
+
+  it("B13 a tampered cache entry fails the repo's cycle loudly instead of being applied", async () => {
+    const remote = countingRemote({ [FILE_A]: CONTENT_A });
+    await runExosyncParity(
+      { vault: fixture.vault, token: FAKE_PAT },
+      { transportFactory: () => remote, out: () => undefined, env: {} },
+    );
+
+    // Tamper with the stored commit the way a torn write or a bit-flip would:
+    // change the body, leave the envelope's digest as it was.
+    const entryPath = path.join(
+      cacheRoot,
+      OWNER,
+      REPO,
+      "commits",
+      `${HEAD}.json`,
+    );
+    const stored = JSON.parse(readFileSync(entryPath, "utf-8")) as {
+      v: number;
+      sha: string;
+      digest: string;
+      body: string;
+    };
+    writeFileSync(
+      entryPath,
+      JSON.stringify({
+        ...stored,
+        body: JSON.stringify({ sha: "f".repeat(40), tree: { sha: TREE } }),
+      }),
+      "utf-8",
+    );
+
+    const lines: string[] = [];
+    const code = await runExosyncParity(
+      { vault: fixture.vault, token: FAKE_PAT, json: true },
+      { transportFactory: () => remote, out: (l) => lines.push(l), env: {} },
+    );
+
+    // The command does not throw out of the process — ExoSync reports per-repo
+    // verdicts — but the repo's verdict is an ERROR naming the integrity
+    // failure, and nothing from the tampered entry reaches the vault.
+    expect(code).not.toBe(0);
+    expect(lines.join("\n")).toMatch(/failed its integrity check/);
+  });
+});
+
+describe("concurrent writers of the SAME key cannot tear an entry @req:086df113-16bb-4912-bb09-3a13ee187043", () => {
+  it("B15 20 concurrent writes of one key leave a valid, complete file", async () => {
+    // Reachable TODAY, not only under a future `syncAll`: the engine already
+    // fetches blobs through a bounded pool (BLOB_FETCH_CONCURRENCY = 6) and
+    // does not dedupe by blob SHA, so two vault paths with byte-identical
+    // content hit the same cache key inside ONE process. A per-process temp
+    // name made both writers open the same temp path with truncate semantics.
+    const root = mkdtempSync(path.join(tmpdir(), "exosync-objcache-race-"));
+    try {
+      const io = nodeObjectCacheIO(root);
+      const key = `${OWNER}/${REPO}/blobs/${gitBlobShaSync(CONTENT_A)}`;
+      const payloads = Array.from({ length: 20 }, (_, i) =>
+        JSON.stringify({ writer: i, filler: "x".repeat(400_000) }),
+      );
+
+      await Promise.all(payloads.map((p) => io.write(key, p)));
+
+      const stored = await io.read(key);
+      expect(stored).not.toBeNull();
+      // Whichever writer won, the file must be ONE of them in full — never a
+      // splice of two.
+      expect(payloads).toContain(stored);
+      // And no temp file survives the race.
+      const leftovers = (await io.list()).filter((e) => e.key.includes(".tmp"));
+      expect(leftovers).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

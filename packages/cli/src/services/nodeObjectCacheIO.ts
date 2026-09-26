@@ -16,6 +16,7 @@
  * — `atime` alone is unreliable (`noatime` mounts do not update it).
  */
 
+import { randomUUID } from "node:crypto";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -35,14 +36,21 @@ export function resolveObjectCacheRoot(
   return path.join(os.homedir(), ".cache", "exocortex", "exosync-objects");
 }
 
-/** `256 MiB` default ceiling, overridable for constrained devices. */
+/**
+ * `256 MiB` default ceiling, overridable for constrained devices.
+ *
+ * `0` is HONOURED as "store nothing" (every write is evicted immediately) —
+ * it is a meaningful setting, and silently promoting it to the 256 MiB
+ * default would do the opposite of what it says. Junk and negatives fall back
+ * to the default, since there is no sensible reading of them.
+ */
 export function resolveObjectCacheMaxBytes(
   env: NodeJS.ProcessEnv = process.env,
 ): number | undefined {
   const raw = env.EXOCORTEX_EXOSYNC_CACHE_MAX_BYTES;
   if (raw === undefined || raw.length === 0) return undefined;
   const n = Number.parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : undefined;
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
 }
 
 function keyToPath(root: string, key: string): string {
@@ -93,8 +101,17 @@ export function nodeObjectCacheIO(root: string): ObjectCacheIO {
       const target = keyToPath(root, key);
       await fsp.mkdir(path.dirname(target), { recursive: true });
       // temp+rename: a crash mid-write must not leave a torn entry that would
-      // later fail its integrity check and abort a sync fail-loud.
-      const tmp = `${target}.${process.pid}.tmp`;
+      // later fail its integrity check and fail that repo's cycle.
+      //
+      // ⛔ The temp name must be unique per CALL, not per process. The engine
+      // already fetches blobs through a bounded pool (`BLOB_FETCH_CONCURRENCY`
+      // = 6) and does not dedupe by blob SHA, so two vault paths with
+      // byte-identical content are fetched concurrently BY THE SAME PROCESS
+      // and land on the same cache key. With a pid-only temp name both writers
+      // opened the same file with truncate semantics and could leave a torn
+      // entry — which the integrity check would then correctly, and uselessly,
+      // report as corruption of a disk this feature had corrupted itself.
+      const tmp = `${target}.${process.pid}-${randomUUID()}.tmp`;
       await fsp.writeFile(tmp, content, "utf-8");
       await fsp.rename(tmp, target);
     },

@@ -1,0 +1,26 @@
+{
+  "_doc": "Revert-verify for req 086df113 at the SECOND wiring site: `exosync sync`. The parity spec pins only its own call site, so deleting the wiring from the MAIN command would red nothing without this file (review finding on WIP 1281b62b). Axes B9/B10 in exosync-object-cache.test.ts.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-sync.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-object-cache.test.ts 2>&1",
+  "red_re": "› (B\\d+\\w*) ",
+  "mutants": {
+    "M1_sync_wiring_removed": {
+      "_note": "`exosync sync` keeps a correct but UNCACHED transport.",
+      "from": "  const { transport, cache: objectCache } = wireObjectCache(rawTransport, {\n    ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),\n    sha1: nodeSha1,\n  });\n",
+      "to": "  const transport = rawTransport;\n  const objectCache = null;\n",
+      "expect": ["B9"]
+    },
+    "M2_sync_flag_ignored": {
+      "_note": "`--no-object-cache` stops reaching the wiring on the sync path.",
+      "from": "    ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),\n",
+      "to": "",
+      "expect": ["B10"]
+    }
+  }
+}

@@ -438,7 +438,7 @@ export async function runExosyncSync(
   // req 086df113 — content-addressed cache for commits/trees/blobs. The cache
   // root is DEVICE-wide, so a shared AssetSpace mounted in several vaults is
   // fetched over the network once, not once per vault.
-  const { transport } = wireObjectCache(rawTransport, {
+  const { transport, cache: objectCache } = wireObjectCache(rawTransport, {
     ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),
     sha1: nodeSha1,
   });
@@ -575,6 +575,15 @@ export async function runExosyncSync(
     // dominant phase is visible (which optimisation Phase 1 picks).
     const aggTimings = aggregateTimings(results);
     if (totalMs(aggTimings) > 0) out(formatTimingsLine(aggTimings));
+    // req 086df113 — make the saving OBSERVABLE. Without this line the cache
+    // is invisible in normal use, and "did it help?" has no answer short of
+    // counting packets.
+    const objectStats = objectCache?.stats();
+    if (objectStats !== undefined && objectStats.hits + objectStats.stores > 0) {
+      out(
+        `[ExoSync objects] ${objectStats.hits} served from cache, ${objectStats.misses} fetched, ${objectStats.stores} stored${objectStats.evictions > 0 ? `, ${objectStats.evictions} evicted` : ""}`,
+      );
+    }
   }
 
   return results.some((r) => isFailureStatus(r.status)) ? 1 : 0;

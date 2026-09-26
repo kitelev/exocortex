@@ -266,9 +266,12 @@ loss and are visible cross-device. Design points:
   vaults is downloaded once rather than once per vault. Measured on an idle
   21-repo parity: 42 of its 83 requests are those commits+trees.
   Mutable `git/refs` is never cached. Bounded by LRU
-  (`$EXOCORTEX_EXOSYNC_CACHE_MAX_BYTES`, default 256 MiB); a stored entry whose
-  content no longer hashes to its SHA aborts the sync loudly rather than being
-  applied. Disable with `--no-object-cache` or `EXOCORTEX_EXOSYNC_CACHE=0`.
+  (`$EXOCORTEX_EXOSYNC_CACHE_MAX_BYTES`, default 256 MiB; `0` means "store
+  nothing"); a stored entry whose content no longer hashes to its SHA fails
+  **that repo's cycle** loudly rather than being applied — other repos in the
+  same run are unaffected. Each run reports what the cache saved on an
+  `[ExoSync objects]` line. Disable with `--no-object-cache` or
+  `EXOCORTEX_EXOSYNC_CACHE=0`.
 - **`full-conflict`** — first sync over a diverged tree, or a watermark
   whose base commit no longer matches the remote. Nothing is touched;
   align the local tree with the remote (or clear the watermark file) and

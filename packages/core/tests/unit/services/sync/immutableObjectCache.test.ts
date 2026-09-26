@@ -1,3 +1,19 @@
+it("A6 a truncated (unparseable) entry throws", async () => {
+  const io = memoryIO();
+  const transport = withImmutableObjectCache(
+    countingTransport(),
+    makeCache(io),
+  );
+  await transport({ method: "GET", url: commitUrl(HEAD) });
+  io.map.set(`${OWNER}/${REPO}/commits/${HEAD}`, {
+    content: '{"v": 1, "sha": "a',
+    lastUsedMs: 1,
+  });
+  await expect(
+    transport({ method: "GET", url: commitUrl(HEAD) }),
+  ).rejects.toThrow(/failed its integrity check/);
+});
+
 /**
  * req 086df113-16bb-4912-bb09-3a13ee187043 (issue #4410) — content-addressed
  * cache for immutable git objects.
@@ -65,6 +81,25 @@ function memoryIO(): ObjectCacheIO & {
       if (v) v.lastUsedMs = ++clock;
     },
   };
+}
+
+/**
+ * Build a stored envelope. `digest: "stale"` keeps the ORIGINAL digest while
+ * the body changes (what a torn write or a flipped bit looks like);
+ * `digest: "recomputed"` re-derives it (what a deliberate edit looks like, and
+ * the only case where the content-addressing layer has to answer).
+ */
+async function envelope(
+  sha: string,
+  body: unknown,
+  mode: "recomputed" | "stale" = "recomputed",
+  staleFrom?: unknown,
+): Promise<string> {
+  const bodyText = JSON.stringify(body);
+  const digestSource =
+    mode === "recomputed" ? bodyText : JSON.stringify(staleFrom ?? body);
+  const digest = await sha1(new TextEncoder().encode(digestSource));
+  return JSON.stringify({ v: 1, sha, digest, body: bodyText });
 }
 
 function commitUrl(sha: string): string {
@@ -191,11 +226,43 @@ describe("A3 a corrupted cache entry fails LOUD and is never applied @req:086df1
     const transport = withImmutableObjectCache(inner, makeCache(io));
     await transport({ method: "GET", url: blobUrl(BLOB) });
 
-    // Tamper: keep the declared `sha`, replace the CONTENT — the exact shape a
-    // sha-field-only check would wave through.
+    // Layer 1: the bytes changed, the digest did not — a torn write.
     const key = `${OWNER}/${REPO}/blobs/${BLOB}`;
+    const original = {
+      sha: BLOB,
+      content: Buffer.from(BLOB_CONTENT, "utf-8").toString("base64"),
+      encoding: "base64",
+    };
     io.map.set(key, {
-      content: JSON.stringify({
+      content: await envelope(
+        BLOB,
+        {
+          sha: BLOB,
+          content: Buffer.from("EVIL", "utf-8").toString("base64"),
+          encoding: "base64",
+        },
+        "stale",
+        original,
+      ),
+      lastUsedMs: 1,
+    });
+
+    await expect(
+      transport({ method: "GET", url: blobUrl(BLOB) }),
+    ).rejects.toThrow(/does not match the payload/);
+  });
+
+  it("A22 a DELIBERATE blob edit — digest recomputed — is still caught by content addressing", async () => {
+    const io = memoryIO();
+    const transport = withImmutableObjectCache(
+      countingTransport(),
+      makeCache(io),
+    );
+    await transport({ method: "GET", url: blobUrl(BLOB) });
+
+    // Layer 2: digest consistent, `sha` field intact — only the CONTENT lies.
+    io.map.set(`${OWNER}/${REPO}/blobs/${BLOB}`, {
+      content: await envelope(BLOB, {
         sha: BLOB,
         content: Buffer.from("EVIL", "utf-8").toString("base64"),
         encoding: "base64",
@@ -205,7 +272,53 @@ describe("A3 a corrupted cache entry fails LOUD and is never applied @req:086df1
 
     await expect(
       transport({ method: "GET", url: blobUrl(BLOB) }),
-    ).rejects.toThrow(/failed its integrity check/);
+    ).rejects.toThrow(/recomputed blob sha/);
+  });
+
+  it("A23 a tampered TREE entry is caught by the stored digest", async () => {
+    // The case content addressing cannot answer: `?recursive=1` is a flattened
+    // listing, not one git object, so its hash is not recomputable. Without
+    // the digest layer this swap would be applied and `diffTrees` would fetch
+    // the wrong blob for that path.
+    const io = memoryIO();
+    const transport = withImmutableObjectCache(
+      countingTransport(),
+      makeCache(io),
+    );
+    await transport({ method: "GET", url: treeUrl(TREE) });
+
+    const key = `${OWNER}/${REPO}/trees/${TREE}~recursive=1`;
+    const honest = { sha: TREE, truncated: false, tree: [] };
+    io.map.set(key, {
+      content: await envelope(
+        TREE,
+        {
+          sha: TREE,
+          truncated: false,
+          tree: [{ path: "a.md", type: "blob", sha: "e".repeat(40) }],
+        },
+        "stale",
+        honest,
+      ),
+      lastUsedMs: 1,
+    });
+
+    await expect(
+      transport({ method: "GET", url: treeUrl(TREE) }),
+    ).rejects.toThrow(/does not match the payload/);
+  });
+
+  it("A24 an entry in the OLD (pre-envelope) format is a miss, not corruption", async () => {
+    const io = memoryIO();
+    const inner = countingTransport();
+    const transport = withImmutableObjectCache(inner, makeCache(io));
+    io.map.set(`${OWNER}/${REPO}/commits/${HEAD}`, {
+      content: JSON.stringify({ sha: HEAD, tree: { sha: TREE } }),
+      lastUsedMs: 1,
+    });
+    const resp = await transport({ method: "GET", url: commitUrl(HEAD) });
+    expect(resp.status).toBe(200);
+    expect(inner.calls).toHaveLength(1); // re-fetched, nothing thrown
   });
 
   it("A6 a truncated (unparseable) entry throws", async () => {
@@ -232,7 +345,10 @@ describe("A3 a corrupted cache entry fails LOUD and is never applied @req:086df1
     );
     await transport({ method: "GET", url: commitUrl(HEAD) });
     io.map.set(`${OWNER}/${REPO}/commits/${HEAD}`, {
-      content: JSON.stringify({ sha: "c".repeat(40), tree: { sha: TREE } }),
+      content: await envelope(HEAD, {
+        sha: "c".repeat(40),
+        tree: { sha: TREE },
+      }),
       lastUsedMs: 1,
     });
     await expect(
@@ -317,6 +433,42 @@ describe("A4 the cache is bounded by LRU eviction @req:086df113-16bb-4912-bb09-3
   });
 });
 
+describe("the ceiling survives across PROCESSES, not just within one @req:086df113-16bb-4912-bb09-3a13ee187043", () => {
+  it("A25 a fresh cache over an already-oversized store evicts on its FIRST store", async () => {
+    // Every CLI invocation builds a new ImmutableObjectCache over the SAME
+    // device-wide store. A per-process byte counter therefore restarts at 0,
+    // and a run with a small delta would never sweep however large the store
+    // already was — the store would grow without bound across runs. (Review
+    // finding; the axis is what keeps the fix from being undone.)
+    const io = memoryIO();
+    for (let i = 0; i < 5; i += 1) {
+      io.map.set(`old/repo/commits/${String(i).repeat(40)}`, {
+        content: "x".repeat(100),
+        lastUsedMs: i,
+      });
+    }
+    expect(io.map.size).toBe(5);
+
+    // A brand-new cache, a ceiling the store already exceeds, and a sweep
+    // interval far larger than anything this run will write.
+    const cache = new ImmutableObjectCache({
+      io,
+      sha1,
+      maxBytes: 250,
+      sweepIntervalBytes: 10 * 1024 * 1024,
+    });
+    const transport = withImmutableObjectCache(countingTransport(), cache);
+    await transport({ method: "GET", url: commitUrl(HEAD) });
+
+    expect(cache.stats().evictions).toBeGreaterThan(0);
+    const total = [...io.map.values()].reduce(
+      (n, v) => n + v.content.length,
+      0,
+    );
+    expect(total).toBeLessThanOrEqual(250);
+  });
+});
+
 describe("A5 MUTABLE reads are never cached @req:086df113-16bb-4912-bb09-3a13ee187043", () => {
   it("A12 git/refs goes to the network every single time", async () => {
     const inner = countingTransport();
@@ -372,6 +524,34 @@ describe("A7 URL parsing refuses anything that is not a SHA-addressed object @re
     ["not-a-url", "unparseable"],
   ])("A16 %s → not cacheable (%s)", (url) => {
     expect(parseImmutableObjectUrl(url)).toBeNull();
+  });
+
+  // Owner and repo are the segments the Node adapter joins into a PATH, and
+  // the existing traversal case only exercises the SHA position. These forms
+  // SURVIVE `new URL`'s dot-segment normalisation (measured), so they really
+  // do reach the character-class check — unlike a plain `..`, which the URL
+  // parser removes before the parse gets there.
+  it.each([
+    [`${API}/repos/..%00/${REPO}/git/commits/${HEAD}`, "owner ..%00"],
+    [`${API}/repos/${OWNER}/..;/git/commits/${HEAD}`, "repo ..;"],
+    [`${API}/repos/%252e%252e/${REPO}/git/commits/${HEAD}`, "double-encoded"],
+  ])("A19 %s → refused by the segment class (%s)", (url) => {
+    expect(parseImmutableObjectUrl(url)).toBeNull();
+  });
+
+  it("A20 a plain `..` never reaches the segment check — the URL parser removes it", () => {
+    // Not vacuous by accident: it documents WHICH guard answers. `repos`
+    // disappears from the normalised path, so the anchor lookup fails first.
+    const url = `${API}/repos/../${REPO}/git/commits/${HEAD}`;
+    expect(new URL(url).pathname).not.toContain("repos");
+    expect(parseImmutableObjectUrl(url)).toBeNull();
+  });
+
+  it("A21 `...` is an ordinary directory name and IS accepted", () => {
+    const ref = parseImmutableObjectUrl(
+      `${API}/repos/.../${REPO}/git/commits/${HEAD}`,
+    );
+    expect(ref?.key).toBe(`.../${REPO}/commits/${HEAD}`);
   });
 
   it("A17 positive control — a SHA-addressed tree IS cacheable", () => {

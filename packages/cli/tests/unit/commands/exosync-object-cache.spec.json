@@ -11,16 +11,22 @@
   "red_re": "› (B\\d+\\w*) ",
   "mutants": {
     "M1_wiring_removed": {
-      "_note": "The call site itself: the command keeps a correct transport, just an UNCACHED one. If nothing reds, the cache is shipped unreachable.",
-      "from": "  const { transport } = wireObjectCache(rawTransport, {\n    ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),\n    sha1: nodeSha1,\n  });\n",
-      "to": "  const transport = rawTransport;\n",
-      "expect": ["B4"]
+      "_note": "The call site itself: the command keeps a correct transport, just an UNCACHED one. If nothing reds, the cache is shipped unreachable. Also reds B14: with no cache there is nothing to report, which is the correct consequence.",
+      "from": "  const { transport, cache: objectCache } = wireObjectCache(rawTransport, {\n    ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),\n    sha1: nodeSha1,\n  });\n",
+      "to": "  const transport = rawTransport;\n  const objectCache = null;\n",
+      "expect": ["B4", "B14"]
     },
     "M2_flag_ignored": {
       "_note": "`--no-object-cache` stops reaching the wiring, so the opt-out silently does nothing.",
       "from": "    ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),\n",
       "to": "",
       "expect": ["B5"]
+    },
+    "M3_saving_not_reported": {
+      "_note": "The cache still works, it just stops saying so — which is how a cache becomes unverifiable in normal use.",
+      "from": "  reportObjectCache();\n",
+      "to": "",
+      "expect": ["B14"]
     }
   }
 }
