@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutants for issue #4393 — display sites put back on the narrow `/^[a-z]+__/`. Type-preserving: the shared-grammar call stays (import used), only its effect is narrowed. Subject: AssetRelationsTable.tsx.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "harness": "cd \"$(dirname {subject})/../../..\" && node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/display-prefix-4393.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/presentation/components/AssetRelationsTable.tsx",
+  "mutants": {
+    "M3_property_name_narrow": {
+      "_note": "humanizePropertyName strips only `[a-z]+__` — values reach it too, so A4 reddens with A3.",
+      "from": "Namespace.fromPropertyKey(raw)?.localName ?? raw;",
+      "to": "Namespace.fromPropertyKey(raw) ? raw.replace(/^[a-z]+__/, \"\") : raw;",
+      "expect": ["A3", "A4"]
+    },
+    "M4_value_guard_narrow": {
+      "_note": "humanizePropertyValue recognises a plain value as prefixed only for `[a-z]+__`.",
+      "from": "    if (Namespace.fromPropertyKey(trimmed) !== null) {",
+      "to": "    if (/^[a-z]+__/.test(trimmed) && Namespace.fromPropertyKey(trimmed) !== null) {",
+      "expect": ["A4"]
+    }
+  }
+}
