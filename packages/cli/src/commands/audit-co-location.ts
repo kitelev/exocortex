@@ -56,8 +56,11 @@ function addExample(
  * Audit a single vault for the asset–ontology co-location invariant: every
  * asset with `exo__Asset_isDefinedBy` must physically live in the same folder
  * as the ontology file that reference resolves to (FLAT, exact-match). Uses the
- * shared {@link findReferencedFile} resolver (same path as `apply
- * repair-folder`) over a cached adapter so the audit and migration agree.
+ * shared {@link findReferencedFile} resolver over a cached adapter. ⛔ NOT the
+ * path `apply repair-folder` takes: its step is `service_call repairFolder` →
+ * core `FolderRepairService` → `getFirstLinkpathDest` (precondition
+ * `isInWrongFolder` → `getExpectedFolderSync`), so on edge-case references the
+ * audit and the migration can disagree (pre-existing, see folderRepairHelpers).
  *
  * Fail-open: assets with no `isDefinedBy`, a `!`-prefixed (intentionally
  * unresolvable) reference, or a reference that doesn't resolve in THIS vault
