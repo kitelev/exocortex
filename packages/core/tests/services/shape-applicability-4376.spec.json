@@ -20,14 +20,14 @@
     },
     "M3_key_conflates_different_class_sets": {
       "_note": "Keys on the SIZE of the class set, so two different single-class subjects share an entry and the second inherits the first's verdict. This is the mutant that matters: a too-coarse key is the way this optimisation turns into a correctness bug. S4 joins the measured set because its three subjects no longer share one key either (two of them carry two classes, the third three).",
-      "from": "    const key = [...new Set(classes)].sort().join('\\u0000');",
+      "from": "    const key = [...new Set(classes)]\n      .sort()\n      .map((c) => `${c.length}:${c}`)\n      .join('');",
       "to": "    const key = String(classes.length);",
       "expect": ["S3", "S4"]
     },
     "M4_key_keeps_order_and_duplicates": {
-      "_note": "Same anchor as M3, different splice — the driver applies each mutant to a pristine copy, so sharing an anchor is fine. Drops the sort and the de-duplication, splitting one logical class set across three cache entries.",
-      "from": "    const key = [...new Set(classes)].sort().join('\\u0000');",
-      "to": "    const key = classes.join('\\u0000');",
+      "_note": "Same anchor as M3, different splice — the driver applies each mutant to a pristine copy, so sharing an anchor is fine. Keeps the length-prefixing (so this is NOT a collision test) and drops only the sort and the de-duplication, splitting one logical class set across three cache entries.",
+      "from": "    const key = [...new Set(classes)]\n      .sort()\n      .map((c) => `${c.length}:${c}`)\n      .join('');",
+      "to": "    const key = classes.map((c) => `${c.length}:${c}`).join('');",
       "expect": ["S4"]
     },
     "M5_domainless_shapes_stop_applying": {
@@ -41,6 +41,12 @@
       "from": "            (sc) => sc === domainClass || hierarchy.isSubClassOf(sc, domainClass),",
       "to": "            (sc) => sc === domainClass,",
       "expect": ["S2", "S4", "S6"]
+    },
+    "M7_separator_key_instead_of_length_prefixed": {
+      "_note": "The shape the first revision shipped: a `\\u0000`-separated key. It is not injective for arbitrary strings, and the comment that justified it claimed a guarantee this codebase does not enforce (IRI.isValidIRI and Namespace.PROPERTY_KEY_RE both accept an embedded NUL). Kept as a mutant rather than as prose so the length-prefixed form has something that can make it red — S7 feeds two class sets whose separator-joined keys collide.",
+      "from": "    const key = [...new Set(classes)]\n      .sort()\n      .map((c) => `${c.length}:${c}`)\n      .join('');",
+      "to": "    const key = [...new Set(classes)].sort().join('\\u0000');",
+      "expect": ["S7"]
     }
   }
 }

@@ -1767,6 +1767,32 @@ describe('#4376 shape applicability is computed per class set, not per subject',
     expect(report.violations.map((v) => v.propertyPath)).toEqual([`${EMS}Effort_label`]);
   });
 
+  it('S7 does not let two class sets collide into one cache entry', () => {
+    // The concrete collision the round-1 review surfaced. An earlier revision keyed the cache as
+    // `sorted.join('\u0000')` and justified it with "an IRI cannot contain NUL — the RDF term
+    // grammar guarantees it". That guarantee does not exist in this codebase: `IRI.isValidIRI`
+    // accepts an embedded U+0000 and `Namespace.PROPERTY_KEY_RE` captures the local name with `.`.
+    // Under a separator key these two sets produce the SAME string:
+    //   {"urn:p\u0000urn:q"}        → "urn:p\u0000urn:q"
+    //   {"urn:p", "urn:q"} sorted    → "urn:p\u0000urn:q"
+    // Length-prefixing makes the key injective for any array of strings, so the question stops
+    // being about what today's writers happen to emit.
+    const P = 'urn:p';
+    const Q = 'urn:q';
+    const PQ = `${P}\u0000${Q}`;
+
+    const shape = makeShape({ propertyIRI: `${EMS}Effort_status`, domain: [Q], minCount: 1 });
+    const triples = [
+      typeTriple('node:A', PQ), // one exotic class — NOT urn:q, so the shape must not apply
+      typeTriple('node:B', P), // two ordinary classes, one of which IS urn:q
+      typeTriple('node:B', Q),
+    ];
+
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+
+    expect(report.violations.map((v) => v.focusNode)).toEqual(['node:B']);
+  });
+
   it('S6 still matches a subject whose class is a SUBCLASS of the shape domain', () => {
     const shape = makeShape({
       propertyIRI: `${EMS}Effort_status`,

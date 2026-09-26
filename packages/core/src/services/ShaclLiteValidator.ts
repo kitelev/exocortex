@@ -343,15 +343,34 @@ export function validate(
    * of #4369 came from.
    *
    * ⛤ A composite string key rather than nested maps, unlike the memo in #4369: the key here is a
-   * SET, and there is no nested-map shape for that. `\u0000` is safe as a separator because it
-   * cannot occur in an IRI — a constraint the RDF term grammar guarantees, not a convention.
-   * Sorted and de-duplicated so two subjects with the same classes in a different order (or with a
-   * class listed twice) share one entry rather than splitting the cache.
+   * SET, and there is no nested-map shape for that. Sorted and de-duplicated so two subjects with
+   * the same classes in a different order (or with a class listed twice) share one entry rather
+   * than splitting the cache.
+   *
+   * ⛔ LENGTH-PREFIXED rather than separator-joined, and that is not belt-and-braces. An earlier
+   * revision of this comment justified a `\u0000` separator by claiming the RDF term grammar
+   * forbids NUL inside an IRI. That claim is FALSE for this codebase: `IRI.isValidIRI` checks
+   * whitespace, a scheme prefix and `new URL()` — none of which reject an embedded U+0000 (`new
+   * URL("https://…#Ta\u0000sk")` does not throw) — and `Namespace.PROPERTY_KEY_RE` captures the
+   * local name with `.`, which matches NUL too. So the separator's safety rested on what today's
+   * writers happen to emit, not on anything enforced. `length:value` is injective for ANY array of
+   * strings by construction, so the question stops being empirical.
+   *
+   * ⚠ COST this buys the CPU saving with: the map holds one entry per distinct class set for the
+   * duration of the call, where the pre-#4376 code held nothing beyond one iteration. 313 entries
+   * on vault-my is a property of THIS data shape, not a structural bound — a corpus whose subjects
+   * carry individually-varied class combinations pushes that toward the subject count, and this
+   * validator also runs on the memory-constrained mobile plugin. Bounded within the call (the map
+   * is function-local and dies with it) and still under the O(subjects × shapes) the function
+   * already had, but it is a real trade, not a free win.
    */
   const applicableShapesByClassKey = new Map<string, Shape[]>();
 
   const applicableShapesFor = (classes: string[]): Shape[] => {
-    const key = [...new Set(classes)].sort().join('\u0000');
+    const key = [...new Set(classes)]
+      .sort()
+      .map((c) => `${c.length}:${c}`)
+      .join('');
     const cached = applicableShapesByClassKey.get(key);
     if (cached !== undefined) return cached;
 
