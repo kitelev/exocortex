@@ -1913,7 +1913,8 @@ export class NoteToRDFConverter {
     // skips the type triple entirely (ShaclLiteValidator only processes
     // `obj.type === 'iri'`), leaving the asset apparently classless and
     // emitting false `sh:class` violations against any referencing asset.
-    // The file IRI is still traversable by `TripleClassHierarchy` via
+    // The file IRI is still traversable by the CLI's `TripleClassHierarchy`
+    // (`packages/cli/src/commands/validate-schema.ts`) via the
     // `exo__Class_superClass` triples emitted by the class file itself.
     if (this.isUUID(classRef)) {
       const resolvedFile = this.vault.getFirstLinkpathDest(classRef, "");
