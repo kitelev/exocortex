@@ -327,6 +327,63 @@ describe("GroundingExecutor.property_replace (@req:02de55a4-0a07-4347-b434-bb4a4
     expect(writer.updateFile).not.toHaveBeenCalled();
   });
 
+  /**
+   * #4432 — the degenerate request. `from === to` rewrites the element with
+   * itself, so the file is byte-identical while the command still prints its
+   * vault-authored success message. Someone dropping the LAST class of a
+   * multi-value list writes exactly this (removal is expressed as a replace
+   * onto a value already present, #4302) and reads the green line as "removed".
+   */
+  it("R13 `from` equal to `to` is REFUSED rather than reported as a replacement", async () => {
+    const { executor, writer } = makeExecutor(
+      `---\nexo__Instance_class:\n  - "${OBJECT_PROPERTY}"\n---\nBody`,
+    );
+
+    const result = await executor.execute(
+      makeGrounding({
+        targetProperty: "exo__Instance_class",
+        replaceFromExpression: `"${OBJECT_PROPERTY}"`,
+        replaceToExpression: `"${OBJECT_PROPERTY}"`,
+      }),
+      TARGET_IRI,
+      FILE_PATH,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/both resolved to/);
+    // Today the no-op already leaves the file untouched; lock that, so a fix
+    // that starts writing (e.g. stamping `updatedAt` on a non-change) is caught.
+    expect(writer.updateFile).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Review of #4433 found the ordering matters and nothing locked it: when the
+   * degenerate pair is ALSO absent from the list, both refusals are true, but
+   * "is not a value of" is the more diagnostic one — a template or composite
+   * whose two expressions collapsed onto the same WRONG value should hear that
+   * the value was never there, not merely that the request was degenerate.
+   */
+  it("R14 a degenerate pair that is ALSO absent hears the more diagnostic refusal", async () => {
+    const { executor, writer } = makeExecutor(
+      `---\nexo__Instance_class:\n  - "${OBJECT_PROPERTY}"\n---\nBody`,
+    );
+
+    const result = await executor.execute(
+      makeGrounding({
+        targetProperty: "exo__Instance_class",
+        replaceFromExpression: `"${DATATYPE_PROPERTY}"`,
+        replaceToExpression: `"${DATATYPE_PROPERTY}"`,
+      }),
+      TARGET_IRI,
+      FILE_PATH,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/is not a value of/);
+    expect(result.error).not.toMatch(/both resolved to/);
+    expect(writer.updateFile).not.toHaveBeenCalled();
+  });
+
   it("R12 control — a NON-empty replace on a list that CONTAINS an empty element still works", async () => {
     // Without this, refusing every list that has an empty element anywhere
     // would pass R10/R11 while breaking the ordinary case.
