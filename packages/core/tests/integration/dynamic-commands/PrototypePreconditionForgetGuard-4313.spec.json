@@ -1,0 +1,46 @@
+{
+  "_doc": "Revert-verify mutants for issue #4313 — the forget-leak guard had the same disease it guards against, one level up: (1) it read only `exocmd__Command_precondition` and was blind to a binding-level override, which REPLACES that tree at runtime (`CommandResolver.ts`), and (2) its lifecycle population was a hand-written literal set compared by exact string, so a binding on an un-enumerated class was absent from the population rather than misjudged. The subject is the guard test itself — it is a data-driven guard, so its classifier IS the mechanism. `red_re` anchors on the `● <suite> › P<n> …` header; the file's pre-existing axes are prose-named and deliberately out of the machine key space.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/core/node_modules",
+    "packages/cli/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "● .*› (P\\d+) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/tests/integration/dynamic-commands/PrototypePreconditionForgetGuard.test.ts",
+  "harness": "cd \"$(dirname {subject})/../../..\" && node ../../node_modules/jest/bin/jest.js tests/integration/dynamic-commands/PrototypePreconditionForgetGuard --verbose 2>&1",
+  "mutants": {
+    "M1_bucket_is_a_rubber_stamp": {
+      "_note": "The classifier accepts everything, so the ratchet can never report an unrecognised class. P2 stays green by construction — which is exactly why P3 exists.",
+      "from": "  if (LIFECYCLE_TARGET_CLASSES.has(tc)) return \"lifecycle\";",
+      "to": "  if (true) return \"lifecycle\";",
+      "expect": ["P3"]
+    },
+    "M2_creation_bucket_removed": {
+      "_note": "Back to name-based buckets only: ems__BookReadingSession (one binding, a create-from-prototype command) becomes unrecognised again — the very member the issue named.",
+      "from": "  if (categories.size > 0 && [...categories].every((c) => c === \"creation\")) {\n    return \"creation-target\";\n  }\n",
+      "to": "",
+      "expect": ["P2", "P3"]
+    },
+    "M3_binding_override_ignored": {
+      "_note": "The guard goes back to reading only the command-level precondition, so an override that drops the clause is invisible — the #4313 item-1 blindness.",
+      "from": "    if (b.overrideUid) return enforcesNotPrototype(b.overrideUid, resolve);",
+      "to": "    if (b.overrideUid && b.overrideUid.length < 0) return enforcesNotPrototype(b.overrideUid, resolve);",
+      "expect": ["P6"]
+    },
+    "M4_creation_bucket_accepts_any": {
+      "_note": "One creation binding would excuse a class that ALSO carries lifecycle commands from the guard.",
+      "from": "  if (categories.size > 0 && [...categories].every((c) => c === \"creation\")) {",
+      "to": "  if (categories.size > 0 && [...categories].some((c) => c === \"creation\")) {",
+      "expect": ["P3"]
+    },
+    "M5_lifecycle_binding_population_emptied": {
+      "_note": "Canary check: with the population empty, P5 would pass vacuously — P4 is what catches that. Also reddens P6 by construction: P6 draws its sample binding from the same population, so an empty one leaves it nothing to override — which is itself the point P4 makes.",
+      "from": "      LIFECYCLE_TARGET_CLASSES.has(b.targetClass) &&",
+      "to": "      LIFECYCLE_TARGET_CLASSES.has(b.targetClass) && b.targetClass.length < 0 &&",
+      "expect": ["P4", "P6"]
+    }
+  }
+}
