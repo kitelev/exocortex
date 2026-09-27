@@ -192,7 +192,6 @@ export {
   type AssetRelation,
 } from "./services/AreaHierarchyBuilder";
 export { ClassCreationService } from "./services/ClassCreationService";
-export { ConceptCreationService } from "./services/ConceptCreationService";
 export { EffortStatusWorkflow } from "./services/EffortStatusWorkflow";
 export { WorkflowEngine } from "./services/WorkflowEngine";
 export type { WorkflowValidationResult } from "./services/WorkflowEngine";

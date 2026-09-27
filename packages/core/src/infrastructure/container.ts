@@ -10,7 +10,6 @@ import { StatusTimestampService } from "../services/StatusTimestampService";
 import { FolderRepairService } from "../services/FolderRepairService";
 import { RenameToUidService } from "../services/RenameToUidService";
 import { ClassCreationService } from "../services/ClassCreationService";
-import { ConceptCreationService } from "../services/ConceptCreationService";
 import { NoteToRDFConverter } from "../services/NoteToRDFConverter";
 import { AreaHierarchyBuilder } from "../services/AreaHierarchyBuilder";
 import { GenericAssetCreationService } from "../services/GenericAssetCreationService";
@@ -55,10 +54,6 @@ export function registerCoreServices(
   targetContainer.registerSingleton(
     DI_TOKENS.ClassCreationService,
     ClassCreationService,
-  );
-  targetContainer.registerSingleton(
-    DI_TOKENS.ConceptCreationService,
-    ConceptCreationService,
   );
   targetContainer.registerSingleton(
     DI_TOKENS.GenericAssetCreationService,
