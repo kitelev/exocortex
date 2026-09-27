@@ -92,7 +92,13 @@ export interface GuardedRoute {
  * Machine-readable routing table — see {@link GuardedRoute}.
  *
  * Every cliName here was verified against the live registry on 2026-08-19
- * (76 `exocmd__Command_cliName` across the mounted assetspaces).
+ * (76 `exocmd__Command_cliName` across the mounted assetspaces), and the
+ * `exo__Instance_class` pair added 2026-09-27 was verified the same way
+ * (`apply <name> --dry-run` on a live asset → precondition passed).
+ *
+ * ⚠ A command minted AFTER a sweep is invisible to this table until someone
+ * re-sweeps — the failure mode of #4326, where a path that had existed for a
+ * month read as "no sanctioned path exists" because the refusal did not name it.
  */
 export const GUARDED_ROUTES: Record<string, GuardedRoute> = {
   // Status state machine (transitions carry preconditions).
@@ -123,9 +129,32 @@ export const GUARDED_ROUTES: Record<string, GuardedRoute> = {
     argSuffix: `--input '{"label":"<text>"}'`,
   },
   // Reclassing — dedicated Convert commands (raw set desyncs class vs co-location).
+  //
+  // ⚤ The Convert pair REPLACES the class. Dual-typing — adding a second class
+  // beside the first, which is how `exo__Deprecated{Asset,Class,Property}` marks an
+  // asset deprecated — is a DIFFERENT operation, and naming only the replacing
+  // commands read as "no sanctioned path exists" (#4326). The corpus rule then
+  // prescribed a raw Edit-append: the mutation leaving the product entirely, the
+  // same failure mode `clearedBy` was introduced for.
+  //
+  // `append-instance-class` / `replace-instance-class` (groundings ac0cf4ce /
+  // 60db3634) exist since 2026-08-28 — AFTER the 2026-08-19 sweep above, which is
+  // why the table missed them. Both verified to resolve 2026-09-27 (`apply …
+  // --dry-run` → precondition passed). They are orphan-bound (0 of 92
+  // `exocmd__CommandBinding`), so they have no UI button and `resolve-buttons`
+  // does not list them; `apply` resolves them by `cliName` regardless, which is
+  // precisely why naming them HERE is the only surface a blocked user meets.
   exo__Instance_class: {
-    commands: ["convert-to-task", "convert-to-project"],
-    note: "reclassing is a semantic operation with a precondition",
+    commands: [
+      "convert-to-task",
+      "convert-to-project",
+      "append-instance-class",
+      "replace-instance-class",
+    ],
+    note:
+      "reclassing is a semantic operation with a precondition; " +
+      `append/replace take --input '{"class":"[[<uid>]]"}' — append ADDS a ` +
+      "second class (dual-type deprecation), the others replace",
   },
   // Status-transition FACT timestamps (set only as status-transition side effects).
   //
