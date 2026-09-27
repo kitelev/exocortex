@@ -1,6 +1,6 @@
 {
   "_doc": "Revert-verify mutants for issue #4326 — the `exo__Instance_class` guard route named only the REPLACING Convert pair, so dual-typing an asset (adding exo__Deprecated{Asset,Class,Property} beside the existing class) had no named path and authors went around the product with a raw Edit-append. The additive command `append-instance-class` (grounding ac0cf4ce, property_append) was minted 2026-08-28, after the 2026-08-19 sweep that built the table. M1 = the path absent again; M2 = named but its required --input unstated (a name without its payload is not a path); M3 = control, the replacing pair swapped out instead of kept. red_re anchors on the `● <suite> › A<n> …` header.",
-  "tree": "/Users/kitelev/Developer/exocortex-development/worktrees/fix-4326-instance-class-routes",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
     "packages/cli/node_modules",
@@ -9,7 +9,7 @@
     "packages/obsidian-plugin/node_modules"
   ],
   "red_re": "● .*› (A\\d+) ",
-  "subject": "/Users/kitelev/Developer/exocortex-development/worktrees/fix-4326-instance-class-routes/packages/cli/src/commands/propertyMutationShared.ts",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/propertyMutationShared.ts",
   "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/guardedRoutes.test.ts --verbose 2>&1",
   "mutants": {
     "M1_additive_path_dropped": {
