@@ -47,8 +47,81 @@ const LIFECYCLE_TARGET_CLASSES = new Set([
   "ems__Effort",
   "ems__Meeting",
   "ems__Session",
+  // Added by #4313. Measured 2026-09-27: 4 bindings target it (Park — Waiting,
+  // Move to Backlog, Trash, Execute) and all four already carry the clause, so
+  // this widening changes NO verdict today — the value is that the commands are
+  // now IN the guarded set rather than silently outside it.
+  "ems__Action",
 ]);
 const UNIVERSAL_TARGET_CLASSES = new Set(["exo__Asset"]);
+
+/**
+ * #4313 item 2 — the classifier compares `exocmd__CommandBinding_targetClass`
+ * by exact string, so a binding on a class nobody enumerated is invisible to it:
+ * not misjudged, simply absent from the population the guard walks. That is the
+ * guard's own disease one level up — it cannot report a command it never sees.
+ *
+ * ⛔ The issue's preferred fix (derive the lifecycle set by walking
+ * `exo__Class_superClass` up to `ems__Effort`) is NOT implementable here: the
+ * `ems__` TBox lives in `exoas-public`, which this repo does not pin — only
+ * `exoas-exo`, `exoas-exocmd` and `exoas-exo-reqs` are submodules. Walking a
+ * chain whose nodes are absent would classify everything as "unreachable".
+ *
+ * So the ratchet is the fallback the issue itself names as the minimum, and it
+ * is the half that actually matters: every distinct targetClass in the
+ * submodule must fall into a NAMED bucket. A new one — including a narrower
+ * Effort subclass — turns the axis red and forces a deliberate decision instead
+ * of silently widening the blind spot.
+ *
+ * ⚠ Buckets are matched on the RAW value, because the data carries two
+ * spellings: `exo__Class` appears both as a label and as its bare UID
+ * (`8619c4fc…`). Normalising them here would hide that, and the spelling is
+ * exactly what the runtime classifier keys on.
+ */
+const PROTOTYPE_TARGET_SUFFIX = /Prototype$/;
+const KNOWN_NON_LIFECYCLE_TARGET_CLASSES = new Map<string, string>([
+  ["agr__Position", "agreements domain — not an Effort"],
+  ["agr__MetaRule", "agreements domain — not an Effort"],
+  ["agr__Agreement", "agreements domain — not an Effort"],
+  ["concept__Concept", "knowledge domain — not an Effort"],
+  ["exodev__RFC", "document, not an Effort"],
+  ["exo__Class", "TBox class asset (label spelling)"],
+  ["8619c4fc-64f1-4869-b17e-e34186cacca9", "TBox class asset (bare-UID spelling of exo__Class)"],
+  ["829b9b3b-6fc3-4276-be6a-27d3398c012e", "exo__Ontology (bare-UID spelling)"],
+]);
+
+/**
+ * The bucket a raw targetClass value falls into, or null when unrecognised.
+ *
+ * ⛤ `categories` is the set of `exocmd__Command_category` values of every
+ * command bound to this targetClass, and it is what keeps the "creation" bucket
+ * a MECHANISM rather than one more hand-listed string. Measured 2026-09-27:
+ * `ems__BookReadingSession` is targeted by exactly one binding, whose command
+ * `start-book-reading` is `category: creation` with a `create_instance`
+ * grounding — it creates the instance, so it correctly carries no
+ * not-a-prototype clause. Listing the class by name would have covered that one
+ * asset and none of its successors; keying on the category covers both.
+ *
+ * ⚠ The bucket requires EVERY bound command to be creation. A class that also
+ * carries a lifecycle command must be classified as lifecycle — otherwise a
+ * single creation binding would excuse the whole class from the guard.
+ */
+function targetClassBucket(
+  tc: string,
+  categories: ReadonlySet<string>,
+): string | null {
+  if (LIFECYCLE_TARGET_CLASSES.has(tc)) return "lifecycle";
+  if (UNIVERSAL_TARGET_CLASSES.has(tc)) return "universal";
+  // A `*Prototype` class is the TARGET of a create-from-prototype command; such
+  // a command correctly carries no not-a-prototype clause (its whole point is to
+  // act ON a prototype), so these are outside the guard by design.
+  if (PROTOTYPE_TARGET_SUFFIX.test(tc)) return "prototype-target";
+  if (categories.size > 0 && [...categories].every((c) => c === "creation")) {
+    return "creation-target";
+  }
+  if (KNOWN_NON_LIFECYCLE_TARGET_CLASSES.has(tc)) return "non-lifecycle";
+  return null;
+}
 
 // Native not-a-prototype clause: a NOT-EXISTS over the transitive super-class walk
 // from the target's instance_class up to exo:Prototype (de-hacked from STRENDS).
@@ -278,6 +351,14 @@ describe("prototype precondition — forget-leak guard (exoas-exocmd submodule) 
 
   // command uid -> set of binding targetClass labels
   const commandTargets = new Map<string, Set<string>>();
+  // #4313 item 1 — the bindings THEMSELVES, because a binding may override the
+  // command's precondition and the override is what governs at runtime.
+  const bindingRecords: {
+    uid: string;
+    cmdUid: string;
+    targetClass: string;
+    overrideUid: string | null;
+  }[] = [];
   for (const a of assets) {
     if (!instanceClassUids(a.fm).includes(COMMAND_BINDING_CLASS_UID)) continue;
     const tc = a.fm["exocmd__CommandBinding_targetClass"];
@@ -285,6 +366,12 @@ describe("prototype precondition — forget-leak guard (exoas-exocmd submodule) 
     if (typeof tc !== "string" || !cmdUid) continue;
     if (!commandTargets.has(cmdUid)) commandTargets.set(cmdUid, new Set());
     commandTargets.get(cmdUid)!.add(tc);
+    bindingRecords.push({
+      uid: a.uid,
+      cmdUid,
+      targetClass: tc,
+      overrideUid: firstWikilinkUid(a.fm["exocmd__CommandBinding_precondition"]),
+    });
   }
 
   const resolve = (u: string): Asset | undefined => byUid.get(u);
@@ -326,6 +413,114 @@ describe("prototype precondition — forget-leak guard (exoas-exocmd submodule) 
       expect(commandEnforcesNotPrototype(cmdUid)).toBe(true);
     },
   );
+
+  // targetClass -> the categories of every command bound to it
+  const targetClassCategories = new Map<string, Set<string>>();
+  for (const [cmdUid, tcs] of commandTargets) {
+    const category = String(byUid.get(cmdUid)?.fm["exocmd__Command_category"] ?? "").replace(/^"|"$/g, "");
+    for (const t of tcs) {
+      if (!targetClassCategories.has(t)) targetClassCategories.set(t, new Set());
+      if (category) targetClassCategories.get(t)!.add(category);
+    }
+  }
+  const allTargetClasses = new Set(targetClassCategories.keys());
+  const bucketOf = (t: string): string | null =>
+    targetClassBucket(t, targetClassCategories.get(t) ?? new Set());
+
+  it("P1 the discovered targetClass population is non-trivial (canary: an empty population makes P2 vacuous)", () => {
+    expect(allTargetClasses.size).toBeGreaterThanOrEqual(10);
+  });
+
+  it("P2 every targetClass in the submodule falls into a NAMED bucket (#4313 ratchet)", () => {
+    const unclassified = [...allTargetClasses].filter((t) => bucketOf(t) === null);
+    expect(unclassified).toEqual([]);
+  });
+
+  it("P3 the classifier is not a rubber stamp — an unknown class is rejected", () => {
+    const none = new Set<string>();
+    expect(targetClassBucket("zz__NotARealClass", none)).toBeNull();
+    expect(targetClassBucket("ems__Task", none)).toBe("lifecycle");
+    expect(targetClassBucket("ems__TaskPrototype", none)).toBe("prototype-target");
+    // A creation-only class is excused; the same class with ANY lifecycle-shaped
+    // command bound to it must NOT be — otherwise one creation binding would
+    // buy the whole class an exemption.
+    expect(targetClassBucket("zz__Made", new Set(["creation"]))).toBe("creation-target");
+    expect(targetClassBucket("zz__Made", new Set(["creation", "status"]))).toBeNull();
+  });
+
+  /**
+   * #4313 item 1 — what actually gates a button/CLI call is the binding's
+   * precondition when it has one: `CommandResolver.ts` builds
+   * `{ ...command, precondition: binding.precondition }`, a full REPLACEMENT,
+   * not an AND with the command-level tree.
+   *
+   * ⛔ The pre-existing `commandEnforcesNotPrototype` reads only
+   * `exocmd__Command_precondition` off the command asset, so a binding that
+   * overrides it without re-including the clause keeps the guard green while
+   * the real gate stops enforcing — the very leak this file exists to catch,
+   * one layer down.
+   */
+  function bindingEnforcesNotPrototype(b: {
+    cmdUid: string;
+    overrideUid: string | null;
+  }): boolean {
+    if (b.overrideUid) return enforcesNotPrototype(b.overrideUid, resolve);
+    return commandEnforcesNotPrototype(b.cmdUid);
+  }
+
+  const lifecycleBindings = bindingRecords.filter(
+    (b) =>
+      LIFECYCLE_TARGET_CLASSES.has(b.targetClass) &&
+      !UNIVERSAL_TARGET_CLASSES.has(b.targetClass),
+  );
+
+  it("P4 the lifecycle BINDING population is non-trivial (canary for P5)", () => {
+    expect(lifecycleBindings.length).toBeGreaterThanOrEqual(20);
+  });
+
+  it("P5 every lifecycle binding enforces the clause through its EFFECTIVE precondition (#4313)", () => {
+    const leaking = lifecycleBindings
+      .filter((b) => !bindingEnforcesNotPrototype(b))
+      .map((b) => `${b.uid} (${b.targetClass} -> ${byUid.get(b.cmdUid)?.label ?? "?"})`);
+    expect(leaking).toEqual([]);
+  });
+
+  /**
+   * ⚠ P5 is currently satisfied by the command-level tree alone: measured
+   * 2026-09-27, ZERO bindings in the submodule carry
+   * `exocmd__CommandBinding_precondition`, so the override branch never runs on
+   * real data and P5 would stay green even if it were removed. P6 is what makes
+   * the override branch falsifiable — without it the whole item-1 fix is a
+   * signature with no mechanism behind it.
+   */
+  it("P6 an override that DROPS the clause is detected (synthetic — the override branch is otherwise unexercised)", () => {
+    const bare = "zz-override-without-clause";
+    const withClause = STANDALONE_PRECONDITION_UID;
+    const guarded = lifecycleBindings.find((b) => bindingEnforcesNotPrototype(b));
+    expect(guarded).toBeTruthy();
+
+    // Same command, but the binding overrides its precondition with a tree that
+    // does not carry the clause -> must be reported as leaking.
+    expect(
+      bindingEnforcesNotPrototype({ cmdUid: guarded!.cmdUid, overrideUid: bare }),
+    ).toBe(false);
+    // ...and with the standalone clause-bearing precondition -> enforced again.
+    expect(
+      bindingEnforcesNotPrototype({ cmdUid: guarded!.cmdUid, overrideUid: withClause }),
+    ).toBe(true);
+    // Control: without an override the command-level tree still governs.
+    expect(
+      bindingEnforcesNotPrototype({ cmdUid: guarded!.cmdUid, overrideUid: null }),
+    ).toBe(true);
+  });
+
+  it("P7 records how many bindings override the precondition today (0 — P5's override branch is dormant)", () => {
+    const overriding = bindingRecords.filter((b) => b.overrideUid);
+    // Not an assertion that it must stay 0: when it stops being 0, P5 starts
+    // doing real work on real data and this number documents when that began.
+    expect(overriding.length).toBeGreaterThanOrEqual(0);
+    expect(bindingRecords.length).toBeGreaterThanOrEqual(50);
+  });
 
   it("the standalone 'Target is not a prototype' precondition exists and carries the clause", () => {
     const pre = byUid.get(STANDALONE_PRECONDITION_UID);
