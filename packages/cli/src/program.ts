@@ -13,6 +13,7 @@ import { createBatchCommand } from "./commands/create-batch.js";
 import { setPropertyCommand } from "./commands/set-property.js";
 import { removePropertyCommand } from "./commands/remove-property.js";
 import { setBodyCommand } from "./commands/set-body.js";
+import { getBodyCommand } from "./commands/get-body.js";
 import { repairFrontmatterCommand } from "./commands/repair-frontmatter.js";
 import { findCommand } from "./commands/find.js";
 import { applyCommand } from "./commands/apply.js";
@@ -87,6 +88,12 @@ export function createProgram(version?: string): Command {
   // body-rewrite counterpart of set-property (frontmatter) / create --body-file
   // (new asset). Closes the "raw backup→rm→Write to rewrite a body" dogfood gap.
   program.addCommand(setBodyCommand());
+  // get-body — the READ counterpart of set-body (req 9de09856): prints the body
+  // to stdout so a body can be APPENDED to (read → modify → set-body) instead of
+  // rewritten from memory. Load-bearing property: its output piped back into
+  // `set-body --body-file -` is a no-op, i.e. both verbs cut the
+  // frontmatter/body boundary identically.
+  program.addCommand(getBodyCommand());
   // repair-frontmatter — raw-text dedupe of duplicated top-level YAML keys
   // (keep-last). The dogfood-clean repair for the invisible/unrepairable
   // duplicate-key class (#3800): fixes a file the parser itself cannot read.

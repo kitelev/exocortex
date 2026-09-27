@@ -1,0 +1,22 @@
+{
+  "_doc": "Revert-verify mutant for req 9de09856 — the get-body WIRING half. Separate spec because the driver mutates ONE subject and the registration line lives in program.ts, not in the command file (integration-test-revert-verify §A117). This is the feature-sdd §Step-4 'is the new code WIRED IN' axis: axes G1-G8 call getBodyCommand() directly and stay GREEN if the verb is never registered, so without G9 the command could ship perfect and unreachable. Expectation written BEFORE the run.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?)[: ]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/program.ts",
+  "harness": "cd \"$(dirname {subject})/../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/get-body.integration.test.ts 2>&1",
+  "mutants": {
+    "M1_get_body_not_registered": {
+      "from": "  program.addCommand(getBodyCommand());",
+      "to": "  void getBodyCommand;",
+      "expect": ["G9"],
+      "_note": "The pre-feature state of the CLI surface: the command exists, nothing registers it. Type-preserving on purpose (`void getBodyCommand;` keeps the import used, so tsc does not fail on an unused binding and the run measures behaviour rather than compilation — §A36/§A97: a BROKEN run is the absence of a measurement, not a red one). Reddens G9 alone; G1-G8 stay green, which is exactly what proves they do NOT cover the wiring."
+    }
+  }
+}
