@@ -14,27 +14,37 @@
       "_note": "The wiring axis (feature-sdd Step 4 §a/§b): skippedFilesNotice can be perfect and still reach nobody. Type-preserving — the condition keeps its shape, only its truth changes, so no narrowing is lost.",
       "from": "        if (skippedNotice !== null) {\n          console.error(skippedNotice);\n        }",
       "to": "        if (skippedNotice !== null && skippedNotice === undefined) {\n          console.error(skippedNotice);\n        }",
-      "expect": [
-        "S2",
-        "S4",
-        "S5",
-        "S6",
-        "S7",
-        "S8",
-        "S9",
-        "S10"
-      ]
+      "expect": ["S2", "S4", "S5", "S6", "S7", "S8", "S9", "S10"]
     },
     "M3_select_meta_drops_the_loader_fields": {
-      "_note": "The JSON surface alone. Anchored on `itemCount: results.length` because the construct branch is otherwise byte-identical; the SELECT query these axes run takes this branch.",
+      "_note": "The JSON surface alone. Anchored on `itemCount: results.length` because the construct branch is otherwise byte-identical; the SELECT query these axes run takes this branch. ⛤ С req b9394291 этот мутант краснит ТАКЖЕ Z1 и Z2 (они читают тот же `loaderMeta`). В `expect` они НЕ внесены намеренно: `expect` — предикат «эти оси обязаны покраснеть», и вписать туда чужие оси значило бы сделать ЭТОТ мутант зависимым от жизни req b9394291 (снимут его оси — мутант станет rc=2 без всякого дефекта).",
       "from": "              itemCount: results.length,\n              loadDurationMs: loadDuration,\n              execDurationMs: execDuration,\n              triplesScanned: triples.length,\n              cacheHit,\n              queryResultCacheHit: false,\n              ...loaderMeta,",
       "to": "              itemCount: results.length,\n              loadDurationMs: loadDuration,\n              execDurationMs: execDuration,\n              triplesScanned: triples.length,\n              cacheHit,\n              queryResultCacheHit: false,",
-      "expect": [
-        "S1",
-        "S7",
-        "S8",
-        "S9"
-      ]
+      "expect": ["S1", "S7", "S8", "S9"]
+    },
+    "MZ1_cache_path_claims_an_empty_list_instead_of_disclaiming_it": {
+      "from": "          if (loaded.zeroTriplePaths.length === 0) return {};\n          return {\n            zeroTripleCount: loaded.zeroTriplePaths.length,\n            skippedFilesAvailable: false,\n          };",
+      "to": "          if (loaded.zeroTriplePaths.length === 0) return {};\n          return {\n            skippedFiles: [],\n            skippedCount: 0,\n          };",
+      "expect": ["S4", "Z1"],
+      "_note": "Ровно та ложная подпись, ради запрета которой заведён req: пустой список читается как «ничего не отброшено». Type-preserving — та же форма возврата. S4 краснеет ЗАКОНОМЕРНО: она принадлежит 81cd5d1f и утверждает отсутствие `skippedFiles` на кэш-пути — ровно то, что мутант и подделывает. Ожидание выведено ИЗ ПРОГОНА (ITRV §A44), не из темы."
+    },
+    "MZ2_full_parse_stops_marking_the_list_as_available": {
+      "from": "            return {\n              skippedCount: loaded.skippedFiles.length,\n              skippedFiles: loaded.skippedFiles,\n              skippedFilesAvailable: true,\n            };",
+      "to": "            return {\n              skippedCount: loaded.skippedFiles.length,\n              skippedFiles: loaded.skippedFiles,\n            };",
+      "expect": ["Z2"],
+      "_note": "Снимает ПОЛОЖИТЕЛЬНУЮ половину признака. Без неё потребитель, ветвящийся на флаге, не отличит полный парс от кэш-пути."
+    },
+    "MZ3_cache_path_emits_the_fields_on_a_clean_vault": {
+      "from": "          if (loaded.zeroTriplePaths.length === 0) return {};",
+      "to": "          if (loaded.zeroTriplePaths.length < 0) return {};",
+      "expect": ["Z3"],
+      "_note": "Гвард молчания на КЭШ-пути. `< 0` вместо `if (false)` — сохраняет форму выражения и не даёт constant-condition. ⛤ Этот мутант в первом прогоне не покрасил НИЧЕГО — и дефект был в ОСИ, не в нём: вторая итерация Z3 отвечала из query-result кэша, наполненного её же первой итерацией, и до loaderMeta не доходила. Чинилось добавлением `--no-cache` в ось; после — краснеет ровно Z3."
+    },
+    "MZ4_full_parse_emits_the_fields_on_a_clean_vault": {
+      "from": "            if (loaded.skippedFiles.length === 0) return {};",
+      "to": "            if (loaded.skippedFiles.length < 0) return {};",
+      "expect": ["S3", "Z3"],
+      "_note": "Парный гвард молчания на ПОЛНОМ парсе — у Z3 две половины, и одним мутантом они не запираются. S3 краснеет вместе с Z3: она тоже требует молчания на чистом vault, но по своим полям (81cd5d1f). Две оси на один гвард — дублирующее покрытие, а не смешение."
     }
   }
 }
