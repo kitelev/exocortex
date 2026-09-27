@@ -514,11 +514,19 @@ describe("prototype precondition — forget-leak guard (exoas-exocmd submodule) 
     ).toBe(true);
   });
 
-  it("P7 records how many bindings override the precondition today (0 — P5's override branch is dormant)", () => {
-    const overriding = bindingRecords.filter((b) => b.overrideUid);
-    // Not an assertion that it must stay 0: when it stops being 0, P5 starts
-    // doing real work on real data and this number documents when that began.
-    expect(overriding.length).toBeGreaterThanOrEqual(0);
+  /**
+   * ⛔ An earlier draft asserted `overriding.length >= 0` here "to document the
+   * current count". That is always true — it verifies nothing, and the repo's
+   * `check-test-antipatterns` gate rejected it, correctly: a documenting
+   * assertion that cannot go red is the vacuous-axis shape this whole file is
+   * about. The count belongs in prose; what IS checkable is that the binding
+   * population P5/P6 walk is real.
+   *
+   * Measured 2026-09-27: 73 bindings, of which 0 carry
+   * `exocmd__CommandBinding_precondition` — which is exactly why P6 has to drive
+   * the override branch synthetically.
+   */
+  it("P7 the binding population is non-trivial (canary: an empty one makes P5 vacuous)", () => {
     expect(bindingRecords.length).toBeGreaterThanOrEqual(50);
   });
 
