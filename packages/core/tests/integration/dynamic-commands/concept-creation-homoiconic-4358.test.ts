@@ -114,7 +114,11 @@ describe("narrower-concept creation is homoiconic (exoas-exocmd data-guard) (#43
       frontmatter(GROUNDING_CREATE),
       "exocmd__Grounding_targetFolder",
     ).join(" ");
-    expect(folder).toContain("$");
+    // Pinned to the exact token, not merely "contains a $": a loose predicate stays
+    // green when the folder is swapped for a DIFFERENT real token, so it would not
+    // assert the thing the axis is named after. `$isDefinedByFolder` resolves the
+    // parent's anchor folder (VaultFrontmatterRefToFolderResolver).
+    expect(folder).toBe("$isDefinedByFolder");
     // The exact defect #4357 fixed: a literal top-level folder sits outside every
     // assetspace and is therefore never carried by ExoSync.
     expect(folder).not.toMatch(/^concepts\/?$/);
@@ -151,6 +155,16 @@ describe("narrower-concept creation is homoiconic (exoas-exocmd data-guard) (#43
     // therefore produces a SECOND, non-canonical property beside the real one —
     // measured on a throwaway concept before this was fixed.
     expect(keys).not.toContain("definition");
+  });
+
+  it("H9 the label is mandatory in the schema (was old 'throws when label is missing')", () => {
+    const parsed = JSON.parse(
+      String(frontmatter(GROUNDING_CREATE)["exocmd__Grounding_inputSchema"] ?? ""),
+    ) as { required?: string[] };
+    // The deleted service threw `createNarrowerConcept requires userInput.label`.
+    // `create_instance` has no such code path — the obligation is declared here and
+    // enforced by the schema, so this is where the guarantee had to move.
+    expect(parsed.required).toContain("label");
   });
 
   it("H8 control — the superseded service_call grounding is retired, not still live", () => {

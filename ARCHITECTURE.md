@@ -586,7 +586,7 @@ subdirectories. Main clusters:
 | Cluster                            | Representative modules                                                                                                                                              |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Vault-driven command machinery** | `CommandResolver`, `PreconditionEvaluator`, `GroundingExecutor`, `CommandExecutionFlow`, `WorkflowEngine`/`WorkflowResolver`                                        |
-| **Asset creation**                 | `GenericAssetCreationService`, `AreaCreationService`, `ClassCreationService`, `ConceptCreationService`, `SupervisionCreationService`, `DynamicFrontmatterGenerator` |
+| **Asset creation**                 | `GenericAssetCreationService`, `AreaCreationService`, `ClassCreationService`, `SupervisionCreationService`, `DynamicFrontmatterGenerator` |
 | **Status & effort lifecycle**      | `EffortStatusWorkflow`, `TaskStatusService`, `StatusTimestampService`, `EffortVotingService`, `PlanningService`, `SessionEventService`                              |
 | **RDF & schema resolution**        | `NoteToRDFConverter`, `PrototypeChainMaterializer`, `PropertySchemaResolver`, `InstantiationRuleResolver`, `IRICanonicalizer`, `SourceAnnotator`                    |
 | **Validation (SHACL-lite)**        | `ShaclLiteValidator`, `ShapeLoader`, `ShapeRegistry`, `ValidatorDaemon`                                                                                             |
