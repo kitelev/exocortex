@@ -1,0 +1,23 @@
+{
+  "_doc": "Revert-verify mutant for req 9de09856 — the DELIVERED-BYTES half. Separate spec because the axis needs a REAL process with a REAL pipe on the BUILT bundle, which jest cannot provide (its axes mock process.stdout.write and process.exit). ⛔ This spec and its harness run LOCALLY and under the mutant driver, NOT in CI: the CLI jest job does not build dist, and the harness is not named `*-verify.{sh,py}` so verify-harness-runner does not sweep it either (harness-invocation-surface §A19 — naming that inapplicability out loud rather than leaving it to be read as an oversight). Same shape as use-cache-4264.proc-chain.spec.json, which states the same constraint. Expectation written BEFORE the run, and the RED state was OBSERVED on the pre-fix bundle: P1 delivered 65 536 of 549 528 bytes (88.1 % lost), P3 --json unparseable, P4 the round trip WROTE the truncated body (changed:true, bodyBytes 65 539). The harness rebuilds by default so a mutated copy of the tree is measured, not a stale bundle.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "❌ (P\\d+)",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/get-body.ts",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && npx tsx packages/cli/tests/integration/get-body-9de09856-pipe.harness.ts 2>&1",
+  "mutants": {
+    "M1_process_exit_after_write": {
+      "from": "          process.stdout.write(body);\n        }\n",
+      "to": "          process.stdout.write(body);\n        }\n        process.exit(0);\n",
+      "expect": ["P1", "P3", "P4"],
+      "_note": "Restores the pre-fix pattern: process.exit(0) right after writing. It does not wait for an asynchronous write to drain, and stdout IS asynchronous when it is a pipe — so the body is cut at the 64 KiB buffer. P2 (file redirect) and P5 (small body) stay GREEN, and that pair is what proves the axis measures PIPE HANDLING rather than 'reading the body at all': a mutant that broke reading would redden all five."
+    }
+  }
+}

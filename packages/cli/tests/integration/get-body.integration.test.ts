@@ -48,7 +48,15 @@ const EMPTY_BODY_UID = "b8b8b8b8-0000-4000-8000-000000000002";
 const CYRILLIC_UID = "c7c7c7c7-0000-4000-8000-000000000003";
 const NONEXISTENT_UID = "f0f0f0f0-0000-4000-8000-000000000009";
 const OUTSIDE_UID = "d6d6d6d6-0000-4000-8000-000000000004";
+const NO_TRAILING_NL_UID = "e5e5e5e5-0000-4000-8000-000000000005";
+const UID_IN_BODY_UID = "a4a4a4a4-0000-4000-8000-000000000006";
 const STALE_UPDATED_AT = "2020-01-01T00:00:00";
+
+/** A body whose file does NOT end in a newline — 9.7 % of the live corpus. */
+const NO_TRAILING_NL_BODY = "TAIL WITHOUT A NEWLINE";
+/** A non-asset whose BODY carries the uid key — the whole-file guard's blind spot. */
+const UID_IN_BODY_BODY =
+  "Docs example:\n\n```yaml\nexo__Asset_uid: 11111111-2222-4333-8444-555555555555\n```\n";
 
 /** Bodies that must NEVER reach stdout — the guards are what keep them out. */
 const NON_ASSET_BODY = "BODY OF A NON ASSET\n";
@@ -117,6 +125,18 @@ describe("req 9de09856: `cli get-body` prints the body of an existing asset", ()
       path.join(vault, notAnAssetPath),
       `---\ntitle: just notes\n---\n${NON_ASSET_BODY}`,
     );
+    // An asset whose file does NOT end in a newline (9.7 % of the live corpus).
+    fs.writeFileSync(
+      path.join(vault, `${TASKS_DIR}/${NO_TRAILING_NL_UID}.md`),
+      `---\nexo__Asset_uid: ${NO_TRAILING_NL_UID}\nexo__Asset_label: "No trailing NL"\nexo__Asset_updatedAt: ${STALE_UPDATED_AT}\n---\n${NO_TRAILING_NL_BODY}`,
+    );
+    // A NON-asset whose frontmatter has no uid but whose BODY carries the key. A
+    // guard testing the whole file would accept it and print the body; the shipped
+    // guard tests the frontmatter block only.
+    fs.writeFileSync(
+      path.join(vault, `${TASKS_DIR}/${UID_IN_BODY_UID}.md`),
+      `---\ntitle: docs page\n---\n${UID_IN_BODY_BODY}`,
+    );
     // A VALID asset one level ABOVE the vault. The outside-vault guard is the only
     // thing standing between get-body and this file: remove the guard and the read
     // SUCCEEDS, so axis G5 reddens on the printed body. Were the target merely
@@ -158,6 +178,34 @@ describe("req 9de09856: `cli get-body` prints the body of an existing asset", ()
     fs.rmSync(outsideAsset, { force: true });
   });
 
+  /**
+   * SUCCESS is "process.exit was never called" — not "called with 0".
+   *
+   * The command must fall off the end of its action so the process ends naturally
+   * and stdout DRAINS: `process.exit` does not wait for an asynchronous write, and
+   * stdout is asynchronous whenever it is a pipe. Measured on the built bundle with
+   * the largest live asset (424 964-byte body): to a file 424 964 bytes arrived,
+   * through a pipe only 65 536. So this predicate is the in-jest half of the
+   * truncation guard — restoring `process.exit(0)` reddens every success axis. The
+   * delivered-bytes half needs a real process and lives in
+   * get-body-9de09856-pipe.harness.ts (§A66: these axes see the intermediate
+   * record, the harness sees the effect).
+   */
+  function expectNaturalExit(codes: number[]): void {
+    expect(codes).toEqual([]);
+  }
+
+  /**
+   * REFUSAL requires an actual non-zero code — ⛔ not `not.toContain(0)`, which is
+   * also satisfied by "exit was never called" and would therefore pass on a command
+   * that silently did nothing (§A38 — a negated predicate is satisfied by many
+   * outcomes).
+   */
+  function expectRefused(codes: number[]): void {
+    expect(codes.length).toBeGreaterThan(0);
+    expect(codes.some((c) => c !== 0)).toBe(true);
+  }
+
   /** Run the real get-body command; returns its exit codes + captured stdout. */
   async function runGetBody(
     relPath: string,
@@ -189,7 +237,7 @@ describe("req 9de09856: `cli get-body` prints the body of an existing asset", ()
 
   it("G1 round trip: its output fed back through set-body is a no-op @req:9de09856-ffd6-4add-aa7c-56985808dc87", async () => {
     const got = await runGetBody(taskPath);
-    expect(got.exit).toContain(0);
+    expectNaturalExit(got.exit);
 
     // Hand the captured body back to set-body EXACTLY as received — the same
     // path a caller takes for read → modify → write.
@@ -207,10 +255,43 @@ describe("req 9de09856: `cli get-body` prints the body of an existing asset", ()
     expect(after).toContain(`exo__Asset_updatedAt: ${STALE_UPDATED_AT}`);
   });
 
+  it("G1b round trip on a file with NO trailing newline: body survives, set-body normalises by exactly one \\n @req:9de09856-ffd6-4add-aa7c-56985808dc87", async () => {
+    // 4 490 of 46 164 live assets (9.7 %) have no trailing newline, so this is the
+    // majority-adjacent case, not an edge one. The round trip is NOT a no-op here —
+    // set-body appends the newline — and the requirement says so explicitly. What
+    // MUST hold is that the body survives byte-for-byte as a prefix, and that the
+    // normalisation is idempotent: the SECOND cycle is a no-op.
+    const noNlPath = `${TASKS_DIR}/${NO_TRAILING_NL_UID}.md`;
+
+    const first = await runGetBody(noNlPath);
+    expectNaturalExit(first.exit);
+    // The body came back exactly as it sits on disk — no trailing newline invented.
+    expect(first.stdout).toBe(NO_TRAILING_NL_BODY);
+    expect(first.stdout.endsWith("\n")).toBe(false);
+
+    const bodyFile = path.join(vault, "no-nl-body.md");
+    fs.writeFileSync(bodyFile, first.stdout);
+    const back = await runSetBody(noNlPath, ["--body-file", bodyFile]);
+    // set-body reports the change and appends exactly one newline — nothing else.
+    expect(back.stdout).toContain('"changed":true');
+    const afterWrite = fs.readFileSync(path.join(vault, noNlPath), "utf-8");
+
+    const second = await runGetBody(noNlPath);
+    expect(second.stdout.startsWith(first.stdout)).toBe(true);
+    expect(second.stdout).toBe(`${NO_TRAILING_NL_BODY}\n`);
+
+    // Idempotent: the second cycle IS a no-op.
+    const bodyFile2 = path.join(vault, "no-nl-body-2.md");
+    fs.writeFileSync(bodyFile2, second.stdout);
+    const again = await runSetBody(noNlPath, ["--body-file", bodyFile2]);
+    expect(again.stdout).toContain('"changed":false');
+    expect(fs.readFileSync(path.join(vault, noNlPath), "utf-8")).toBe(afterWrite);
+  });
+
   it("G2 prints ONLY the body — no frontmatter block @req:9de09856-ffd6-4add-aa7c-56985808dc87", async () => {
     const got = await runGetBody(taskPath);
 
-    expect(got.exit).toContain(0);
+    expectNaturalExit(got.exit);
     expect(got.stdout).toBe(BODY_TEXT);
     expect(got.stdout).not.toContain("exo__Asset_uid");
     expect(got.stdout).not.toContain("---");
@@ -220,14 +301,13 @@ describe("req 9de09856: `cli get-body` prints the body of an existing asset", ()
     const got = await runGetBody(emptyBodyPath);
 
     expect(got.stdout).toBe("");
-    expect(got.exit).toContain(0);
-    expect(got.exit).not.toContain(1);
+    expectNaturalExit(got.exit);
   });
 
   it("G4 --json reports bodyBytes in UTF-8 BYTES, not UTF-16 units @req:9de09856-ffd6-4add-aa7c-56985808dc87", async () => {
     const got = await runGetBody(cyrillicPath, ["--json"]);
 
-    expect(got.exit).toContain(0);
+    expectNaturalExit(got.exit);
     const parsed = JSON.parse(got.stdout) as {
       path: string;
       bodyBytes: number;
@@ -246,7 +326,7 @@ describe("req 9de09856: `cli get-body` prints the body of an existing asset", ()
     // axis pins the guard rather than "some refusal happened".
     const got = await runGetBody(`../${path.basename(outsideAsset)}`);
 
-    expect(got.exit).not.toContain(0);
+    expectRefused(got.exit);
     expect(got.stdout).toBe("");
     expect(got.stdout).not.toContain(OUTSIDE_BODY.trim());
     const messages = errorSpy.mock.calls.flat().map(String).join("\n");
@@ -260,7 +340,7 @@ describe("req 9de09856: `cli get-body` prints the body of an existing asset", ()
     // branch would also produce.
     const got = await runGetBody(notAnAssetPath);
 
-    expect(got.exit).not.toContain(0);
+    expectRefused(got.exit);
     expect(got.stdout).toBe("");
     expect(got.stdout).not.toContain(NON_ASSET_BODY.trim());
     const messages = errorSpy.mock.calls.flat().map(String).join("\n");
@@ -270,12 +350,12 @@ describe("req 9de09856: `cli get-body` prints the body of an existing asset", ()
   it("G7 reports a missing file by name @req:9de09856-ffd6-4add-aa7c-56985808dc87", async () => {
     const got = await runGetBody(`${TASKS_DIR}/${NONEXISTENT_UID}.md`);
 
-    expect(got.exit).not.toContain(0);
+    expectRefused(got.exit);
     const messages = errorSpy.mock.calls.flat().map(String).join("\n");
     expect(messages).toContain("Target file not found");
   });
 
-  it("G8 is read-only: the asset is left byte-identical @req:9de09856-ffd6-4add-aa7c-56985808dc87", async () => {
+  it("G8 is read-only on EVERY outcome — success and each refusal @req:9de09856-ffd6-4add-aa7c-56985808dc87", async () => {
     const abs = path.join(vault, taskPath);
     const before = fs.readFileSync(abs, "utf-8");
     const statBefore = fs.statSync(abs);
@@ -289,6 +369,37 @@ describe("req 9de09856: `cli get-body` prints the body of an existing asset", ()
     expect(fs.readFileSync(abs, "utf-8")).toContain(
       `exo__Asset_updatedAt: ${STALE_UPDATED_AT}`,
     );
+
+    // The requirement says "любой из перечисленных исходов" — the REFUSAL paths are
+    // part of the guarantee, and the happy path alone would leave them unlocked.
+    const nonAsset = path.join(vault, notAnAssetPath);
+    const nonAssetBefore = fs.readFileSync(nonAsset, "utf-8");
+    const outsideBefore = fs.readFileSync(outsideAsset, "utf-8");
+
+    await runGetBody(notAnAssetPath);
+    await runGetBody(`../${path.basename(outsideAsset)}`);
+    await runGetBody(`${TASKS_DIR}/${NONEXISTENT_UID}.md`);
+
+    expect(fs.readFileSync(nonAsset, "utf-8")).toBe(nonAssetBefore);
+    expect(fs.readFileSync(outsideAsset, "utf-8")).toBe(outsideBefore);
+    // The missing file was not created as a side effect of being asked for.
+    expect(fs.existsSync(path.join(vault, `${TASKS_DIR}/${NONEXISTENT_UID}.md`))).toBe(
+      false,
+    );
+  });
+
+  it("G11 the asset check reads the FRONTMATTER, not the body @req:9de09856-ffd6-4add-aa7c-56985808dc87", async () => {
+    // A guard testing the whole file is satisfied by an exo__Asset_uid line in the
+    // BODY (a yaml fence in docs, a template skeleton) and would print a non-asset's
+    // body. Live false-positive population is 0 of 46 164, so this locks a latent
+    // hole — which is exactly the kind that reopens silently if nothing pins it.
+    const got = await runGetBody(`${TASKS_DIR}/${UID_IN_BODY_UID}.md`);
+
+    expectRefused(got.exit);
+    expect(got.stdout).toBe("");
+    expect(got.stdout).not.toContain("Docs example");
+    const messages = errorSpy.mock.calls.flat().map(String).join("\n");
+    expect(messages).toContain("Not a vault asset");
   });
 
   it("G9 WIRING: get-body is registered in the real CLI program @req:9de09856-ffd6-4add-aa7c-56985808dc87", () => {

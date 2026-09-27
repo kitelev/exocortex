@@ -80,20 +80,30 @@ export function getBodyCommand(): Command {
           throw readError;
         }
 
-        // Only read a real asset (has an exo__Asset_uid), so get-body never
-        // silently serves a bare markdown file as if it were an asset body —
-        // the same boundary set-body draws on the write side.
-        if (!/^\s*exo__Asset_uid:/m.test(original)) {
-          throw new Error(
-            `Not a vault asset (no exo__Asset_uid): ${vaultRelative}. get-body only reads existing assets.`,
-          );
-        }
-
         const fm = new FrontmatterService();
         const parsed = fm.parse(original);
         if (!parsed.exists) {
           throw new Error(
             `No frontmatter block found in ${vaultRelative}; get-body prints the body that FOLLOWS the frontmatter block.`,
+          );
+        }
+
+        // Only read a real asset (the FRONTMATTER declares an exo__Asset_uid), so
+        // get-body never serves a bare markdown file as if it were an asset body —
+        // the same boundary set-body draws on the write side.
+        //
+        // ⛤ Tested against `parsed.content`, NOT the whole file, which is a
+        // DELIBERATE divergence from set-body (it tests `original`). Over the whole
+        // file the key can be satisfied by the BODY — a yaml fence in documentation,
+        // a template skeleton — and a non-asset would have its body printed. Live
+        // count of the false-positive population (uid present in the body ONLY):
+        // 0 of 46 164 assets across vault-exodev + vault-my, so this corrects a
+        // latent hole rather than a live defect, and the stricter side is the safe
+        // side for a reader. The write-side verb keeps its own wording on purpose:
+        // widening a guard that refuses to WRITE is not this requirement's scope.
+        if (!/^\s*exo__Asset_uid:/m.test(parsed.content)) {
+          throw new Error(
+            `Not a vault asset (no exo__Asset_uid): ${vaultRelative}. get-body only reads existing assets.`,
           );
         }
 
@@ -131,7 +141,24 @@ export function getBodyCommand(): Command {
           process.stdout.write(body);
         }
 
-        process.exit(0);
+        // ⛔ NO process.exit(0) here — the process must end naturally so stdout
+        // DRAINS. `process.exit` does not wait for an asynchronous write to
+        // flush, and stdout is asynchronous whenever it is a PIPE, which is the
+        // primary documented channel for this command:
+        //     get-body <p> | set-body <p> --body-file -
+        // Measured on the built bundle with the largest live asset (424 964-byte
+        // body, aiknow/1d04c4d9): to a FILE 424 964 bytes arrived, through a PIPE
+        // only 65 536 — 84.6 % silently lost, and `--json` came out as truncated,
+        // unparseable JSON. Piping that into set-body WRITES the truncated body,
+        // i.e. destroys the tail of the asset — the exact silent loss this
+        // requirement exists to prevent. Nothing here holds the event loop open
+        // (the only I/O is a synchronous read), so falling off the end of the
+        // action is both sufficient and correct; the exit code stays 0.
+        // Locked by the real-pipe axis in get-body-9de09856-pipe.harness.ts —
+        // the jest axes CANNOT see this: they mock process.stdout.write and
+        // process.exit, so no pipe and no flush is ever exercised
+        // (integration-test-revert-verify §A66 — the axes judge an intermediate
+        // record, the product is the DELIVERED effect).
       } catch (error) {
         ErrorHandler.handle(error as Error);
       }
