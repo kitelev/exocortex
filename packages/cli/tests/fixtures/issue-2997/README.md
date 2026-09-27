@@ -12,8 +12,9 @@ Layout:
   Project → Phase → Task hierarchy used in the issue's reproduction
   query. Loaded alone this set must answer the query without throwing
   (control case).
-- `bad-files/` — 11 files mimicking each shape that produced a
-  loader skip-warning during the original incident:
+- `bad-files/` — 12 files mimicking each shape that produced a
+  loader skip-warning during the original incident (1-11), plus one added
+  later (12) for the shape the loader used to drop SILENTLY:
 
   | #   | File                                 | Bad shape                                                                |
   | --- | ------------------------------------ | ------------------------------------------------------------------------ |
@@ -28,6 +29,14 @@ Layout:
   | 9   | `09-empty-effort-parent.md`          | `ems__Effort_parent: ""`                                                 |
   | 10  | `10-empty-asset-updatedat.md`        | `exo__Asset_updatedAt: ""`                                               |
   | 11  | `11-empty-effort-start-timestamp.md` | `ems__Effort_startTimestamp: ""`                                         |
+  | 12  | `12-unparseable-frontmatter.md`      | unquoted scalar with `": "` → the BLOCK does not parse (req `fe50da38`)  |
+
+- `comment-only-frontmatter.md` (fixture ROOT, deliberately NOT in
+  `bad-files/`) — a block whose body is only a YAML comment. It is
+  SILENT by design: non-blank by `trim()`, but it means what the blessed
+  empty block means. Being in the root and out of `BAD_FIXTURES` is what
+  makes the mixed-vault exact-set assertion lock that silence, the same
+  way `README.md` locks the no-block case.
 
 The Project root carries the UUID
 `5b4030aa-f0c1-43dc-996a-896b0a1a6dfb` from the issue, so the same

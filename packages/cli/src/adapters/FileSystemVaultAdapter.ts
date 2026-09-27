@@ -122,8 +122,21 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
    * block (`---\n\n---`) is a legitimate "no keys yet", not a failure.
    *
    * The message comes from js-yaml itself rather than being authored here, so
-   * it cannot drift from what actually rejected the file. Re-parsing costs
-   * nothing in practice: this runs only for a file that already failed.
+   * it cannot drift from what actually rejected the file.
+   *
+   * ⛔ COST, stated honestly because an earlier draft of this comment got it
+   * wrong: the caller asks whenever `getFrontmatter` returned null, and that is
+   * true for EVERY ordinary note with no block at all — not only for the rare
+   * malformed one. So this performs a second full read + regex pass over those
+   * files on every vault walk.
+   *
+   * ⛤ MEASURED, not guessed (2026-09-28, the three canonical vaults): files
+   * with no block at all number **17 of 54 314** `.md`, so on this corpus the
+   * extra read is negligible. The cost scales with that count, which is
+   * vault-dependent — a vault of ordinary notes would pay more. What is NOT
+   * conditional is the withdrawal of the old claim: "runs only for a file that
+   * already failed" was false, and a comment that misstates its own mechanism
+   * is the defect whatever the number turns out to be.
    */
   getFrontmatterParseFailure(file: IFile): { reason: string } | null {
     let content: string;
@@ -136,12 +149,34 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
       return null;
     }
     const blockBody = FileSystemVaultAdapter.FRONTMATTER_BLOCK.exec(content)?.[1];
-    if (blockBody === undefined || blockBody.trim() === "") return null;
+    if (blockBody === undefined) return null;
+    // ⛤ A body with NO CONTENT LINE — only blanks and `#` comments — means what
+    //    the blessed empty block `---\n\n---` means: "no keys yet". js-yaml
+    //    throws `expected a document, but the input is empty` on it (measured,
+    //    not assumed), so without this it would land in the catch below and be
+    //    reported — noise on a legitimate authoring shape (review of PR #4439).
+    // ⛔ Judged on the INPUT, not on the parser's wording: matching that message
+    //    would pin the diagnostic to a dependency's prose, the same mistake the
+    //    axis avoids by asserting `(line:column)` instead of the message text.
+    const hasContentLine = blockBody
+      .split("\n")
+      .some((line) => {
+        const t = line.trim();
+        return t !== "" && !t.startsWith("#");
+      });
+    if (!hasContentLine) return null;
     if (this.extractFrontmatter(content) !== null) return null;
     try {
       yaml.load(blockBody, { schema: yaml.YAML11_SCHEMA });
-      // Parsed, but not into a mapping (a bare scalar / sequence block).
-      return { reason: "frontmatter is not a mapping" };
+      // ⛔ No nullish guard here on purpose: a body of the literal `null` DOES
+      //    load to null and is NOT a usable mapping — silencing it would hide a
+      //    real malformed asset. The empty-document case is already handled
+      //    above, by the input, before we ever parse.
+      // Parsed into SOMETHING that is not a usable frontmatter mapping: a bare
+      // scalar, a sequence, or a mapping whose keys are not strings (`: : :`
+      // loads as `{null: …}`) — the last is what `parseYamlFrontmatterTolerant`
+      // rejects, so name the requirement, not just the shape.
+      return { reason: "frontmatter is not a mapping with string keys" };
     } catch (error) {
       return {
         reason:

@@ -162,6 +162,17 @@ describe("Issue #2997 Phase 2 — Loader two-phase commit (all-or-nothing)", () 
       expect(
         result.skippedFiles.some((f) => f.path.endsWith("README.md")),
       ).toBe(false);
+
+      // ⛤ SECOND silent-by-design shape, found by review: a block whose body is
+      //    only a YAML comment. Non-blank by `trim()`, but it loads to an EMPTY
+      //    DOCUMENT and means what the blessed `---\n\n---` means. Without this
+      //    the diagnostic reported it as "expected a document, but the input is
+      //    empty" — noise on a legitimate authoring shape.
+      expect(
+        result.skippedFiles.some((f) =>
+          f.path.endsWith("comment-only-frontmatter.md"),
+        ),
+      ).toBe(false);
     },
     30_000,
   );
