@@ -117,9 +117,22 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
    * block that is PRESENT and does NOT parse. Contract + why the three outcomes
    * are kept apart: `IVaultFrontmatterManager.getFrontmatterParseFailure`.
    *
-   * ⛔ The predicate is the SAME one `updateFrontmatter` already uses below
-   * (block present ∧ its body non-blank ∧ nothing parsed out of it) — an EMPTY
-   * block (`---\n\n---`) is a legitimate "no keys yet", not a failure.
+   * ⛔ The predicate STARTED OUT identical to `updateFrontmatter`'s below and is NOT
+   * any more — the earlier wording of this line ("the SAME one … already uses") was
+   * made false by the review fix for comment-only bodies, and is withdrawn here rather
+   * than left to rot. Both still agree that a block must be present and that an EMPTY
+   * one (`---\n\n---`) is a legitimate "no keys yet"; they now differ on a body of
+   * ONLY YAML comments, and that difference is DELIBERATE because the two paths answer
+   * different questions:
+   *
+   *   - READ (here): "is there a failure to report?" → No. A comment-only block carries
+   *     no keys, exactly like an empty one; reporting it would be noise.
+   *   - WRITE (`updateFrontmatter`): "may I re-serialise this block?" → No. Patching
+   *     rewrites the whole block through js-yaml, which would DESTROY the comment, so
+   *     refusing is the correct answer even though there are no keys to lose.
+   *
+   * ⇒ Do not "unify" them without deciding that question first: making the write path
+   * silent here would silently delete a user's comment on the next patch.
    *
    * The message comes from js-yaml itself rather than being authored here, so
    * it cannot drift from what actually rejected the file.
@@ -158,12 +171,20 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     // ⛔ Judged on the INPUT, not on the parser's wording: matching that message
     //    would pin the diagnostic to a dependency's prose, the same mistake the
     //    axis avoids by asserting `(line:column)` instead of the message text.
+    // ⛔ ASCII-ONLY, и это НЕ педантизм. `String.prototype.trim()` снимает целый класс
+    //    юникодных пробелов (NBSP U+00A0, EN/EM SPACE, IDEOGRAPHIC SPACE, BOM), а js-yaml
+    //    разделителем перед `#` считает ТОЛЬКО ASCII space/tab. Предикат на `.trim()`
+    //    молчал бы о теле `<NBSP># c`, которое парсер грузит РЕАЛЬНЫМ скаляром `" # c"`
+    //    (а с BOM — бросает ДРУГУЮ ошибку) — то есть ровно тот тихий дроп, ради
+    //    устранения которого этот метод и заведён. Измерено на js-yaml 5.3.0, который
+    //    резолвит `packages/cli` (⛔ не корневой 4.3.1 — verify-before-assert §A18).
+    //    ⛤ Хвостовой `\r` допускается: блок с ФЕНСАМИ в LF и телом в CRLF сюда
+    //    доходит (чисто-CRLF файл отсекается раньше — его `FRONTMATTER_BLOCK` не
+    //    видит вовсе), и голая `\r`-строка — та же пустая строка, а не контент.
+    const NO_CONTENT_LINE = /^[ \t]*(#.*)?\r?$/;
     const hasContentLine = blockBody
       .split("\n")
-      .some((line) => {
-        const t = line.trim();
-        return t !== "" && !t.startsWith("#");
-      });
+      .some((line) => !NO_CONTENT_LINE.test(line));
     if (!hasContentLine) return null;
     if (this.extractFrontmatter(content) !== null) return null;
     try {
@@ -217,7 +238,7 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     const blockBody = FileSystemVaultAdapter.FRONTMATTER_BLOCK.exec(content)?.[1];
     if (parsed === null && blockBody !== undefined && blockBody.trim() !== "") {
       throw new Error(
-        `updateFrontmatter: frontmatter of ${file.path} is not parseable — refusing to patch (would drop keys)`,
+        `updateFrontmatter: frontmatter of ${file.path} is not parseable — refusing to patch (re-serialising would overwrite the unreadable block)`,
       );
     }
     const target: IFrontmatter = parsed ?? {};

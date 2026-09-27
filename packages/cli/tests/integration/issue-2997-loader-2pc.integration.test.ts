@@ -50,6 +50,11 @@ const BAD_FIXTURES: BadFixture[] = [
   // entry, no log line, while every other rejection was named. Listing it
   // here also tightens the mixed-vault case below, which counts the set.
   { filename: "12-unparseable-frontmatter.md", expectedReasonContains: "Unparseable frontmatter" },
+  // 13 — NBSP (U+00A0) before the `#`. `String.prototype.trim()` strips it and would
+  // classify the line as a comment, but js-yaml treats ONLY ASCII space/tab as the
+  // separator and loads the body as a REAL scalar. Silencing it would reopen exactly
+  // the class this ticket closes — found by review of the round-2 delta.
+  { filename: "13-nbsp-comment-frontmatter.md", expectedReasonContains: "not a mapping with string keys" },
 ];
 
 let tempRoot: string;

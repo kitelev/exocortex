@@ -16,20 +16,21 @@ Layout:
   loader skip-warning during the original incident (1-11), plus one added
   later (12) for the shape the loader used to drop SILENTLY:
 
-  | #   | File                                 | Bad shape                                                                |
-  | --- | ------------------------------------ | ------------------------------------------------------------------------ |
-  | 1   | `01-invalid-iri-class.md`            | `exo__Instance_class` wikilink with spaces/parens → `Invalid IRI format` |
-  | 2   | `02-empty-locked-by.md`              | `ems__Effort_lockedBy: ""` → empty literal                               |
-  | 3   | `03-empty-lock-expires.md`           | `ems__Effort_lockExpires: ""` → empty literal                            |
-  | 4   | `04-missing-asset-uid.md`            | no `exo__Asset_uid`                                                      |
-  | 5   | `05-missing-asset-isdefinedby.md`    | no `exo__Asset_isDefinedBy`                                              |
-  | 6   | `06-empty-asset-label.md`            | `exo__Asset_label: ""`                                                   |
-  | 7   | `07-empty-instance-class.md`         | `exo__Instance_class: ""`                                                |
-  | 8   | `08-empty-effort-status.md`          | `ems__Effort_status: ""`                                                 |
-  | 9   | `09-empty-effort-parent.md`          | `ems__Effort_parent: ""`                                                 |
-  | 10  | `10-empty-asset-updatedat.md`        | `exo__Asset_updatedAt: ""`                                               |
-  | 11  | `11-empty-effort-start-timestamp.md` | `ems__Effort_startTimestamp: ""`                                         |
-  | 12  | `12-unparseable-frontmatter.md`      | unquoted scalar with `": "` → the BLOCK does not parse (req `fe50da38`)  |
+  | #   | File                                 | Bad shape                                                                  |
+  | --- | ------------------------------------ | -------------------------------------------------------------------------- |
+  | 1   | `01-invalid-iri-class.md`            | `exo__Instance_class` wikilink with spaces/parens → `Invalid IRI format`   |
+  | 2   | `02-empty-locked-by.md`              | `ems__Effort_lockedBy: ""` → empty literal                                 |
+  | 3   | `03-empty-lock-expires.md`           | `ems__Effort_lockExpires: ""` → empty literal                              |
+  | 4   | `04-missing-asset-uid.md`            | no `exo__Asset_uid`                                                        |
+  | 5   | `05-missing-asset-isdefinedby.md`    | no `exo__Asset_isDefinedBy`                                                |
+  | 6   | `06-empty-asset-label.md`            | `exo__Asset_label: ""`                                                     |
+  | 7   | `07-empty-instance-class.md`         | `exo__Instance_class: ""`                                                  |
+  | 8   | `08-empty-effort-status.md`          | `ems__Effort_status: ""`                                                   |
+  | 9   | `09-empty-effort-parent.md`          | `ems__Effort_parent: ""`                                                   |
+  | 10  | `10-empty-asset-updatedat.md`        | `exo__Asset_updatedAt: ""`                                                 |
+  | 11  | `11-empty-effort-start-timestamp.md` | `ems__Effort_startTimestamp: ""`                                           |
+  | 12  | `12-unparseable-frontmatter.md`      | unquoted scalar with `": "` → the BLOCK does not parse (req `fe50da38`)    |
+  | 13  | `13-nbsp-comment-frontmatter.md`     | U+00A0 before `#` → js-yaml reads a SCALAR, not a comment (req `fe50da38`) |
 
 - `comment-only-frontmatter.md` (fixture ROOT, deliberately NOT in
   `bad-files/`) — a block whose body is only a YAML comment. It is
