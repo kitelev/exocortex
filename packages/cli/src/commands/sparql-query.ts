@@ -408,13 +408,41 @@ export function sparqlQueryCommand(): Command {
         if (skippedNotice !== null) {
           console.error(skippedNotice);
         }
-        const loaderMeta: Record<string, unknown> =
-          loaded.skippedFiles && loaded.skippedFiles.length > 0
-            ? {
-                skippedCount: loaded.skippedFiles.length,
-                skippedFiles: loaded.skippedFiles,
-              }
-            : {};
+        // req b9394291 — the asymmetry above is now STATED in meta instead of
+        // being left for the reader of this comment. A `--output json` consumer
+        // that ignores stderr (a legitimate choice: stdout is declared the only
+        // document) used to lose the cache-path signal entirely.
+        //
+        // ⛔ The disclaimer CANNOT be `skippedFiles: []` or `skippedCount: 0`.
+        // Both read as the positive claim "nothing was dropped", which is
+        // exactly the false signature req 81cd5d1f was created to remove. What
+        // the cache genuinely knows is a COUNT of entries with no triples —
+        // skipped files and genuinely empty ones together — so it is published
+        // under its own honest name, next to an explicit "the list is not
+        // available on this path".
+        //
+        // Silence still means "nothing to report": a clean vault carries none
+        // of these fields on either path, so absence never has to be read as
+        // "this path cannot tell" (axis S3 of 81cd5d1f locks that).
+        const loaderMeta: Record<string, unknown> = (() => {
+          if (loaded.skippedFiles) {
+            // FULL PARSE — the per-file list exists and is authoritative.
+            if (loaded.skippedFiles.length === 0) return {};
+            return {
+              skippedCount: loaded.skippedFiles.length,
+              skippedFiles: loaded.skippedFiles,
+              skippedFilesAvailable: true,
+            };
+          }
+          // CACHE PATH — `skippedFiles` is undefined BY CONSTRUCTION (see
+          // LoadVaultTriplesResult): the cache format cannot tell a skipped
+          // file from a genuinely empty one.
+          if (loaded.zeroTriplePaths.length === 0) return {};
+          return {
+            zeroTripleCount: loaded.zeroTriplePaths.length,
+            skippedFilesAvailable: false,
+          };
+        })();
 
         if (outputFormat === "text" && cacheHit) {
           console.log(

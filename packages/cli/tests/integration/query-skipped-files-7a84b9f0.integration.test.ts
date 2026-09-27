@@ -52,6 +52,9 @@ interface CliResponse {
   meta?: {
     skippedCount?: number;
     skippedFiles?: Array<{ path: string; reason: string }>;
+    // req b9394291 — the cache path's machine-readable half.
+    zeroTripleCount?: number;
+    skippedFilesAvailable?: boolean;
     [k: string]: unknown;
   };
 }
@@ -302,4 +305,68 @@ describe("query surfaces loader-skipped files (ticket 7a84b9f0)", () => {
     expect("skippedCount" in (second.response?.meta ?? {})).toBe(false);
     expect(second.stderr).toBe("");
   }, 60000);
+  // ── req b9394291 — the cache path's machine-readable half ────────────────
+  // Sibling req 81cd5d1f REQUIRES the cache path to claim no per-file list
+  // (its scenario says "meta carries no skippedFiles"), so these axes do not
+  // widen it: they add two fields the cache format genuinely supports and keep
+  // `skippedFiles` absent. Naming: S1-S10 are 81cd5d1f's; Z* is this req's, so
+  // a red line names one owner unambiguously (the driver keys on the name).
+
+  it("Z1 on --use-cache meta states the zero-triple COUNT and that the per-file list is unavailable @req:b9394291-481d-4756-9104-7eade8d8e770", async () => {
+    seedDirtyVault();
+    const { response } = await runQuery(["--use-cache", "--output", "json"]);
+
+    expect(response?.success).toBe(true);
+    expect(response?.meta?.zeroTripleCount).toBe(1);
+    // The disclaimer is EXPLICIT, not inferred from an absence.
+    expect(response?.meta?.skippedFilesAvailable).toBe(false);
+    // ⛔ And it is NOT expressible as an empty list / a zero count: both would
+    // read as "nothing was dropped", the false signature 81cd5d1f removed.
+    expect("skippedFiles" in (response?.meta ?? {})).toBe(false);
+    expect("skippedCount" in (response?.meta ?? {})).toBe(false);
+    // Canary: the run really produced a result, so the fields above describe a
+    // vault that was read — not a query that went nowhere.
+    expect(response?.data?.count).toBe(1);
+  }, 60000);
+
+  it("Z2 on the full parse meta marks the per-file list as AVAILABLE, alongside the list itself @req:b9394291-481d-4756-9104-7eade8d8e770", async () => {
+    seedDirtyVault();
+    const { response } = await runQuery(["--output", "json"]);
+
+    expect(response?.success).toBe(true);
+    expect(response?.meta?.skippedFilesAvailable).toBe(true);
+    expect(response?.meta?.skippedCount).toBe(1);
+    expect(response?.meta?.skippedFiles).toHaveLength(1);
+    // The flag is not a substitute for the list — both are present, and a
+    // consumer branching on the flag finds what the flag promised.
+    expect(response?.meta?.skippedFiles?.[0]?.path).toBe("orphan.md");
+  }, 60000);
+
+  it("Z3 a clean vault carries NONE of the four fields, on either path @req:b9394291-481d-4756-9104-7eade8d8e770", async () => {
+    seedCleanVault();
+
+    // ⛔ `--no-cache` on the second pass is LOAD-BEARING, not noise: it bypasses
+    // the QUERY-RESULT cache, which the first pass just populated. Without it
+    // the second run answers from that cache before the vault is read at all,
+    // `loaderMeta` is never computed, and the axis passes for a reason that has
+    // nothing to do with the guard it claims to lock — caught by mutant MZ3,
+    // which reddened nothing until this line was added.
+    for (const extra of [
+      ["--output", "json"],
+      ["--use-cache", "--no-cache", "--output", "json"],
+    ]) {
+      const { response } = await runQuery(extra);
+      const meta = response?.meta ?? {};
+      // Silence means "nothing to report" on BOTH paths. If the availability
+      // flag leaked out here, absence-of-fields would stop being readable as
+      // "clean" and start needing interpretation.
+      expect("zeroTripleCount" in meta).toBe(false);
+      expect("skippedFilesAvailable" in meta).toBe(false);
+      expect("skippedFiles" in meta).toBe(false);
+      expect("skippedCount" in meta).toBe(false);
+      // Canary per path: a clean vault still answers.
+      expect(response?.data?.count).toBe(1);
+    }
+  }, 60000);
+
 });
