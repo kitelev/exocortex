@@ -424,6 +424,17 @@ export function sparqlQueryCommand(): Command {
         // Silence still means "nothing to report": a clean vault carries none
         // of these fields on either path, so absence never has to be read as
         // "this path cannot tell" (axis S3 of 81cd5d1f locks that).
+        //
+        // ⛔ BOUNDARY, stated so nobody "fixes" the silence: this flag answers
+        // "is there a list for the files reported here", NOT "is a per-file
+        // list computable on this load path". On a CLEAN full parse it is
+        // absent, exactly as on the cache path — so its absence alone does not
+        // distinguish the two. That is deliberate and locked by Z3 + S3:
+        // emitting it unconditionally would make absence-of-fields stop
+        // meaning "clean" and start needing interpretation, which is the very
+        // thing req 81cd5d1f removed. A consumer that genuinely needs the
+        // capability bit wants a different field, and that is a new decision
+        // with its own requirement — not a loosening of this one.
         const loaderMeta: Record<string, unknown> = (() => {
           if (loaded.skippedFiles) {
             // FULL PARSE — the per-file list exists and is authoritative.
