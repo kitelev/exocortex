@@ -39,11 +39,14 @@
  * Prints `✅ P<n>` / `❌ P<n>` per axis and `PASS=<n> FAIL=<n>`; exit 1 on failure.
  */
 import { spawnSync } from "child_process";
+import { fileURLToPath } from "url";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
-const HERE = path.dirname(new URL(import.meta.url).pathname);
+// fileURLToPath, not new URL().pathname — the latter is not percent-decoded, so a
+// tree path containing a space would resolve wrongly (round-2 review LOW).
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PKG = path.resolve(HERE, "../..");
 const TREE = path.resolve(CLI_PKG, "../..");
 
@@ -121,6 +124,12 @@ function runPiped(args: string[]): { rc: number; out: Buffer; err: string } {
   const r = spawnSync(process.execPath, [DIST, ...args], {
     cwd: TREE,
     maxBuffer: 64 * 1024 * 1024,
+    // ⛔ A timeout is load-bearing here, not hygiene: natural termination is exactly
+    // the property this harness measures, so a subject that HANGS is the expected
+    // failure mode — and without a timeout the harness hangs with it, which is
+    // indistinguishable from "the axis does not differentiate"
+    // (integration-test-revert-verify §A70/§A116). rc 124/null is reported as red.
+    timeout: 120_000,
   });
   return {
     rc: r.status ?? -1,
@@ -151,6 +160,7 @@ function runPiped(args: string[]): { rc: number; out: Buffer; err: string } {
   const r = spawnSync(process.execPath, [DIST, "get-body", bigRel, "--vault", vault], {
     cwd: TREE,
     stdio: ["ignore", fd, "pipe"],
+    timeout: 120_000,
   });
   fs.closeSync(fd);
   const got = fs.statSync(outFile).size;

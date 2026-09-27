@@ -50,6 +50,7 @@ const NONEXISTENT_UID = "f0f0f0f0-0000-4000-8000-000000000009";
 const OUTSIDE_UID = "d6d6d6d6-0000-4000-8000-000000000004";
 const NO_TRAILING_NL_UID = "e5e5e5e5-0000-4000-8000-000000000005";
 const UID_IN_BODY_UID = "a4a4a4a4-0000-4000-8000-000000000006";
+const NO_FRONTMATTER_UID = "c3c3c3c3-0000-4000-8000-000000000007";
 const STALE_UPDATED_AT = "2020-01-01T00:00:00";
 
 /** A body whose file does NOT end in a newline — 9.7 % of the live corpus. */
@@ -57,6 +58,8 @@ const NO_TRAILING_NL_BODY = "TAIL WITHOUT A NEWLINE";
 /** A non-asset whose BODY carries the uid key — the whole-file guard's blind spot. */
 const UID_IN_BODY_BODY =
   "Docs example:\n\n```yaml\nexo__Asset_uid: 11111111-2222-4333-8444-555555555555\n```\n";
+/** No frontmatter block at all — pins the guard ORDER, not just the guard. */
+const NO_FRONTMATTER_BODY = "PLAIN MARKDOWN WITH NO FENCE\n";
 
 /** Bodies that must NEVER reach stdout — the guards are what keep them out. */
 const NON_ASSET_BODY = "BODY OF A NON ASSET\n";
@@ -136,6 +139,12 @@ describe("req 9de09856: `cli get-body` prints the body of an existing asset", ()
     fs.writeFileSync(
       path.join(vault, `${TASKS_DIR}/${UID_IN_BODY_UID}.md`),
       `---\ntitle: docs page\n---\n${UID_IN_BODY_BODY}`,
+    );
+    // No frontmatter block and no uid — the only input on which the pre-fix guard
+    // order (uid check first) and the shipped one (parse first) are distinguishable.
+    fs.writeFileSync(
+      path.join(vault, `${TASKS_DIR}/${NO_FRONTMATTER_UID}.md`),
+      NO_FRONTMATTER_BODY,
     );
     // A VALID asset one level ABOVE the vault. The outside-vault guard is the only
     // thing standing between get-body and this file: remove the guard and the read
@@ -386,6 +395,22 @@ describe("req 9de09856: `cli get-body` prints the body of an existing asset", ()
     expect(fs.existsSync(path.join(vault, `${TASKS_DIR}/${NONEXISTENT_UID}.md`))).toBe(
       false,
     );
+  });
+
+  it("G12 refuses a file with NO frontmatter block, naming that as the reason @req:9de09856-ffd6-4add-aa7c-56985808dc87", async () => {
+    // Round-2 review: every other fixture begins with `---`, so NO axis reached the
+    // `!parsed.exists` branch and nothing pinned the guard ORDER either — deleting
+    // that guard, or swapping the two guards back, reddened nothing. This axis plus
+    // the order mutant close that hole.
+    const got = await runGetBody(`${TASKS_DIR}/${NO_FRONTMATTER_UID}.md`);
+
+    expectRefused(got.exit);
+    expect(got.stdout).toBe("");
+    expect(got.stdout).not.toContain(NO_FRONTMATTER_BODY.trim());
+    const messages = errorSpy.mock.calls.flat().map(String).join("\n");
+    // The ORDER is what this pins: the file has no uid either, so the pre-fix order
+    // would have answered "Not a vault asset" instead.
+    expect(messages).toContain("No frontmatter block found");
   });
 
   it("G11 the asset check reads the FRONTMATTER, not the body @req:9de09856-ffd6-4add-aa7c-56985808dc87", async () => {

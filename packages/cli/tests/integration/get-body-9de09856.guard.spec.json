@@ -77,6 +77,18 @@
       "to": "        const body = afterBlock.replace(/^\\r?\\n/, \"\").slice(0, -1);",
       "expect": ["G2", "G1b"],
       "_note": "Drops the body's LAST character (M2 shifts the FRONT). ⛤ Note which axes DON'T redden: G1's round trip stays GREEN, because the character lost from a newline-terminated body is exactly the newline set-body appends back — the pair's normalisation MASKS a tail loss. That is precisely why the byte-exact G2 and the no-trailing-newline G1b exist: the load-bearing round-trip axis alone is blind to this class."
+    },
+    "M12_no_frontmatter_guard_removed": {
+      "from": "        if (!parsed.exists) {\n          throw new Error(\n            `No frontmatter block found in ${vaultRelative}; get-body prints the body that FOLLOWS the frontmatter block.`,\n          );\n        }\n",
+      "to": "",
+      "expect": ["G12"],
+      "_note": "Round-2 review found this branch pinned by NOTHING: every other fixture begins with `---`, so no axis reached it. Without the guard the file falls through to the uid check, which refuses with a DIFFERENT message — hence G12 asserts the message, not merely a non-zero exit (§A38: a negated exit predicate is satisfied by many outcomes)."
+    },
+    "M13_guard_order_swapped_back": {
+      "from": "        if (!parsed.exists) {\n          throw new Error(\n            `No frontmatter block found in ${vaultRelative}; get-body prints the body that FOLLOWS the frontmatter block.`,\n          );\n        }\n",
+      "to": "        if (!/^\\s*exo__Asset_uid:/m.test(original)) {\n          throw new Error(\n            `Not a vault asset (no exo__Asset_uid): ${vaultRelative}. get-body only reads existing assets.`,\n          );\n        }\n        if (!parsed.exists) {\n          throw new Error(\n            `No frontmatter block found in ${vaultRelative}; get-body prints the body that FOLLOWS the frontmatter block.`,\n          );\n        }\n",
+      "expect": ["G12"],
+      "_note": "Restores the PRE-FIX guard order (whole-file uid check first). The only input that distinguishes the two orders is a file with neither a frontmatter block nor a uid — G12's fixture — where the old order answers 'Not a vault asset' instead of naming the missing block. Both orders refuse and both exit non-zero, so only the MESSAGE separates them: that is why this mutant exists and why G12 asserts the message."
     }
   }
 }
