@@ -3757,6 +3757,32 @@ export class GroundingExecutor {
       };
     }
 
+    // #4432 — `from === to` can only be a no-op: the map branch below rewrites
+    // the element with itself, `updateProperty` emits the same list, and the
+    // file comes back byte-identical (measured: same `shasum`, `updatedAt` not
+    // stamped). Reporting that as a replacement is a signature not derived from
+    // the mechanism — the command prints its vault-authored
+    // `exocmd__Command_successMessage` regardless of whether anything changed,
+    // so "done" and "not done" render identically.
+    //
+    // This is not hypothetical: removing ONE class from a multi-value
+    // `exo__Instance_class` is expressed as a replace onto a value already in
+    // the list (set semantics collapse it), so someone trying to drop the LAST
+    // remaining class naturally writes `from === to`, reads the green line and
+    // believes the class is gone (#4302).
+    //
+    // Refusing is safe here: a sweep of `~/.claude/bin`, `~/dotfiles/scripts`
+    // and this repo found no caller relying on an idempotent `from === to`.
+    if (fromPlain === toPlain) {
+      return {
+        success: false,
+        error:
+          `property_replace: replaceFromExpression and replaceToExpression both ` +
+          `resolved to "${fromPlain}" — this can only leave <${grounding.targetProperty}> ` +
+          `unchanged, and reporting a no-op as a replacement would hide that`,
+      };
+    }
+
     const fromIndex = existing.findIndex(
       (item) => decodeYamlSequenceItem(item) === fromPlain,
     );
