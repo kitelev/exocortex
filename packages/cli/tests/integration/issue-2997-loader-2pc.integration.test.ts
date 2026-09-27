@@ -45,6 +45,11 @@ const BAD_FIXTURES: BadFixture[] = [
   { filename: "09-empty-effort-parent.md", expectedReasonContains: "ems__Effort_parent" },
   { filename: "10-empty-asset-updatedat.md", expectedReasonContains: "exo__Asset_updatedAt" },
   { filename: "11-empty-effort-start-timestamp.md", expectedReasonContains: "ems__Effort_startTimestamp" },
+  // 12 — the frontmatter BLOCK is present and does not parse. Before the fix
+  // this family was the one the loader dropped SILENTLY: no skippedFiles
+  // entry, no log line, while every other rejection was named. Listing it
+  // here also tightens the mixed-vault case below, which counts the set.
+  { filename: "12-unparseable-frontmatter.md", expectedReasonContains: "Unparseable frontmatter" },
 ];
 
 let tempRoot: string;
@@ -118,6 +123,45 @@ describe("Issue #2997 Phase 2 — Loader two-phase commit (all-or-nothing)", () 
         }
       }
       expect(result.triples.length).toBeGreaterThan(0);
+    },
+    30_000,
+  );
+
+  // ⛔ TWO axes, not one — the change ADDS A CALL into an existing function, so
+  //    "the branch does what it promises" and "the branch is WIRED into the
+  //    production path" are different claims (feature-sdd Step 4).
+  //    (a) the unparseable file is NAMED, with the parser's OWN message;
+  //    (b) a plain note in the SAME vault stays silent — without it an
+  //        over-wide fix (report every null frontmatter) passes (a) too.
+  it(
+    "names a file whose frontmatter block does not parse, and stays silent about a note that has no block @req:fe50da38-4798-46e6-bb0a-b4b88596c340",
+    async () => {
+      const fixtureRoot = resolve(__dirname, "../fixtures/issue-2997");
+      const adapter = new FileSystemVaultAdapter(fixtureRoot);
+      const converter = new NoteToRDFConverter(adapter);
+
+      const result = await converter.convertVaultWithValidation();
+
+      const unparseable = result.skippedFiles.find((f) =>
+        f.path.endsWith("12-unparseable-frontmatter.md"),
+      );
+      expect(unparseable).toBeDefined();
+      expect(unparseable!.reason).toMatch(/^Unparseable frontmatter: /);
+      // The reason is DERIVED from the parser, not authored here. Proven by the
+      // `(line:column)` suffix: only js-yaml knows where the block broke, so a
+      // hand-written reason could not carry it.
+      // ⛔ Do NOT assert the wording itself — it belongs to the parser, and the
+      //    two parsers disagree on this very fixture: pyyaml says "mapping
+      //    values are not allowed here", js-yaml 5 (YAML11) says "bad
+      //    indentation of a mapping entry". Pinning either would lock this axis
+      //    to a dependency's prose (verify-before-assert §A18).
+      expect(unparseable!.reason).toMatch(/\(\d+:\d+\)/);
+
+      // README.md has no frontmatter block at all: legitimately not an asset,
+      // and reporting it would turn a useful notice into noise.
+      expect(
+        result.skippedFiles.some((f) => f.path.endsWith("README.md")),
+      ).toBe(false);
     },
     30_000,
   );

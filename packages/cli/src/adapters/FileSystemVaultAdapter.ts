@@ -113,6 +113,44 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
   }
 
   /**
+   * The ONE cause of a null `getFrontmatter` that is a defect: a frontmatter
+   * block that is PRESENT and does NOT parse. Contract + why the three outcomes
+   * are kept apart: `IVaultFrontmatterManager.getFrontmatterParseFailure`.
+   *
+   * ⛔ The predicate is the SAME one `updateFrontmatter` already uses below
+   * (block present ∧ its body non-blank ∧ nothing parsed out of it) — an EMPTY
+   * block (`---\n\n---`) is a legitimate "no keys yet", not a failure.
+   *
+   * The message comes from js-yaml itself rather than being authored here, so
+   * it cannot drift from what actually rejected the file. Re-parsing costs
+   * nothing in practice: this runs only for a file that already failed.
+   */
+  getFrontmatterParseFailure(file: IFile): { reason: string } | null {
+    let content: string;
+    try {
+      // Read-then-catch, no exists/stat probe first (`js/file-system-race`).
+      content = fs.readFileSync(this.resolvePath(file.path), "utf-8");
+    } catch {
+      // Unreadable or gone — that is not a PARSE failure, and claiming one
+      // would put a wrong reason in front of the user.
+      return null;
+    }
+    const blockBody = FileSystemVaultAdapter.FRONTMATTER_BLOCK.exec(content)?.[1];
+    if (blockBody === undefined || blockBody.trim() === "") return null;
+    if (this.extractFrontmatter(content) !== null) return null;
+    try {
+      yaml.load(blockBody, { schema: yaml.YAML11_SCHEMA });
+      // Parsed, but not into a mapping (a bare scalar / sequence block).
+      return { reason: "frontmatter is not a mapping" };
+    } catch (error) {
+      return {
+        reason:
+          error instanceof Error ? error.message.split("\n")[0] : String(error),
+      };
+    }
+  }
+
+  /**
    * PATCH the file's frontmatter block with the keys `updater` returns,
    * through the core carrier of the key dialect `FrontmatterService.applyPatch`
    * (req `2a020489`) — in parity with the plugin's `ObsidianVaultAdapter`:
