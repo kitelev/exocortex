@@ -566,8 +566,11 @@ export class GenericAssetCreationService {
     // This map is only reached when the parent gives no folder (the branch
     // above), i.e. when there IS no parent or it sits at the vault root — the
     // one situation where no folder is the right answer for a concept either.
-    // Resolving from the anchor the way `ConceptCreationService` now does is
-    // the real fix and belongs where the caller knows the anchor, not here.
+    // Resolving from the anchor is the real fix and belongs where the caller
+    // knows the anchor, not here. That is how narrower-concept creation now
+    // works: the `create_instance` grounding `85c40d1e` takes the anchor from
+    // the shared InheritanceRule `cbe000c4` (#4358 replaced the TypeScript
+    // `ConceptCreationService`, which used to be the example cited here).
     const classFolderMap: Record<string, string> = {
       ems__Task: "tasks",
       ems__Project: "projects",

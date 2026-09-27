@@ -11,7 +11,6 @@ import {
   FolderRepairService,
   PropertyCleanupService,
   RenameToUidService,
-  ConceptCreationService,
   ClassCreationService,
   type ClassRefResolver,
   type IGroundingService,
@@ -222,7 +221,6 @@ export function populateServiceRegistry(
     const fixMissingLabelService = new FixMissingLabelService(vaultAdapter);
     const renameToUidService = new RenameToUidService(vaultAdapter);
     const folderRepairService = new FolderRepairService(vaultAdapter);
-    const conceptCreationService = new ConceptCreationService(vaultAdapter);
     const classCreationService = new ClassCreationService(
       vaultAdapter,
       folderRepairService,
@@ -368,36 +366,13 @@ export function populateServiceRegistry(
       ),
     );
 
-    registry.register(
-      "createNarrowerConcept",
-      wrapService(async (targetIRI: string, userInput?: UserInput) => {
-        // Create a child ims__Concept whose ims__Concept_broader points to the
-        // current target concept. Wraps existing ConceptCreationService (which
-        // was previously orphaned: no service_call wiring → no UI button could
-        // invoke it). Mirrors createRelatedTask pattern: resolve target file,
-        // call domain service, open created file. See RFC 5a61a359 Phase C.2.
-        const label = userInput?.label as string | undefined;
-        if (!label) throw new Error("createNarrowerConcept requires userInput.label");
-        const definition = (userInput?.definition as string | undefined) ?? "";
-        const aliasesInput = userInput?.aliases;
-        const aliases = Array.isArray(aliasesInput)
-          ? aliasesInput.map(String)
-          : typeof aliasesInput === "string" && aliasesInput.length > 0
-            ? [aliasesInput]
-            : [];
-        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
-        const createdFile = await conceptCreationService.createNarrowerConcept(
-          iFile,
-          label,
-          definition,
-          aliases,
-        );
-        const tfile = vaultAdapter.toTFile(createdFile);
-        const leaf = app.workspace.getLeaf("tab");
-        await leaf.openFile(tfile);
-        app.workspace.setActiveLeaf(leaf, { focus: true });
-      }),
-    );
+    // `createNarrowerConcept` registration removed (#4358): the command
+    // `create-narrower-concept` now runs on a homoiconic `create_instance`
+    // grounding (`85c40d1e`) — genus from a PropertyDefault `$target`, the
+    // parent anchor from the shared InheritanceRule `cbe000c4`. Nothing
+    // resolves this serviceId any more, so the wrapper only kept
+    // ConceptCreationService alive. Locked by
+    // `concept-creation-homoiconic-4358.test.ts`.
 
     registry.register(
       "createSubclass",

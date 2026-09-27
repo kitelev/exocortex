@@ -1,0 +1,72 @@
+{
+  "_doc": "Mutants for #4358 on the `create_instance` GROUNDING — the asset that now carries the semantics the deleted `ConceptCreationService` used to hold in TypeScript. Each mutant knocks out one field and must redden exactly the axis that field backs; that is what makes the 'the guarantee moved, it was not dropped' claim checkable rather than asserted. Axes H1 and H8 live on OTHER assets (the command and the superseded grounding) and therefore have their own sibling specs — a spec pins one subject.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› (H\\d+) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/exoas-exocmd/exocmd/85c40d1e-02b7-43c6-832b-d0b481ed19fb.md",
+  "harness": "cd \"$(dirname {subject})/../../core\" && node ../../node_modules/jest/bin/jest.js tests/integration/dynamic-commands/concept-creation-homoiconic-4358.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_type_back_to_service_call": {
+      "from": "\nexocmd__Grounding_type: \"[[4367e2d6-6c92-450a-becb-abce1fb07682]]\"\n",
+      "to": "\nexocmd__Grounding_type: \"[[9bf9fc99-ac37-4e51-b9f5-bd920099947c]]\"\n",
+      "expect": [
+        "H2"
+      ],
+      "_note": "The whole point of the issue: if the grounding slides back to service_call, TypeScript is in the path again."
+    },
+    "M2_target_class_retargeted": {
+      "from": "\nexocmd__Grounding_targetClass: dda12c48-6886-4624-8710-ed4ba92ce2b3\n",
+      "to": "\nexocmd__Grounding_targetClass: 790e5b16-251d-4556-96ac-e5c7f1429b2e\n",
+      "expect": [
+        "H3"
+      ]
+    },
+    "M3_folder_hardcoded_again": {
+      "from": "\nexocmd__Grounding_targetFolder: $isDefinedByFolder\n",
+      "to": "\nexocmd__Grounding_targetFolder: concepts/\n",
+      "expect": [
+        "H4"
+      ],
+      "_note": "Reintroduces defect #4357 verbatim — a literal top-level folder that sits outside every assetspace, so ExoSync never carried it."
+    },
+    "M4_inheritance_rule_retargeted": {
+      "from": "\nexocmd__Grounding_inheritanceRule: \"[[cbe000c4-b29a-4405-876d-790fb2296121]]\"\n",
+      "to": "\nexocmd__Grounding_inheritanceRule: \"[[85c40d1e-02b7-43c6-832b-d0b481ed19fb]]\"\n",
+      "expect": [
+        "H5"
+      ],
+      "_note": "Points at a real asset (self) rather than deleting the key, so the mutant changes WHICH rule applies instead of making the frontmatter structurally odd."
+    },
+    "M5_property_default_retargeted": {
+      "from": "\nexocmd__Grounding_propertyDefault: \"[[f1ef295a-be32-4b52-994e-0d89aa0ae78c]]\"\n",
+      "to": "\nexocmd__Grounding_propertyDefault: \"[[85c40d1e-02b7-43c6-832b-d0b481ed19fb]]\"\n",
+      "expect": [
+        "H6"
+      ],
+      "_note": "H6 still reads the PropertyDefault asset itself by constant, so only the wiring half reddens — that is the half this subject owns."
+    },
+    "M6_schema_key_back_to_bare": {
+      "from": "\\\"concept__Concept_definition\\\":{\\\"type\\\":\\\"string\\\"",
+      "to": "\\\"definition\\\":{\\\"type\\\":\\\"string\\\"",
+      "expect": [
+        "H7"
+      ],
+      "_note": "The measured defect: create_instance writes schema keys into frontmatter as-is, so a bare key produces a SECOND, non-canonical property beside the real one."
+    },
+    "M7_label_no_longer_required": {
+      "from": "\\\"required\\\":[\\\"label\\\"]}",
+      "to": "\\\"required\\\":[]}",
+      "expect": [
+        "H9"
+      ],
+      "_note": "The deleted service threw on a missing label; with create_instance the obligation lives here, so this mutant is what proves the guarantee actually moved."
+    }
+  }
+}

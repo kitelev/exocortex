@@ -507,7 +507,7 @@ it("should preserve already quoted wikilinks", async () => {
 
 **Where to apply:**
 
-- All service classes that create frontmatter (`GenericAssetCreationService`, `ClassCreationService`, `ConceptCreationService` — the former `TaskCreationService`/`ProjectCreationService` were replaced by `GenericAssetCreationService`)
+- All service classes that create frontmatter (`GenericAssetCreationService`, `ClassCreationService` — the former `TaskCreationService`/`ProjectCreationService` were replaced by `GenericAssetCreationService`; `ConceptCreationService` was dropped in #4358, narrower-concept creation is now the homoiconic `create_instance` grounding `85c40d1e`)
 - Any code that modifies wikilink properties
 - Import/migration scripts
 

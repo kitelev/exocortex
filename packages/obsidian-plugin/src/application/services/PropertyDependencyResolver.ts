@@ -156,7 +156,9 @@ export class PropertyDependencyResolver {
 
     // ─── concept__Concept_ namespace ────────────────────────────────────
     // `ims__` was retired by the M2-0 re-prefix (2026-06-14). The genus key is
-    // migrated here because `ConceptCreationService` now writes it; the sibling
+    // migrated here because the narrower-concept grounding writes it (since
+    // #4358 that is `85c40d1e`, a `create_instance` PropertyDefault; before it,
+    // the TypeScript `ConceptCreationService`); the sibling
     // `ims__Concept_narrower` / `_related` keys below are NOT produced by any
     // writer in this repo (verified whole-repo: they appear only here and in this
     // file's own test), so they re-create nothing; their migration is ticket
