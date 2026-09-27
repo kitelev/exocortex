@@ -1,0 +1,94 @@
+{
+  "_doc": "Revert-verify mutants for req 9de09856 — the get-body PREDICATE half (the cut position, the raw-output contract, bodyBytes units, and each guard). The WIRING half lives in get-body-9de09856.wiring.spec.json because the driver mutates ONE subject and the registration line sits in program.ts (integration-test-revert-verify §A117). Expectations written BEFORE the run. ⛔ A mutant shifting the cut by +1 was DISCARDED as vacuous before it was written: slice(len+1) eats the separator newline that the following .replace(/^\\r?\\n/) would have eaten anyway, so both revisions emit identical bytes — the shipped pair is deliberately tolerant of a one-character drift, hence M2 shifts by TWO.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?)[: ]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/get-body.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/get-body.integration.test.ts 2>&1",
+  "mutants": {
+    "M1_separator_newline_kept": {
+      "from": "        const body = afterBlock.replace(/^\\r?\\n/, \"\");",
+      "to": "        const body = afterBlock;",
+      "expect": ["G1", "G2"],
+      "_note": "Keeps the newline that separates the frontmatter block from the body, so every body is emitted with a leading \\n. G2 compares the raw output byte-for-byte; G1 shows the real cost — set-body writes block + \\n + \"\\nBODY\" and reports changed:true, i.e. the round trip stops being a no-op. This is the load-bearing pair."
+    },
+    "M2_cut_shifted_by_two": {
+      "from": "        const afterBlock = original.slice(frontmatterBlock.length);",
+      "to": "        const afterBlock = original.slice(frontmatterBlock.length + 2);",
+      "expect": ["G1", "G2"],
+      "_note": "Eats the separator newline AND the body's first character. Shifts by two on purpose: see the ⛔ note in _doc — a +1 shift is absorbed by the newline strip and would be a vacuous mutant."
+    },
+    "M3_bodybytes_in_utf16_units": {
+      "from": "              bodyBytes: Buffer.byteLength(body, \"utf8\"),",
+      "to": "              bodyBytes: body.length,",
+      "expect": ["G4"],
+      "_note": "The set-body floor, mirrored: on the Cyrillic fixture the two measures disagree (every Cyrillic code point is 2 bytes / 1 UTF-16 unit), which is exactly why G4 asserts the byte count AND asserts it differs from .length — without the second assertion the axis would pass under this mutant on ASCII prose."
+    },
+    "M4_nonasset_guard_removed": {
+      "from": "        if (!/^\\s*exo__Asset_uid:/m.test(parsed.content)) {\n          throw new Error(\n            `Not a vault asset (no exo__Asset_uid): ${vaultRelative}. get-body only reads existing assets.`,\n          );\n        }\n",
+      "to": "",
+      "expect": ["G6", "G11"],
+      "_note": "Without the guard the non-asset fixture parses fine (it HAS a frontmatter block) and its body is printed — G6 reddens on the printed body and on the missing message. The fixture carries a body precisely so this mutant cannot hide behind the 'no frontmatter block' refusal."
+    },
+    "M5_outside_vault_guard_removed": {
+      "from": "        if (\n          vaultRelative === \"..\" ||\n          vaultRelative.startsWith(`..${pathSep}`) ||\n          isAbsolute(vaultRelative)\n        ) {\n          throw new Error(\n            `Target is outside the vault: ${pathArg} (vault: ${vaultPath})`,\n          );\n        }\n\n",
+      "to": "",
+      "expect": ["G5"],
+      "_note": "The G5 fixture is a VALID asset one level above the vault, so removing the guard makes the read SUCCEED and print a body from outside — the axis reddens on output, not merely on a non-zero exit (§A38: a negated exit-code predicate is satisfied by many outcomes, ENOENT included)."
+    },
+    "M6_raw_output_extra_newline": {
+      "from": "          process.stdout.write(body);",
+      "to": "          process.stdout.write(body + \"\\n\");",
+      "expect": ["G1", "G2", "G3"],
+      "_note": "The most tempting 'harmless' change — println instead of print. It breaks the round trip (set-body appends its own trailing newline, so the body grows by one blank line on every cycle), breaks the byte-exact raw output, and turns the body-less asset's empty output into a newline."
+    },
+    "M7_enoent_branch_removed": {
+      "from": "          if ((readError as NodeJS.ErrnoException).code === \"ENOENT\") {\n            throw new Error(`Target file not found: ${pathArg}`);\n          }\n",
+      "to": "",
+      "expect": ["G7"],
+      "_note": "The raw fs error still exits non-zero, so only the MESSAGE distinguishes the two revisions — G7 asserts the message for that reason."
+    },
+    "M8_writes_to_the_target": {
+      "from": "        const frontmatterBlock = `---\\n${parsed.content}\\n---`;",
+      "to": "        const frontmatterBlock = `---\\n${parsed.content}\\n---`;\n        (await import(\"fs\")).appendFileSync(targetPath, \"MUTANT WROTE HERE\\n\");",
+      "expect": ["G8"],
+      "_note": "read-only is a NEGATIVE guarantee — nothing in the shipped code would redden if it silently acquired a write. This mutant supplies the write, so G8 (byte-identical file + unchanged size + surviving stale updatedAt) has a state in which it CAN be red. ⚠ It also perturbs G1/G2/G3/G4 (the file grows before set-body reads it back), which is expected: the driver requires the NAMED axes to be red, not that no others are. ⛔ The first form of this mutant used `require(\"fs\")` and was VACUOUS — the module is ESM, so `require` is not defined, the action threw a ReferenceError inside its own catch and never wrote anything: G1-G4 reddened (the command failed outright) while G8 stayed GREEN, i.e. the mutant measured a crash instead of a write (§A12 — the mutation landed but did not change the behaviour it claimed). The dynamic `import()` form works because the action is already async. Kept in the note so the next author does not re-derive it."
+    },
+    "M9_process_exit_restored": {
+      "from": "          process.stdout.write(body);\n        }\n",
+      "to": "          process.stdout.write(body);\n        }\n        process.exit(0);\n",
+      "expect": ["G1", "G1b", "G2", "G3", "G4"],
+      "_note": "Restores the truncation defect the review caught: process.exit(0) does not wait for an async stdout write to drain, and stdout is async on a PIPE. Measured on the built bundle with the largest live asset (424 964-byte body): file 424 964 bytes, pipe 65 536 — 84.6 % lost, --json unparseable. Every success axis asserts `exit was never called`, so all of them redden. The DELIVERED-bytes half needs a real process — get-body-9de09856-pipe.harness.ts."
+    },
+    "M10_asset_check_reads_whole_file": {
+      "from": "        if (!/^\\s*exo__Asset_uid:/m.test(parsed.content)) {",
+      "to": "        if (!/^\\s*exo__Asset_uid:/m.test(original)) {",
+      "expect": ["G11"],
+      "_note": "The set-body wording, which tests the WHOLE file: an exo__Asset_uid line in the BODY (yaml fence in docs, template skeleton) then satisfies the guard and a non-asset has its body printed. Live false-positive population is 0 of 46 164, so nothing but this axis can see the hole — which is why it is pinned rather than left as a mirror."
+    },
+    "M11_body_last_char_dropped": {
+      "from": "        const body = afterBlock.replace(/^\\r?\\n/, \"\");",
+      "to": "        const body = afterBlock.replace(/^\\r?\\n/, \"\").slice(0, -1);",
+      "expect": ["G2", "G1b"],
+      "_note": "Drops the body's LAST character (M2 shifts the FRONT). ⛤ Note which axes DON'T redden: G1's round trip stays GREEN, because the character lost from a newline-terminated body is exactly the newline set-body appends back — the pair's normalisation MASKS a tail loss. That is precisely why the byte-exact G2 and the no-trailing-newline G1b exist: the load-bearing round-trip axis alone is blind to this class."
+    },
+    "M12_no_frontmatter_guard_removed": {
+      "from": "        if (!parsed.exists) {\n          throw new Error(\n            `No frontmatter block found in ${vaultRelative}; get-body prints the body that FOLLOWS the frontmatter block.`,\n          );\n        }\n",
+      "to": "",
+      "expect": ["G12"],
+      "_note": "Round-2 review found this branch pinned by NOTHING: every other fixture begins with `---`, so no axis reached it. Without the guard the file falls through to the uid check, which refuses with a DIFFERENT message — hence G12 asserts the message, not merely a non-zero exit (§A38: a negated exit predicate is satisfied by many outcomes)."
+    },
+    "M13_guard_order_swapped_back": {
+      "from": "        if (!parsed.exists) {\n          throw new Error(\n            `No frontmatter block found in ${vaultRelative}; get-body prints the body that FOLLOWS the frontmatter block.`,\n          );\n        }\n",
+      "to": "        if (!/^\\s*exo__Asset_uid:/m.test(original)) {\n          throw new Error(\n            `Not a vault asset (no exo__Asset_uid): ${vaultRelative}. get-body only reads existing assets.`,\n          );\n        }\n        if (!parsed.exists) {\n          throw new Error(\n            `No frontmatter block found in ${vaultRelative}; get-body prints the body that FOLLOWS the frontmatter block.`,\n          );\n        }\n",
+      "expect": ["G12"],
+      "_note": "Restores the PRE-FIX guard order (whole-file uid check first). The only input that distinguishes the two orders is a file with neither a frontmatter block nor a uid — G12's fixture — where the old order answers 'Not a vault asset' instead of naming the missing block. Both orders refuse and both exit non-zero, so only the MESSAGE separates them: that is why this mutant exists and why G12 asserts the message."
+    }
+  }
+}
