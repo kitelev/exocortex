@@ -3682,6 +3682,13 @@ export class GroundingExecutor {
    *   asset at the vault root, so such a grounding is refused too. No authored
    *   grounding uses that combination today, and `property_delete` covers
    *   intentional removal, so refusing loudly is the safer trade.
+   * - `from` and `to` resolve to the SAME value (#4432). Such a request can only
+   *   be a no-op — the element is rewritten with itself — and a success would be
+   *   indistinguishable from a real replacement, because the CLI prints the
+   *   command's vault-authored `exocmd__Command_successMessage` on any
+   *   `success: true`. It is checked AFTER the `from`-not-present guard, so a
+   *   degenerate pair that is also absent still hears the more diagnostic
+   *   "is not a value of".
    *
    * Comparison is on DECODED forms (as in `executePropertyAppend`): `existing`
    * holds the raw on-disk items, so a stored `"Say \"hi\""` matches a plain
@@ -3757,6 +3764,18 @@ export class GroundingExecutor {
       };
     }
 
+    const fromIndex = existing.findIndex(
+      (item) => decodeYamlSequenceItem(item) === fromPlain,
+    );
+    if (fromIndex === -1) {
+      return {
+        success: false,
+        error:
+          `property_replace: "${fromPlain}" is not a value of ` +
+          `<${grounding.targetProperty}> on this asset — refusing rather than appending`,
+      };
+    }
+
     // #4432 — `from === to` can only be a no-op: the map branch below rewrites
     // the element with itself, `updateProperty` emits the same list, and the
     // file comes back byte-identical (measured: same `shasum`, `updatedAt` not
@@ -3771,6 +3790,12 @@ export class GroundingExecutor {
     // remaining class naturally writes `from === to`, reads the green line and
     // believes the class is gone (#4302).
     //
+    // ⛤ Placed AFTER the absent-value guard on purpose (review of #4433): when
+    // `from === to` AND the value is not in the list at all, "is not a value of"
+    // is the more diagnostic of the two true statements — a template or composite
+    // whose two expressions collapsed onto the same WRONG value should hear that
+    // the value was never there, not merely that the request was degenerate.
+    //
     // Refusing is safe here: a sweep of `~/.claude/bin`, `~/dotfiles/scripts`
     // and this repo found no caller relying on an idempotent `from === to`.
     if (fromPlain === toPlain) {
@@ -3780,18 +3805,6 @@ export class GroundingExecutor {
           `property_replace: replaceFromExpression and replaceToExpression both ` +
           `resolved to "${fromPlain}" — this can only leave <${grounding.targetProperty}> ` +
           `unchanged, and reporting a no-op as a replacement would hide that`,
-      };
-    }
-
-    const fromIndex = existing.findIndex(
-      (item) => decodeYamlSequenceItem(item) === fromPlain,
-    );
-    if (fromIndex === -1) {
-      return {
-        success: false,
-        error:
-          `property_replace: "${fromPlain}" is not a value of ` +
-          `<${grounding.targetProperty}> on this asset — refusing rather than appending`,
       };
     }
 
