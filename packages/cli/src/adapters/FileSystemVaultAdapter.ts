@@ -113,6 +113,100 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
   }
 
   /**
+   * The ONE cause of a null `getFrontmatter` that is a defect: a frontmatter
+   * block that is PRESENT and does NOT parse. Contract + why the three outcomes
+   * are kept apart: `IVaultFrontmatterManager.getFrontmatterParseFailure`.
+   *
+   * ⛔ The predicate STARTED OUT identical to `updateFrontmatter`'s below and is NOT
+   * any more — the earlier wording of this line ("the SAME one … already uses") was
+   * made false by the review fix for comment-only bodies, and is withdrawn here rather
+   * than left to rot. Both still agree that a block must be present and that an EMPTY
+   * one (`---\n\n---`) is a legitimate "no keys yet"; they now differ on a body of
+   * ONLY YAML comments, and that difference is DELIBERATE because the two paths answer
+   * different questions:
+   *
+   *   - READ (here): "is there a failure to report?" → No. A comment-only block carries
+   *     no keys, exactly like an empty one; reporting it would be noise.
+   *   - WRITE (`updateFrontmatter`): "may I re-serialise this block?" → No. Patching
+   *     rewrites the whole block through js-yaml, which would DESTROY the comment, so
+   *     refusing is the correct answer even though there are no keys to lose.
+   *
+   * ⇒ Do not "unify" them without deciding that question first: making the write path
+   * silent here would silently delete a user's comment on the next patch.
+   *
+   * The message comes from js-yaml itself rather than being authored here, so
+   * it cannot drift from what actually rejected the file.
+   *
+   * ⛔ COST, stated honestly because an earlier draft of this comment got it
+   * wrong: the caller asks whenever `getFrontmatter` returned null, and that is
+   * true for EVERY ordinary note with no block at all — not only for the rare
+   * malformed one. So this performs a second full read + regex pass over those
+   * files on every vault walk.
+   *
+   * ⛤ MEASURED, not guessed (2026-09-28, the three canonical vaults): files
+   * with no block at all number **17 of 54 314** `.md`, so on this corpus the
+   * extra read is negligible. The cost scales with that count, which is
+   * vault-dependent — a vault of ordinary notes would pay more. What is NOT
+   * conditional is the withdrawal of the old claim: "runs only for a file that
+   * already failed" was false, and a comment that misstates its own mechanism
+   * is the defect whatever the number turns out to be.
+   */
+  getFrontmatterParseFailure(file: IFile): { reason: string } | null {
+    let content: string;
+    try {
+      // Read-then-catch, no exists/stat probe first (`js/file-system-race`).
+      content = fs.readFileSync(this.resolvePath(file.path), "utf-8");
+    } catch {
+      // Unreadable or gone — that is not a PARSE failure, and claiming one
+      // would put a wrong reason in front of the user.
+      return null;
+    }
+    const blockBody = FileSystemVaultAdapter.FRONTMATTER_BLOCK.exec(content)?.[1];
+    if (blockBody === undefined) return null;
+    // ⛤ A body with NO CONTENT LINE — only blanks and `#` comments — means what
+    //    the blessed empty block `---\n\n---` means: "no keys yet". js-yaml
+    //    throws `expected a document, but the input is empty` on it (measured,
+    //    not assumed), so without this it would land in the catch below and be
+    //    reported — noise on a legitimate authoring shape (review of PR #4439).
+    // ⛔ Judged on the INPUT, not on the parser's wording: matching that message
+    //    would pin the diagnostic to a dependency's prose, the same mistake the
+    //    axis avoids by asserting `(line:column)` instead of the message text.
+    // ⛔ ASCII-ONLY, и это НЕ педантизм. `String.prototype.trim()` снимает целый класс
+    //    юникодных пробелов (NBSP U+00A0, EN/EM SPACE, IDEOGRAPHIC SPACE, BOM), а js-yaml
+    //    разделителем перед `#` считает ТОЛЬКО ASCII space/tab. Предикат на `.trim()`
+    //    молчал бы о теле `<NBSP># c`, которое парсер грузит РЕАЛЬНЫМ скаляром `" # c"`
+    //    (а с BOM — бросает ДРУГУЮ ошибку) — то есть ровно тот тихий дроп, ради
+    //    устранения которого этот метод и заведён. Измерено на js-yaml 5.3.0, который
+    //    резолвит `packages/cli` (⛔ не корневой 4.3.1 — verify-before-assert §A18).
+    //    ⛤ Хвостовой `\r` допускается: блок с ФЕНСАМИ в LF и телом в CRLF сюда
+    //    доходит (чисто-CRLF файл отсекается раньше — его `FRONTMATTER_BLOCK` не
+    //    видит вовсе), и голая `\r`-строка — та же пустая строка, а не контент.
+    const NO_CONTENT_LINE = /^[ \t]*(#.*)?\r?$/;
+    const hasContentLine = blockBody
+      .split("\n")
+      .some((line) => !NO_CONTENT_LINE.test(line));
+    if (!hasContentLine) return null;
+    if (this.extractFrontmatter(content) !== null) return null;
+    try {
+      yaml.load(blockBody, { schema: yaml.YAML11_SCHEMA });
+      // ⛔ No nullish guard here on purpose: a body of the literal `null` DOES
+      //    load to null and is NOT a usable mapping — silencing it would hide a
+      //    real malformed asset. The empty-document case is already handled
+      //    above, by the input, before we ever parse.
+      // Parsed into SOMETHING that is not a usable frontmatter mapping: a bare
+      // scalar, a sequence, or a mapping whose keys are not strings (`: : :`
+      // loads as `{null: …}`) — the last is what `parseYamlFrontmatterTolerant`
+      // rejects, so name the requirement, not just the shape.
+      return { reason: "frontmatter is not a mapping with string keys" };
+    } catch (error) {
+      return {
+        reason:
+          error instanceof Error ? error.message.split("\n")[0] : String(error),
+      };
+    }
+  }
+
+  /**
    * PATCH the file's frontmatter block with the keys `updater` returns,
    * through the core carrier of the key dialect `FrontmatterService.applyPatch`
    * (req `2a020489`) — in parity with the plugin's `ObsidianVaultAdapter`:
@@ -144,7 +238,7 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     const blockBody = FileSystemVaultAdapter.FRONTMATTER_BLOCK.exec(content)?.[1];
     if (parsed === null && blockBody !== undefined && blockBody.trim() !== "") {
       throw new Error(
-        `updateFrontmatter: frontmatter of ${file.path} is not parseable — refusing to patch (would drop keys)`,
+        `updateFrontmatter: frontmatter of ${file.path} is not parseable — refusing to patch (re-serialising would overwrite the unreadable block)`,
       );
     }
     const target: IFrontmatter = parsed ?? {};

@@ -1023,6 +1023,7 @@ export class NoteToRDFConverter {
     // Notice toasts instead of one per skipped file.
     let invariantViolationCount = 0;
     let invalidIriCount = 0;
+    let unparseableFrontmatterCount = 0;
 
     // FileSpace skip (onto-RFC 18808c73 Phase 5, ExoSync Phase C): spaces
     // declared `exo__FileSpace` in the vault have their mount folders
@@ -1099,6 +1100,40 @@ export class NoteToRDFConverter {
         // (which previously tripped the SPARQL executor with
         // "Literals cannot appear in subject position").
         const frontmatter = this.vault.getFrontmatter(file);
+
+        // A null frontmatter has TWO causes, and only one is a defect: the file
+        // has no block at all (a plain note — legitimately not an asset), or it
+        // has one that does NOT parse (a malformed asset). Without this branch
+        // the second fell through to `convertNote`, which produced zero triples
+        // and threw nothing — so the file was dropped with NO `skippedFiles`
+        // entry and NO log line, while every other rejection was named. That
+        // made the "N file(s) skipped" list silently non-exhaustive, and any
+        // gate reading it took the part for the whole (measured 2026-09-27,
+        // vault-exodev: 2 assets missing from a 6-entry list).
+        //
+        // Feature-detected: an adapter without the capability keeps the
+        // previous behaviour exactly (see IVaultFrontmatterManager).
+        if (!frontmatter) {
+          const parseFailure = this.vault.getFrontmatterParseFailure?.(file);
+          if (parseFailure) {
+            if (strict) {
+              throw new Error(
+                `Unparseable frontmatter in "${file.path}": ${parseFailure.reason}`,
+              );
+            }
+            skippedFiles.push({
+              path: file.path,
+              reason: `Unparseable frontmatter: ${parseFailure.reason}`,
+            });
+            unparseableFrontmatterCount++;
+            this.logger.info(
+              `Skipping file with unparseable frontmatter: ${file.path}`,
+              { reason: parseFailure.reason },
+            );
+            continue;
+          }
+        }
+
         const violation = frontmatter
           ? this.validateExocortexAsset(frontmatter, file.basename)
           : null;
@@ -1164,6 +1199,12 @@ export class NoteToRDFConverter {
       this.logger.warn(
         `Skipped ${invariantViolationCount} file${invariantViolationCount === 1 ? "" : "s"} with invariant violations during indexing (paths in developer console)`,
         { count: invariantViolationCount },
+      );
+    }
+    if (unparseableFrontmatterCount > 0) {
+      this.logger.warn(
+        `Skipped ${unparseableFrontmatterCount} file${unparseableFrontmatterCount === 1 ? "" : "s"} with unparseable frontmatter during indexing (paths in developer console)`,
+        { count: unparseableFrontmatterCount },
       );
     }
     if (invalidIriCount > 0) {
