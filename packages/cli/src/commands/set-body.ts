@@ -5,6 +5,7 @@ import { FrontmatterService } from "@kitelev/exocortex-core";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { WikilinkValidator } from "../services/WikilinkValidator.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
+import { guardStdioAgainstClosedReader } from "../utils/stdioClosedReader.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import {
   DEFAULT_TIMEZONE,
@@ -114,6 +115,13 @@ export function setBodyCommand(): Command {
       "Skip wikilink existence validation for the new body",
     )
     .action(async (pathArg: string, options: SetBodyOptions) => {
+      // ⛔ FIRST statement of the action, and load-bearing for the fix below: once
+      // the success path stops calling process.exit(0), the process lives long
+      // enough for a reader that left early (`--dry-run | less`, quit with `q`) to
+      // deliver EPIPE as an unhandled 'error' event — an uncaught exception, rc=1.
+      // Measured: origin/main rc=0 5/5, the exit-less fix WITHOUT this guard rc=1
+      // 5/5, on the same `| head -c 200` invocation.
+      guardStdioAgainstClosedReader();
       try {
         const vaultPath = resolve(options.vault);
         if (!existsSync(vaultPath)) {
@@ -263,7 +271,37 @@ export function setBodyCommand(): Command {
         };
         process.stdout.write(JSON.stringify(output) + "\n");
 
-        process.exit(0);
+        // ⛔ NO process.exit(0) here — the process must end naturally so stderr
+        // DRAINS. `process.exit` does not wait for an asynchronous write to
+        // flush, and stderr is asynchronous whenever it is a PIPE — which is how
+        // a preview is read in practice (`set-body … --dry-run | less`, or any
+        // capture by a wrapper/agent). Measured on the built bundle with a
+        // 300 KiB body (issue #4436):
+        //     stderr → FILE   605 709 bytes arrived
+        //     stderr → PIPE    65 536 bytes  (89.2 % silently lost, tail gone)
+        // `--dry-run` exists to be READ BEFORE APPLYING, so a truncated preview
+        // is a decision surface that lies: the operator sees a document ending
+        // where the buffer ended and concludes the body is shorter than it is
+        // (dry-run-preview-not-real-output). The stdout echo is ~120 bytes of
+        // JSON and can never truncate, which is why this stayed invisible — the
+        // obvious channel is safe and the truncating one is the diagnostic one.
+        // Nothing here holds the event loop open (the file I/O is synchronous
+        // and the wikilink validation has already been awaited), so falling off
+        // the end of the action is both sufficient and correct. Same fix as
+        // get-body in #4434.
+        // ⛔ The exit code stays 0 ONLY because the action installs
+        // guardStdioAgainstClosedReader() first. Without the exit, a reader that
+        // left early delivers EPIPE as an unhandled 'error' event — rc=1 plus a
+        // stack trace. Measured on the same `| head -c 200` invocation:
+        // origin/main rc=0 5/5, this fix WITHOUT the guard rc=1 5/5, with it
+        // rc=0. Locked by axis S7; round-1 review found this by running it, and
+        // an earlier draft of this comment claimed "the exit code stays 0"
+        // unconditionally, which was false for exactly that input.
+        // Locked by the real-pipe axis in set-body-4436-pipe.harness.ts — the
+        // jest axes CANNOT see this: they mock process.stderr.write and
+        // process.exit, so no pipe and no flush is ever exercised
+        // (integration-test-revert-verify §A66 — the axes judge an intermediate
+        // record, the product is the DELIVERED preview).
       } catch (error) {
         ErrorHandler.handle(error as Error);
       }
