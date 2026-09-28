@@ -29,9 +29,15 @@
  * zero occurrences — and since neither spec is swept by CI, the loss would only
  * show on a deliberate re-run. Verified by running the driver: M22 → red [B16],
  * control 0. Consolidating the two belongs with the siblings that still need the
- * guard: `get-body` (#4447 — shipped WITHOUT it, so it crashes today) and the
- * three commands in #4444 (which still call process.exit(0), so they truncate
- * instead).
+ * guard — see the list below.
+ *
+ * ⛤ Consumers of THIS module, kept current because the list is read as fact:
+ *   `set-body` (#4443) · `get-body` (#4447 — was the crashing one, now guarded).
+ * Still outstanding: the three commands in #4444 (`set-property`,
+ * `remove-property`, `create --dry-run`). They still call `process.exit(0)` on
+ * their success path, so today they TRUNCATE silently rather than crash; dropping
+ * that exit without adding this guard would trade the truncation for the very
+ * EPIPE crash #4447 fixed, so both halves land together there too.
  */
 let stdioGuarded = false;
 

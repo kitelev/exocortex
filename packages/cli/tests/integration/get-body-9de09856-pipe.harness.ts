@@ -35,10 +35,13 @@
  *      channel and the real bytes
  *   P5 a small body still arrives complete (guards against a fix that only works
  *      above the buffer threshold)
+ *   P6 a reader that LEAVES EARLY (`| head -c 200`, `| less` quit with `q`) still
+ *      gets rc=0 and no EPIPE stack trace — the OTHER half of dropping
+ *      process.exit(0), shipped in #4447
  *
  * Prints `✅ P<n>` / `❌ P<n>` per axis and `PASS=<n> FAIL=<n>`; exit 1 on failure.
  */
-import { spawnSync } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { fileURLToPath } from "url";
 import * as fs from "fs";
 import * as os from "os";
@@ -224,6 +227,68 @@ function runPiped(args: string[]): { rc: number; out: Buffer; err: string } {
   else ok("P5", `${want} bytes (below the buffer threshold)`);
 }
 
-fs.rmSync(vault, { recursive: true, force: true });
-console.log(`PASS=${pass} FAIL=${fail}`);
-process.exitCode = fail > 0 ? 1 : 0;
+// tsx transpiles this harness to CJS, where top-level await is unavailable — P6 and
+// the verdict live in an async IIFE so the summary still prints AFTER the last axis.
+void (async (): Promise<void> => {
+  // ---- P6: a reader that LEAVES EARLY must not turn rc 0 into a crash --------
+  // The other half of "no process.exit(0)" (#4447; #4434 landed only the first).
+  // The exit used to terminate the process synchronously, BEFORE the OS delivered
+  // the asynchronous EPIPE that a closed reader causes. Without it AND without
+  // guardStdioAgainstClosedReader(), that EPIPE is an unhandled 'error' event on
+  // stdout — an uncaught exception: rc=1 plus a stack trace, on the very channel
+  // this command documents (`get-body <p> | head -c 200`). Measured on the built
+  // bundle, 549 528-byte body: reader-to-EOF rc=0 (549 528 B); reader leaving after
+  // 200 B WITHOUT the guard rc=1 + "Error: write EPIPE" 5/5; the already-guarded
+  // sibling `set-body --dry-run` on the same invocation rc=0 3/3 (canary: the probe
+  // itself is sound, the guard is the differentiator). This axis reddens when the
+  // guard call is removed.
+  {
+    const rc = await new Promise<number | string>((done) => {
+      const child = spawn(
+        process.execPath,
+        [DIST, "get-body", bigRel, "--vault", vault],
+        { cwd: TREE, stdio: ["ignore", "pipe", "pipe"] },
+      );
+      let seen = 0;
+      let stderrText = "";
+      // ⛔ A timeout, not hygiene: natural termination is exactly what this harness
+      // measures, so a subject that HANGS is an expected failure mode — and without
+      // a timeout the harness hangs with it, which is indistinguishable from "the
+      // axis does not differentiate" (integration-test-revert-verify §A70/§A116).
+      const killer = setTimeout(() => {
+        child.kill("SIGKILL");
+        done("timeout");
+      }, 120_000);
+      child.stderr.on("data", (chunk: Buffer) => {
+        stderrText += chunk.toString("utf-8");
+      });
+      child.stdout.on("data", (chunk: Buffer) => {
+        seen += chunk.length;
+        // Leave once a prefix has been read — exactly what `| head -c 200` or a
+        // reader quitting `less` does to the writer still mid-body.
+        if (seen >= 200) child.stdout.destroy();
+      });
+      child.on("close", (code) => {
+        clearTimeout(killer);
+        done(
+          code === 0 && /EPIPE|Unhandled 'error'/.test(stderrText)
+            ? "epipe-trace"
+            : (code ?? -1),
+        );
+      });
+    });
+    if (rc === 0) ok("P6", "reader left after 200 bytes — rc=0, no EPIPE crash");
+    else if (rc === "timeout") bad("P6", "the process hung after the reader left");
+    else if (rc === "epipe-trace")
+      bad("P6", "rc=0 but an EPIPE stack trace reached the user");
+    else
+      bad(
+        "P6",
+        `rc=${rc} — an early-closing reader crashes the command (the guard is what keeps it 0)`,
+      );
+  }
+
+  fs.rmSync(vault, { recursive: true, force: true });
+  console.log(`PASS=${pass} FAIL=${fail}`);
+  process.exitCode = fail > 0 ? 1 : 0;
+})();
