@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "fs";
 import { FrontmatterService } from "@kitelev/exocortex-core";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
+import { guardStdioAgainstClosedReader } from "../utils/stdioClosedReader.js";
 
 interface GetBodyOptions {
   vault: string;
@@ -47,6 +48,22 @@ export function getBodyCommand(): Command {
       "Print {path, bodyBytes, body} as JSON instead of the raw body",
     )
     .action(async (pathArg: string, options: GetBodyOptions) => {
+      // ⛔ FIRST statement of the action, and the second half of "no
+      // process.exit(0)" below (#4447). #4434 landed only the first half: the exit
+      // used to terminate the process synchronously, BEFORE the OS delivered the
+      // asynchronous EPIPE that a reader closing its end mid-write causes. Without
+      // the exit AND without this guard, that EPIPE is an unhandled 'error' event
+      // on stdout — an uncaught exception: rc=1 plus a Node stack trace printed to
+      // the user, on the very channel this command documents
+      // (`get-body <p> | head -c 200`, `| less` quit with `q`). Measured on the
+      // built bundle with a 549 528-byte body:
+      //     reader reads to EOF                  rc=0, 549 528 bytes
+      //     reader leaves after 200 B, no guard  rc=1 + "Error: write EPIPE"  5/5
+      //     `set-body` (guard shipped in #4443)  rc=0                         3/3
+      // Locked by the real-pipe axis P6 in get-body-9de09856-pipe.harness.ts; the
+      // jest axes CANNOT see it (they mock process.stdout.write, so no pipe and no
+      // reader ever exist — integration-test-revert-verify §A66).
+      guardStdioAgainstClosedReader();
       try {
         const vaultPath = resolve(options.vault);
         if (!existsSync(vaultPath)) {
@@ -159,6 +176,12 @@ export function getBodyCommand(): Command {
         // process.exit, so no pipe and no flush is ever exercised
         // (integration-test-revert-verify §A66 — the axes judge an intermediate
         // record, the product is the DELIVERED effect).
+        //
+        // ⛤ Dropping the exit is only HALF the fix: it also stops terminating the
+        // process before an asynchronous EPIPE can arrive. The paired half is
+        // guardStdioAgainstClosedReader() at the top of this action (#4447) —
+        // without it this command exits 1 with a stack trace whenever the reader
+        // leaves early, which is ordinary use of a pipe.
       } catch (error) {
         ErrorHandler.handle(error as Error);
       }
