@@ -175,6 +175,32 @@ describe("Ticket e6abe049: a body carrying a frontmatter COPY is refused fail-lo
     );
   }
 
+  /**
+   * SUCCESS is "process.exit was never called" — not "called with 0". set-body falls
+   * off the end of its action so the process ends naturally and stderr DRAINS
+   * (issue #4436: `process.exit` does not wait for an asynchronous write, and stderr
+   * is asynchronous when it is a pipe — a 300 KiB `--dry-run` preview lost 89.2 %).
+   */
+  function expectNaturalExit(codes: number[]): void {
+    expect(codes).toEqual([]);
+  }
+
+  /**
+   * REFUSAL requires an actual non-zero code — ⛔ not `not.toContain(0)`, which is
+   * ALSO satisfied by "exit was never called" and so would pass on a command that
+   * silently accepted the body (§A38).
+   *
+   * ⛤ Honest scope, corrected in round-1 review: PROPHYLACTIC, not a fix for a
+   * predicate that is vacuous today. Every refusal here — set-body's and create's
+   * alike — still exits non-zero via ErrorHandler.handle(), so the old form would
+   * still detect it. What changed is that the success path now returns [], giving
+   * the weaker form a reachable way to pass wrongly.
+   */
+  function expectRefused(codes: number[]): void {
+    expect(codes.length).toBeGreaterThan(0);
+    expect(codes.some((c) => c !== 0)).toBe(true);
+  }
+
   const GUARD_MSG = /COPY of a frontmatter block/;
 
   it("Q1: set-body refuses the REAL pre-fix hub body (exoas-exodev@169e6846) and leaves the file byte-identical @req:dbb19e9a-5425-4ccf-94b5-048681359bfb", async () => {
@@ -182,7 +208,7 @@ describe("Ticket e6abe049: a body carrying a frontmatter COPY is refused fail-lo
     await runSetBodyFile(REAL_HUB_COPY);
     expect(errChunks.join("\n")).toMatch(GUARD_MSG);
     expect(errChunks.join("\n")).toContain("31c2bdee-db5f-4e0b-b34e-b1b0e2c12bd5");
-    expect(exitCodes).not.toContain(0);
+    expectRefused(exitCodes);
     expect(fs.readFileSync(taskAbs()).equals(before)).toBe(true);
   });
 
@@ -190,7 +216,7 @@ describe("Ticket e6abe049: a body carrying a frontmatter COPY is refused fail-lo
     const before = fs.readFileSync(taskAbs());
     await runSetBodyFile(REAL_HUB_COPY, ["--skip-wikilink-validation"]);
     expect(errChunks.join("\n")).toMatch(GUARD_MSG);
-    expect(exitCodes).not.toContain(0);
+    expectRefused(exitCodes);
     expect(fs.readFileSync(taskAbs()).equals(before)).toBe(true);
   });
 
@@ -201,7 +227,7 @@ describe("Ticket e6abe049: a body carrying a frontmatter COPY is refused fail-lo
       { from: "user" },
     );
     expect(errChunks.join("\n")).toMatch(GUARD_MSG);
-    expect(exitCodes).not.toContain(0);
+    expectRefused(exitCodes);
     expect(fs.readFileSync(taskAbs()).equals(before)).toBe(true);
   });
 
@@ -214,7 +240,7 @@ describe("Ticket e6abe049: a body carrying a frontmatter COPY is refused fail-lo
     const before = fs.readFileSync(taskAbs());
     await runSetBodyFile(REAL_HUB_COPY, ["--skip-wikilink-validation", "--dry-run"]);
     expect(errChunks.join("\n")).toMatch(GUARD_MSG);
-    expect(exitCodes).not.toContain(0);
+    expectRefused(exitCodes);
     expect(stderrChunks.join("")).not.toContain("DRY RUN PREVIEW");
     expect(fs.readFileSync(taskAbs()).equals(before)).toBe(true);
   });
@@ -229,7 +255,7 @@ describe("Ticket e6abe049: a body carrying a frontmatter COPY is refused fail-lo
       { from: "user" },
     );
     expect(errChunks.join("\n")).toMatch(GUARD_MSG);
-    expect(exitCodes).not.toContain(0);
+    expectRefused(exitCodes);
     expect(stderrChunks.join("")).not.toContain("DRY RUN PREVIEW");
     expect(fs.readdirSync(inbox).length).toBe(before);
   });
@@ -237,28 +263,28 @@ describe("Ticket e6abe049: a body carrying a frontmatter COPY is refused fail-lo
   it("Q3: a live exo__Template body (placeholder uid/createdAt) is ACCEPTED — 31 such assets exist @req:dbb19e9a-5425-4ccf-94b5-048681359bfb", async () => {
     await runSetBodyFile(TEMPLATE_BODY, ["--skip-wikilink-validation"]);
     expect(errChunks.join("\n")).not.toMatch(GUARD_MSG);
-    expect(exitCodes).toContain(0);
+    expectNaturalExit(exitCodes);
     expect(fs.readFileSync(taskAbs(), "utf-8")).toContain("$randomUUIDv4");
   });
 
   it("Q3b: a template body whose PROSE below quotes a real timestamp is ACCEPTED — the leading block ends at its own --- @req:dbb19e9a-5425-4ccf-94b5-048681359bfb", async () => {
     await runSetBodyFile(TEMPLATE_BODY_WITH_QUOTE_BELOW, ["--skip-wikilink-validation"]);
     expect(errChunks.join("\n")).not.toMatch(GUARD_MSG);
-    expect(exitCodes).toContain(0);
+    expectNaturalExit(exitCodes);
     expect(fs.readFileSync(taskAbs(), "utf-8")).toContain("Разбор инцидента");
   });
 
   it("Q4: an ordinary body (heading, and a real uid inside a ```yaml fence) is ACCEPTED @req:dbb19e9a-5425-4ccf-94b5-048681359bfb", async () => {
     await runSetBodyFile(YAML_FENCE_BODY, ["--skip-wikilink-validation"]);
     expect(errChunks.join("\n")).not.toMatch(GUARD_MSG);
-    expect(exitCodes).toContain(0);
+    expectNaturalExit(exitCodes);
     expect(fs.readFileSync(taskAbs(), "utf-8")).toContain("```yaml");
   });
 
   it("Q5: a `---` thematic break followed by prose quoting a real uid is ACCEPTED — a break is not a fence @req:dbb19e9a-5425-4ccf-94b5-048681359bfb", async () => {
     await runSetBodyFile(THEMATIC_BREAK_BODY, ["--skip-wikilink-validation"]);
     expect(errChunks.join("\n")).not.toMatch(GUARD_MSG);
-    expect(exitCodes).toContain(0);
+    expectNaturalExit(exitCodes);
     expect(fs.readFileSync(taskAbs(), "utf-8")).toContain("Вывод: копию сняли.");
   });
 
@@ -283,7 +309,7 @@ describe("Ticket e6abe049: a body carrying a frontmatter COPY is refused fail-lo
     await runSetBodyFile(evil, ["--skip-wikilink-validation"]);
     const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
     expect(elapsedMs).toBeLessThan(500);
-    expect(exitCodes).toContain(0);
+    expectNaturalExit(exitCodes);
   });
 
   it("Q6: create --body-file refuses the same copy and creates NOTHING @req:dbb19e9a-5425-4ccf-94b5-048681359bfb", async () => {
@@ -296,7 +322,7 @@ describe("Ticket e6abe049: a body carrying a frontmatter COPY is refused fail-lo
       { from: "user" },
     );
     expect(errChunks.join("\n")).toMatch(GUARD_MSG);
-    expect(exitCodes).not.toContain(0);
+    expectRefused(exitCodes);
     expect(fs.readdirSync(inbox).length).toBe(before);
   });
 
