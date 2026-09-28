@@ -5,6 +5,7 @@ import { FrontmatterService } from "@kitelev/exocortex-core";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { WikilinkValidator } from "../services/WikilinkValidator.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
+import { guardStdioAgainstClosedReader } from "../utils/stdioClosedReader.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import {
   DEFAULT_TIMEZONE,
@@ -114,6 +115,13 @@ export function setBodyCommand(): Command {
       "Skip wikilink existence validation for the new body",
     )
     .action(async (pathArg: string, options: SetBodyOptions) => {
+      // ⛔ FIRST statement of the action, and load-bearing for the fix below: once
+      // the success path stops calling process.exit(0), the process lives long
+      // enough for a reader that left early (`--dry-run | less`, quit with `q`) to
+      // deliver EPIPE as an unhandled 'error' event — an uncaught exception, rc=1.
+      // Measured: origin/main rc=0 5/5, the exit-less fix WITHOUT this guard rc=1
+      // 5/5, on the same `| head -c 200` invocation.
+      guardStdioAgainstClosedReader();
       try {
         const vaultPath = resolve(options.vault);
         if (!existsSync(vaultPath)) {
@@ -279,8 +287,16 @@ export function setBodyCommand(): Command {
         // obvious channel is safe and the truncating one is the diagnostic one.
         // Nothing here holds the event loop open (the file I/O is synchronous
         // and the wikilink validation has already been awaited), so falling off
-        // the end of the action is both sufficient and correct; the exit code
-        // stays 0. Same fix as get-body in #4434.
+        // the end of the action is both sufficient and correct. Same fix as
+        // get-body in #4434.
+        // ⛔ The exit code stays 0 ONLY because the action installs
+        // guardStdioAgainstClosedReader() first. Without the exit, a reader that
+        // left early delivers EPIPE as an unhandled 'error' event — rc=1 plus a
+        // stack trace. Measured on the same `| head -c 200` invocation:
+        // origin/main rc=0 5/5, this fix WITHOUT the guard rc=1 5/5, with it
+        // rc=0. Locked by axis S7; round-1 review found this by running it, and
+        // an earlier draft of this comment claimed "the exit code stays 0"
+        // unconditionally, which was false for exactly that input.
         // Locked by the real-pipe axis in set-body-4436-pipe.harness.ts — the
         // jest axes CANNOT see this: they mock process.stderr.write and
         // process.exit, so no pipe and no flush is ever exercised

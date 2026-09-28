@@ -44,7 +44,7 @@
  *
  * Prints `✅ S<n>` / `❌ S<n>` per axis and `PASS=<n> FAIL=<n>`; exit 1 on failure.
  */
-import { spawnSync } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { fileURLToPath } from "url";
 import * as fs from "fs";
 import * as os from "os";
@@ -322,6 +322,58 @@ function runPiped(args: string[]): { rc: number; out: Buffer; err: Buffer } {
   else ok("S6", "no-change notice delivered, file untouched, rc=0");
 }
 
-fs.rmSync(vault, { recursive: true, force: true });
-console.log(`PASS=${pass} FAIL=${fail}`);
-process.exitCode = fail > 0 ? 1 : 0;
+// tsx transpiles this harness to CJS, where top-level await is unavailable — S7 and
+// the verdict live in an async IIFE so the summary still prints AFTER the last axis.
+void (async (): Promise<void> => {
+  // ---- S7: a reader that LEAVES EARLY must not turn rc 0 into a crash --------
+  // The other half of "no process.exit(0)": the exit used to terminate the process
+  // synchronously, BEFORE the OS delivered the asynchronous EPIPE that a closed
+  // reader causes. Dropping it (S1's fix) makes that EPIPE reachable, and with no
+  // 'error' listener Node turns it into an uncaught exception — rc=1 plus a stack
+  // trace, on the very scenario the fix exists for (`--dry-run | less`, quit with
+  // `q`). Measured: origin/main rc=0 5/5; the exit-less fix WITHOUT the guard rc=1
+  // 5/5. This axis is what keeps the truncation fix from trading one regression for
+  // another; it reddens when guardStdioAgainstClosedReader is removed.
+  {
+    const rc = await new Promise<number | string>((done) => {
+      const child = spawn(
+        process.execPath,
+        [DIST, ...dryRunArgs(bigRel, bigBodyFile)],
+        { cwd: TREE, stdio: ["ignore", "ignore", "pipe"] },
+      );
+      let seen = 0;
+      let stderrText = "";
+      // ⛔ A timeout, not hygiene: if the subject hangs, the harness would hang with
+      // it and that is indistinguishable from "the axis does not differentiate"
+      // (integration-test-revert-verify §A70/§A116).
+      const killer = setTimeout(() => {
+        child.kill("SIGKILL");
+        done("timeout");
+      }, 120_000);
+      child.stderr.on("data", (chunk: Buffer) => {
+        stderrText += chunk.toString("utf-8");
+        seen += chunk.length;
+        // Leave once a prefix has been read — exactly what `| head -c 200` or a
+        // reader quitting `less` does to the writer still mid-preview.
+        if (seen >= 200) child.stderr.destroy();
+      });
+      child.on("close", (code) => {
+        clearTimeout(killer);
+        done(code === 0 && /EPIPE|Unhandled 'error'/.test(stderrText) ? "epipe-trace" : (code ?? -1));
+      });
+    });
+    if (rc === 0) ok("S7", "reader left after 200 bytes — rc=0, no EPIPE crash");
+    else if (rc === "timeout") bad("S7", "the process hung after the reader left");
+    else if (rc === "epipe-trace")
+      bad("S7", "rc=0 but an EPIPE stack trace reached the user");
+    else
+      bad(
+        "S7",
+        `rc=${rc} — an early-closing reader crashes the command (origin/main returns 0 here)`,
+      );
+  }
+
+  fs.rmSync(vault, { recursive: true, force: true });
+  console.log(`PASS=${pass} FAIL=${fail}`);
+  process.exitCode = fail > 0 ? 1 : 0;
+})();

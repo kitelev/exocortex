@@ -127,8 +127,16 @@ describe("Issue #3943: `cli set-body` overwrites the markdown body of an existin
    * REFUSAL requires an actual non-zero code — ⛔ not `not.toContain(0)`, which is
    * also satisfied by "exit was never called" and would therefore pass on a command
    * that silently did nothing (§A38 — a negated predicate is satisfied by many
-   * outcomes). Since the success path now never calls exit at all, the weaker form
-   * would be vacuous here in particular.
+   * outcomes).
+   *
+   * ⛤ Honest scope, corrected in round-1 review: this is PROPHYLACTIC, not a fix
+   * for a predicate that is vacuous today. Refusals still route through
+   * ErrorHandler.handle(), which calls process.exit with a non-zero code
+   * (ErrorHandler.ts:110,141,167) — untouched here — so `codes` is never [] on
+   * these paths right now and the old form would still detect the refusal. What
+   * changed is that the weaker form now has a reachable way to pass wrongly: the
+   * success path returns [], so any future edit that let a refusal fall through
+   * to it would go unnoticed.
    */
   function expectRefused(codes: number[]): void {
     expect(codes.length).toBeGreaterThan(0);

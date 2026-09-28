@@ -188,8 +188,13 @@ describe("Ticket e6abe049: a body carrying a frontmatter COPY is refused fail-lo
   /**
    * REFUSAL requires an actual non-zero code — ⛔ not `not.toContain(0)`, which is
    * ALSO satisfied by "exit was never called" and so would pass on a command that
-   * silently accepted the body (§A38). That weaker form became vacuous for the
-   * set-body axes the moment the success path stopped calling exit at all.
+   * silently accepted the body (§A38).
+   *
+   * ⛤ Honest scope, corrected in round-1 review: PROPHYLACTIC, not a fix for a
+   * predicate that is vacuous today. Every refusal here — set-body's and create's
+   * alike — still exits non-zero via ErrorHandler.handle(), so the old form would
+   * still detect it. What changed is that the success path now returns [], giving
+   * the weaker form a reachable way to pass wrongly.
    */
   function expectRefused(codes: number[]): void {
     expect(codes.length).toBeGreaterThan(0);
