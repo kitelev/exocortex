@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutants for issue #4436 — the DELIVERED-PREVIEW half of `set-body --dry-run`. Separate spec because the axis needs a REAL process with a REAL stderr pipe on the BUILT bundle, which jest cannot provide (its axes mock process.stderr.write and process.exit). ⛔ This spec and its harness run LOCALLY and under the mutant driver, NOT in CI: the CLI jest job does not build dist, and the harness is not named `*-verify.{sh,py}` so verify-harness-runner does not sweep it either (harness-invocation-surface §A19 — naming that inapplicability out loud rather than leaving it to be read as an oversight). Same shape as get-body-9de09856.pipe.spec.json, which locked the sibling fix in #4434. Expectation written BEFORE the run, and the RED state was OBSERVED on the pre-fix bundle: PASS=5 FAIL=1, S1 delivered 65 536 of 605 709 bytes (89.2 % lost, tail marker absent) while S2 (the same preview through a FILE) was byte-identical to the computed expectation. The harness rebuilds by default so a mutated copy of the tree is measured, not a stale bundle.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "❌ (S\\d+)",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/set-body.ts",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && npx tsx packages/cli/tests/integration/set-body-4436-pipe.harness.ts 2>&1",
+  "mutants": {
+    "M1_process_exit_after_write": {
+      "from": "        process.stdout.write(JSON.stringify(output) + \"\\n\");\n",
+      "to": "        process.stdout.write(JSON.stringify(output) + \"\\n\");\n        process.exit(0);\n",
+      "expect": ["S1"],
+      "_note": "Restores the pre-fix pattern: process.exit(0) at the end of the success path. It does not wait for an asynchronous write to drain, and stderr IS asynchronous when it is a pipe — so the --dry-run preview is cut at the 64 KiB buffer. Everything else stays GREEN, and that is what proves S1 measures PIPE DRAINING rather than 'rebuilding the document at all': S2 (file redirect) and S5 (small preview) never reach the buffer, S3/S4/S6 read the ~120-byte stdout echo, which can never truncate."
+    },
+    "M2_truncate_the_preview": {
+      "from": "            `--- DRY RUN PREVIEW ---\\n${updated}\\n--- END PREVIEW ---\\n`,\n",
+      "to": "            `--- DRY RUN PREVIEW ---\\n${updated.slice(0, 100)}\\n--- END PREVIEW ---\\n`,\n",
+      "expect": ["S1", "S2", "S5"],
+      "_note": "Control that the preview axes are not vacuous: a mutant that shortens the preview ITSELF must redden the pipe axis (S1), the file-redirect control (S2) AND the small-body axis (S5), while the write path (S4), the no-write guarantee (S3) and the no-change notice (S6) stay GREEN. Without this mutant, S2/S5 would have no demonstrated red state and 'the expectation is right' would rest on a single green run."
+    }
+  }
+}

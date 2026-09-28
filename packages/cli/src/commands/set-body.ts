@@ -263,7 +263,29 @@ export function setBodyCommand(): Command {
         };
         process.stdout.write(JSON.stringify(output) + "\n");
 
-        process.exit(0);
+        // ⛔ NO process.exit(0) here — the process must end naturally so stderr
+        // DRAINS. `process.exit` does not wait for an asynchronous write to
+        // flush, and stderr is asynchronous whenever it is a PIPE — which is how
+        // a preview is read in practice (`set-body … --dry-run | less`, or any
+        // capture by a wrapper/agent). Measured on the built bundle with a
+        // 300 KiB body (issue #4436):
+        //     stderr → FILE   605 709 bytes arrived
+        //     stderr → PIPE    65 536 bytes  (89.2 % silently lost, tail gone)
+        // `--dry-run` exists to be READ BEFORE APPLYING, so a truncated preview
+        // is a decision surface that lies: the operator sees a document ending
+        // where the buffer ended and concludes the body is shorter than it is
+        // (dry-run-preview-not-real-output). The stdout echo is ~120 bytes of
+        // JSON and can never truncate, which is why this stayed invisible — the
+        // obvious channel is safe and the truncating one is the diagnostic one.
+        // Nothing here holds the event loop open (the file I/O is synchronous
+        // and the wikilink validation has already been awaited), so falling off
+        // the end of the action is both sufficient and correct; the exit code
+        // stays 0. Same fix as get-body in #4434.
+        // Locked by the real-pipe axis in set-body-4436-pipe.harness.ts — the
+        // jest axes CANNOT see this: they mock process.stderr.write and
+        // process.exit, so no pipe and no flush is ever exercised
+        // (integration-test-revert-verify §A66 — the axes judge an intermediate
+        // record, the product is the DELIVERED preview).
       } catch (error) {
         ErrorHandler.handle(error as Error);
       }
