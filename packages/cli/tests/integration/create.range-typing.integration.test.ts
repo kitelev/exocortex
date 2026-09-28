@@ -95,13 +95,8 @@ function writeDef(
   );
 }
 
-/** UID-canon TBox: metaclasses (copied from the SHACL fixture), the class, its datatype props. */
-function buildTbox(vault: string): void {
-  const exoDir = path.join(vault, "assetspaces/kitelev/exoas-exo/exo");
-  fs.mkdirSync(exoDir, { recursive: true });
-  for (const f of fs.readdirSync(METACLASS_FIXTURES)) {
-    fs.copyFileSync(path.join(METACLASS_FIXTURES, f), path.join(exoDir, f));
-  }
+/** The class every axis creates instances of — written for EVERY axis (#4438). */
+function writeClass(vault: string): void {
   fs.mkdirSync(path.join(vault, TBOX_DIR), { recursive: true });
   fs.writeFileSync(
     path.join(vault, TBOX_DIR, `${CLASS_UID}.md`),
@@ -112,6 +107,16 @@ function buildTbox(vault: string): void {
       aliases: ["ems__Reminder"],
     }),
   );
+}
+
+/** UID-canon TBox: metaclasses (copied from the SHACL fixture), the class, its datatype props. */
+function buildTbox(vault: string): void {
+  const exoDir = path.join(vault, "assetspaces/kitelev/exoas-exo/exo");
+  fs.mkdirSync(exoDir, { recursive: true });
+  for (const f of fs.readdirSync(METACLASS_FIXTURES)) {
+    fs.copyFileSync(path.join(METACLASS_FIXTURES, f), path.join(exoDir, f));
+  }
+  writeClass(vault);
   writeDef(
     vault,
     "39197b8c-0000-4000-8000-000000000011",
@@ -169,6 +174,12 @@ describe(`ticket 2227d660: create types a scalar by the declared exo__Property_r
 
   beforeEach(() => {
     vault = fs.mkdtempSync(path.join(os.tmpdir(), "cli-2227d660-create-"));
+    // The CLASS itself, always — `buildTbox` adds the PROPERTY definitions on
+    // top for the axes that need them, so W3's "no property TBox mounted"
+    // control stays exactly that. Since issue #4438 `create` refuses a --class
+    // uid with no file in the vault, so without this the control would fail on
+    // the class instead of measuring the shape rule.
+    writeClass(vault);
     exitCodes = [];
     exitSpy = jest.spyOn(process, "exit").mockImplementation(((
       code?: number,

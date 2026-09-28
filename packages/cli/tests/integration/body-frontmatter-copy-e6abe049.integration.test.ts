@@ -41,7 +41,13 @@ const { createCommand } = await import("../../src/commands/create.js");
 
 const TASKS_DIR = "assetspaces/kitelev/exoas-my/tasks";
 const TASK_UID = "c1c1c1c1-0000-4000-8000-000000000001";
-const CLASS_UID = "65b58c34-7451-4b89-bea3-483f7c65fe73"; // pass-through (ztlk:Note)
+/**
+ * The class `create` is invoked with (ztlk:Note). Written into the fixture
+ * below: since issue #4438 `create` refuses a `--class` uid with no file in the
+ * vault, so a bare pass-through uid would make the body guard's control axis
+ * fail on the class instead of on the body.
+ */
+const CLASS_UID = "65b58c34-7451-4b89-bea3-483f7c65fe73";
 
 /**
  * VERBATIM leading fragment of the hub's pre-fix body (exoas-exodev@169e6846,
@@ -127,6 +133,12 @@ describe("Ticket e6abe049: a body carrying a frontmatter COPY is refused fail-lo
     fs.mkdirSync(path.join(vault, TASKS_DIR), { recursive: true });
     fs.mkdirSync(path.join(vault, "01 Inbox"), { recursive: true });
     fs.writeFileSync(taskAbs(), originalContent, "utf-8");
+    // The class `create` instances — see CLASS_UID's docblock.
+    fs.writeFileSync(
+      path.join(vault, TASKS_DIR, `${CLASS_UID}.md`),
+      `---\nexo__Asset_uid: ${CLASS_UID}\nexo__Asset_label: ztlk__Note\n---\n`,
+      "utf-8",
+    );
 
     stdoutChunks = [];
     errChunks = [];

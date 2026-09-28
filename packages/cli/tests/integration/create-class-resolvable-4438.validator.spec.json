@@ -1,0 +1,22 @@
+{
+  "_doc": "Revert-verify mutant for issue #4438 / ticket a3f3939c on the RESOLUTION it reuses (WikilinkValidator.targetExists). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). M3 replaces the delegation to `validateWikilink` with the hand-rolled `<uid>.md` existence check the gate must NOT be — the second existence check that would drift from the one every other reference goes through. It reds exactly the two axes that live off the delegated rules: K7 (a class whose UID exists only in frontmatter, the `exo__Asset_uid` scan fallback) and K8 (a create-batch item instancing a class created by an earlier item of the SAME batch, the `pendingUids` set). The gate call site is pinned in create-class-resolvable-4438.create.spec.json. Recorded runs: see PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/services/WikilinkValidator.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --verbose tests/integration/create-class-resolvable-4438.integration.test.ts 2>&1",
+  "mutants": {
+    "M3_the_probe_stops_delegating_and_checks_the_uid_filename_only": {
+      "from": "      await this.validateWikilink(target);",
+      "to": "      if (!(await this.fsAdapter.findFileByUidFilename(target))) throw new WikilinkNotFoundError(target);",
+      "expect": ["K7", "K8"]
+    }
+  }
+}
