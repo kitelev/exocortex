@@ -32,12 +32,13 @@
  * guard — see the list below.
  *
  * ⛤ Consumers of THIS module, kept current because the list is read as fact:
- *   `set-body` (#4443) · `get-body` (#4447 — was the crashing one, now guarded).
- * Still outstanding: the three commands in #4444 (`set-property`,
- * `remove-property`, `create --dry-run`). They still call `process.exit(0)` on
- * their success path, so today they TRUNCATE silently rather than crash; dropping
- * that exit without adding this guard would trade the truncation for the very
- * EPIPE crash #4447 fixed, so both halves land together there too.
+ *   `set-body` (#4443) · `get-body` (#4447) · `set-property`, `remove-property`,
+ *   `create` (#4444 — all three had the truncation and none had the guard).
+ * Nothing in `packages/cli/src/commands/` still calls `process.exit(0)` on a
+ * success path that writes an UNBOUNDED payload: the two remaining call sites,
+ * `assetspace-add.ts` and `bootstrap.ts`, emit a fixed set of short status lines
+ * and were measured as non-candidates in #4444. `create-batch.ts` calls no
+ * `process.exit(0)` at all and carries the private copy described above.
  */
 let stdioGuarded = false;
 

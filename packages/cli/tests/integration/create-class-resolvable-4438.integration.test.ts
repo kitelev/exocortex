@@ -43,6 +43,7 @@ import {
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { expectNaturalExit, expectRefused } from "./helpers/exit-assertions.js";
 
 const { createCommand } = await import("../../src/commands/create.js");
 const { createBatchCommand } =
@@ -285,7 +286,7 @@ describe("issue #4438: `cli create` refuses a class UID that does not exist in t
 
     const run = await runCreate(["--class", PHANTOM_CLASS_UID]);
 
-    expect(run.exit).not.toContain(0);
+    expectRefused(run.exit);
     expect(run.created).toBeNull();
     expect(countMd(vault)).toBe(before);
     // No asset anywhere carries the phantom reference.
@@ -309,7 +310,7 @@ describe("issue #4438: `cli create` refuses a class UID that does not exist in t
   it("K3 an EXISTING class UID still creates the asset (behaviour unchanged)", async () => {
     const run = await runCreate(["--class", TASK_CLASS_UID]);
 
-    expect(run.exit).toContain(0);
+    expectNaturalExit(run.exit);
     expect(run.created).not.toBeNull();
     const content = fs.readFileSync(
       path.join(vault, run.created!.path),
@@ -322,7 +323,7 @@ describe("issue #4438: `cli create` refuses a class UID that does not exist in t
   it("K4 a short-name class still resolves and creates (symbolic form not broken)", async () => {
     const run = await runCreate(["--class", "ems__Task"]);
 
-    expect(run.exit).toContain(0);
+    expectNaturalExit(run.exit);
     expect(run.created).not.toBeNull();
     const content = fs.readFileSync(
       path.join(vault, run.created!.path),
@@ -339,7 +340,7 @@ describe("issue #4438: `cli create` refuses a class UID that does not exist in t
       "--skip-wikilink-validation",
     ]);
 
-    expect(run.exit).toContain(0);
+    expectNaturalExit(run.exit);
     expect(run.created).not.toBeNull();
     const content = fs.readFileSync(
       path.join(vault, run.created!.path),
@@ -353,7 +354,7 @@ describe("issue #4438: `cli create` refuses a class UID that does not exist in t
 
     const run = await runCreate(["--class", PHANTOM_CLASS_UID, "--dry-run"]);
 
-    expect(run.exit).not.toContain(0);
+    expectRefused(run.exit);
     expect(run.stderr).not.toContain("DRY RUN PREVIEW");
     expect(countMd(vault)).toBe(before);
   });
@@ -361,7 +362,7 @@ describe("issue #4438: `cli create` refuses a class UID that does not exist in t
   it("K7 a class whose UID lives only in frontmatter (label-named file) resolves", async () => {
     const run = await runCreate(["--class", LABEL_NAMED_CLASS_UID]);
 
-    expect(run.exit).toContain(0);
+    expectNaturalExit(run.exit);
     expect(run.created).not.toBeNull();
     const content = fs.readFileSync(
       path.join(vault, run.created!.path),
@@ -400,7 +401,7 @@ describe("issue #4438: `cli create` refuses a class UID that does not exist in t
       { class: PHANTOM_CLASS_UID, label: "Phantom-class item" },
     ]);
 
-    expect(run.exit).not.toContain(0);
+    expectRefused(run.exit);
     expect(run.stderr).toContain(PHANTOM_CLASS_UID);
     expect(countMd(vault)).toBe(before);
   });
@@ -415,7 +416,7 @@ describe("issue #4438: `cli create` refuses a class UID that does not exist in t
     ]);
     const phantomClass = await runCreate(["--class", PHANTOM_CLASS_UID]);
 
-    expect(danglingValue.exit).not.toContain(0);
+    expectRefused(danglingValue.exit);
     expect(phantomClass.exit).toEqual(danglingValue.exit);
     // ⛔ Pinned ABSOLUTELY as well, not only by the comparison: every other axis
     // asserts `not.toContain(0)`, and a negation is satisfied by EVERY nonzero

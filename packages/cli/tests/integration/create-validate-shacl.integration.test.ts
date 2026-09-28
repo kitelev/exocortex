@@ -27,6 +27,7 @@ import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { expectNaturalExit, expectRefused } from "./helpers/exit-assertions.js";
 
 const { createCommand } = await import("../../src/commands/create.js");
 
@@ -221,7 +222,7 @@ describe("W3: `cli create --validate` — opt-in pre-write SHACL-lite conformanc
       "--validate",
     ]);
 
-    expect(exitCodes).not.toContain(0);
+    expectRefused(exitCodes);
     const stderr = errorSpy.mock.calls.flat().join("\n");
     expect(stderr).toContain("SHACL-lite validation failed");
     expect(stderr).toContain("ems__Task_count");
@@ -234,7 +235,7 @@ describe("W3: `cli create --validate` — opt-in pre-write SHACL-lite conformanc
   it(`--validate ACCEPTS a conformant candidate even though the vault already has violations elsewhere @req:${REQ}`, async () => {
     await runCreate(["--validate"]);
 
-    expect(exitCodes).toContain(0);
+    expectNaturalExit(exitCodes);
     // Candidate-scoped: the PRE-EXISTING violating asset must NOT block us.
     expect(createdAssetCount()).toBe(1);
     const json = JSON.parse(stdoutChunks.join("").trim());
@@ -247,7 +248,7 @@ describe("W3: `cli create --validate` — opt-in pre-write SHACL-lite conformanc
   it(`WITHOUT --validate the gate never runs — a non-conformant asset is still created (default OFF, byte-identical) @req:${REQ}`, async () => {
     await runCreate(["--property", "ems__Task_count=not-a-number"]);
 
-    expect(exitCodes).toContain(0);
+    expectNaturalExit(exitCodes);
     expect(createdAssetCount()).toBe(1);
     const json = JSON.parse(stdoutChunks.join("").trim());
     const written = fs.readFileSync(path.join(vault, json.path), "utf-8");
@@ -262,7 +263,7 @@ describe("W3: `cli create --validate` — opt-in pre-write SHACL-lite conformanc
       "--validate",
     ]);
 
-    expect(exitCodes).not.toContain(0);
+    expectRefused(exitCodes);
     expect(createdAssetCount()).toBe(0);
     expect(stdoutChunks.join("")).toBe("");
   });
@@ -270,7 +271,7 @@ describe("W3: `cli create --validate` — opt-in pre-write SHACL-lite conformanc
   it(`--dry-run --validate passes a conformant candidate and still writes nothing @req:${REQ}`, async () => {
     await runCreate(["--dry-run", "--validate"]);
 
-    expect(exitCodes).toContain(0);
+    expectNaturalExit(exitCodes);
     expect(createdAssetCount()).toBe(0);
     const json = JSON.parse(stdoutChunks.join("").trim());
     expect(json.uuid).toMatch(
@@ -286,7 +287,7 @@ describe("W3: `cli create --validate` — opt-in pre-write SHACL-lite conformanc
     // structured, machine-readable verdict and write nothing.
     await runCreate(["--property", "ems__Effort_status=", "--validate"]);
 
-    expect(exitCodes).not.toContain(0);
+    expectRefused(exitCodes);
     const stderr = errorSpy.mock.calls.flat().join("\n");
     expect(stderr).toContain("SHACL-lite validation failed");
     expect(stderr).toContain("ems__Effort_status");
