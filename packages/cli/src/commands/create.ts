@@ -14,7 +14,10 @@ import {
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { PlanningFsAdapter } from "../adapters/PlanningFsAdapter.js";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
-import { ClassResolverService } from "../services/ClassResolverService.js";
+import {
+  ClassResolverService,
+  ClassRefNotFoundError,
+} from "../services/ClassResolverService.js";
 import { WikilinkValidator } from "../services/WikilinkValidator.js";
 import { PropertyNameValidator } from "../services/PropertyNameValidator.js";
 import { EffortStatusResolver } from "../services/EffortStatusResolver.js";
@@ -594,6 +597,31 @@ export async function planCreate(
   // Resolve class short name → UUID (UID pass-through if already a UUID).
   const classUid = await classResolver.resolve(vaultPath, options.class);
 
+  // Ticket a3f3939c / issue #4438 — the resolved class MUST exist in the vault.
+  //
+  // ⛔ A short name is checked by the resolver's index lookup, but a FULL UUID
+  // was passed through unchecked, and `exo__Instance_class` is assembled by the
+  // core service DOWNSTREAM of `propertyValues` — so the WikilinkValidator call
+  // below never saw it. A partially-remembered UID therefore created an asset
+  // pointing at nothing, rc=0, with no diagnostic anywhere: `validate schema
+  // --shapes-mode` does not report an unresolvable class either (measured: the
+  // violation/warning counts were identical before and after a manual repair).
+  // The PreToolUse `validate-wikilinks` hook cannot cover this by construction
+  // — a CLI create goes through Bash, not Write/Edit — so the gate has to live
+  // here.
+  //
+  // Same escape as every other reference this command writes:
+  // `--skip-wikilink-validation`. The class ref IS a wikilink, so a second flag
+  // would split one guarantee across two switches. Resolution is delegated to
+  // the validator (`targetExists`), which also honours the in-batch
+  // `pendingUids` — a `create-batch` item may legitimately instance a class
+  // created by an earlier item of the SAME batch.
+  if (!options.skipWikilinkValidation) {
+    if (!(await wikilinkValidator.targetExists(classUid))) {
+      throw new ClassRefNotFoundError(classUid, options.class, vaultPath);
+    }
+  }
+
   // Effort status default (issue #3849): a status-bearing class
   // (ems__Effort or a subclass, detected by walking exo__Class_superClass
   // to ems__Effort — no hardcoded class list) gets a default
@@ -888,7 +916,10 @@ export function createCommand(): Command {
     .option("--no-status", "For a status-bearing class, do NOT inject the default ems__Effort_status — create a status-less prototype/template (issue #3928). No-op for a non-status-bearing class. Mutually exclusive with --status / --property ems__Effort_status.")
     .option("--yes", "Accepted for symmetry with the apply subcommands (create is non-interactive; no-op)")
     .option("--timezone <tz>", "Timezone for timestamps (defaults to Asia/Almaty)")
-    .option("--skip-wikilink-validation", "Skip wikilink existence validation")
+    .option(
+      "--skip-wikilink-validation",
+      "Skip wikilink existence validation — for --property VALUES and for the --class reference written as exo__Instance_class (issue #4438)",
+    )
     .option(
       "--validate",
       "Run SHACL-lite conformance validation on the new asset BEFORE writing it; a non-conformant asset is refused and no file is created (same shapes as `validate schema --shapes-mode`). Opt-in: omit the flag and create behaves exactly as before.",

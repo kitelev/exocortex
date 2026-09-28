@@ -86,6 +86,34 @@ export class WikilinkValidator {
   }
 
   /**
+   * Does a single wikilink TARGET exist in the vault? — the same question
+   * {@link validateValue} asks, answered without throwing so a caller can raise
+   * its own domain-specific error (ticket a3f3939c / issue #4438: `create`
+   * needs a CLASS-specific refusal naming the `--class` argument, not the
+   * generic "wikilink not found").
+   *
+   * Reuses {@link validateWikilink} verbatim, so the resolution rules — UID
+   * filename first, `exo__Asset_uid` frontmatter scan as the fallback,
+   * linkpath (basename/label/aliases) for a non-UUID reference, and the
+   * in-batch `pendingUids` — stay in ONE place. A second, hand-rolled
+   * "does the file exist" check would be exactly the drift this avoids.
+   *
+   * @param target - The wikilink target (a UUID, or a label-form linkpath)
+   * @returns true when the target resolves in the vault (or is pending in this batch)
+   */
+  async targetExists(target: string): Promise<boolean> {
+    try {
+      await this.validateWikilink(target);
+      return true;
+    } catch (error) {
+      if (error instanceof WikilinkNotFoundError) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Extract all wikilinks from a string value.
    *
    * @param value - String that may contain wikilinks

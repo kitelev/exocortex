@@ -547,7 +547,7 @@ export function createBatchCommand(): Command {
     )
     .option(
       "--skip-wikilink-validation",
-      "Skip wikilink existence validation (as in create)",
+      "Skip wikilink existence validation, for --property VALUES and for each item's class reference (as in create)",
     )
     .option(
       "--yes",
