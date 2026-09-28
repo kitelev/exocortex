@@ -17,6 +17,11 @@
       "from": "        `Find the real UID:  find '${vaultPath}' -name '${prefix}*.md'\\n` +",
       "to": "        `${vaultPath} ${prefix}\\n` +",
       "expect": ["K2"]
+    },
+    "M5_the_message_loses_the_substring_that_decides_the_exit_code": {
+      "from": "      `Class [[${classUid}]] not found in vault${asTyped} \u2014 ` +",
+      "to": "      `Class [[${classUid}]] is absent from the vault${asTyped} \u2014 ` +",
+      "expect": ["K10"]
     }
   }
 }

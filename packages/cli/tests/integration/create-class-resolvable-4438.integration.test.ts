@@ -69,6 +69,9 @@ const PHANTOM_CLASS_UID = "fe1a4590-0000-0000-0000-000000000000";
  */
 const LABEL_NAMED_CLASS_UID = "bb77aa11-2222-4333-8444-555566667777";
 
+/** A dangling PROPERTY-value target — the pre-existing refusal K10 compares against. */
+const MISSING_TARGET_UID = "dead0000-0000-4000-8000-000000000999";
+
 const EMS_DIR = "assetspaces/kitelev/exoas-public/ems";
 const EXO_DIR = "assetspaces/kitelev/exoas-exo/exo";
 
@@ -400,5 +403,49 @@ describe("issue #4438: `cli create` refuses a class UID that does not exist in t
     expect(run.exit).not.toContain(0);
     expect(run.stderr).toContain(PHANTOM_CLASS_UID);
     expect(countMd(vault)).toBe(before);
+  });
+
+  it("K10 the class refusal is classified like its sibling: same exit code as a dangling --property wikilink, and that code is FILE_NOT_FOUND", async () => {
+    // The pre-existing refusal this one must not diverge from.
+    const danglingValue = await runCreate([
+      "--class",
+      TASK_CLASS_UID,
+      "--property",
+      `ems__Effort_parent=[[${MISSING_TARGET_UID}]]`,
+    ]);
+    const phantomClass = await runCreate(["--class", PHANTOM_CLASS_UID]);
+
+    expect(danglingValue.exit).not.toContain(0);
+    expect(phantomClass.exit).toEqual(danglingValue.exit);
+    // ⛔ Pinned ABSOLUTELY as well, not only by the comparison: every other axis
+    // asserts `not.toContain(0)`, and a negation is satisfied by EVERY nonzero
+    // code (integration-test-revert-verify §A38). It matters here because the
+    // code is decided by a SUBSTRING of the message — `ErrorHandler`'s
+    // `classifyMessage` maps `includes("not found")` to FILE_NOT_FOUND — so a
+    // reworded refusal would silently become GENERAL_ERROR (1) while every
+    // other axis stayed green. Mutant M5 is exactly that rewording.
+    expect(phantomClass.exit).toContain(3); // ExitCodes.FILE_NOT_FOUND
+  });
+
+  it("K11 create-batch: the class may be created by a LATER item too — pendingUids is built from the whole batch, not incrementally", async () => {
+    const pendingClassUid = "cc33dd44-5555-4666-8777-888899990000";
+    const run = await runBatch([
+      { class: pendingClassUid, label: "Instance written before its class" },
+      {
+        class: CLASS_METACLASS_UID,
+        label: "Batch-made class, declared second",
+        uid: pendingClassUid,
+      },
+    ]);
+
+    expect(run.exit).toContain(0);
+    expect(run.stderr).not.toContain("not found in vault");
+    const written = JSON.parse(run.stdout.trim()) as { path: string }[];
+    expect(written).toHaveLength(2);
+    const instance = fs.readFileSync(
+      path.join(vault, written[0].path),
+      "utf-8",
+    );
+    expect(instance).toContain(pendingClassUid);
   });
 });
