@@ -22,11 +22,16 @@
  * command DID. Any other stdio error still surfaces.
  *
  * ⛤ `create-batch.ts` carries its own private copy of this guard (added with its
- * own flush-then-exit helper). It is NOT consolidated here on purpose: its copy
- * is the anchor of a live mutant in `create-batch-1848dff9.spec.json`, so moving
- * it would silently void that proof. Consolidating the two — and applying this
- * guard to `get-body` (#4434) and to the three commands in #4444, which share the
- * defect — is tracked separately.
+ * own flush-then-exit helper). It is NOT consolidated here on purpose: mutant
+ * `M22_epipe_on_stdio_rethrown` in `create-batch-1848dff9.spec.json` anchors on
+ * that copy's INTERNAL rethrow line — not on its call site — so replacing the
+ * copy with an import would leave that anchor with
+ * zero occurrences — and since neither spec is swept by CI, the loss would only
+ * show on a deliberate re-run. Verified by running the driver: M22 → red [B16],
+ * control 0. Consolidating the two belongs with the siblings that still need the
+ * guard: `get-body` (#4447 — shipped WITHOUT it, so it crashes today) and the
+ * three commands in #4444 (which still call process.exit(0), so they truncate
+ * instead).
  */
 let stdioGuarded = false;
 
