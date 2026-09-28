@@ -436,4 +436,57 @@ describe("Issue #4441 — CRLF/BOM-led frontmatter is recognised by the vault lo
       bodyLinks.map((t) => (t.object as { value: string }).value),
     ).toContain("some-body-target");
   });
+
+  // ── The two encodings this fix deliberately does NOT reach ────────────────
+  // Both were surfaced by the review of this PR. They are pinned, not fixed:
+  // the widened predicate is `\r?\n` and a SINGLE leading U+FEFF, and saying so
+  // in an executable axis is what keeps the requirement's prose from drifting
+  // into "regardless of its line endings".
+  //
+  // ⛤ These are ABSENCE-OF-EFFECT axes, like B6/B8: green under every mutant of
+  //    this PR by construction. Their product is the pin, not a flip — and the
+  //    pin is what a later session needs in order to see that the gap is known
+  //    rather than overlooked.
+
+  it(`B15 OUT OF SCOPE lone-CR fences stay invisible — the fix reaches \\r?\\n, not bare \\r ${REQ}`, async () => {
+    // Classic pre-OS9 Mac line endings: `\r` with no `\n` anywhere. The block
+    // predicate requires a `\n`, so such a file is still read as "no block at
+    // all" — the same silent-invisibility class as #4441, entered through a
+    // third door.
+    // ⛔ Only the READ pair is pinned. The write consequence (an unrelated
+    //    property patch PREPENDS a second block, leaving the original as body
+    //    text) is a live defect, not a desired state, and pinning it as expected
+    //    would freeze it. That consequence is why lone-CR needs its own
+    //    requirement rather than a widening tacked onto this one.
+    const vault = await vaultWith("b15-lone-cr", {
+      "lone-cr.md": "---\rkey: value\r---\rbody\r",
+    });
+    const { adapter, file } = only(vault);
+
+    expect(adapter.getFrontmatter(file)).toBeNull();
+    expect(adapter.getFrontmatterParseFailure(file)).toBeNull();
+
+    const result = await convert(vault);
+    expect(result.triples).toEqual([]);
+    expect(result.skippedFiles).toEqual([]);
+  });
+
+  it(`B16 OUT OF SCOPE a DOUBLE BOM stays invisible — exactly one U+FEFF is skipped ${REQ}`, async () => {
+    // Two stacked BOM bytes — the artifact of a naive "ensure a BOM" tool that
+    // does not check for an existing one. `bomLength` skips at most one, so the
+    // second still defeats the `^` anchor. The requirement says "a leading
+    // U+FEFF", singular; this axis is what makes that word load-bearing instead
+    // of incidental.
+    const vault = await vaultWith("b16-double-bom", {
+      "double-bom.md": BOM + BOM + lfFenced(VALID_YAML),
+    });
+    const { adapter, file } = only(vault);
+
+    expect(adapter.getFrontmatter(file)).toBeNull();
+    expect(adapter.getFrontmatterParseFailure(file)).toBeNull();
+
+    const result = await convert(vault);
+    expect(result.triples).toEqual([]);
+    expect(result.skippedFiles).toEqual([]);
+  });
 });
