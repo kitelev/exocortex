@@ -161,7 +161,10 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
       // would put a wrong reason in front of the user.
       return null;
     }
-    const blockBody = FileSystemVaultAdapter.FRONTMATTER_BLOCK.exec(content)?.[1];
+    // ⛤ The SAME normalized matcher the read path used (BOM skipped, `\r?\n`
+    //    fences) — by construction, not by a parallel regex that could drift.
+    const blockBody =
+      FileSystemVaultAdapter.matchFrontmatterBlock(content)?.body;
     if (blockBody === undefined) return null;
     // ⛤ A body with NO CONTENT LINE — only blanks and `#` comments — means what
     //    the blessed empty block `---\n\n---` means: "no keys yet". js-yaml
@@ -178,9 +181,13 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     //    (а с BOM — бросает ДРУГУЮ ошибку) — то есть ровно тот тихий дроп, ради
     //    устранения которого этот метод и заведён. Измерено на js-yaml 5.3.0, который
     //    резолвит `packages/cli` (⛔ не корневой 4.3.1 — verify-before-assert §A18).
-    //    ⛤ Хвостовой `\r` допускается: блок с ФЕНСАМИ в LF и телом в CRLF сюда
-    //    доходит (чисто-CRLF файл отсекается раньше — его `FRONTMATTER_BLOCK` не
-    //    видит вовсе), и голая `\r`-строка — та же пустая строка, а не контент.
+    //    ⛤ Хвостовой `\r` допускается, и с req `c05a3565` (#4441) это стало
+    //    несущим: прежняя редакция этой строки объясняла допуск тем, что «чисто-CRLF
+    //    файл отсекается раньше — его `FRONTMATTER_BLOCK` не видит вовсе».
+    //    ⛔ Обоснование СНЯТО — матчер теперь CRLF-толерантен, поэтому сюда доходит
+    //    и блок, у которого в CRLF и фенсы, и тело. Допуск от этого не меняется
+    //    (голая `\r`-строка — та же пустая строка, а не контент), но держится он
+    //    уже на семантике `\r`, а не на недостижимости входа.
     const NO_CONTENT_LINE = /^[ \t]*(#.*)?\r?$/;
     const hasContentLine = blockBody
       .split("\n")
@@ -235,7 +242,8 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     // An EMPTY block (`---\n\n---`) parses to nothing and is a legitimate
     // "no keys yet"; only a block with a non-blank body that still yields no
     // mapping is unreadable.
-    const blockBody = FileSystemVaultAdapter.FRONTMATTER_BLOCK.exec(content)?.[1];
+    const blockBody =
+      FileSystemVaultAdapter.matchFrontmatterBlock(content)?.body;
     if (parsed === null && blockBody !== undefined && blockBody.trim() !== "") {
       throw new Error(
         `updateFrontmatter: frontmatter of ${file.path} is not parseable — refusing to patch (re-serialising would overwrite the unreadable block)`,
@@ -502,19 +510,74 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     };
   }
 
-  /** A leading `---` block; group 1 = its YAML body. Shared by the three block readers/writers below. */
-  private static readonly FRONTMATTER_BLOCK = /^---\n([\s\S]*?)\n---/;
+  /**
+   * A leading `---` block; group 1 = its YAML body.
+   *
+   * CRLF-tolerant on BOTH fences, mirroring
+   * `NoteToRDFConverter.extractBodyContent`, which has carried the `\r?\n` form
+   * all along (req `c05a3565`, #4441). Until then this constant — the one that
+   * decides whether a block EXISTS at all — was anchored to a literal `\n`, so
+   * a valid asset written with CRLF was not a parse failure but a
+   * "no block found": zero triples, and no entry in the skip list either.
+   *
+   * ⛔ Never `.match()` raw content against this directly — go through
+   * {@link matchFrontmatterBlock}. A BOM before `---` defeats the `^` anchor
+   * exactly as a CRLF fence did, and the write path needs the original-string
+   * offsets that helper returns.
+   */
+  private static readonly FRONTMATTER_BLOCK = /^---\r?\n([\s\S]*?)\r?\n---/;
+
+  /** Length of a leading U+FEFF (0 or 1) — a BOM only counts at index 0. */
+  private static bomLength(content: string): number {
+    return content.charCodeAt(0) === 0xfeff ? 1 : 0;
+  }
+
+  /**
+   * The ONE answer to "does this content open with a frontmatter block, and
+   * what is its body?" — shared by the read path ({@link extractFrontmatter}),
+   * the diagnostic path ({@link getFrontmatterParseFailure}) and the write path
+   * ({@link replaceFrontmatter}).
+   *
+   * Shared BY CONSTRUCTION, not by three parallel edits: the read/diagnostic
+   * pair already drifted once on a nearby predicate (#4439 review), and the
+   * only structural cure is that neither can ask the question for itself.
+   *
+   * A leading BOM is skipped for MATCHING ONLY. `blockStart`/`blockEnd` are
+   * offsets into the ORIGINAL string, so the write path can splice around the
+   * block and leave the byte where the user put it — patching one unrelated
+   * property must not silently strip a file's BOM.
+   */
+  private static matchFrontmatterBlock(content: string): {
+    body: string;
+    /** Offsets into the ORIGINAL `content` (i.e. BOM already accounted for). */
+    blockStart: number;
+    blockEnd: number;
+  } | null {
+    const bom = FileSystemVaultAdapter.bomLength(content);
+    const match = FileSystemVaultAdapter.FRONTMATTER_BLOCK.exec(
+      bom === 0 ? content : content.slice(bom),
+    );
+    if (!match) return null;
+    // `^`-anchored and non-global ⇒ the match always begins at index 0 of the
+    // string we handed it, so the original offsets are that string's offsets
+    // shifted by the BOM.
+    return {
+      body: match[1],
+      blockStart: bom,
+      blockEnd: bom + match[0].length,
+    };
+  }
 
   private extractFrontmatter(content: string): IFrontmatter | null {
-    const match = content.match(FileSystemVaultAdapter.FRONTMATTER_BLOCK);
+    const block = FileSystemVaultAdapter.matchFrontmatterBlock(content);
 
-    if (!match) {
+    if (!block) {
       return null;
     }
 
     // #3800: tolerant parse — a duplicated mapping key would otherwise throw
     // and collapse the asset to `null` (0 triples → invisible & unrepairable).
-    return parseYamlFrontmatterTolerant(match[1]) as IFrontmatter | null;
+    return parseYamlFrontmatterTolerant(block.body) as IFrontmatter | null;
   }
 
   /**
@@ -534,9 +597,16 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
    *   timestamp (`2026-05-17T19:40:11`) parses to a Date and is re-emitted in
    *   its `.000Z` form, an empty value becomes `null`, a quoted plain word
    *   loses its quotes. The text path touches one line and leaves the rest.
-   * - the new block is spliced in with a FUNCTION replacer: a string replacer
-   *   would re-interpret `$&` / `$1` / `` $` `` / `$'` / `$$` inside any dumped
-   *   value as a replacement pattern (class #3748 / #3795).
+   * - the new block is spliced in BY INDEX. The previous form was
+   *   `content.replace(re, () => block)` — a FUNCTION replacer, because a string
+   *   one would re-interpret `$&` / `$1` / `` $` `` / `$'` / `$$` inside any
+   *   dumped value as a replacement pattern (class #3748 / #3795).
+   *   Index-splicing keeps that immunity (nothing is interpreted at all) and
+   *   additionally carries a leading BOM across untouched: the byte lives
+   *   BEFORE `blockStart`, so it is simply not part of what gets replaced
+   *   (req `c05a3565`, #4441). On a file with NO block the new one is inserted
+   *   AFTER the BOM for the same reason — prepending it would leave the byte
+   *   stranded in the middle of the file.
    */
   private replaceFrontmatter(
     content: string,
@@ -549,14 +619,17 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     });
     const block = `---\n${frontmatterYaml.trim()}\n---`;
 
-    const frontmatterRegex = FileSystemVaultAdapter.FRONTMATTER_BLOCK;
-    const match = content.match(frontmatterRegex);
+    const existing = FileSystemVaultAdapter.matchFrontmatterBlock(content);
 
-    if (match) {
-      return content.replace(frontmatterRegex, () => block);
-    } else {
-      return `${block}\n${content}`;
+    if (existing) {
+      return (
+        content.slice(0, existing.blockStart) +
+        block +
+        content.slice(existing.blockEnd)
+      );
     }
+    const bom = FileSystemVaultAdapter.bomLength(content);
+    return content.slice(0, bom) + `${block}\n` + content.slice(bom);
   }
 
   /**

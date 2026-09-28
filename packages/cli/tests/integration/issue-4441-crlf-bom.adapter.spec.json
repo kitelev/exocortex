@@ -1,0 +1,47 @@
+{
+  "_doc": "Revert-verify mutants for req c05a3565-7b8d-42dc-bc9f-7e71d47d9364 (issue #4441), CLI-adapter half. Each mutant removes ONE of the three things the fix introduced — the CRLF-tolerant fences, the BOM skip, the SHARED normalisation — and the expectation below was written BEFORE the run (sparql-iri-form-pre-verify §A18). ⛔ The axis names are the machine key: red_re reads the name right after `›`, so every axis is named `B<n>` as its FIRST token (§A47/§A104). ⛤ The NoteToRDFConverter half cannot live here — mutant-driver takes ONE subject — it is issue-4441-crlf-bom.converter.spec.json.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/adapters/FileSystemVaultAdapter.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/issue-4441-crlf-bom-frontmatter.integration.test.ts 2>&1",
+  "red_re": "› (?:@req:[0-9a-f-]+ )?(B\\d+)[: ]",
+  "mutants": {
+    "M1_fences_back_to_literal_lf": {
+      "from": "  private static readonly FRONTMATTER_BLOCK = /^---\\r?\\n([\\s\\S]*?)\\r?\\n---/;\n",
+      "to": "  private static readonly FRONTMATTER_BLOCK = /^---\\n([\\s\\S]*?)\\n---/;\n",
+      "expect": ["B1", "B3", "B4", "B9", "B11"],
+      "_note": "The pre-fix regex. Only the CRLF axes redden: the BOM skip is untouched, so BOM+LF shapes (B2, B5, B10, B13, B14) stay green — that asymmetry is what proves the two halves of the fix are separately load-bearing. B9 reddens through its BOM+CRLF case as well as its CRLF one."
+    },
+    "M2_bom_never_skipped": {
+      "from": "    return content.charCodeAt(0) === 0xfeff ? 1 : 0;\n",
+      "to": "    return 0;\n",
+      "expect": ["B2", "B5", "B9", "B10", "B13", "B14"],
+      "_note": "Type-preserving (still returns a number), so no type-narrowing is lost and a BROKEN verdict cannot be confused with redness (§A36/§A97). Every BOM axis reddens; the pure-CRLF and pure-LF axes stay green."
+    },
+    "M3_diagnostic_path_gets_its_own_regex": {
+      "from": "    const blockBody =\n      FileSystemVaultAdapter.matchFrontmatterBlock(content)?.body;\n    if (blockBody === undefined) return null;\n",
+      "to": "    const blockBody = /^---\\n([\\s\\S]*?)\\n---/.exec(content)?.[1];\n    if (blockBody === undefined) return null;\n",
+      "expect": ["B3", "B4", "B5", "B9"],
+      "_note": "Simulates the failure mode the requirement exists to prevent: the READ path normalised, the DIAGNOSTIC path not. The read path still returns null for a malformed CRLF/BOM block, so the file is invisible AND unnamed — exactly the silent drop #4439 closed for its own trigger. The anchor includes the following `if` line because the same two-line assignment also appears in updateFrontmatter, and a mutation that lands twice is a defect in the mutant, not a verdict about the axis."
+    },
+    "M6_predicate_loses_its_start_anchor": {
+      "from": "  private static readonly FRONTMATTER_BLOCK = /^---\\r?\\n([\\s\\S]*?)\\r?\\n---/;\n",
+      "to": "  private static readonly FRONTMATTER_BLOCK = /---\\r?\\n([\\s\\S]*?)\\r?\\n---/;\n",
+      "expect": ["B7"],
+      "_note": "Guards the OVER-WIDENING direction — the class the #4439 review already caught once. Without `^`, a `---` fence sitting inside a code block in the BODY is read as the asset's frontmatter. Exists so B7 is not a vacuously-green control: it is the only axis that can see this, which is what makes it load-bearing. ⛤ B6 and B8 stay green under every mutant here BY CONSTRUCTION — they assert the ABSENCE of a side effect, and such an axis is legitimately green in both directions (integration-test-revert-verify §ось на ОТСУТСТВИЕ побочного эффекта). Their product is the pin itself, not a flip."
+    },
+    "M4_write_path_drops_the_bom": {
+      "from": "      blockStart: bom,\n",
+      "to": "      blockStart: 0,\n",
+      "expect": ["B10"],
+      "_note": "Keeps the BOM out of the MATCH but lets the splice start at 0, so an unrelated property write silently eats the byte. Narrow by construction: only the BOM round-trip axis can see it, which is what makes B10 non-redundant with B2."
+    }
+  }
+}
