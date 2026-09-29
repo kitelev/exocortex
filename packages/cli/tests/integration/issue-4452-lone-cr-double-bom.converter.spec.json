@@ -1,0 +1,23 @@
+{
+  "_doc": "Req 74419202 (#4452) §Scope — `NoteToRDFConverter.extractBodyContent` on the SHARED predicate instead of its own twin. This is the mutant the orchestrator required as the condition for admitting that file into scope: it must redden the body-link axis and NOT merely the reading ones.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/NoteToRDFConverter.ts",
+  "harness": "cd \"$(dirname {subject})/../../../cli\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/issue-4441-crlf-bom-frontmatter.integration.test.ts --verbose 2>&1",
+  "red_re": "› (?:@req:[0-9a-f-]+ )?(B\\d+)[: ]",
+  "mutants": {
+    "Q6_body_split_back_to_its_own_twin_regex": {
+      "from": "    const block = matchFrontmatterBlock(content);\n    // ⛤ No block: the previous form returned the BOM-STRIPPED content (it\n    //    `replace`d on `withoutBom`), so that is kept — byte-identical for one\n    //    byte, and a run is stripped for the same reason one was.\n    if (!block) return content.slice(leadingBomLength(content));\n",
+      "to": "    const withoutBom =\n      content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;\n    const m = /^---\\r?\\n([\\s\\S]*?)\\r?\\n---\\r?\\n?/.exec(withoutBom);\n    const block = m ? { body: m[1], blockStart: 0, blockEnd: m[0].length } : null;\n    if (!block) return withoutBom;\n    return withoutBom.slice(block.blockEnd);\n",
+      "expect": ["B21"],
+      "_note": "The pre-#4452 twin restored VERBATIM, BOM skip included — deliberately, so that B13 (single BOM) stays GREEN and the redness is attributable to the lone-CR body split alone. That is what makes this mutant an oracle for the §Scope decision rather than for the BOM half, which the foreign M5 already covers."
+    }
+  }
+}

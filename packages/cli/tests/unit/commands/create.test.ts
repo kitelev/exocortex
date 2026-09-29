@@ -18,6 +18,7 @@ const {
 import {
   matchFrontmatterBlock,
   frontmatterBlockBody,
+  leadingBomLength,
 } from "../../../../core/src/utilities/frontmatterBlock.js";
 
 jest.unstable_mockModule("uuid", () => ({
@@ -30,6 +31,7 @@ jest.unstable_mockModule("uuid", () => ({
 jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   matchFrontmatterBlock,
   frontmatterBlockBody,
+  leadingBomLength,
   DateFormatter: { toLocalTimestamp: jest.fn(() => "2026-03-23T12:00:00") },
   MetadataHelpers: { buildFileContent: jest.fn(() => "---\n---\n") },
   GenericAssetCreationService: class GenericAssetCreationService {},

@@ -190,14 +190,70 @@ describe("#4453 — CRLF/BOM frontmatter on the plugin surface (req 1dfbd427)", 
     it.each([
       ["a note with no fence", NO_FENCE],
       ["a fence that is not at position 0", FENCE_IN_BODY],
-      ["lone-CR fences (#4452 territory)", LONE_CR],
-      ["a DOUBLED BOM (#4452 territory)", DOUBLE_BOM],
     ])(
       "C4 @req:1dfbd427-9a96-4fc2-a49e-146f6b2a46e5 control — %s stays unrecognised",
       (_name, content) => {
         expect(frontmatterBlockBody(content)).toBeNull();
       },
     );
+
+    // ⛔ FLIPPED, not extended (req `74419202-264e-4394-a634-0b36d47357f8`,
+    //    #4452). `LONE_CR` and `DOUBLE_BOM` were the third and fourth rows of
+    //    C4 above, asserting that the predicate does NOT reach them — the
+    //    executable half of `1dfbd427`'s and `c05a3565`'s shared "#4452
+    //    territory" non-goal. #4452 closed that gap in the SAME shared helper,
+    //    so a control asserting the old limit cannot stay: it would pin a
+    //    limit that no longer exists. They move here, with the new tag.
+    //
+    // ⛤ This is the whole plugin-side delivery of #4452: no plugin SOURCE file
+    //    is touched. The three plugin sites read through `matchFrontmatterBlock`
+    //    since `1dfbd427`, so they gain both shapes by construction — which is
+    //    what one shared predicate is for. The #4440 diagnostic half remains a
+    //    separate work item on a separate surface.
+    it.each([
+      ["lone-CR fences", LONE_CR],
+      ["a DOUBLED BOM", DOUBLE_BOM],
+    ])(
+      "C6 @req:74419202-264e-4394-a634-0b36d47357f8 recognises %s — the plugin surface inherits it from the shared predicate",
+      (_name, content) => {
+        const body = frontmatterBlockBody(content);
+        expect(body).not.toBeNull();
+        for (const line of FM_LINES) {
+          expect(body).toContain(line);
+        }
+      },
+    );
+
+    // ⛔ The over-widening #4452 introduced and its own review caught, pinned
+    //    HERE because this is where the predicate is exercised DIRECTLY. A
+    //    single pattern with an alternation at both fences let the engine split
+    //    ONE physical CRLF between them (`\r` closing the opening fence, the
+    //    same sequence's `\n` closing the closing one), so a CRLF file whose
+    //    first two lines are both a bare `---` read as an EMPTY block.
+    // ⛤ On the CLI side the read-level observable is USELESS for this — an
+    //    empty block parses to nothing, so `getFrontmatter` is null either way
+    //    (its axis there had to assert data loss on the WRITE path instead).
+    //    Through `frontmatterBlockBody` the difference is direct: `null`
+    //    (no block) versus `""` (empty block).
+    it.each([
+      ["CRLF", `---\r\n---\r\nActual body, two rules at top\r\n`],
+      ["LF", `---\n---\nActual body\n`],
+      ["CR", `---\r---\rActual body\r`],
+    ])(
+      "C7 @req:74419202-264e-4394-a634-0b36d47357f8 control — two stacked bare --- on a %s file are NOT a block: one line ending may not serve both fences",
+      (_name, content) => {
+        expect(frontmatterBlockBody(content)).toBeNull();
+      },
+    );
+
+    it("C8 @req:74419202-264e-4394-a634-0b36d47357f8 CONTROL a genuinely EMPTY block (TWO separators) is still recognised in all three encodings", () => {
+      // Pairs with C7: a fix that required `\r\n` at both fences would satisfy
+      // C7 and break the CR row here. An empty block has two separators to
+      // give, which is exactly what distinguishes it from C7's single one.
+      for (const content of ["---\n\n---\nbody\n", "---\r\n\r\n---\r\nbody\r\n", "---\r\r---\rbody\r"]) {
+        expect(frontmatterBlockBody(content)).toBe("");
+      }
+    });
   });
 
   describe("P — each plugin site, through its own entry point", () => {

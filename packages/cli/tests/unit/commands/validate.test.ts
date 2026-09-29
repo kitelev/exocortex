@@ -9,6 +9,7 @@ import { Command } from "commander";
 import {
   matchFrontmatterBlock,
   frontmatterBlockBody,
+  leadingBomLength,
 } from "../../../../core/src/utilities/frontmatterBlock.js";
 
 jest.unstable_mockModule("../../../src/cache/CacheManager.js", () => ({
@@ -22,6 +23,7 @@ jest.unstable_mockModule("../../../src/cache/CacheManager.js", () => ({
 jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   matchFrontmatterBlock,
   frontmatterBlockBody,
+  leadingBomLength,
   NoteToRDFConverter: jest.fn(),
   Triple: jest.fn(),
   IRI: jest.fn(),

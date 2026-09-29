@@ -1,0 +1,29 @@
+{
+  "_doc": "Req 74419202 (#4452) — the WRITE-path half in `FileSystemVaultAdapter.replaceFrontmatter`: decision 1 (replace whole, normalise no line endings) and decision 2 (write back EXACTLY ONE U+FEFF). Both branches of the method have their own mutant, because B19/B20 replace an existing block while B25 inserts into a block-less file.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/adapters/FileSystemVaultAdapter.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/issue-4441-crlf-bom-frontmatter.integration.test.ts --verbose 2>&1",
+  "red_re": "› (?:@req:[0-9a-f-]+ )?(B\\d+)[: ]",
+  "mutants": {
+    "Q4_write_path_carries_the_whole_bom_run": {
+      "from": "      const leadingBom = existing.blockStart > 0 ? \"\\uFEFF\" : \"\";\n      return leadingBom + block + content.slice(existing.blockEnd);\n",
+      "to": "      return (\n        content.slice(0, existing.blockStart) +\n        block +\n        content.slice(existing.blockEnd)\n      );\n",
+      "expect": ["B20"],
+      "_note": "The pre-#4452 splice, verbatim: it carried `content.slice(0, blockStart)` across, i.e. ALL N bytes. Reverts decision 2 for the replace branch while leaving the read path fully widened — so only the «exactly one BOM survives a write» axis can see it, and the axes that merely READ an N-BOM file stay green."
+    },
+    "Q5_no_block_branch_counts_at_most_one_bom": {
+      "from": "    const bomRun = leadingBomLength(content);\n    return (\n      (bomRun > 0 ? \"\\uFEFF\" : \"\") + `${block}\\n` + content.slice(bomRun)\n    );\n",
+      "to": "    const bom = content.charCodeAt(0) === 0xfeff ? 1 : 0;\n    return content.slice(0, bom) + `${block}\\n` + content.slice(bom);\n",
+      "expect": ["B25"],
+      "_note": "Same revert for the OTHER branch (insert into a block-less file): the surplus bytes would be left stranded after the inserted block. Narrow by construction — only an axis that writes to a block-less N-BOM file reaches this line."
+    }
+  }
+}

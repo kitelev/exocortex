@@ -14,10 +14,10 @@
   "red_re": "› (?:@req:[0-9a-f-]+ )?(B\\d+)[: ]",
   "mutants": {
     "M5_body_bom_not_skipped": {
-      "from": "    const withoutBom =\n      content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;\n",
-      "to": "    const withoutBom = content;\n",
-      "expect": ["B13"],
-      "_note": "B14 stays GREEN on purpose: with the whole file treated as body, the REAL body wikilink is still found, so only the 'frontmatter links must NOT leak into the body index' axis can see this. The pair is what keeps an over-wide 'return nothing as body' from satisfying B13."
+      "from": "    const block = matchFrontmatterBlock(content);\n    // ⛤ No block: the previous form returned the BOM-STRIPPED content (it\n    //    `replace`d on `withoutBom`), so that is kept — byte-identical for one\n    //    byte, and a run is stripped for the same reason one was.\n    if (!block) return content.slice(leadingBomLength(content));\n",
+      "to": "    const m = /^---\\r?\\n([\\s\\S]*?)\\r?\\n---\\r?\\n?/.exec(content);\n    const block = m ? { body: m[1], blockStart: 0, blockEnd: m[0].length } : null;\n    if (!block) return content;\n    return content.slice(block.blockEnd);\n",
+      "expect": ["B13", "B21"],
+      "_note": "B14 stays GREEN on purpose: with the whole file treated as body, the REAL body wikilink is still found, so only the 'frontmatter links must NOT leak into the body index' axis can see this. The pair is what keeps an over-wide 'return nothing as body' from satisfying B13.\n⚤ ANCHOR MIGRATED by req 74419202 (#4452): `extractBodyContent` no longer carries its own regex + `withoutBom` — it goes through the shared predicate. The mutant keeps its SUBJECT («the body split does not skip the BOM») by restoring the pre-#4452 twin WITHOUT its BOM skip, so B13 still reddens. §A117 migration: the mutant travels with the guard.\n⚤ EXPECTATION WIDENED by req 74419202 (#4452): the migrated `to` restores the pre-#4452 twin WITHOUT its BOM skip, and that twin is LF/CRLF-only, so it loses the lone-CR body split as well — B21. The two are NOT redundant with #4452's own Q6, which restores the twin WITH its BOM skip and therefore reddens B21 ALONE while B13 stays green: M5 proves the BOM half of the body split, Q6 proves the lone-CR half."
     }
   }
 }

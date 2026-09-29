@@ -12,11 +12,13 @@ import type { Severity, Violation } from "@kitelev/exocortex-core";
 import {
   matchFrontmatterBlock,
   frontmatterBlockBody,
+  leadingBomLength,
 } from "../../../../core/src/utilities/frontmatterBlock.js";
 
 jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   matchFrontmatterBlock,
   frontmatterBlockBody,
+  leadingBomLength,
   InMemoryTripleStore: jest.fn(),
   ExoQLParser: jest.fn(),
   ExoQLAlgebraTranslator: jest.fn(),
