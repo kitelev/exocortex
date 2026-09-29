@@ -249,10 +249,26 @@ export class PlanningFsAdapter extends NodeFsAdapter {
   private static readonly MAX_UNKNOWN_PATHS = 200;
 
   /**
-   * The two single-key query shapes `create` issues — `findFileByUID` and
-   * `EffortStatusResolver.resolveStatusUid` — and the only ones narrowing
-   * applies to. Anything else (a multi-key query, another key, a non-string
-   * value) takes the scan unchanged.
+   * The single-key query shapes narrowing applies to. Anything else (a
+   * multi-key query, another key, a non-string value) takes the scan
+   * unchanged.
+   *
+   * `create` reaches this through THREE call sites, all measured on the PR
+   * head rather than recalled (review of PR #4476 — an earlier revision of
+   * this docstring said "the two … and the only ones", and that was a false
+   * statement in the code, not merely a stale one):
+   *
+   * | site | key |
+   * |---|---|
+   * | `NodeFsAdapter.findFileByUID` (the `isDefinedBy` anchor) | `exo__Asset_uid` |
+   * | `EffortStatusResolver.resolveStatusUid` (the default status) | `exo__Asset_label` |
+   * | `EffortStatusResolver.resolveClassFile` (the status-bearing walk) | `exo__Asset_label` |
+   *
+   * The third is narrowed too, and deliberately so: it resolves a class
+   * reference that is not a UUID, i.e. a `prefix__Name` label, which the index
+   * keys verbatim. It is exercised end to end — `ems__Task` is status-bearing
+   * only via the `ems__Effort` walk, and the byte-identity axis compares the
+   * resolved `ems__Effort_status` between the narrowed and the scanning path.
    */
   private static narrowableQuery(
     query: Record<string, any>,

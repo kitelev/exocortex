@@ -604,12 +604,13 @@ export function createBatchCommand(): Command {
         const pendingUids = new Set(
           items.flatMap((item) => (item.uid ? [item.uid] : [])),
         );
-        const fsAdapter = new PlanningFsAdapter(vaultPath);
-        const ctx = new CreateContext(vaultPath, {
-          fsAdapter,
-          warn,
-          pendingUids,
-        });
+        // #4291 — the context owns the cache, so the adapter it is given must
+        // be built from the SAME one: an adapter without the lookup index
+        // would pay the cache read (the TBox filter uses it) and still scan
+        // the corpus for every uid / label lookup, i.e. strictly worse than
+        // before. The context is constructed first for exactly that reason.
+        const ctx = new CreateContext(vaultPath, { warn, pendingUids });
+        const fsAdapter = ctx.fsAdapter;
 
         failures.push(...(await checkCallerUids(items, fsAdapter)));
         const pendingIndex = new Map(

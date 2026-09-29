@@ -22,7 +22,8 @@
  *   C6  a class-def whose own label is NOT TBox-form is still admitted (metaclass closure)
  *   C7  a converter-SKIPPED file stays a candidate, so a uid only IT carries still resolves
  *   C8  a vault modified after the cache was written → no narrowing (full walk), same output
- *   C9  a label-less property def, named by its basename, is admitted by its domain alone
+ *   C9  a label-less property def, named by its basename, survives the narrowing
+ *   C10 a label the consumer accepts but the cache's own TBOX_FORM rejects is still read
  *
  * Revert-verify (mutants applied to a COPY of the tree by the driver spec
  * `tests/integration/create-cache-scan-4291.spec.json`): manifest diff ignored →
@@ -60,6 +61,9 @@ const PROP_DUP_B = "42910000-0000-4000-8000-000000000012"; // ems__Task_dup, ran
 const PROP_REQUIRED = "42910000-0000-4000-8000-000000000013"; // ems__Task_required, minCount 1
 const PROP_ISDEFINEDBY = "42910000-0000-4000-8000-000000000014"; // exo__Asset_isDefinedBy
 const PROP_RELATED = "42910000-0000-4000-8000-000000000015"; // ems__Task_related, Multiple + wikilink range
+/** A label the CONSUMER accepts (`KEY_SHAPE`) but the cache's own TBOX_FORM rejects: a space after `__`. */
+const PROP_SPACED = "42910000-0000-4000-8000-000000000016";
+const PROP_SPACED_LABEL = "ems__Task note";
 /** A property def the converter SKIPS, so the cache records neither its uid nor its domain. */
 const SKIPPED_UID = "42910000-0000-4000-8000-000000000020";
 
@@ -174,6 +178,13 @@ describe("#4291 create serves its vault scans from the persistent cache", () => 
     // `create` writes `exo__Asset_isDefinedBy` itself and validates the KEY, so
     // the mounted TBox has to declare it or every create here is rejected.
     asset(root, "tbox", PROP_ISDEFINEDBY, `exo__Instance_class:\n  - "[[${CLASS_PROPERTY}]]"\nexo__Asset_label: exo__Asset_isDefinedBy\nexo__Property_domain:\n  - "[[${CLASS_CLASS}]]"\nexo__Property_range:\n  - "[[${CLASS_ONTOLOGY}]]"\nexo__Asset_isDefinedBy: "[[${ONTO}]]"\n`);
+
+    // C10: a domainless, rangeless property def whose LABEL carries a space
+    // after the separator. `PropertyNameValidator.KEY_SHAPE` (`__.+$`) accepts
+    // it, so a full scan calls it a known property; the cache's own
+    // `TBOX_FORM` (`__\S+$`) does not. Nothing else here can admit it — which
+    // is exactly why the read filter must not borrow that stricter predicate.
+    asset(root, "tbox", PROP_SPACED, `exo__Instance_class:\n  - "[[${CLASS_PROPERTY}]]"\nexo__Asset_label: "${PROP_SPACED_LABEL}"\nexo__Asset_isDefinedBy: "[[${ONTO}]]"\n`);
 
     // C7 / C1: a property def the converter REFUSES — `exo__Asset_updatedAt`
     // is present but empty, one of its EMPTY_OPTIONAL_PROPERTY invariants
@@ -408,6 +419,27 @@ describe("#4291 create serves its vault scans from the persistent cache", () => 
     );
     expect(full).toBeDefined();
     expect(narrowed).toEqual(full);
+  });
+
+  it("C10 a label the consumer accepts but the cache's own TBOX_FORM rejects is still read", async () => {
+    const cold = buildVault();
+    const warm = buildVault();
+    await indexVault(warm);
+
+    const paths = await new CacheManager(warm).tboxScanPaths();
+    expect(paths).not.toBeNull();
+    expect(paths!.has(`tbox/${PROP_SPACED}.md`)).toBe(true);
+
+    // The verdict of `validate()` must not depend on whether a cache happened
+    // to be valid: the key is known on BOTH paths, so neither refuses.
+    const args = taskArgs(["--property", `${PROP_SPACED_LABEL}=whatever`]);
+    const a = await runCreate(cold, args);
+    const b = await runCreate(warm, args);
+    expect(a.exitCode).toBeNull();
+    expect(b.exitCode).toBe(a.exitCode);
+    expect(a.errors.join("\n")).not.toContain("Unknown property");
+    expect(b.errors.join("\n")).not.toContain("Unknown property");
+    expect(preview(b)).toBe(preview(a));
   });
 
   it("C8 a vault modified after the cache was written gets no narrowing, and the same output", async () => {

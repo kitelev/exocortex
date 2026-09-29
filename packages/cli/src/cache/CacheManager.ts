@@ -312,6 +312,25 @@ export interface AssetLookupIndex {
 }
 
 const ASSET_UID_IRI_SUFFIX = "#Asset_uid";
+
+/**
+ * #4291 — `<prefix>__` and NOTHING about the tail: deliberately WIDER than
+ * {@link TBOX_FORM}, which requires `\S+` and therefore rejects a label with a
+ * space after the separator.
+ *
+ * ⛔ Reusing `TBOX_FORM` here was a real divergence, not a style point (review
+ * of PR #4476): `PropertyNameValidator.KEY_SHAPE` is `^(<prefix>)__.+$`, so a
+ * def labelled `ems__Foo Bar` IS a known property name to the full scan — and
+ * a domainless, rangeless def is a case that validator documents as normal, so
+ * no other clause here would admit it. Under the strict form it dropped out of
+ * the narrowed scan silently, and `create --property "ems__Foo Bar"=x` changed
+ * its verdict depending on whether the cache happened to be valid.
+ *
+ * The rule for this predicate is one-directional: it must be at least as
+ * permissive as EVERY consumer of the scan it filters. Over-admitting costs
+ * one file read; under-admitting changes what `create` accepts.
+ */
+const TBOX_LABEL_PREFIX = new RegExp(`^${PREFIX_PATTERN_SOURCE}__`);
 const RDFS_LABEL_IRI_SUFFIX = "rdf-schema#label";
 const ASSET_ALIASES_IRI_SUFFIX = "#Asset_aliases";
 const ASSET_PROTOTYPE_IRI_SUFFIX = "#Asset_prototype";
@@ -1687,7 +1706,12 @@ const TBOX_SCAN_PREDICATE_SUFFIXES = ["#Class_superClass", "#subClassOf"];
  *   converted" reading safe: conversion is per-file all-or-nothing (two-phase
  *   commit, #2997), so a file with triples has no *silently dropped* key.
  * - **a TBox-form own label** — `PropertyNameValidator` harvests the property
- *   NAME from it, `ShapeLoader` its `uid → symbolic label` entry.
+ *   NAME from it, `ShapeLoader` its `uid → symbolic label` entry. Read off the
+ *   entry's own label triple, NOT off the persisted `tboxLabel` flag: that flag
+ *   exists for entries the converter committed nothing for, and those are
+ *   already admitted by the clause above — so consulting it here changed the
+ *   admitted set on no input (a dead condition, not a defensive one; the mutant
+ *   driver showed it could not be made to red).
  * - **a TBox predicate** — see {@link TBOX_SCAN_PREDICATE_SUFFIXES}.
  *
  * ⛤ A class-def is admitted by its `exo__Class_superClass` edge, NOT by a
@@ -1702,15 +1726,21 @@ function entryFeedsTboxScan(entry: CacheFileEntry): boolean {
   if (entry.triples.length === 0) {
     return true;
   }
-  if (entryHasTBoxLabel(entry)) {
-    return true;
-  }
+  const ownSubject = vaultPathToIRI(entry.path);
   for (const t of entry.triples) {
     if (t.predicate.type !== "IRI") {
       continue;
     }
     const predicate = t.predicate.value;
     if (TBOX_SCAN_PREDICATE_SUFFIXES.some((s) => predicate.endsWith(s))) {
+      return true;
+    }
+    if (
+      t.subject.type === "IRI" &&
+      t.subject.value === ownSubject &&
+      predicate.endsWith(ASSET_LABEL_IRI_SUFFIX) &&
+      (t.object.type === "IRI" || TBOX_LABEL_PREFIX.test(t.object.value))
+    ) {
       return true;
     }
   }

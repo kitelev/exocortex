@@ -23,28 +23,34 @@
       "_note": "The honest half of the index. Without it a uid that only a converter-SKIPPED file carries becomes unresolvable — the cache would be treated as the whole vault."
     },
     "M4_unjudgeable_entries_dropped_from_scan_filter": {
-      "from": "  if (entry.triples.length === 0) {\n    return true;\n  }\n  if (entryHasTBoxLabel(entry)) {",
-      "to": "  if (entry.triples.length === 0) {\n    return false;\n  }\n  if (entryHasTBoxLabel(entry)) {",
+      "from": "function entryFeedsTboxScan(entry: CacheFileEntry): boolean {\n  if (entry.triples.length === 0) {\n    return true;\n  }",
+      "to": "function entryFeedsTboxScan(entry: CacheFileEntry): boolean {\n  if (entry.triples.length === 0) {\n    return false;\n  }",
       "expect": ["C1"],
       "_note": "Same clause, other consumer: a file the cache holds no triples for must still be READ by the TBox scan, because the cache cannot say what it declares."
     },
     "M6_rdfs_label_not_indexed": {
       "from": "          predicate.endsWith(RDFS_LABEL_IRI_SUFFIX) ||\n          predicate.endsWith(ASSET_LABEL_IRI_SUFFIX)",
       "to": "          predicate.endsWith(ASSET_LABEL_IRI_SUFFIX)",
-      "expect": ["C3", "C4"],
-      "_note": "A TBox-form label is emitted as a SYMBOLIC IRI under the exo predicate, so an exo-only index is blind to exactly the assets a label lookup wants (`ems__EffortStatusBacklog`). ⛤ C1 stays GREEN on purpose and that is the sharp part: an incomplete index does NOT fall back to the corpus scan — it answers EMPTY, and the status is silently not resolved. So the axes that catch it are the ones reading the OUTPUT (C3 byte-identity, C4 the same preview warm and cold), not the read-count axis. Predicted C1, measured C3+C4; the prediction was read off the mutant's theme rather than off which axes execute after it (integration-test-revert-verify §A44)."
+      "expect": ["C3", "C4", "C10"],
+      "_note": "A TBox-form label is emitted as a SYMBOLIC IRI under the exo predicate, so an exo-only index is blind to exactly the assets a label lookup wants (`ems__EffortStatusBacklog`). ⛤ C1 stays GREEN on purpose and that is the sharp part: an incomplete index does NOT fall back to the corpus scan — it answers EMPTY, and the status is silently not resolved. So the axes that catch it are the ones reading the OUTPUT (C3 byte-identity, C4 the same preview warm and cold), not the read-count axis. Predicted C1, measured C3+C4; the prediction was read off the mutant's theme rather than off which axes execute after it (integration-test-revert-verify §A44). ⛤ Re-measured after C10 was added: it reds too, for the same mechanism — its create also resolves the default status, so a blind label index leaves `ems__Effort_status` out of the warm preview and the warm/cold comparison fails."
     },
     "M2_superclass_edge_not_a_tbox_signal": {
       "from": "const TBOX_SCAN_PREDICATE_SUFFIXES = [\"#Class_superClass\", \"#subClassOf\"];",
       "to": "const TBOX_SCAN_PREDICATE_SUFFIXES: string[] = [];",
       "expect": ["C6"],
-      "_note": "The PAIR carries the signal, not either member: the converter emits `exo:Class_superClass` AND its `rdfs:subClassOf` twin, so removing one leaves the file admitted by the other (a one-place mutation on a disjunction is powerless by construction — integration-test-revert-verify §A33). With neither, a class-def labelled humanly is admitted by nothing, and it is a link in the property-metaclass closure."
+      "_note": "The PAIR carries the signal, not either member: the converter emits `exo:Class_superClass` AND its `rdfs:subClassOf` twin, so removing one leaves the file admitted by the other (a one-place mutation on a disjunction is powerless by construction — integration-test-revert-verify §A33). With neither, a class-def labelled humanly is admitted by nothing, and it is a link in the property-metaclass closure. ⛤ Diagnosis for the two clauses REMOVED from this predicate before shipping (review category (a), 'truly defensive', proven by reading both consumers rather than by the fixture): a class-def typed `exo__Class` reaches either scan ONLY through its superClass edge — `buildPropertyMetaclassClosure` and `propertyClassKeysFromEdges` both read `superRefs`/edges and nothing else, so an edgeless class-def is inert on every input, prod or fixture; and an `exo__Property_domain` cannot make a file a shape candidate unless its property label resolves, which requires `exo__Asset_label` or the basename the converter synthesises into it — either way the label clause already admits it. Neither was category (b) 'the fixture lacks the input'."
     },
     "M7_tbox_label_clause_dropped": {
-      "from": "  if (entryHasTBoxLabel(entry)) {\n    return true;\n  }",
-      "to": "  if (entryHasTBoxLabel(entry) && false) {\n    return true;\n  }",
-      "expect": ["C1", "C3", "C4", "C5", "C6", "C9"],
+      "from": "      predicate.endsWith(ASSET_LABEL_IRI_SUFFIX) &&\n      (t.object.type === \"IRI\" || TBOX_LABEL_PREFIX.test(t.object.value))",
+      "to": "      false &&\n      predicate.endsWith(ASSET_LABEL_IRI_SUFFIX) &&\n      (t.object.type === \"IRI\" || TBOX_LABEL_PREFIX.test(t.object.value))",
+      "expect": ["C1", "C3", "C4", "C5", "C6", "C9", "C10"],
       "_note": "The clause that actually admits the property defs — including the label-LESS ones of issue #3099, whose basename the converter synthesises into `exo__Asset_label`. Its removal is what a too-narrow predicate looks like, and it reds nearly the whole set. Predicted C1/C4/C5/C9 from the mutant's theme; MEASURED two more, each for a reason worth naming (integration-test-revert-verify §A44): C3 because the status enum is a TBox-labelled asset too, so the warm preview loses `ems__Effort_status` and stops matching the cold one; C6 because the property `ems__Task_note` is admitted by its own label, not by the class-def it is typed by — so the key it addresses becomes unknown and the create is refused."
+    },
+    "M8_label_predicate_borrowed_from_the_cache": {
+      "from": "      (t.object.type === \"IRI\" || TBOX_LABEL_PREFIX.test(t.object.value))",
+      "to": "      (t.object.type === \"IRI\" || TBOX_FORM.test(t.object.value))",
+      "expect": ["C10"],
+      "_note": "The exact divergence the PR #4476 review found: `TBOX_FORM` requires `\\S+` after the separator, `PropertyNameValidator.KEY_SHAPE` accepts `.+`. Borrowing the cache's own stricter predicate drops a domainless def labelled `ems__Task note` from the narrowed scan, and `create --property 'ems__Task note'=x` then changes its verdict depending on whether a valid cache happened to exist. The rule this pins is one-directional: the read filter must be at least as permissive as EVERY consumer of the scan it filters."
     }
   }
 }
