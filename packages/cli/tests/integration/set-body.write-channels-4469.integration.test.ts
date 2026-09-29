@@ -149,6 +149,29 @@ describe("set-body on a non-LF asset (#4469)", () => {
     expect(upToBody.endsWith("---\r\n")).toBe(true);
   });
 
+  it(`CH44 ${REQ} the body's own trailing terminator is the FILE's, so not one foreign line ending survives anywhere`, async () => {
+    // The seam BEFORE the body is CH40/CH42's business; this is the terminator
+    // the command appends AFTER it, which was a hardcoded "\n" and therefore the
+    // single foreign line ending in an otherwise CRLF / lone-CR file.
+    const crlfUid = "66666666-6666-4666-8666-666666666666";
+    const crlf = await run(
+      crlfUid,
+      `---\r\nexo__Asset_uid: ${crlfUid}\r\nkeep__me: original\r\n---\r\nold body\r\n`,
+    );
+    // ⛤ Asserted on the TAIL alone, not on the whole file's profile: a profile
+    // assertion here would redden for any mutant that introduces an LF anywhere
+    // (MB1 swaps the fences, MB2 the seam) and this axis would then stop being
+    // about the terminator. The block and the seam have their own axes.
+    expect(crlf.endsWith("new body text\r\n")).toBe(true);
+
+    const crUid = "77777777-7777-4777-8777-777777777777";
+    const cr = await run(
+      crUid,
+      `---\rexo__Asset_uid: ${crUid}\rkeep__me: original\r---\rold body\r`,
+    );
+    expect(cr.endsWith("new body text\r")).toBe(true);
+  });
+
   it(`CH43 ${REQ} CONTROL — the pure-LF asset is unchanged in shape`, async () => {
     const uid = "33333333-3333-4333-8333-333333333333";
     const after = await run(

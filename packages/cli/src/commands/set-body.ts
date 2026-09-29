@@ -223,11 +223,20 @@ export function setBodyCommand(): Command {
         // new body (ensure a trailing newline for a non-empty body). Then, if
         // anything changed, bump exo__Asset_updatedAt — updateProperty re-matches ONLY the frontmatter
         // block, leaving the just-written body intact.
+        // ⛔ The trailing terminator is the FILE's, not a bare `\n` (#4469). On a
+        // CRLF or lone-CR asset the hardcoded LF was the single foreign line
+        // ending in the whole file — a mixed-EOL file introduced by the very
+        // write that preserves the block's own endings everywhere else.
+        // Measured on the dist before this line changed: CRLF file → crlf=5,
+        // lf=1 (tail `---\r\nnew body\n`); lone-CR → cr=5, lf=1.
+        // A body that ALREADY ends in a terminator of any of the three forms is
+        // left alone rather than given a second one; for an LF file both
+        // branches are byte-identical to the previous behaviour.
         const bodyPart =
           newBody.length > 0
-            ? newBody.endsWith("\n")
+            ? /(?:\r\n|\r|\n)$/.test(newBody)
               ? newBody
-              : `${newBody}\n`
+              : `${newBody}${eol}`
             : "";
         // The separator between the block and the body is the FILE's own line
         // ending (#4469) — a bare `\n` here is what put a lone LF straight after
