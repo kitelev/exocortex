@@ -325,7 +325,34 @@ export class NoteToRDFConverter {
    * const triples = await converter.convertNote(file);
    * ```
    */
-  async convertNote(file: IFile): Promise<Triple[]> {
+  /**
+   * @param resolvedFrontmatter - frontmatter the CALLER has already resolved
+   *   through the same tier this method would use. Passing it skips a second,
+   *   identical resolution (on a cold metadataCache that is a second full disk
+   *   read of the same file); omitting it keeps the previous behaviour exactly.
+   *
+   *   ⛔ `undefined` means "not supplied", `null` means "resolved, and there is
+   *   none" — they are NOT interchangeable: collapsing them would make a
+   *   genuinely frontmatter-less file trigger a fresh resolution on every call.
+   *
+   *   ⛤ Why the parameter instead of the loop calling
+   *   `convertNoteFromFrontmatter` directly: `convertNote` is the seam two
+   *   already-merged requirements measure re-parsing through
+   *   (`jest.spyOn(NoteToRDFConverter.prototype, "convertNote")` — req
+   *   `42812747` cache-manifest delta, req `cb707868` `--use-cache`
+   *   write-through). Moving the vault walk off that seam left both of them
+   *   counting zero while the loader was working perfectly — 7 green-looking
+   *   axes that had silently stopped measuring anything. Their assertions read
+   *   `mock.calls[i][0].path`, so an added SECOND argument is invisible to
+   *   them, while a changed call site is not.
+   */
+  async convertNote(
+    file: IFile,
+    resolvedFrontmatter?: Record<string, unknown> | null,
+  ): Promise<Triple[]> {
+    if (resolvedFrontmatter !== undefined) {
+      return this.convertNoteFromFrontmatter(file, resolvedFrontmatter);
+    }
     // Tier 1 of RFC 8f93ff95 (req 7d00a60b): the asset's OWN frontmatter must not
     // be gated on Obsidian's metadataCache. On a cold cache getFrontmatter()
     // returns null, convertNoteFromFrontmatter short-circuits to [], and the whole
@@ -1192,12 +1219,11 @@ export class NoteToRDFConverter {
           continue;
         }
 
-        // Reuses the frontmatter resolved above — `convertNote` would resolve
-        // it a second time through the same tier, for the same answer.
-        const candidate = await this.convertNoteFromFrontmatter(
-          file,
-          frontmatter,
-        );
+        // Reuses the frontmatter resolved above — without it `convertNote`
+        // resolves the same file a second time through the same tier, for the
+        // same answer. Still `convertNote`, on purpose: it is the seam two
+        // other requirements count re-parsed files through (see its docstring).
+        const candidate = await this.convertNote(file, frontmatter);
         allTriples.push(...candidate);
         if (options.onFileTriples) {
           try {

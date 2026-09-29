@@ -22,8 +22,8 @@
     "M2_collapse_no_block_into_a_failure": {
       "from": "    // Outcome 1 — no block at all: a plain note, legitimately not an asset.\n    if (body === null) return null;\n",
       "to": "    // Outcome 1 — no block at all: a plain note, legitimately not an asset.\n    if (body === null) return { reason: \"no frontmatter\" };\n",
-      "expect": ["A1", "B2"],
-      "_note": "The OVER-WIDE fix the requirement's acceptance names explicitly as the risk: report any null frontmatter. A report-only acceptance would pass it, which is why A1/B2 exist. A7 stays green — an unreadable file returns before this line."
+      "expect": ["A1", "B2", "B7"],
+      "_note": "The OVER-WIDE fix the requirement's acceptance names explicitly as the risk: report any null frontmatter. A report-only acceptance would pass it, which is why A1/B2 exist. A7 stays green — an unreadable file returns before this line. ⛤ B7 also reddens, reason read rather than smoothed over: once a plain note is reported as a failure the loop `continue`s it, so it never reaches convertNote and B7's per-file list loses it. Same class as the converter spec's C1/C2 corrections (integration-test-revert-verify §A44) — the prediction came from the mutant's theme, not from which axes execute after it lands."
     },
     "M3_drop_the_no_content_line_predicate": {
       "from": "    if (!hasContentLine) return null;\n",

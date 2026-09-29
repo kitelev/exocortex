@@ -322,5 +322,29 @@ describe("ObsidianVaultAdapter.getFrontmatterParseFailure — plugin parity (#44
         "valid.md",
       ]);
     });
+
+    it("B7 @req:fe50da38-4798-46e6-bb0a-b4b88596c340 the vault walk still parses each file THROUGH convertNote (the seam other requirements count)", async () => {
+      // Two already-merged requirements measure "which files were re-parsed" by
+      // spying on `NoteToRDFConverter.prototype.convertNote` (req 42812747 —
+      // cache-manifest delta; req cb707868 — `--use-cache` write-through).
+      // Reusing the resolved frontmatter must therefore pass it INTO
+      // convertNote, not bypass convertNote: an earlier draft of this change
+      // called `convertNoteFromFrontmatter` directly and left 7 of their axes
+      // counting zero while the loader worked perfectly. Nothing on their side
+      // could have caught that — hence this axis here, next to the change that
+      // can break it.
+      const { adapter } = makeVault(
+        { "valid.md": VALID, "plain.md": PLAIN },
+        { warm: true },
+      );
+      const spy = jest.spyOn(NoteToRDFConverter.prototype, "convertNote");
+
+      await new NoteToRDFConverter(adapter).convertVaultWithValidation();
+
+      expect(
+        spy.mock.calls.map(([f]) => (f as IFile).path).sort(),
+      ).toEqual(["plain.md", "valid.md"]);
+      spy.mockRestore();
+    });
   });
 });
