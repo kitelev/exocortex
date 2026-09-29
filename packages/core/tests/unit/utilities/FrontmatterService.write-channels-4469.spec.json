@@ -1,0 +1,59 @@
+{
+  "_doc": "Revert-verify mutants for issue #4469 / req 2d072437-c19d-49a4-ae89-f20b6185571f — FrontmatterService, the TEXT write channel behind `set-property`, `remove-property`, `set-body` and every `apply <cmd>` that writes a property. Each mutant removes ONE guarantee and must redden EXACTLY the axes that state it; expectations written BEFORE the run. M1/M6/M7 restore the pre-#4469 LF-only predicate at each of its three sites (they were three separate call sites, not one, so three mutants); M2 models a js-yaml RE-DUMP of the block (the thing decision 1 of the requirement forbids — it costs LF/CRLF assets their byte-identity while leaving the block count correct, which is why it reddens the byte-shape axes and NOT CH1); M3/M4 pin the two halves of the BOM policy (a run collapses to one; a single one is not dropped); M5 pins that a newly inserted line carries the FILE's line ending rather than LF.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› (CH\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/utilities/FrontmatterService.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/utilities/FrontmatterService.write-channels-4469.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_updateProperty_back_to_lf_only_predicate": {
+      "from": "    const block = matchFrontmatterBlock(content);\n    const serialized = this.serializeValue(property, value);",
+      "to": "    const lfOnly = /^---\\n([\\s\\S]*?)\\n---/.exec(content);\n    const block = lfOnly\n      ? { body: lfOnly[1], blockStart: 0, blockEnd: lfOnly[0].length }\n      : null;\n    const serialized = this.serializeValue(property, value);",
+      "expect": ["CH1", "CH2", "CH3", "CH4", "CH6", "CH7"],
+      "_note": "The exact predicate this class carried until #4469. A non-LF (or BOM-prefixed) asset is then seen as having no block, so updateProperty PREPENDS a second one — the measured defect. CH5 (pure LF) stays green, which is the control that the mutant is not simply breaking everything."
+    },
+    "M2_body_rejoined_with_lf_like_a_redump": {
+      "from": "      FrontmatterService.joinBodyLines(lines, eols),\n    );\n    // req 960d7a3f (Scenario C)",
+      "to": "      lines.join(\"\\n\"),\n    );\n    // req 960d7a3f (Scenario C)",
+      "expect": ["CH2", "CH4", "CH7"],
+      "_note": "Models the js-yaml RE-DUMP `updateProperty` must NOT become: the block comes back with one uniform LF ending and the original bytes are gone. The block COUNT stays correct, so CH1 and CH3 stay green — the mutant is pointed at byte-identity alone, which is what decision 1 of the requirement is about."
+    },
+    "M3_bom_run_preserved_verbatim": {
+      "from": "    const bom = block.blockStart > 0 ? \"\\uFEFF\" : \"\";",
+      "to": "    const bom = content.slice(0, block.blockStart);",
+      "expect": ["CH3"],
+      "_note": "Keeps N BOMs instead of collapsing to one. CH6 (a single BOM) stays green — a run and a single byte are different halves of the policy and each has its own axis."
+    },
+    "M4_bom_dropped_entirely": {
+      "from": "    const bom = block.blockStart > 0 ? \"\\uFEFF\" : \"\";",
+      "to": "    const bom = \"\";",
+      "expect": ["CH3", "CH6"],
+      "_note": "The opposite failure: the write silently re-encodes a file the user deliberately marked. Both BOM axes redden."
+    },
+    "M5_new_line_always_lf": {
+      "from": "    const eol = FrontmatterService.blockEol(content, block);\n    const span = FrontmatterService.findPropertyLineSpan(lines, property);",
+      "to": "    const eol = \"\\n\";\n    const span = FrontmatterService.findPropertyLineSpan(lines, property);",
+      "expect": ["CH2", "CH4", "CH7"],
+      "_note": "Inserts an LF line into a CRLF / lone-CR block — the MIXED block decision 2 of the requirement forbids. CH1 stays green because the block count and the body are unaffected; the redness is exactly the line-ending axes."
+    },
+    "M6_removePhysicalKey_back_to_lf_only_predicate": {
+      "from": "  private removePhysicalKey(content: string, property: string): string {\n    const block = matchFrontmatterBlock(content);",
+      "to": "  private removePhysicalKey(content: string, property: string): string {\n    const lfOnly = /^---\\n([\\s\\S]*?)\\n---/.exec(content);\n    const block = lfOnly\n      ? { body: lfOnly[1], blockStart: 0, blockEnd: lfOnly[0].length }\n      : null;",
+      "expect": ["CH8", "CH9"],
+      "_note": "The removal half had its own call site, so it needs its own mutant: a shared import does not make two call sites one guarantee."
+    },
+    "M7_parseObject_back_to_crlf_only_split": {
+      "from": "    const lines = parsed.content.split(/\\r\\n|\\r|\\n/);",
+      "to": "    const lines = parsed.content.split(/\\r?\\n/);",
+      "expect": ["CH10"],
+      "_note": "`parse` now returns a lone-CR body verbatim; a `\\r?\\n` split hands the whole block to the loop as ONE line and every key reads as absent. The read half of the same service has to follow the predicate or the round-trip breaks."
+    }
+  }
+}
