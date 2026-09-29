@@ -2,12 +2,15 @@
  * Issue #4464 — the two driver-reliability defects the four out-of-jest
  * `*-pipe.harness.ts` files shared: `--no-build` accepted a bundle older than
  * the sources it was built from, and cleanup of the temp tree was the last
- * statement of the IIFE rather than a `finally`.
+ * statement of the IIFE rather than a `finally`. Issue #4466 brought the fifth
+ * driver in this directory (`use-cache-4264-proc-chain.harness.ts`) under the
+ * same guards and WIDENED the wiring sweep below from `*-pipe.harness.ts` to
+ * `*.harness.ts` — see the comment on `harnesses` for what that costs.
  *
  * The harnesses themselves cannot run here — they need a built bundle and real
  * pipes, which is the whole reason they live outside jest (the CLI jest job does
  * not build `dist`). Their GUARDS can and do: `helpers/pipe-harness-guards.ts`
- * is plain fs/argv logic, so this suite is CI-gated even though its four callers
+ * is plain fs/argv logic, so this suite is CI-gated even though its five callers
  * are not. That asymmetry is the point — before #4464 nothing about the drivers
  * was covered by any gate at all.
  *
@@ -23,11 +26,11 @@
  *   G3  cleanup runs when the body THROWS, and the error still propagates —
  *       both halves, because a `finally` that swallowed would turn a crash into
  *       `PASS=…` + rc=0.
- *   G4  every `*-pipe.harness.ts` obtains its bundle through
+ *   G4  every `*.harness.ts` obtains its bundle through
  *       `prepareBundleOrExit` — the wiring half of G1/G2
- *   G5  every `*-pipe.harness.ts` runs its axis body through `runAxes` — the
+ *   G5  every `*.harness.ts` runs its axis body through `runAxes` — the
  *       wiring half of G3
- *   G6  no `*-pipe.harness.ts` removes a temp tree on its own any more, which is
+ *   G6  no `*.harness.ts` removes a temp tree on its own any more, which is
  *       what says the cleanup moved rather than got duplicated
  *   G8  a file reachable only through a SYMLINKED directory still counts as an
  *       input — a dirent-kind walk skips symlinks in silence (a `Dirent` for one
@@ -46,7 +49,11 @@
  *
  * Mutants: `pipe-harness-guards-4464.spec.json` (subject = the helper) locks
  * G1, G3, G8, G9 and G10; `pipe-harness-guards-4464.wiring.spec.json`
- * (subject = the create-batch harness) locks G4 and G5.
+ * (subject = the create-batch harness) locks G4 and G5. A spec has exactly one
+ * subject, so the widened sweep gets its own:
+ * `pipe-harness-guards-4466.wiring.spec.json` (subject = the proc-chain
+ * harness) proves the fifth file is observed too — without it G4/G5 would be
+ * true of the new member only by inspection.
  */
 import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import * as fs from "fs";
@@ -214,10 +221,28 @@ describe("#4464 — pipe-harness driver guards", () => {
     expect(newestFileUnder(tree.srcFile)).toBeNull();
   });
 
-  // ---- wiring: the four drivers actually go through the guards ---------------
+  // ---- wiring: the drivers actually go through the guards --------------------
+  /**
+   * ⛤ The sweep is `*.harness.ts`, WIDER than the `*-pipe.harness.ts` it was
+   * written as (#4464 → #4466). The narrow form was correct for its own issue —
+   * it enumerated four files and covered exactly them — but it meant the fifth
+   * out-of-jest driver in this same directory
+   * (`use-cache-4264-proc-chain.harness.ts`) carried both defects unwatched: it
+   * parsed the flags itself and, under `--no-build`, checked neither staleness
+   * nor existence. A sweep that is narrower than the family it protects has to
+   * be widened by hand every time the family grows, which is the failure this
+   * one just had.
+   *
+   * ⛔ The cost is stated rather than slid into: EVERY future `*.harness.ts` in
+   * this directory is now a compliance obligation. A driver that genuinely has
+   * no bundle to measure would redden G4/G5 — and must then be exempted by an
+   * explicit, argued change to these axes, not by being named out of the glob.
+   * That is the intended asymmetry: growing the family is silent, opting out of
+   * the guards is not.
+   */
   const harnesses = fs
     .readdirSync(__dirname)
-    .filter((f) => f.endsWith("-pipe.harness.ts"))
+    .filter((f) => f.endsWith(".harness.ts"))
     .sort();
 
   /**
@@ -233,23 +258,26 @@ describe("#4464 — pipe-harness driver guards", () => {
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/(^|[^:])\/\/.*$/gm, "$1");
 
-  it("G4: every *-pipe.harness.ts obtains its bundle through prepareBundleOrExit", () => {
-    // Canary: an empty sweep would make G4/G5/G6 vacuously green.
-    expect(harnesses.length).toBeGreaterThanOrEqual(4);
+  it("G4: every *.harness.ts obtains its bundle through prepareBundleOrExit", () => {
+    // Canary: an empty sweep would make G4/G5/G6 vacuously green. The floor is
+    // the five drivers that exist as of #4466 — four `*-pipe` plus the proc-chain
+    // one — so a glob that silently narrowed back would redden here first.
+    expect(harnesses.length).toBeGreaterThanOrEqual(5);
+    expect(harnesses).toContain("use-cache-4264-proc-chain.harness.ts");
     const missing = harnesses.filter(
       (f) => !codeOf(f).includes("prepareBundleOrExit("),
     );
     expect(missing).toEqual([]);
   });
 
-  it("G5: every *-pipe.harness.ts runs its axis body through runAxes", () => {
-    expect(harnesses.length).toBeGreaterThanOrEqual(4);
+  it("G5: every *.harness.ts runs its axis body through runAxes", () => {
+    expect(harnesses.length).toBeGreaterThanOrEqual(5);
     const missing = harnesses.filter((f) => !codeOf(f).includes("runAxes("));
     expect(missing).toEqual([]);
   });
 
-  it("G6: no *-pipe.harness.ts removes its temp tree on its own", () => {
-    expect(harnesses.length).toBeGreaterThanOrEqual(4);
+  it("G6: no *.harness.ts removes its temp tree on its own", () => {
+    expect(harnesses.length).toBeGreaterThanOrEqual(5);
     const offenders = harnesses.filter((f) => codeOf(f).includes("fs.rmSync("));
     expect(offenders).toEqual([]);
   });
