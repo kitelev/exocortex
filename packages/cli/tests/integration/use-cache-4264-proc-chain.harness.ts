@@ -22,10 +22,22 @@
  * Flag parsing, the rebuild, the existence check and the refusal to measure a
  * bundle older than what it was built from all live in the shared guard module
  * (issue #4464, widened to this file by #4466). Before that this harness parsed
- * `--dist` / `--no-build` itself and, under `--no-build`, checked NEITHER
- * staleness NOR existence — an absent or stale bundle was measured in silence
- * (harness-invocation-surface §A8). Its cleanup likewise moves into `runAxes`,
- * so the `finally` is structural rather than re-typed here.
+ * `--dist` / `--no-build` itself and, under `--no-build`, checked existence but
+ * NOT staleness, so a bundle older than the tree it was pointed at was measured
+ * in silence (harness-invocation-surface §A8).
+ *
+ * ⛔ #4466 states this file had "not even the `fs.existsSync(dist)` check" —
+ * measured against the tree, that is wrong: the check was there (`⛔ BROKEN: no
+ * CLI bundle at …`, rc 2). Only the staleness half was missing, exactly as in
+ * the four siblings before #4464. Likewise the cleanup: it already ran from a
+ * hand-written `try/finally`, so nothing leaked on a throw — what moves into
+ * `runAxes` is the guarantee's OWNERSHIP, not the guarantee.
+ *
+ * ⚠ One consequence of routing through the shared module: a build failure or an
+ * absent bundle now exits 1 with `❌ BUILD — …` where this file used to exit 2
+ * with `⛔ BROKEN: …`. Its two mutant specs key on `❌ (P\d+) ` and on rc
+ * changing relative to the control, so both are unaffected (the full matrix was
+ * measured identical before and after).
  *
  * Axes:
  *   P1 `index` on the fixture succeeds and persists an inferred layer
