@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutants for req 1848dff9-bb2e-43a9-95e7-d917d6cef552 (issue #4347, `cli create-batch`) — the EARLY-CLOSING-READER half, added by #4456. Separate spec because the axes need a REAL process with REAL pipes on the BUILT bundle, which jest cannot provide: the jest axis B16 mocks `process.stdout.write` and synthesises the failure by emitting 'error' on the mock, so no pipe, no real EPIPE and no flush is ever exercised (integration-test-revert-verify §A66, the same limit `helpers/exit-assertions.ts` documents about itself). That is why `M24_stdio_guard_not_installed` in create-batch-1848dff9.spec.json reddened ZERO axes on two independent trees including pristine origin/main — it has MOVED here as M1 and now has an axis that observes it. ⛔ This spec and its harness run LOCALLY and under the mutant driver, NOT in CI: the CLI jest job does not build dist, and the harness is not named `*-verify.{sh,py}` so verify-harness-runner does not sweep it either (harness-invocation-surface §A19 — naming that inapplicability out loud rather than leaving it to read as an oversight). Same shape as get-body-9de09856.pipe.spec.json, set-body-4436.pipe.spec.json and dryrun-4444.*.spec.json, which locked the three siblings. Expectation written BEFORE the run, and the RED state was OBSERVED on the guard-less bundle (200-item batch): stdout reader gone before the echo -> rc=1 + \"Error: write EPIPE\" with all 200 files already on disk; stderr reader gone at 477 B of the preview -> rc=1; C3 and C4 green in the same run. The harness rebuilds by default so a mutated copy of the tree is measured, not a stale bundle.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "❌ (C\\d+)",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/create-batch.ts",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && npx tsx packages/cli/tests/integration/create-batch-1848dff9-pipe.harness.ts 2>&1",
+  "mutants": {
+    "M1_stdio_guard_not_installed": {
+      "from": "      guardStdioAgainstClosedReader();",
+      "to": "      void 0;",
+      "expect": ["C1", "C2"],
+      "_note": "MOVED here from create-batch-1848dff9.spec.json by #4456, where it declared `expect: [\"B16\"]` and reddened nothing at all. Removing the call leaves both stdio streams without an 'error' listener, so the asynchronous EPIPE a departed reader causes becomes an uncaught exception: rc=1 AFTER every item was written (measured: 200 of 200 on disk), plus a Node stack trace on the very channels this command documents (`create-batch … | head`, `--dry-run 2>&1 | head`). Two axes redden because the guard covers TWO streams and the command writes to both — the stdout echo (C1) and the planning/preview stream (C2); M2 below is the mutant that separates them, so this is not one defect counted twice. C3 stays GREEN (both readers stay to EOF, so no reader ever departs) and C4 stays GREEN (it exercises `create`, a different file) — that pair is what makes C1/C2 statements about a departing reader rather than about running the batch at all, and tells a broken probe apart from a lost guard (integration-test-revert-verify §A13)."
+    },
+    "M2_guard_covers_stdout_only": {
+      "from": "  for (const stream of [process.stdout, process.stderr]) {",
+      "to": "  for (const stream of [process.stdout]) {",
+      "expect": ["C2"],
+      "_note": "The guard's docstring claims BOTH streams, and the action's comment gives the reason: 'planning writes warnings to stderr long before finish(), and `2>&1 | head` closes that pipe too'. This mutant keeps the listener on stdout only, so C1 stays GREEN and only C2 reddens — which is what proves the stderr half is separately locked rather than riding along on the stdout half. Without it, M1's two red axes could not be told apart from one defect observed twice."
+    }
+  }
+}

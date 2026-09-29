@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for req 1848dff9-bb2e-43a9-95e7-d917d6cef552 (issue #4347, `cli create-batch`), subject = the batch command. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). One mutant per guarantee the command itself carries; the per-item pipeline is create's own planCreate and is locked by create's suites. Expectations written BEFORE the run (§A44).",
+  "_doc": "Revert-verify mutants for req 1848dff9-bb2e-43a9-95e7-d917d6cef552 (issue #4347, `cli create-batch`), subject = the batch command. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). One mutant per guarantee the command itself carries; the per-item pipeline is create's own planCreate and is locked by create's suites. Expectations written BEFORE the run (§A44). ⛔ The EARLY-CLOSING-READER guarantee is NOT in this spec: `M24_stdio_guard_not_installed` lived here declaring `expect: [\"B16\"]` and reddened ZERO axes on two independent trees including pristine origin/main (#4456). B16 mocks `process.stdout.write` and emits 'error' on the mock, so it can observe the handler's POLICY (M22 reddens it) but never whether the handler is INSTALLED, and no in-jest axis can — a real pipe and a real flush are unreachable from here (integration-test-revert-verify §A66). That mutant now lives in create-batch-1848dff9.pipe.spec.json as M1, against an out-of-jest harness that drives a real reader away from a real pipe.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -139,12 +139,6 @@
       "to": "          false",
       "expect": ["B17"],
       "_note": "Review round 3 LOW: a self-anchored item (namespace ontology anchored on its own uid) was told 'which item[k] of this same batch creates' with k = itself."
-    },
-    "M24_stdio_guard_not_installed": {
-      "from": "      guardStdioAgainstClosedReader();",
-      "to": "      void 0;",
-      "expect": ["B16"],
-      "_note": "Review round 3 LOW: the guard was installed only inside finish(), so an EPIPE on an early stderr warning (2>&1 | head) was still uncaught; it is now the action's first statement, and this mutant locks that the listener is ours (not one the jest worker happens to register)."
     }
   }
 }
