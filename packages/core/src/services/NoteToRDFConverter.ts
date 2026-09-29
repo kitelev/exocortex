@@ -1099,7 +1099,31 @@ export class NoteToRDFConverter {
         // malformed asset can never leak partial triples into the store
         // (which previously tripped the SPARQL executor with
         // "Literals cannot appear in subject position").
-        const frontmatter = this.vault.getFrontmatter(file);
+        // Resolved ONCE, through the same disk-fallback tier `convertNote`
+        // uses below — not twice, and not through the cache-only reader.
+        //
+        // Two things depend on this being the fallback tier (req `fe50da38`,
+        // #4440 — the plugin half of the skip-list promise):
+        //
+        //  1. MEANING. On a cold metadataCache the cache-only reader returns
+        //     null for EVERY file, so `!frontmatter` said nothing about the
+        //     file — the parse-failure probe below would have been asked about
+        //     well-formed assets (it answers "no failure", so no file is
+        //     mis-reported, but the question is vacuous).
+        //  2. COST. That vacuous question costs one full disk read per file on
+        //     the plugin's cold eager walk (12k+ files on a phone), and then
+        //     `convertNote` read the very same file AGAIN through its own
+        //     fallback — two reads where one is needed. Resolving here and
+        //     handing the result to `convertNoteFromFrontmatter` keeps the walk
+        //     at ONE read per file and leaves the probe for the files that are
+        //     genuinely frontmatter-less (17 of 54 314 on the canonical corpus).
+        //
+        // Feature-detected exactly as `convertNote` does it: an adapter without
+        // the fallback tier (the CLI one reads the filesystem directly; the
+        // in-memory test doubles have no disk) keeps the cached reader.
+        const frontmatter = this.vault.getFrontmatterWithFallback
+          ? await this.vault.getFrontmatterWithFallback(file)
+          : this.vault.getFrontmatter(file);
 
         // A null frontmatter has TWO causes, and only one is a defect: the file
         // has no block at all (a plain note — legitimately not an asset), or it
@@ -1113,8 +1137,18 @@ export class NoteToRDFConverter {
         //
         // Feature-detected: an adapter without the capability keeps the
         // previous behaviour exactly (see IVaultFrontmatterManager).
+        //
+        // ⛔ `await` is load-bearing, not cosmetic: the capability MAY return a
+        // promise (the plugin's only read API is async — see the port). Without
+        // it the promise OBJECT is truthy, so every frontmatter-less plain note
+        // would be reported as skipped with `reason: undefined` — the exact
+        // false-positive the three-outcome split exists to prevent. `await` on
+        // the CLI's synchronous value, and on the `undefined` of an adapter
+        // without the capability, changes nothing.
         if (!frontmatter) {
-          const parseFailure = this.vault.getFrontmatterParseFailure?.(file);
+          const parseFailure = await this.vault.getFrontmatterParseFailure?.(
+            file,
+          );
           if (parseFailure) {
             if (strict) {
               throw new Error(
@@ -1158,7 +1192,12 @@ export class NoteToRDFConverter {
           continue;
         }
 
-        const candidate = await this.convertNote(file);
+        // Reuses the frontmatter resolved above — `convertNote` would resolve
+        // it a second time through the same tier, for the same answer.
+        const candidate = await this.convertNoteFromFrontmatter(
+          file,
+          frontmatter,
+        );
         allTriples.push(...candidate);
         if (options.onFileTriples) {
           try {

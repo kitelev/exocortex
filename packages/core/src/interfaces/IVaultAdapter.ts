@@ -105,11 +105,27 @@ export interface IVaultFrontmatterManager {
    *
    * OPTIONAL for the same reason as `getFrontmatterWithFallback`: a platform
    * capability, not a universal contract. An adapter that never sees the raw
-   * block (a metadata-cache-backed one, the in-memory test ones) has nothing to
-   * answer with, so callers feature-detect and keep today's behaviour when it
-   * is absent.
+   * block (the in-memory test ones) has nothing to answer with, so callers
+   * feature-detect and keep today's behaviour when it is absent.
+   *
+   * ⛤ MAY RETURN A PROMISE (req `fe50da38`, #4440 — the plugin half). The
+   * earlier wording of the line above named "a metadata-cache-backed one" as an
+   * adapter that cannot answer; that was true of `metadataCache` and FALSE of
+   * the adapter — `ObsidianVaultAdapter` reads raw content through
+   * `vault.read`, which is Obsidian's ONLY read API and is **async on every
+   * platform** (there is no sync counterpart, and Node `fs` is forbidden on
+   * mobile by the Desktop↔Mobile parity invariant). A sync-only signature would
+   * therefore have excluded the plugin BY CONSTRUCTION and left the skip list
+   * permanently non-exhaustive on the surface most users actually run.
+   *
+   * Widening (not a second async-named capability) keeps ONE question with ONE
+   * answer: every caller must `await` the result, which is a no-op for the
+   * synchronous CLI implementation and for the `undefined` of an adapter that
+   * does not implement it at all.
    */
-  getFrontmatterParseFailure?(file: IFile): { reason: string } | null;
+  getFrontmatterParseFailure?(
+    file: IFile,
+  ): { reason: string } | null | Promise<{ reason: string } | null>;
   /**
    * Write the keys `updater` returns into the file's frontmatter (req
    * `2a020489`; the plugin half of the dialect is req `de7131ae`).
