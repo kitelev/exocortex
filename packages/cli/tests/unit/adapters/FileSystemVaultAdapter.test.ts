@@ -12,7 +12,18 @@ import { parseYamlFrontmatterTolerant } from "../../../../core/src/utilities/par
 import { FrontmatterService } from "../../../../core/src/utilities/FrontmatterService.js";
 
 // Mock exocortex module before import
+// #4461: the block predicate now lives in core and the SUT imports it from the
+// barrel, so this explicit-export mock must provide it. Imported from SOURCE,
+// like `parseYamlFrontmatterTolerant` above/below: a stub would answer "no
+// block" and the mock would stop mirroring production (test-fixture-realism).
+import {
+  matchFrontmatterBlock,
+  frontmatterBlockBody,
+} from "../../../../core/src/utilities/frontmatterBlock.js";
+
 jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
+  matchFrontmatterBlock,
+  frontmatterBlockBody,
   IVaultAdapter: class {},
   IFile: class {},
   IFolder: class {},

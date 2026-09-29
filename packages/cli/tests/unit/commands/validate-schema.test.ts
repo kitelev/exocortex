@@ -5,7 +5,18 @@ import { mkdirSync, writeFileSync } from "fs";
 // Mock exocortex (heavy dependency)
 import type { Severity, Violation } from "@kitelev/exocortex-core";
 
+// #4461: the block predicate now lives in core and the SUT imports it from the
+// barrel, so this explicit-export mock must provide it. Imported from SOURCE,
+// like `parseYamlFrontmatterTolerant` above/below: a stub would answer "no
+// block" and the mock would stop mirroring production (test-fixture-realism).
+import {
+  matchFrontmatterBlock,
+  frontmatterBlockBody,
+} from "../../../../core/src/utilities/frontmatterBlock.js";
+
 jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
+  matchFrontmatterBlock,
+  frontmatterBlockBody,
   InMemoryTripleStore: jest.fn(),
   ExoQLParser: jest.fn(),
   ExoQLAlgebraTranslator: jest.fn(),
