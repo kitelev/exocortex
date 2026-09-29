@@ -1,0 +1,23 @@
+{
+  "_doc": "Revert-verify WIRING mutant for req 1dfbd427 (#4453): the shared core predicate must be what this site actually asks. A spec on the core helper alone would stay green if a site kept its own regex — that is the defect (a shared helper nothing calls), not a hypothesis.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/adapters/ObsidianFileSystemAdapter.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/adapters/plugin-frontmatter-crlf-bom-4453.test.ts --verbose 2>&1",
+  "red_re": "● .*› ([CPX]\\d+) ",
+  "mutants": {
+    "W_site_keeps_its_own_lf_only_regex": {
+      "from": "    const body = frontmatterBlockBody(content);\n",
+      "to": "    const body = /^---\\n([\\s\\S]*?)\\n---/.exec(content)?.[1] ?? null;\n",
+      "expect": ["P3", "P4"],
+      "_note": "The pre-#4453 predicate of the DataAdapter-backed read path. P4 reddens through findFileByUID, i.e. the user-visible consequence (the asset cannot be found at all), not just the metadata read."
+    }
+  }
+}

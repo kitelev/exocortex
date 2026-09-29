@@ -4,6 +4,7 @@ import {
   FileNotFoundError,
   FileAlreadyExistsError,
   parseYamlFrontmatterTolerant,
+  frontmatterBlockBody,
 } from "@kitelev/exocortex-core";
 
 export class ObsidianFileSystemAdapter implements IFileSystemAdapter {
@@ -109,15 +110,21 @@ export class ObsidianFileSystemAdapter implements IFileSystemAdapter {
     return abstract instanceof TFolder;
   }
 
+  /**
+   * ⛤ Was an LF-only regex of its own (req `1dfbd427`, #4453): a valid
+   * CRLF-fenced or BOM-led file returned `{}` here, so `getFileMetadata` saw no
+   * properties and `findFilesByMetadata` / `findFileByUID` could not find the
+   * asset at all — while the CLI, fixed by #4450, read it fine. Now the ONE
+   * shared predicate decides, so this surface cannot drift from the others.
+   */
   private extractFrontmatter(content: string): Record<string, unknown> {
-    const frontmatterRegex = /^---\n([\s\S]*?)\n---/;
-    const match = content.match(frontmatterRegex);
-    if (!match) {
+    const body = frontmatterBlockBody(content);
+    if (body === null) {
       return {};
     }
     // #3800: tolerant parse — a duplicated mapping key would otherwise throw
     // and collapse the asset to `{}` (0 triples → invisible & unrepairable).
-    return parseYamlFrontmatterTolerant(match[1]) ?? {};
+    return parseYamlFrontmatterTolerant(body) ?? {};
   }
 
   private matchesQuery(

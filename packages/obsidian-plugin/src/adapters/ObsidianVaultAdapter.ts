@@ -5,6 +5,7 @@ import {
   IFolder,
   IFrontmatter,
   FrontmatterService,
+  frontmatterBlockBody,
 } from "@kitelev/exocortex-core";
 
 /** A linkpath body that is exactly a uuid — the `uid-bare` wikilink form. */
@@ -126,33 +127,18 @@ export class ObsidianVaultAdapter implements IVaultAdapter {
   }
 
   /**
-   * A leading `---` block; group 1 = its YAML body.
+   * ⛤ The block predicate now lives in ONE place for the whole repo —
+   * `frontmatterBlockBody` from `@kitelev/exocortex-core` (req `1dfbd427`,
+   * #4453). It was LF-only here, so a valid CRLF-fenced or BOM-led asset was
+   * invisible to the plugin while the CLI indexed it fine (#4441 / PR #4450) —
+   * the same file, different triples, decided by which surface read it.
    *
-   * ⛔ Never `.match()` raw content against this directly — go through
-   * {@link matchFrontmatterBlock}, so the READ path and the DIAGNOSTIC path
-   * cannot drift. The CLI adapter learned this the expensive way: its read and
-   * diagnostic predicates were written in parallel and diverged (#4439 review),
-   * and the cure there was the same single matcher
-   * (`FileSystemVaultAdapter.matchFrontmatterBlock`).
-   *
-   * ⚠ LF-only ON PURPOSE in this change: a CRLF-fenced or BOM-led block is
-   * still invisible here, exactly as it is today. That is the plugin half of
-   * #4441 and is tracked as its own requirement (#4453) — widening it while
-   * implementing the skip-list capability would ship a second, unrequested
-   * behaviour change (previously-invisible VALID assets becoming visible) under
-   * a requirement that promises nothing of the sort.
+   * Two sites inside this class share it (read + diagnostic); the reason they
+   * must share ONE is that the CLI's read and diagnostic predicates were
+   * written in parallel and drifted (#4439 review). Now the sharing is
+   * repo-wide rather than class-wide, so the drift cannot re-enter through a
+   * fourth copy either.
    */
-  private static readonly FRONTMATTER_BLOCK = /^---\n([\s\S]*?)\n---/;
-
-  /**
-   * The ONE answer to "does this content open with a frontmatter block, and
-   * what is its body?" — shared by {@link extractFrontmatter} (read) and
-   * {@link getFrontmatterParseFailure} (diagnostic).
-   */
-  private static matchFrontmatterBlock(content: string): string | null {
-    const match = ObsidianVaultAdapter.FRONTMATTER_BLOCK.exec(content);
-    return match ? match[1] : null;
-  }
 
   /**
    * A body line carrying NO KEYS — blank, or a YAML comment. ASCII-only, and
@@ -197,7 +183,7 @@ export class ObsidianVaultAdapter implements IVaultAdapter {
       return null;
     }
 
-    const body = ObsidianVaultAdapter.matchFrontmatterBlock(content);
+    const body = frontmatterBlockBody(content);
     // Outcome 1 — no block at all: a plain note, legitimately not an asset.
     if (body === null) return null;
     // A body with no content line — only blanks and `#` comments — means what
@@ -233,7 +219,7 @@ export class ObsidianVaultAdapter implements IVaultAdapter {
    * @returns Parsed frontmatter or null if not found or invalid
    */
   private extractFrontmatter(content: string): IFrontmatter | null {
-    const yamlContent = ObsidianVaultAdapter.matchFrontmatterBlock(content);
+    const yamlContent = frontmatterBlockBody(content);
 
     if (yamlContent === null) {
       return null;
