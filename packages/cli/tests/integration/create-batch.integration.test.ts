@@ -31,7 +31,11 @@
  *   B13  the command exits only after stdout and stderr have been flushed
  *   B14  null for an optional key means "absent"; a UTF-8 BOM is accepted
  *   B15  a diagnostic printed once also names the other items that raised it
- *   B16  a reader that closes the pipe early (EPIPE) does not change the exit code
+ *   B16  an EPIPE *reported on stdio* is swallowed: the exit code stands
+ *        ⛔ not a pipe — this axis mocks `process.stdout.write` and emits the
+ *        event itself, so it observes the handler's POLICY, not its INSTALLATION
+ *        and not a flush. A reader leaving a REAL pipe lives in
+ *        create-batch-1848dff9-pipe.harness.ts (C1/C2), out of jest (#4456)
  *
  * B6 observes service INSTANCES through prototype spies (the `this` of each
  * call) and the underlying reads through `NodeFsAdapter.prototype` — never a
@@ -1094,10 +1098,17 @@ describe("req 1848dff9: `cli create-batch` — many assets, one invocation", () 
     );
   });
 
-  it("B16: a reader that closes the pipe early (EPIPE) does not change the exit code @req:1848dff9-bb2e-43a9-95e7-d917d6cef552", async () => {
-    // `| head -c 100`: the write fails with EPIPE — reported to the callback AND
-    // emitted as 'error'. Unhandled, that event is an uncaught exception (exit
-    // 1 after every file was written); the batch's outcome must stand.
+  it("B16: an EPIPE reported on stdio is swallowed and the exit code stands @req:1848dff9-bb2e-43a9-95e7-d917d6cef552", async () => {
+    // What this axis CAN see: `process.stdout.write` is replaced, and the EPIPE is
+    // reported to the callback AND emitted as 'error' BY THIS TEST. So it locks the
+    // handler's policy — EPIPE is swallowed, the batch's outcome stands — which is
+    // what `M22_epipe_on_stdio_rethrown` reddens.
+    // ⛔ What it CANNOT see, and once falsely promised: whether the handler is
+    // installed at all. There is no pipe here, no reader, no flush, so removing
+    // `guardStdioAgainstClosedReader()` changed nothing observable — measured on two
+    // independent trees including pristine origin/main (#4456). That half is locked
+    // out of jest by C1/C2 in create-batch-1848dff9-pipe.harness.ts, driving a real
+    // reader away from a real pipe (integration-test-revert-verify §A66).
     const epipe = Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
     jest.spyOn(process.stdout, "write").mockImplementation(((
       chunk: unknown,
