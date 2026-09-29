@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for issue #4448 / ticket 36bd4ee0 on the GATE call site (create.ts). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). M1 is the regression axis — with the refusal reduced to a no-op the phantom creator lands exactly as it did before the fix, so the five gate axes red (C10 among them, because with no refusal there is no exit code to compare against the dangling-property sibling) and the five behaviour-preservation axes stay GREEN (non-vacuity). M2 pins the ESCAPE: with the `--skip-wikilink-validation` guard dropped the gate fires even when the caller deliberately opted out, and C4 alone reds. M5 pins the FAIL-OPEN SCOPE: widening the gate from the explicit flag to the EFFECTIVE creator (the ExoAssistant default included) reds C6 alone — which is what makes the untouched default a deliberate decision rather than an accident. The validator-side reuse and the message live in create-createdby-resolvable-4448.validator.spec.json. Recorded runs: see PR body.",
+  "_doc": "Revert-verify mutants for issue #4448 / ticket 36bd4ee0 on the GATE call site (create.ts). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). M1 is the regression axis — with the refusal reduced to a no-op the phantom creator lands exactly as it did before the fix, so the five gate axes red (C10 among them, because with no refusal there is no exit code to compare against the dangling-property sibling) and the five behaviour-preservation axes stay GREEN (non-vacuity). M2 pins the ESCAPE: with the `--skip-wikilink-validation` guard dropped the gate fires even when the caller deliberately opted out, and C4 alone reds. M5 pins the FAIL-OPEN SCOPE: widening the gate from the explicit flag to the EFFECTIVE creator (the ExoAssistant default included) reds C6 alone — which is what makes the untouched default a deliberate decision rather than an accident. M7 pins the EMPTY-STRING EDGE of that scope: tightening the check from truthiness to `!== undefined` makes `--created-by \"\"` probed and therefore refused, and C11 alone reds — so the fall-through to the default is a decision rather than an unnoticed consequence of `||`. The validator-side reuse and the message live in create-createdby-resolvable-4448.validator.spec.json. Recorded runs: see PR body. M8 targets the in-batch MECHANISM rather than the probe: withholding `pendingUids` from the validator reds C8 alone, so C8's non-vacuity is pinned independently of M3 (which reds it via the delegation). Contributed by the review of this PR as a throwaway check; shipped so the proof outlives that run.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -27,6 +27,16 @@
       "from": "  const explicitCreatedBy = options.createdBy;",
       "to": "  const explicitCreatedBy = options.createdBy || DEFAULT_CREATED_BY_UID;",
       "expect": ["C6"]
+    },
+    "M7_the_scope_check_is_tightened_from_truthiness_to_defined_so_an_empty_flag_is_probed": {
+      "from": "  if (!options.skipWikilinkValidation && explicitCreatedBy) {",
+      "to": "  if (!options.skipWikilinkValidation && explicitCreatedBy !== undefined) {",
+      "expect": ["C11"]
+    },
+    "M8_pendingUids_is_not_handed_to_the_validator_so_an_in_batch_creator_cannot_resolve": {
+      "from": "      pendingUids: this.options.pendingUids,",
+      "to": "      pendingUids: undefined,",
+      "expect": ["C8"]
     }
   }
 }

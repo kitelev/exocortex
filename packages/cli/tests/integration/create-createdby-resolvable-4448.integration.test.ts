@@ -27,7 +27,7 @@
  *
  * Revert-verify (~/dotfiles/.claude/rules/integration-test-revert-verify.md):
  * mutants live in two spec files, one per subject —
- *   create-createdby-resolvable-4448.create.spec.json     (create.ts: M1, M2, M5)
+ *   create-createdby-resolvable-4448.create.spec.json     (create.ts: M1, M2, M5, M7)
  *   create-createdby-resolvable-4448.validator.spec.json  (WikilinkValidator.ts: M3, M4, M6)
  * M1 (refusal reduced to a no-op) reds C1/C2/C5/C9/C10 and leaves
  * C3/C4/C6/C7/C8 GREEN — the non-vacuity control: with the gate gone the
@@ -38,7 +38,14 @@
  * reusing `validateWikilink` and checks the UID filename only) reds C7/C8 — it
  * pins the REUSE rather than a second hand-rolled existence check. M4 (the
  * `find` hint dropped) reds C2. M6 (`not found` dropped from the message) reds
- * C10, because the exit code is decided by a SUBSTRING of that message.
+ * C10, because the exit code is decided by a SUBSTRING of that message. M7
+ * (the scope check tightened from truthiness to `!== undefined`) reds C11 alone
+ * — the empty-string edge is pinned as a decision, not left implicit.
+ *
+ * ⛤ C8 declares the CONSUMER item first on purpose: `create-batch` builds
+ * `pendingUids` from the whole batch before planning, so membership is
+ * order-independent, and an earlier-declared identity would pass even under an
+ * incremental implementation.
  */
 import {
   jest,
@@ -416,18 +423,24 @@ describe("issue #4448: `cli create` refuses an explicit --created-by uid that do
     expect(content).toContain(LABEL_NAMED_CREATOR_UID);
   });
 
-  it("C8 create-batch: an item may name a creator created by an EARLIER item of the same batch", async () => {
+  it("C8 create-batch: an item may name a creator created by ANOTHER item of the same batch — pendingUids is built from the whole batch, not incrementally", async () => {
     const pendingIdentityUid = "aa11bb22-3333-4444-8555-66667777aaaa";
+    // The CONSUMER is declared FIRST on purpose. `create-batch` builds
+    // `pendingUids` from the whole batch before the planning loop starts, so
+    // membership is order-independent — declaring the identity second proves
+    // that, whereas declaring it first would pass even under an incremental
+    // implementation and leave the stronger guarantee unpinned. (#4438's K11
+    // makes the same point for the class half.)
     const run = await runBatch([
-      {
-        class: TASK_CLASS_UID,
-        label: "Batch-made identity",
-        uid: pendingIdentityUid,
-      },
       {
         class: TASK_CLASS_UID,
         label: "Created by the batch-made identity",
         createdBy: pendingIdentityUid,
+      },
+      {
+        class: TASK_CLASS_UID,
+        label: "Batch-made identity",
+        uid: pendingIdentityUid,
       },
     ]);
 
@@ -435,7 +448,7 @@ describe("issue #4448: `cli create` refuses an explicit --created-by uid that do
     const written = JSON.parse(run.stdout.trim()) as { path: string }[];
     expect(written).toHaveLength(2);
     const instance = fs.readFileSync(
-      path.join(vault, written[1].path),
+      path.join(vault, written[0].path),
       "utf-8",
     );
     expect(instance).toContain(
@@ -457,6 +470,31 @@ describe("issue #4448: `cli create` refuses an explicit --created-by uid that do
     expectRefused(run.exit);
     expect(run.stderr).toContain(PHANTOM_CREATOR_UID);
     expect(countMd(vault)).toBe(before);
+  });
+
+  it("C11 an explicit but EMPTY --created-by is treated as no flag: the default is written, nothing is refused", async () => {
+    // The gate branches on TRUTHINESS, so `--created-by ""` falls through to the
+    // ExoAssistant default rather than being probed. Pinned deliberately because
+    // the alternative reading ("explicit input is always checked") is the one a
+    // reader takes from the docblock, and because probing "" would refuse a call
+    // that today succeeds. No dangling reference can result either way — the
+    // empty string is never written. Mutant M7 tightens the check to
+    // `!== undefined` and reds this axis alone.
+    const before = countMd(vault);
+
+    const run = await runCreate(["--created-by", ""]);
+
+    expectNaturalExit(run.exit);
+    expect(run.created).not.toBeNull();
+    expect(countMd(vault)).toBe(before + 1);
+    const content = fs.readFileSync(
+      path.join(vault, run.created!.path),
+      "utf-8",
+    );
+    expect(content).toContain(
+      `exo__Asset_createdBy: "[[${EXOASSISTANT_UID}]]"`,
+    );
+    expect(content).not.toContain('exo__Asset_createdBy: "[[]]"');
   });
 
   it("C10 the creator refusal is classified like its sibling: same exit code as a dangling --property wikilink, and that code is FILE_NOT_FOUND", async () => {

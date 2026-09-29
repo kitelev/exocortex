@@ -651,7 +651,18 @@ export async function planCreate(
   // owns UID-filename → `exo__Asset_uid` scan → label-form linkpath → in-batch
   // `pendingUids`), and `create-batch` inherits the refusal because it runs
   // every item through this function — so a batch item naming an identity
-  // created by an EARLIER item of the same batch stays legal.
+  // created by ANOTHER item of the same batch stays legal, in either direction:
+  // `create-batch` builds `pendingUids` from the WHOLE batch before the planning
+  // loop starts, so membership does not depend on item order. (⛔ #4446's comment
+  // above says "an EARLIER item" for the class half; measured here, that
+  // ordering is not a guarantee the code makes or needs — #4438's own axis K11
+  // already pins the later-item direction. Left unchanged there: it is a comment
+  // outside this ticket, with no behavioural consequence.)
+  //
+  // ⚠ The condition is a TRUTHINESS check, so `--created-by ""` — an explicit but
+  // empty flag — is treated like no flag at all and falls through to the default
+  // below. No dangling reference can result (the empty string is never written),
+  // and axis C11 pins that deliberately rather than leaving it to be rediscovered.
   const explicitCreatedBy = options.createdBy;
   if (!options.skipWikilinkValidation && explicitCreatedBy) {
     if (!(await wikilinkValidator.targetExists(explicitCreatedBy))) {
