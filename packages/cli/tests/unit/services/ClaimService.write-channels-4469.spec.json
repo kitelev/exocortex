@@ -1,0 +1,23 @@
+{
+  "_doc": "Revert-verify mutant for the PRE-CHECK half of issue #4469 / req 2d072437-c19d-49a4-ae89-f20b6185571f. `claimTask` refuses a task already claimed by another worker; that refusal is decided by `readFrontmatter`, which carried its own LF/CRLF-only regex while the WRITE it guards (`atomicUpdateFrontmatter`) was widened by this work item. MC1 restores the local regex — the refusal branch then becomes unreachable for a lone-CR / BOM task file and the claim is silently STOLEN from its owner. Expectations written BEFORE the run.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› (CH\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/services/ClaimService.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/services/ClaimService.write-channels-4469.test.ts --verbose 2>&1",
+  "mutants": {
+    "MC1_precheck_back_to_the_local_lf_crlf_regex": {
+      "from": "  const block = matchFrontmatterBlock(content);\n  if (!block) return null;",
+      "to": "  const legacy = /^---\\s*\\r?\\n([\\s\\S]*?)\\r?\\n---/.exec(content);\n  if (!legacy) return null;\n  const block = { body: legacy[1] };",
+      "expect": ["CH50", "CH51"],
+      "_note": "CH52 (an UNCLAIMED lone-CR task) stays green on purpose: a blind pre-check returns `null` there too, and `null` means 'not claimed', which is the correct answer for that input. The mutant is therefore pointed at the ONE direction where blindness costs something — an owned task being taken."
+    }
+  }
+}

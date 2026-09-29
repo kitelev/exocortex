@@ -188,6 +188,45 @@ export class FrontmatterService {
   }
 
   /**
+   * The leading frontmatter block EXACTLY as it stands on disk — both fences,
+   * the body verbatim, a leading BOM run collapsed to one — together with the
+   * file's own line ending.
+   *
+   * ⛤ Exists because a caller that REPLACES THE BODY BELOW the block
+   * (`set-body`) must put the block back byte-for-byte, and the obvious way to
+   * do that — `` `---\n${parse(content).content}\n---` `` — silently rewrites
+   * both fences as LF and drops the BOM. That hand-reconstruction is what
+   * `set-body` did until #4469; it was harmless only because `parse()` used to
+   * refuse a CRLF / lone-CR / BOM file outright, so widening the predicate made
+   * the latent bug HOT. A shared accessor is the fix for the class: the block's
+   * bytes have exactly ONE owner.
+   *
+   * @returns the block and its EOL, or `null` when the content opens with none
+   */
+  static leadingBlock(
+    content: string,
+  ): {
+    readonly text: string;
+    readonly eol: string;
+    readonly end: number;
+  } | null {
+    const block = matchFrontmatterBlock(content);
+    if (!block) return null;
+    const bom = block.blockStart > 0 ? "\uFEFF" : "";
+    return {
+      text: bom + content.slice(block.blockStart, block.blockEnd),
+      eol: FrontmatterService.blockEol(content, block),
+      // ⛔ The offset in the ORIGINAL string, NOT `text.length`: the two differ
+      // by exactly the BOM bytes this accessor normalises away. A READER that
+      // slices by a RECONSTRUCTION's length prints part of the closing fence as
+      // body — measured on `get-body` before #4469: a CRLF asset printed
+      // `"--\r\nTHE REAL BODY"` (two dashes of the fence leaked), a 3-BOM asset
+      // printed the whole fence.
+      end: block.blockEnd,
+    };
+  }
+
+  /**
    * Put `newBody` back between the block's own fences, keeping every byte the
    * edit did not touch: the fences' line endings, the body's untouched lines,
    * and the whole of the file after the block (including its bare CRs).

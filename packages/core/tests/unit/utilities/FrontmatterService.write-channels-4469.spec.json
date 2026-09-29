@@ -26,16 +26,16 @@
       "_note": "Models the js-yaml RE-DUMP `updateProperty` must NOT become: the block comes back with one uniform LF ending and the original bytes are gone. The block COUNT stays correct, so CH1 and CH3 stay green — the mutant is pointed at byte-identity alone, which is what decision 1 of the requirement is about."
     },
     "M3_bom_run_preserved_verbatim": {
-      "from": "    const bom = block.blockStart > 0 ? \"\\uFEFF\" : \"\";",
-      "to": "    const bom = content.slice(0, block.blockStart);",
+      "from": "    const closeEol = content.slice(bodyEnd, block.blockEnd - 3);\n    const bom = block.blockStart > 0 ? \"\\uFEFF\" : \"\";",
+      "to": "    const closeEol = content.slice(bodyEnd, block.blockEnd - 3);\n    const bom = content.slice(0, block.blockStart);",
       "expect": ["CH3"],
-      "_note": "Keeps N BOMs instead of collapsing to one. CH6 (a single BOM) stays green — a run and a single byte are different halves of the policy and each has its own axis."
+      "_note": "Keeps N BOMs instead of collapsing to one. CH6 (a single BOM) stays green — a run and a single byte are different halves of the policy and each has its own axis. ⛤ Anchored WITH the preceding `closeEol` line: #4469's own fix-first round added a second BOM-policy site (`leadingBlock`, for the readers `set-body`/`get-body`), so the bare line occurs twice and a one-line anchor became ambiguous. The two sites are independent guarantees with their own axes — this mutant is pointed at the WRITE path alone."
     },
     "M4_bom_dropped_entirely": {
-      "from": "    const bom = block.blockStart > 0 ? \"\\uFEFF\" : \"\";",
-      "to": "    const bom = \"\";",
+      "from": "    const closeEol = content.slice(bodyEnd, block.blockEnd - 3);\n    const bom = block.blockStart > 0 ? \"\\uFEFF\" : \"\";",
+      "to": "    const closeEol = content.slice(bodyEnd, block.blockEnd - 3);\n    const bom = \"\";",
       "expect": ["CH3", "CH6"],
-      "_note": "The opposite failure: the write silently re-encodes a file the user deliberately marked. Both BOM axes redden."
+      "_note": "The opposite failure: the write silently re-encodes a file the user deliberately marked. Both BOM axes redden. Same disambiguating anchor as M3, for the same reason."
     },
     "M5_new_line_always_lf": {
       "from": "    const eol = FrontmatterService.blockEol(content, block);\n    const span = FrontmatterService.findPropertyLineSpan(lines, property);",
