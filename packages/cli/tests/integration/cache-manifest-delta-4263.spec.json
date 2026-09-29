@@ -26,9 +26,10 @@
       "expect": ["A4", "A9", "A10"]
     },
     "M4_tbox_guard_removed": {
-      "from": "const TBOX_FORM = /^[a-z][a-zA-Z0-9]*__\\S+$/;",
-      "to": "const TBOX_FORM = /^$/;",
-      "expect": ["A11", "A12"]
+      "from": "const TBOX_FORM = new RegExp(`^${PREFIX_PATTERN_SOURCE}__\\\\S+$`);",
+      "to": "const TBOX_FORM = new RegExp(`^$`);",
+      "expect": ["A11", "A12"],
+      "_note": "⛤ Anchor repaired 2026-09-29 (#4291): it still quoted the inline literal this constant carried before #4350 moved it onto the shared `PREFIX_PATTERN_SOURCE`, so the mutation had been landing 0 times — dead on `origin/main`, not broken by #4291."
     },
     "M5_inferred_layer_dropped_on_delta": {
       "from": "    if (cached.metadata.inferenceEnabled) {\n      const nextByPath",

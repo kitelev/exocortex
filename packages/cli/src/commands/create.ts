@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { resolve } from "path";
+import { resolve, relative as relativePath } from "path";
 import { existsSync } from "fs";
 import { readFileSync } from "fs";
 import {
@@ -38,7 +38,7 @@ import {
   pickCanonicalHome,
   type ClassNeighbourScan,
 } from "../executors/folderRepairHelpers.js";
-import type { CacheManager } from "../cache/CacheManager.js";
+import type { AssetLookupIndex, CacheManager } from "../cache/CacheManager.js";
 import { assertNoFrontmatterCopy } from "./bodyFrontmatterGuard.js";
 import { assertIsDefinedByIsOntology } from "./isDefinedByRangeGuard.js";
 
@@ -416,6 +416,11 @@ export class CreateContext {
   private propertyNameValidatorInstance?: PropertyNameValidator;
   private statusResolverInstance?: EffortStatusResolver;
   private shapeRegistryLoad?: Promise<ShapeRegistry>;
+  private tboxScanFilterLoad?: Promise<
+    ((absolutePath: string) => boolean) | undefined
+  >;
+  private assetUidIndexLoad?: Promise<AssetLookupIndex | undefined>;
+  private cacheManagerLoad?: Promise<CacheManager>;
   private readonly neighbourScans = new Map<string, Promise<ClassNeighbourScan>>();
 
   constructor(vaultPath: string, options: CreateContextOptions = {}) {
@@ -430,8 +435,54 @@ export class CreateContext {
 
   get fsAdapter(): NodeFsAdapter {
     this.fsAdapterInstance ??=
-      this.options.fsAdapter ?? new PlanningFsAdapter(this.vaultPath);
+      this.options.fsAdapter ??
+      new PlanningFsAdapter(this.vaultPath, {
+        // #4291 — the anchor lookup (`findFileByUID` → `findFilesByMetadata`)
+        // reads every file's frontmatter to find ONE asset. The cache already
+        // holds `exo__Asset_uid` per file; hand it over so the lookup narrows
+        // its candidates instead of scanning. `undefined` ⇒ today's scan.
+        lookupIndex: () => this.assetLookupIndex(),
+      });
     return this.fsAdapterInstance;
+  }
+
+  /**
+   * #4291 — the cache-derived lookup index, resolved once per invocation.
+   * Shares nothing with {@link tboxScanFilter} but the cache file, which
+   * `CacheManager` reads once per instance.
+   */
+  private assetLookupIndex(): Promise<AssetLookupIndex | undefined> {
+    this.assetUidIndexLoad ??= (async () => {
+      try {
+        const index = await (await this.cacheManager()).assetLookupIndex();
+        return index ?? undefined;
+      } catch {
+        return undefined;
+      }
+    })();
+    return this.assetUidIndexLoad;
+  }
+
+  /**
+   * The ONE `CacheManager` of this invocation (#4264 + #4291).
+   *
+   * Every consumer that touches the cache goes through this instance — the two
+   * #4291 lookups here, and `--validate` / `--write-through` in the command
+   * half — because `CacheManager` only skips re-reading `triples.json` (95.8 MB
+   * on the measured vault) for a caller holding the SAME instance. Two
+   * instances would parse it twice and hand back identical data.
+   *
+   * ⛤ #4291 widened this deliberately: before it, a bare `create` never loaded
+   * the cache module at all, and the narrow module graph of the default path
+   * was the reason. That trade is now the other way round — the default path
+   * is exactly the one whose corpus pass the cache removes.
+   */
+  cacheManager(): Promise<CacheManager> {
+    this.cacheManagerLoad ??= (async () => {
+      const { CacheManager } = await import("../cache/CacheManager.js");
+      return new CacheManager(this.vaultPath);
+    })();
+    return this.cacheManagerLoad;
   }
 
   get classResolver(): ClassResolverService {
@@ -464,12 +515,46 @@ export class CreateContext {
       : undefined;
   }
 
+  /**
+   * #4291 — the READ filter both TBox scans share, resolved ONCE per
+   * invocation and memoised (they run one after the other, so without this the
+   * cache would be read twice).
+   *
+   * `undefined` — a stale, legacy or absent cache, any failure — means "read
+   * every file", i.e. exactly the pre-#4291 walk. That is what makes the
+   * optimisation cache-OPPORTUNISTIC: no cache is ever built here, because
+   * building one parses the corpus and would make the cold path slower than
+   * the walk it replaces.
+   */
+  private tboxScanFilter(): Promise<((absolutePath: string) => boolean) | undefined> {
+    this.tboxScanFilterLoad ??= (async () => {
+      try {
+        const paths = await (await this.cacheManager()).tboxScanPaths();
+        if (paths === null) return undefined;
+        // The scans walk with absolute paths; the cache records vault-relative
+        // ones. Resolve the vault root ONCE and compare on the relative tail,
+        // so a symlinked / non-normalised `--vault` cannot silently reject
+        // every file (which would look like "the TBox is empty", not an error).
+        const root = resolve(this.vaultPath);
+        return (absolutePath: string): boolean => {
+          const relative = relativePath(root, absolutePath);
+          return paths.has(relative);
+        };
+      } catch {
+        // Fail-open: an unreadable cache must cost a full walk, never a throw.
+        return undefined;
+      }
+    })();
+    return this.tboxScanFilterLoad;
+  }
+
   get propertyNameValidator(): PropertyNameValidator {
     this.propertyNameValidatorInstance ??= new PropertyNameValidator(
       this.vaultPath,
       {
         warn: (msg) => this.warn(`⚠ ${msg}\n`),
         readFile: this.sharedReader,
+        scanFilter: () => this.tboxScanFilter(),
       },
     );
     return this.propertyNameValidatorInstance;
@@ -489,6 +574,7 @@ export class CreateContext {
   shapeRegistry(): Promise<ShapeRegistry> {
     this.shapeRegistryLoad ??= ShapeLoader.loadFromVaultFS(this.vaultPath, {
       readFile: this.sharedReader,
+      scanFilter: () => this.tboxScanFilter(),
     }).catch(() => new ShapeRegistry());
     return this.shapeRegistryLoad;
   }
@@ -1009,10 +1095,8 @@ export function createCommand(): Command {
         // The decision half of create — every guard, every resolution and the
         // co-location that yield the config — is `planCreate`: the SAME
         // function `create-batch` runs for each of its items.
-        const { config, label: trimmedLabel } = await planCreate(
-          options,
-          new CreateContext(vaultPath),
-        );
+        const ctx = new CreateContext(vaultPath);
+        const { config, label: trimmedLabel } = await planCreate(options, ctx);
 
         // The write half: build, optionally validate, then preview or write.
         const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
@@ -1020,25 +1104,20 @@ export function createCommand(): Command {
 
         // #4264 — one CacheManager for the whole invocation when --use-cache:
         // `--validate` loads through it (so the loaded state stays in memory)
-        // and the write-through after the write reuses that state. Without
-        // the flag no CacheManager exists — no cache read, no cache write.
-        // Lazily imported INSIDE the flag branch (same pattern as `--validate`
-        // below): the cache module pulls the serialization + inference graph,
-        // and the default `create` path must neither pay that load nor widen
-        // its module graph. Constructed only when something will use it —
-        // the --validate load or the --write-through — so a bare
-        // `create --use-cache` (delta-only default, decision ae0b4fce) neither
-        // loads the module nor holds an instance. A constructed-but-unused
-        // CacheManager reads and writes nothing, so this guard is not
-        // observable under jest (the suites import the module themselves);
-        // it is kept for the module graph, not locked by an axis.
+        // and the write-through after the write reuses that state.
+        //
+        // ⛤ #4291 — that instance now comes from the CreateContext, which has
+        // already used it to narrow the TBox scan and the single-key lookups.
+        // The flag still decides whether a cache is LOADED / WRITTEN THROUGH
+        // for `--validate`; it no longer decides whether the module is loaded,
+        // because the default path reads the cache too.
         const useCache = options.useCache ?? false;
         let cacheManager: CacheManager | undefined;
         if (useCache && (options.validate || options.writeThrough)) {
-          const { CacheManager: CacheManagerCtor } = await import(
-            "../cache/CacheManager.js"
-          );
-          cacheManager = new CacheManagerCtor(vaultPath);
+          // #4291 — the instance `planCreate` already used, NOT a second one:
+          // a fresh manager would re-read the whole cache file to answer the
+          // same question (req cb707868 axis A8 pins one read per invocation).
+          cacheManager = await ctx.cacheManager();
         }
         const cacheLog = (line: string): void => {
           process.stderr.write(`${line}\n`);

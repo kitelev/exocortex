@@ -19,10 +19,10 @@
       "_note": "The loop-in-one-process that the requirement rules out: every item gets fresh services and a fresh read memo, so every scan runs per item."
     },
     "M2_batch_uids_not_handed_to_wikilink_validation": {
-      "from": "        const ctx = new CreateContext(vaultPath, {\n          fsAdapter,\n          warn,\n          pendingUids,\n        });",
-      "to": "        const ctx = new CreateContext(vaultPath, {\n          fsAdapter,\n          warn,\n          pendingUids: pendingUids.size < 0 ? pendingUids : new Set<string>(),\n        });",
+      "from": "        const ctx = new CreateContext(vaultPath, { warn, pendingUids });",
+      "to": "        const ctx = new CreateContext(vaultPath, {\n          warn,\n          pendingUids: pendingUids.size < 0 ? pendingUids : new Set<string>(),\n        });",
       "expect": ["B4"],
-      "_note": "Type-preserving: pendingUids stays read, the context gets an empty set. B4b stays green — it is refused either way, which is what makes the pair prove B4 passes BECAUSE of the batch."
+      "_note": "Type-preserving: pendingUids stays read, the context gets an empty set. B4b stays green — it is refused either way, which is what makes the pair prove B4 passes BECAUSE of the batch. ⛤ Anchor repaired 2026-09-29 (#4291): the context is now constructed BEFORE the adapter (it owns the cache-backed one), so the option object lost its `fsAdapter` member and the multi-line form this quoted no longer exists."
     },
     "M3_all_or_nothing_reduced_to_best_effort": {
       "from": "        if (failures.length > 0) {\n          reportFailures(failures, total);",

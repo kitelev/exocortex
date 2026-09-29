@@ -1,0 +1,20 @@
+{
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/create-cache-scan-4291.integration.test.ts 2>&1",
+  "red_re": "› (C\\d+) ",
+  "_doc": "Revert-verify mutants for #4291, subject create-batch.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/create-cache-scan-4291.batch.spec.json after setting `tree` and `subject` to YOUR checkout. Siblings: create-cache-scan-4291.cachemanager / .create / .adapter .spec.json.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/create-batch.ts",
+  "mutants": {
+    "B1_batch_builds_its_own_adapter": {
+      "from": "        const ctx = new CreateContext(vaultPath, { warn, pendingUids });\n        const fsAdapter = ctx.fsAdapter;",
+      "to": "        const { PlanningFsAdapter: MutantAdapter } = await import(\n          \"../adapters/PlanningFsAdapter.js\"\n        );\n        const fsAdapter = new MutantAdapter(vaultPath);\n        const ctx = new CreateContext(vaultPath, { fsAdapter, warn, pendingUids });",
+      "expect": ["C11"],
+      "_note": "The regression the review of PR #4476 found unlocked: an adapter built here carries no cache-backed lookup index, so `create-batch` pays the cache read (the TBox filter still uses it) AND scans the corpus for every uid / label lookup — strictly worse than before this PR. No other axis can see it: they all drive `create`, whose fixtures were built for `create`, which is exactly the shape of integration-test-revert-verify §A122. C11 is the axis that does. ⛤ Type-preserving on purpose: the adapter is imported dynamically rather than through a top-level name this file no longer carries, so the mutant COMPILES and C11's red is a read-count difference — not a module that failed to load, which reads the same in the driver but means the opposite (integration-test-revert-verify §A97)."
+    }
+  }
+}
