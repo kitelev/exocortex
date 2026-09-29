@@ -1,0 +1,26 @@
+{
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/create-cache-scan-4291.integration.test.ts 2>&1",
+  "red_re": "› (C\\d+) ",
+  "_doc": "Revert-verify mutants for #4291, subject PlanningFsAdapter.ts (the narrowed single-key lookup). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/create-cache-scan-4291.adapter.spec.json after setting `tree` and `subject` to YOUR checkout. Siblings: create-cache-scan-4291.cachemanager.spec.json, create-cache-scan-4291.create.spec.json.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/adapters/PlanningFsAdapter.ts",
+  "mutants": {
+    "P1_index_answers_instead_of_narrowing": {
+      "from": "        const found: string[] = [];\n        for (const file of candidates) {\n          try {\n            const metadata = await this.getFileMetadata(file);\n            if (this.matchesQuery(metadata, query)) {\n              found.push(file);\n            }\n          } catch {\n            continue;\n          }\n        }\n        return found;",
+      "to": "        return candidates;",
+      "expect": ["C1", "C3", "C4", "C6", "C7"],
+      "_note": "The design's load-bearing distinction: the index narrows the CANDIDATES, the base class's own predicate still decides. Trusting the index outright makes every cache-unjudgeable path — always a candidate — answer every query, and the fixture's earliest-sorting one then wins both the anchor lookup and the status lookup. Predicted C1/C3/C4/C5/C9; MEASURED C1/C3/C4/C6/C7. C5 and C9 do not execute this code at all (the conflict diagnostic comes from `PropertyNameValidator`'s own walk, C9 calls `ShapeLoader` directly), while C6 goes red because the bogus anchor fails the isDefinedBy range guard and C7 because it asserts the uid lookup returns THAT file, not the first candidate (integration-test-revert-verify §A44)."
+    },
+    "P2_unjudgeable_paths_not_candidates": {
+      "from": "    const wanted = new Set([...(source.get(value) ?? []), ...index.unknownPaths]);",
+      "to": "    const wanted = new Set([...(source.get(value) ?? [])]);",
+      "expect": ["C7"],
+      "_note": "Same invariant as the cache-side M3, on the consuming side: a uid only a converter-SKIPPED file carries must still resolve."
+    }
+  }
+}

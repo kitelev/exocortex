@@ -1656,30 +1656,22 @@ function entryHasTBoxLabel(entry: CacheFileEntry): boolean {
  * #4291 — predicates whose PRESENCE on a file makes it a possible contributor
  * to a TBox scan. Matched on the IRI suffix, so an ad-hoc namespace counts too.
  *
- * `ShapeLoader.loadFromVaultFS` keeps a file when it declares an
- * `exo__Property_domain` (a shape candidate) or an `exo__Class_superClass`
- * (a hierarchy edge); `PropertyNameValidator.collect()` keeps it when it is a
- * class-def or carries a `prefix__Name` label. The rest of this list is
- * deliberate SLACK: `Property_range` / `_cardinality` / `_severity` /
- * `_minCount` and the RDFS twins cannot appear on a file that declares no
- * domain, but admitting them costs one extra read and removes a whole class of
- * "the converter emitted this key under a predicate I did not list" surprise.
+ * Just the class-hierarchy edge, and BOTH forms of it: a class-def reaches
+ * `ShapeLoader.propertyClassKeysFromEdges` / `PropertyNameValidator
+ * .buildPropertyMetaclassClosure` only through this edge, and a class may be
+ * labelled humanly (`concept__Definition (DEPRECATED)` — a space, so not TBox
+ * form), in which case nothing else admits it.
+ *
+ * ⛤ `exo__Property_domain` and friends are deliberately NOT here, and that was
+ * MEASURED rather than reasoned: a file can only become a shape candidate if
+ * its property label resolves, and that label comes from `exo__Asset_label` or
+ * — for the label-less defs of issue #3099 — from the basename, which the
+ * converter synthesises INTO `exo__Asset_label`. Either way `entryHasTBoxLabel`
+ * is already true. An earlier revision listed the domain predicates too; the
+ * mutant driver showed no input on which removing them changed the admitted
+ * set, so they were slack that no axis could ever pin.
  */
-const TBOX_SCAN_PREDICATE_SUFFIXES = [
-  "#Property_domain",
-  "#Property_range",
-  "#Property_cardinality",
-  "#Property_severity",
-  "#Property_minCount",
-  "#Class_superClass",
-  "#domain",
-  "#range",
-  "#subClassOf",
-];
-
-/** The `exo__Class` metaclass, in both forms a cache entry can name it by. */
-const CLASS_METACLASS_IRI_SUFFIX = "/ontology/exo#Class";
-const CLASS_METACLASS_UID = "8619c4fc-64f1-4869-b17e-e34186cacca9";
+const TBOX_SCAN_PREDICATE_SUFFIXES = ["#Class_superClass", "#subClassOf"];
 
 /**
  * #4291 — can this file contribute ANYTHING to a TBox scan
@@ -1697,10 +1689,14 @@ const CLASS_METACLASS_UID = "8619c4fc-64f1-4869-b17e-e34186cacca9";
  * - **a TBox-form own label** — `PropertyNameValidator` harvests the property
  *   NAME from it, `ShapeLoader` its `uid → symbolic label` entry.
  * - **a TBox predicate** — see {@link TBOX_SCAN_PREDICATE_SUFFIXES}.
- * - **a class-def** — `exo__Instance_class` / `rdf:type` naming the `exo__Class`
- *   metaclass. Needed SEPARATELY from the label clause: a class may be labelled
- *   humanly (`concept__Definition (DEPRECATED)` — a space, so not TBox form)
- *   and still be a link in the property-metaclass closure.
+ *
+ * ⛤ A class-def is admitted by its `exo__Class_superClass` edge, NOT by a
+ * separate "is it typed exo__Class" clause. An earlier revision had one; the
+ * mutant driver showed it could not change the admitted set on any input —
+ * a class-def only reaches the two scans THROUGH that edge (both build the
+ * property-metaclass closure from edges), so an edgeless class-def contributes
+ * nothing to either. Keeping an unpinnable branch would have been the more
+ * expensive half of the trade.
  */
 function entryFeedsTboxScan(entry: CacheFileEntry): boolean {
   if (entry.triples.length === 0) {
@@ -1715,13 +1711,6 @@ function entryFeedsTboxScan(entry: CacheFileEntry): boolean {
     }
     const predicate = t.predicate.value;
     if (TBOX_SCAN_PREDICATE_SUFFIXES.some((s) => predicate.endsWith(s))) {
-      return true;
-    }
-    if (
-      (predicate.endsWith(INSTANCE_CLASS_IRI_SUFFIX) || predicate.endsWith("#type")) &&
-      (t.object.value.endsWith(CLASS_METACLASS_IRI_SUFFIX) ||
-        t.object.value.includes(CLASS_METACLASS_UID))
-    ) {
       return true;
     }
   }

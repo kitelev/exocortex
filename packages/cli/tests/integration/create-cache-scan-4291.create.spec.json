@@ -1,0 +1,38 @@
+{
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/create-cache-scan-4291.integration.test.ts 2>&1",
+  "red_re": "› (C\\d+) ",
+  "_doc": "Revert-verify mutants for #4291, subject create.ts (the WIRING half). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/create-cache-scan-4291.create.spec.json after setting `tree` and `subject` to YOUR checkout. Siblings on the other subjects: create-cache-scan-4291.cachemanager.spec.json (the cache-side predicates) and create-cache-scan-4291.adapter.spec.json (the narrowed lookup).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/create.ts",
+  "mutants": {
+    "W1_shape_scan_not_filtered": {
+      "from": "    this.shapeRegistryLoad ??= ShapeLoader.loadFromVaultFS(this.vaultPath, {\n      readFile: this.sharedReader,\n      scanFilter: () => this.tboxScanFilter(),\n    }).catch(() => new ShapeRegistry());",
+      "to": "    this.shapeRegistryLoad ??= ShapeLoader.loadFromVaultFS(this.vaultPath, {\n      readFile: this.sharedReader,\n    }).catch(() => new ShapeRegistry());",
+      "expect": ["C1"],
+      "_note": "The whole point of the change for one of the two scans. Behaviour is unaffected (that is the invariant), so only the READ-count axis can see it."
+    },
+    "W2_property_name_scan_not_filtered": {
+      "from": "        warn: (msg) => this.warn(`⚠ ${msg}\\n`),\n        readFile: this.sharedReader,\n        scanFilter: () => this.tboxScanFilter(),",
+      "to": "        warn: (msg) => this.warn(`⚠ ${msg}\\n`),\n        readFile: this.sharedReader,",
+      "expect": ["C1"],
+      "_note": "The other scan. It runs FIRST, so before #4291 it was the only one a stub-flip could see — the reason the ticket's map named two consumers and there were four."
+    },
+    "W3_lookup_index_not_injected": {
+      "from": "        lookupIndex: () => this.assetLookupIndex(),",
+      "to": "        _unusedIndex: () => this.assetLookupIndex(),",
+      "expect": ["C1"],
+      "_note": "Without the index the anchor lookup and the status lookup each scan the corpus — the two readers the shared memo hid behind the scans."
+    },
+    "W4_shape_registry_never_loaded": {
+      "from": "    this.shapeRegistryLoad ??= ShapeLoader.loadFromVaultFS(this.vaultPath, {",
+      "to": "    this.shapeRegistryLoad ??= Promise.reject(new Error(\"mutant: no shapes\")).catch(() => new ShapeRegistry()) as Promise<ShapeRegistry>;\n    this.shapeRegistryLoad ??= ShapeLoader.loadFromVaultFS(this.vaultPath, {",
+      "expect": ["C4"],
+      "_note": "The AC's 'shape refusals unchanged' axis, proven non-vacuous: with an EMPTY registry the cardinality-aware writer falls back to its shape-based default and a Multiple property holding one wikilink is written as a scalar instead of a list. MEASURED C4 only: C9 was predicted from the theme but it loads the registry through `ShapeLoader` DIRECTLY, not through `create`, so a mutation of create's wiring cannot reach it (integration-test-revert-verify §A44)."
+    }
+  }
+}
