@@ -19,9 +19,18 @@
  * (stderr captured ALONE; stdout fully separated, see §measurement note below):
  *
  *     command            stderr → FILE   stderr → PIPE     lost
- *     set-property         605 729          73 728         87.8 %
- *     remove-property      605 708          73 728         87.8 %
- *     create               605 895          65 536         89.2 %
+ *     set-property         605 729          65 536        ≈89 %
+ *     remove-property      605 708          65 536        ≈89 %
+ *     create               605 895          65 536        ≈89 %
+ *
+ * ⛔ The PIPE column is NOT a property of the commands. Re-measured on the
+ * merged tree with the exit re-added it is 65 536 for all three, 8/8 runs; on the
+ * pre-#4444 bundle the two property verbs cut at 73 728 instead. The write simply
+ * stops at whatever the pipe buffer accepted before the exit landed, so the
+ * MECHANISM is the durable claim and the byte count is a dated observation
+ * (capability-probe-latch-discipline §ТРЕТЬЯ форма — replace a caught number
+ * with the mechanism, not with a second number). What IS invariant across every
+ * run: the fixture's tail marker never arrives, which is what the axes assert.
  *
  * `process.exit` does not wait for an asynchronous write, and stderr IS
  * asynchronous when it is a pipe. `--dry-run` exists to be READ BEFORE APPLYING,
@@ -38,7 +47,7 @@
  * looks like "stderr only" and is not — under zsh MULTIOS stdout is duplicated into
  * the same pipe, so the ~178-byte stdout JSON echo lands inside the "delivered
  * preview" and inflates it (first pass of this measurement reported 65 714 instead
- * of 73 728/65 536 for exactly that reason). Every axis below therefore uses
+ * of the real figure for exactly that reason). Every axis below therefore uses
  * `stdio: ["ignore", "ignore", "pipe"]` — two distinct OS handles, no shell.
  *
  * ⛤ HOW THE EXPECTATION IS ESTABLISHED, and its honest limit. The load-bearing

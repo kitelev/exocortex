@@ -317,9 +317,15 @@ export function removePropertyCommand(): Command {
         // UNBOUNDED, and `process.exit` does not wait for an asynchronous write;
         // stderr is asynchronous whenever it is a pipe, which is how a preview is
         // read. Measured on the built bundle with a 605 686-byte asset: to a FILE
-        // 605 708 bytes arrived, through a PIPE only 65 700 — 89.2 % silently lost
-        // from a surface whose entire purpose is to be read before applying
+        // 605 708 bytes arrived, through a PIPE only 65 536 (8/8 runs, merged tree
+        // with the exit re-added), tail marker absent — ≈89 % lost from a surface
+        // whose entire purpose is to be read before applying
         // (dry-run-preview-not-real-output).
+        // ⛔ The byte count is not a property of this command — the same source cut
+        // at 73 728 on the pre-#4444 bundle. Stable is the MECHANISM: the write
+        // stops at whatever the pipe buffer accepted before the exit landed. (An
+        // earlier revision claimed 65 700 / 89.2 %, a figure the #4444 PR itself had
+        // already retracted as a shell artefact; corrected after review.)
         //
         // Nothing here holds the event loop open (the only I/O is synchronous), so
         // the action falling off its end is sufficient and the exit code stays 0 —

@@ -34,11 +34,19 @@
  * ⛤ Consumers of THIS module, kept current because the list is read as fact:
  *   `set-body` (#4443) · `get-body` (#4447) · `set-property`, `remove-property`,
  *   `create` (#4444 — all three had the truncation and none had the guard).
- * Nothing in `packages/cli/src/commands/` still calls `process.exit(0)` on a
- * success path that writes an UNBOUNDED payload: the two remaining call sites,
- * `assetspace-add.ts` and `bootstrap.ts`, emit a fixed set of short status lines
- * and were measured as non-candidates in #4444. `create-batch.ts` calls no
- * `process.exit(0)` at all and carries the private copy described above.
+ * `assetspace-add.ts` and `bootstrap.ts` still call `process.exit(0)` and are not
+ * candidates: each emits a fixed set of short status lines, measured in #4444.
+ *
+ * ⛔ `create-batch.ts` DOES call `process.exit` — via its own `finish()` helper
+ * (`await finish(0)` on both success paths), right after writing an unbounded
+ * per-item `--dry-run` preview. It escapes this bug class by a DIFFERENT mechanism
+ * than the five consumers above: `finish()` awaits an explicit flush signal on both
+ * streams before exiting, instead of dropping the exit. That is why it is not a
+ * sixth candidate, and why it keeps the private copy of the guard described above.
+ * ⛤ The previous wording here claimed it "calls no `process.exit(0)` at all" —
+ * false, and inherited unchecked from #4443 into #4444's rewrite of this list
+ * (`create-batch.ts` line ~514). Corrected after review: a list introduced as
+ * "read as fact" has to survive one grep, and this one did not.
  */
 let stdioGuarded = false;
 

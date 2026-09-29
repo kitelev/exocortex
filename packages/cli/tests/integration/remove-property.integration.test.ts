@@ -201,7 +201,6 @@ describe("Issue #3926: `cli remove-property` deletes a non-guarded frontmatter p
     ]);
 
     expectNaturalExit(out.exit);
-    expect(out.exit).not.toContain(1);
     // The key is gone; the sibling non-target property survives.
     expect(out.content).not.toContain("ems__EffortPrototype_startTime");
     expect(out.content).toContain("ems__EffortPrototype_endTime: 10:00");
@@ -232,7 +231,6 @@ describe("Issue #3926: `cli remove-property` deletes a non-guarded frontmatter p
     ]);
 
     expectNaturalExit(out.exit);
-    expect(out.exit).not.toContain(1);
     // No change → file byte-identical, stale updatedAt NOT bumped.
     expect(out.content).toBe(before);
     expect(out.content).toContain(`exo__Asset_updatedAt: ${STALE_UPDATED_AT}`);

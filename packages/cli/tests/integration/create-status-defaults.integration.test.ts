@@ -171,7 +171,6 @@ describe("Issue #3849: `cli create` sets default ems__Effort_status + createdBy"
     const out = await runCreate(TASK_CLASS_UID, []);
 
     expectNaturalExit(out.exit);
-    expect(out.exit).not.toContain(1);
     // Default status = Backlog (scalar UID-canon wikilink).
     expect(out.content).toContain(`ems__Effort_status: "[[${BACKLOG_UID}]]"`);
     // Default creator = ExoAssistant.
@@ -219,7 +218,6 @@ describe("Issue #3849: `cli create` sets default ems__Effort_status + createdBy"
     const out = await runCreate(CONCEPT_CLASS_UID, ["--yes"]);
 
     expectNaturalExit(out.exit);
-    expect(out.exit).not.toContain(1);
     expect(out.uuid).not.toBe("");
   });
 

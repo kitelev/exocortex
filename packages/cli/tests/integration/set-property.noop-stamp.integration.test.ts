@@ -176,7 +176,6 @@ describe("Ticket 6ffac10e: `cli set-property` no-op leaves the file byte-identic
   /** The full no-op post-condition against the bytes written by the first call. */
   function expectNoop(first: RunResult, second: RunResult): void {
     expectNaturalExit(second.exit);
-    expect(second.exit).not.toContain(1);
     // Byte-identical to what the FIRST call wrote — updatedAt still A, not B.
     expect(second.bytes.equals(first.bytes)).toBe(true);
     expect(second.content).toContain(`exo__Asset_updatedAt: ${STAMP_A}`);
