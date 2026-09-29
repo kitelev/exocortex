@@ -13,20 +13,20 @@
     "W1_shape_scan_not_filtered": {
       "from": "    this.shapeRegistryLoad ??= ShapeLoader.loadFromVaultFS(this.vaultPath, {\n      readFile: this.sharedReader,\n      scanFilter: () => this.tboxScanFilter(),\n    }).catch(() => new ShapeRegistry());",
       "to": "    this.shapeRegistryLoad ??= ShapeLoader.loadFromVaultFS(this.vaultPath, {\n      readFile: this.sharedReader,\n    }).catch(() => new ShapeRegistry());",
-      "expect": ["C1"],
-      "_note": "The whole point of the change for one of the two scans. Behaviour is unaffected (that is the invariant), so only the READ-count axis can see it."
+      "expect": ["C1", "C11"],
+      "_note": "The whole point of the change for one of the two scans. Behaviour is unaffected (that is the invariant), so only the READ-count axis can see it. ⛤ Re-measured after C11 (the create-batch axis) was added: it reds too, and for the reason that axis exists — `create-batch` plans through the SAME `CreateContext`, so anything that un-narrows `create` un-narrows the batch with it."
     },
     "W2_property_name_scan_not_filtered": {
       "from": "        warn: (msg) => this.warn(`⚠ ${msg}\\n`),\n        readFile: this.sharedReader,\n        scanFilter: () => this.tboxScanFilter(),",
       "to": "        warn: (msg) => this.warn(`⚠ ${msg}\\n`),\n        readFile: this.sharedReader,",
-      "expect": ["C1"],
-      "_note": "The other scan. It runs FIRST, so before #4291 it was the only one a stub-flip could see — the reason the ticket's map named two consumers and there were four."
+      "expect": ["C1", "C11"],
+      "_note": "The other scan. It runs FIRST, so before #4291 it was the only one a stub-flip could see — the reason the ticket's map named two consumers and there were four. ⛤ Re-measured after C11 (the create-batch axis) was added: it reds too, and for the reason that axis exists — `create-batch` plans through the SAME `CreateContext`, so anything that un-narrows `create` un-narrows the batch with it."
     },
     "W3_lookup_index_not_injected": {
       "from": "        lookupIndex: () => this.assetLookupIndex(),",
       "to": "        _unusedIndex: () => this.assetLookupIndex(),",
-      "expect": ["C1"],
-      "_note": "Without the index the anchor lookup and the status lookup each scan the corpus — the two readers the shared memo hid behind the scans."
+      "expect": ["C1", "C11"],
+      "_note": "Without the index the anchor lookup and the status lookup each scan the corpus — the two readers the shared memo hid behind the scans. ⛤ Re-measured after C11 (the create-batch axis) was added: it reds too, and for the reason that axis exists — `create-batch` plans through the SAME `CreateContext`, so anything that un-narrows `create` un-narrows the batch with it."
     },
     "W4_shape_registry_never_loaded": {
       "from": "    this.shapeRegistryLoad ??= ShapeLoader.loadFromVaultFS(this.vaultPath, {",

@@ -814,6 +814,13 @@ export class CacheManager {
       // only answers true while the on-disk stamp still matches the one taken
       // WITH this parse. A cache another process replaced since is re-read,
       // which is exactly the guarantee `refreshAfterWrite` depends on.
+      //
+      // ⚠ This WIDENS an existing, accepted trade rather than introducing one:
+      // `refreshAfterWrite` has used `loadedIsCurrent() ? this.loaded : …`
+      // since #4264, so the coarse mtime+size staleness signal was already
+      // trusted there. What changes is the population — every reader in one
+      // invocation, not only the writer that opted in. Named here so it is a
+      // conscious widening (review of PR #4476, LOW).
       if (this.loaded && (await this.loadedIsCurrent())) {
         return this.loaded;
       }
