@@ -26,6 +26,7 @@ import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { expectNaturalExit, expectRefused } from "./helpers/exit-assertions.js";
 
 const { createCommand } = await import("../../src/commands/create.js");
 const { PropertyNameValidator } = await import(
@@ -274,7 +275,7 @@ describe("RFC 430e84f1: `cli create` validates property NAMES against the mounte
     // did not match a hyphen, the key was skipped, and this typo reached the
     // vault unchallenged.
     await runCreate(["--property", "tbank-nessy__Deal_stagge=x"]);
-    expect(exitCodes).not.toContain(0);
+    expectRefused(exitCodes);
     expect(createdAssetCount()).toBe(0);
   });
 
@@ -293,7 +294,7 @@ describe("RFC 430e84f1: `cli create` validates property NAMES against the mounte
   it(`rejects an UNKNOWN-PREFIX property name — exit != 0, no asset created @req:${REQ}`, async () => {
     await runCreate(["--property", "nonExisting__Prop=x"]);
 
-    expect(exitCodes).not.toContain(0);
+    expectRefused(exitCodes);
     expect(exitCodes).toContain(2); // INVALID_ARGUMENTS
     const stderr = errorSpy.mock.calls.flat().join("\n");
     expect(stderr).toContain("Unknown property");
@@ -305,7 +306,7 @@ describe("RFC 430e84f1: `cli create` validates property NAMES against the mounte
   it(`rejects a KNOWN-PREFIX MISSPELLED name and fuzzy-suggests the closest @req:${REQ}`, async () => {
     await runCreate(["--property", `ems__Effort_parentEffort=[[${VALID_TARGET}]]`]);
 
-    expect(exitCodes).not.toContain(0);
+    expectRefused(exitCodes);
     const stderr = errorSpy.mock.calls.flat().join("\n");
     expect(stderr).toContain("ems__Effort_parent"); // the suggestion
     expect(createdAssetCount()).toBe(0);
@@ -319,7 +320,7 @@ describe("RFC 430e84f1: `cli create` validates property NAMES against the mounte
       "exo__Asset_isDefinedBy=[[!kitelev]]",
     ]);
 
-    expect(exitCodes).toContain(0);
+    expectNaturalExit(exitCodes);
     expect(exitCodes).not.toContain(2);
     const json = JSON.parse(stdoutChunks.join("").trim());
     expect(json.uuid).toBeTruthy();
@@ -332,7 +333,7 @@ describe("RFC 430e84f1: `cli create` validates property NAMES against the mounte
       `ems__Effort_startTimestamp=2026-07-27T10:00:00`,
     ]);
 
-    expect(exitCodes).toContain(0);
+    expectNaturalExit(exitCodes);
     expect(exitCodes).not.toContain(2);
   });
 
@@ -346,7 +347,7 @@ describe("RFC 430e84f1: `cli create` validates property NAMES against the mounte
       `ems__Effort_plannedStartTimestamp=2026-07-30T20:00:00`,
     ]);
 
-    expect(exitCodes).toContain(0);
+    expectNaturalExit(exitCodes);
     expect(exitCodes).not.toContain(2);
     expect(createdAssetCount()).toBe(1);
   });

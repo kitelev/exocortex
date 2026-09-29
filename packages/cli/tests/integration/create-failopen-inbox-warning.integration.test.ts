@@ -33,6 +33,7 @@ import {
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { expectNaturalExit } from "./helpers/exit-assertions.js";
 
 const { createCommand } = await import("../../src/commands/create.js");
 
@@ -162,7 +163,7 @@ describe("Ticket 3f8b640f: `cli create` fail-open into `01 Inbox/` is audible", 
       ],
       { from: "user" },
     );
-    expect(exitCodes).toContain(0);
+    expectNaturalExit(exitCodes);
     expect(exitCodes).not.toContain(1);
     const json = stdoutChunks.join("").trim();
     if (!json) {

@@ -22,6 +22,7 @@ import { WikilinkValidator } from "../services/WikilinkValidator.js";
 import { PropertyNameValidator } from "../services/PropertyNameValidator.js";
 import { EffortStatusResolver } from "../services/EffortStatusResolver.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
+import { guardStdioAgainstClosedReader } from "../utils/stdioClosedReader.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
 import {
   ShaclConformanceError,
@@ -933,6 +934,14 @@ export function createCommand(): Command {
       "With --use-cache: fold the created asset into an existing persistent cache in this process, so the next --use-cache process is a plain hit. Refused without --use-cache",
     )
     .action(async (options: CreateCommandOptions) => {
+      // ⛔ FIRST statement, and the paired half of dropping process.exit(0) at the
+      // end of the success path (#4444) — see the comment at that removal. Without
+      // the guard, the exit-less path lets an asynchronous EPIPE from a reader that
+      // left early become an uncaught exception (rc=1 + a Node stack trace);
+      // measured on `get-body` in #4447 and on `set-body` in #4443.
+      // ⛤ Deliberately ABOVE the --write-through refusal below: that branch writes
+      // to stderr and then exits too, so it is the same write-then-exit shape.
+      guardStdioAgainstClosedReader();
       // #4264 — refused before anything is read or written: without
       // --use-cache there is no cache to write through to.
       if (options.writeThrough && !options.useCache) {
@@ -1082,7 +1091,19 @@ export function createCommand(): Command {
         const output = { uuid, path, label: trimmedLabel };
         process.stdout.write(JSON.stringify(output) + "\n");
 
-        process.exit(0);
+        // ⛔ NO process.exit(0) here — the process must end naturally so stderr
+        // DRAINS. The `--dry-run` preview is `built.content`, i.e. the WHOLE asset
+        // the real write would produce, so with `--body-file` it is unbounded; and
+        // `process.exit` does not wait for an asynchronous write, while stderr is
+        // asynchronous whenever it is a pipe. Measured on the built bundle with a
+        // 549 528-byte `--body-file`: to a FILE 605 895 bytes arrived, through a
+        // PIPE only 65 658 — 89.2 % silently lost. #4444 measured the two property
+        // verbs and named this one by code identity; this is its own measurement.
+        //
+        // Nothing here holds the event loop open: the writes are synchronous, and
+        // the optional `--write-through` cache fold is awaited above and is
+        // best-effort by construction. Measured per path in
+        // dryrun-4444-pipe.harness.ts.
       } catch (error) {
         ErrorHandler.handle(error as Error);
       }

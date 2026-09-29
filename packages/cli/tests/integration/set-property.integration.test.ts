@@ -31,6 +31,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { parseFrontmatterAsReader } from "@kitelev/exocortex-test-utils";
+import { expectNaturalExit, expectRefused } from "./helpers/exit-assertions.js";
 
 const { setPropertyCommand } = await import("../../src/commands/set-property.js");
 
@@ -198,7 +199,7 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
       '{"property":"concept__Movie_watched","value":true}',
     ]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     expect(out.exit).not.toContain(1);
     // Boolean serialises bare (YAML-native), NOT quoted.
     expect(out.content).toContain("concept__Movie_watched: true");
@@ -216,7 +217,7 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
       "Some Channel: with colon",
     ]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     // A ': '-bearing value MUST be quoted or it breaks YAML parsing.
     expect(out.content).toContain(
       'youtube__Video_channel: "Some Channel: with colon"',
@@ -255,7 +256,7 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
       '{"property":"exo__Asset_aliases","value":["Dreyfus Model","Модель Дрейфуса","Dreyfus Hum Model"]}',
     ]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     expect(out.exit).not.toContain(1);
     // Canonical bare `aliases:` key updated in place with all 3 values.
     expect(out.content).toContain("aliases:");
@@ -275,7 +276,7 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
       '{"property":"aliases","value":["Alpha","Beta"]}',
     ]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     expect(out.content).toContain("aliases:");
     expect(out.content).toContain("  - Alpha");
     expect(out.content).toContain("  - Beta");
@@ -294,7 +295,7 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
     ]);
 
     expect(out.exit).toContain(1);
-    expect(out.exit).not.toContain(0);
+    expectRefused(out.exit);
     expect(out.errorLog).toMatch(/Refusing to set "ems__Effort_status"/);
     expect(out.errorLog).toMatch(/mark-done|move-to-backlog|start-effort/);
     // File byte-identical — the guard did not write anything.
@@ -366,7 +367,7 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
       "$1 & $& deal",
     ]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     // Exactly one frontmatter block — no duplicated `---` and no injected content.
     expect((out.content.match(/^---$/gm) ?? []).length).toBe(2);
     expect(out.content).toContain("concept__Movie_price: $1 & $& deal");
@@ -400,7 +401,7 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
       "one-line replacement",
     ]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     // ⛤ Authoritative check is the PARSE of the written file — the command's own
     // JSON echo is exactly what lies in this bug.
     const parsed = parseFrontmatter(out.content);
@@ -434,7 +435,7 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
       "ASK { ?s ?p ?o }",
     ]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     const parsed = parseFrontmatter(out.content);
     expect(parsed.exocmd__Precondition_sparqlAsk).toBe("ASK { ?s ?p ?o }");
     expect(out.content).not.toContain("PREFIX exo:");
@@ -450,7 +451,7 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
       '{"property":"concept__Movie_meta","value":{"a":1}}',
     ]);
 
-    expect(out.exit).not.toContain(0);
+    expectRefused(out.exit);
     expect(out.errorLog).toMatch(/must be a scalar/i);
     expect(out.content).toBe(before);
   });
@@ -467,7 +468,7 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
       "ok",
     ]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     expect(out.errorLog).not.toMatch(/Refusing to set/);
     expect(out.content).toContain("custom__toString: ok");
   });
@@ -483,7 +484,7 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
       }),
     ]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     // Wikilink value is quoted (not a broken bare `[[uid]]` flow sequence).
     expect(out.content).toContain(
       `exo__Asset_isDefinedBy: "[[${ANCHOR_OTHER}]]"`,
@@ -505,7 +506,7 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
       }),
     ]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     expect(out.content).toContain(
       `exo__Asset_isDefinedBy: "[[${ANCHOR_MOVIES}]]"`,
     );
@@ -523,7 +524,7 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
       '{"property":"exo__Asset_relates","value":"[[99999999-9999-4999-8999-999999999999]]"}',
     ]);
 
-    expect(out.exit).not.toContain(0);
+    expectRefused(out.exit);
     expect(out.errorLog).toMatch(/not found/i);
     expect(out.content).toBe(before);
   });
@@ -537,7 +538,7 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
       }),
     ]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     expect(out.content).toContain(`exo__Asset_relates: "[[${PARENT_UID}]]"`);
   });
 
@@ -551,7 +552,7 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
       "--dry-run",
     ]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     expect(out.stderr).toMatch(/DRY RUN PREVIEW/);
     expect(out.stderr).toMatch(/concept__Movie_watched: true/);
     // File is byte-identical — nothing written.
@@ -587,7 +588,7 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
     // check WITHOUT the ENOENT→friendly mapping reddens both assertions (the raw
     // readFileSync error surfaces): this is the revert-verify axis for the
     // read-directly refactor that closed the js/file-system-race (#3907).
-    expect(exitCodes).not.toContain(0);
+    expectRefused(exitCodes);
     expect(errorLog).toMatch(/Target file not found/);
     expect(errorLog).not.toMatch(/no such file or directory/i);
   });
