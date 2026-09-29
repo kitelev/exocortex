@@ -29,10 +29,24 @@
  *       wiring half of G3
  *   G6  no `*-pipe.harness.ts` removes a temp tree on its own any more, which is
  *       what says the cleanup moved rather than got duplicated
+ *   G8  a file reachable only through a SYMLINKED directory still counts as an
+ *       input — a dirent-kind walk skips symlinks in silence (a `Dirent` for one
+ *       answers false to both `isDirectory` and `isFile`), which would hand back
+ *       "not stale" for a symlinked `src` however old the bundle was
+ *   G9  a DANGLING symlink is skipped rather than throwing ENOENT out of the
+ *       walk — the same guard covers the TOCTOU case (a file listed by
+ *       `readdirSync` and removed before its `statSync` by a concurrent build)
+ *   G10 a symlink LOOP terminates: it bottoms out in ELOOP — raised by the
+ *       per-entry `statSync`, measured — which the walk absorbs, and the real
+ *       newest file is still reported
+ *   G11 a root that is not a directory yields `null` rather than throwing
+ *       ENOTDIR. This is the directory-level guard's only OBSERVABLE case: the
+ *       loop in G10 never reaches `readdirSync` on a bad path, so without G11
+ *       that guard has no axis at all (its mutant reddened nothing).
  *
  * Mutants: `pipe-harness-guards-4464.spec.json` (subject = the helper) locks
- * G1 and G3; `pipe-harness-guards-4464.wiring.spec.json` (subject = the
- * create-batch harness) locks G4 and G5.
+ * G1, G3, G8, G9 and G10; `pipe-harness-guards-4464.wiring.spec.json`
+ * (subject = the create-batch harness) locks G4 and G5.
  */
 import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import * as fs from "fs";
@@ -42,6 +56,7 @@ import { fileURLToPath } from "url";
 import {
   PipeHarnessBundleError,
   bundleInputRoots,
+  newestFileUnder,
   prepareBundle,
   runAxes,
 } from "./helpers/pipe-harness-guards.js";
@@ -157,37 +172,85 @@ describe("#4464 — pipe-harness driver guards", () => {
     expect(fs.existsSync(scratch)).toBe(false);
   });
 
+  it("G8: a file reachable only through a symlinked directory still counts", () => {
+    const real = join(tree.root, "elsewhere");
+    fs.mkdirSync(real, { recursive: true });
+    const hidden = join(real, "newer.ts");
+    fs.writeFileSync(hidden, "export const y = 2;\n");
+    setMtime(tree.srcFile, 1_700_000_000);
+    setMtime(hidden, 1_700_000_600);
+    fs.symlinkSync(real, join(tree.src, "linked"));
+
+    // ⛔ A Dirent for a symlink answers false to BOTH isDirectory and isFile, so a
+    // dirent-kind walk would skip the whole subtree and report "not stale".
+    const newest = newestFileUnder(tree.src);
+    expect(newest?.file).toBe(join(tree.src, "linked", "newer.ts"));
+  });
+
+  it("G9: a dangling symlink is skipped, not fatal, and the real newest still wins", () => {
+    fs.symlinkSync(join(tree.root, "does-not-exist"), join(tree.src, "gone"));
+    setMtime(tree.srcFile, 1_700_000_600);
+
+    const newest = newestFileUnder(tree.src);
+    expect(newest?.file).toBe(tree.srcFile);
+  });
+
+  it("G10: a symlink loop terminates instead of taking the walk down", () => {
+    fs.symlinkSync(tree.src, join(tree.src, "loop"));
+    setMtime(tree.srcFile, 1_700_000_600);
+
+    // The loop bottoms out in ELOOP — measured: `statSync` raises it first, at
+    // the same depth readdirSync would (15 on APFS), so it is the per-entry
+    // guard that absorbs a loop, not the directory-level one.
+    const newest = newestFileUnder(tree.src);
+    expect(newest?.file).toBe(tree.srcFile);
+  });
+
+  it("G11: a root that is not a directory yields null, not a throw", () => {
+    // The directory-level guard's own stated case ("not a directory"). It is
+    // NOT reachable through the loop in G10 — `statSync` refuses those entries
+    // before `readdirSync` is ever called on them — so without this axis the
+    // guard has no observer at all.
+    expect(newestFileUnder(tree.srcFile)).toBeNull();
+  });
+
   // ---- wiring: the four drivers actually go through the guards ---------------
   const harnesses = fs
     .readdirSync(__dirname)
     .filter((f) => f.endsWith("-pipe.harness.ts"))
     .sort();
 
+  /**
+   * Source with comments removed, so a `// … prepareBundleOrExit(…)` note cannot
+   * satisfy G4/G5 and a stale `// fs.rmSync(` remark cannot fail G6. Heuristic by
+   * construction — it would also strip a `//` inside a string literal — but these
+   * axes ask "is the call there", and a heuristic that only ever removes text can
+   * make them stricter, never looser.
+   */
+  const codeOf = (f: string): string =>
+    fs
+      .readFileSync(join(__dirname, f), "utf-8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+
   it("G4: every *-pipe.harness.ts obtains its bundle through prepareBundleOrExit", () => {
     // Canary: an empty sweep would make G4/G5/G6 vacuously green.
     expect(harnesses.length).toBeGreaterThanOrEqual(4);
     const missing = harnesses.filter(
-      (f) =>
-        !fs
-          .readFileSync(join(__dirname, f), "utf-8")
-          .includes("prepareBundleOrExit("),
+      (f) => !codeOf(f).includes("prepareBundleOrExit("),
     );
     expect(missing).toEqual([]);
   });
 
   it("G5: every *-pipe.harness.ts runs its axis body through runAxes", () => {
     expect(harnesses.length).toBeGreaterThanOrEqual(4);
-    const missing = harnesses.filter(
-      (f) => !fs.readFileSync(join(__dirname, f), "utf-8").includes("runAxes("),
-    );
+    const missing = harnesses.filter((f) => !codeOf(f).includes("runAxes("));
     expect(missing).toEqual([]);
   });
 
   it("G6: no *-pipe.harness.ts removes its temp tree on its own", () => {
     expect(harnesses.length).toBeGreaterThanOrEqual(4);
-    const offenders = harnesses.filter((f) =>
-      fs.readFileSync(join(__dirname, f), "utf-8").includes("fs.rmSync("),
-    );
+    const offenders = harnesses.filter((f) => codeOf(f).includes("fs.rmSync("));
     expect(offenders).toEqual([]);
   });
 

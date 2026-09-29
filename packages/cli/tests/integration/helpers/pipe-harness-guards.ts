@@ -54,7 +54,22 @@ export interface PrepareBundleOptions {
   build?: (tree: string) => { status: number | null; stderr: string };
 }
 
-/** The newest file anywhere under `root`, or `null` when `root` does not exist. */
+/**
+ * The newest file anywhere under `root`, or `null` when `root` does not exist.
+ *
+ * ⛔ Classification is by `statSync` (which FOLLOWS a symlink), not by the
+ * `Dirent` kind: a `Dirent` for a symlink answers `false` to BOTH `isDirectory`
+ * and `isFile` (measured), so a dirent-kind walk skips symlinked trees in
+ * silence — a workspace laid out with a symlinked `src` would report "not stale"
+ * however old the bundle was, which is the very defect this module exists to
+ * close. The two failure modes that buys are both absorbed deliberately:
+ * a dangling symlink makes `statSync` throw ENOENT, and a symlink LOOP makes
+ * `readdirSync` throw ELOOP (measured: at depth 15 on APFS) — the walk skips
+ * the entry or the directory rather than taking the harness down with it.
+ * The `statSync` guard doubles as the TOCTOU guard: a file listed by
+ * `readdirSync` and removed before its `statSync` (a concurrent build under
+ * `dist/`) is skipped, not fatal.
+ */
 export function newestFileUnder(
   root: string,
 ): { file: string; mtimeMs: number } | null {
@@ -64,16 +79,21 @@ export function newestFileUnder(
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch {
-      return; // vanished mid-walk, or not a directory — nothing to compare
+      return; // vanished mid-walk, not a directory, or a symlink loop (ELOOP)
     }
     for (const e of entries) {
       const p = path.join(dir, e.name);
-      if (e.isDirectory()) {
+      let st: fs.Stats;
+      try {
+        st = fs.statSync(p);
+      } catch {
+        continue; // removed between readdir and stat, or a dangling symlink
+      }
+      if (st.isDirectory()) {
         walk(p);
         continue;
       }
-      if (!e.isFile()) continue;
-      const st = fs.statSync(p);
+      if (!st.isFile()) continue;
       if (newest === null || st.mtimeMs > newest.mtimeMs) {
         newest = { file: p, mtimeMs: st.mtimeMs };
       }
