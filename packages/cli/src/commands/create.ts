@@ -18,7 +18,10 @@ import {
   ClassResolverService,
   ClassRefNotFoundError,
 } from "../services/ClassResolverService.js";
-import { WikilinkValidator } from "../services/WikilinkValidator.js";
+import {
+  WikilinkValidator,
+  CreatedByRefNotFoundError,
+} from "../services/WikilinkValidator.js";
 import { PropertyNameValidator } from "../services/PropertyNameValidator.js";
 import { EffortStatusResolver } from "../services/EffortStatusResolver.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
@@ -623,6 +626,50 @@ export async function planCreate(
     }
   }
 
+  // Ticket 36bd4ee0 / issue #4448 — an EXPLICIT `--created-by` MUST exist too.
+  //
+  // ⛔ The SAME mechanism as the class half above, on a sibling property:
+  // `exo__Asset_createdBy` is assembled by the core service DOWNSTREAM of
+  // `propertyValues`, so the `validatePropertyValues` call further down never
+  // inspected it either. Measured on this checkout before the gate:
+  // `create --created-by beef0000-0000-4000-8000-000000000111` exited 0 and
+  // wrote the asset; `find <vault> -name 'beef0000*'` returned 0 while the same
+  // find on a real identity uid returned 1.
+  //
+  // ⛤ Gated on `options.createdBy`, so the scope is the CALLER'S INPUT and the
+  // ExoAssistant default is excluded BY CONSTRUCTION, not by a second
+  // condition: the default is applied further down as
+  // `options.createdBy || DEFAULT_CREATED_BY_UID`, and it is a product
+  // constant, not input. A minimal vault that does not carry that identity file
+  // must stay writable (fail-open) — asserted as a negative control axis, and
+  // it is clause 4 of req b341020e's Gherkin ("the created asset has
+  // exo__Asset_createdBy set to the ExoAssistant wikilink", unconditional).
+  //
+  // Escape, probe and batch coverage are the class half's, deliberately:
+  // `--skip-wikilink-validation` (the creator ref IS a wikilink — a second flag
+  // would split one guarantee across two switches), `targetExists` (ONE place
+  // owns UID-filename → `exo__Asset_uid` scan → label-form linkpath → in-batch
+  // `pendingUids`), and `create-batch` inherits the refusal because it runs
+  // every item through this function — so a batch item naming an identity
+  // created by ANOTHER item of the same batch stays legal, in either direction:
+  // `create-batch` builds `pendingUids` from the WHOLE batch before the planning
+  // loop starts, so membership does not depend on item order. (⛔ #4446's comment
+  // above says "an EARLIER item" for the class half; measured here, that
+  // ordering is not a guarantee the code makes or needs — #4438's own axis K11
+  // already pins the later-item direction. Left unchanged there: it is a comment
+  // outside this ticket, with no behavioural consequence.)
+  //
+  // ⚠ The condition is a TRUTHINESS check, so `--created-by ""` — an explicit but
+  // empty flag — is treated like no flag at all and falls through to the default
+  // below. No dangling reference can result (the empty string is never written),
+  // and axis C11 pins that deliberately rather than leaving it to be rediscovered.
+  const explicitCreatedBy = options.createdBy;
+  if (!options.skipWikilinkValidation && explicitCreatedBy) {
+    if (!(await wikilinkValidator.targetExists(explicitCreatedBy))) {
+      throw new CreatedByRefNotFoundError(explicitCreatedBy, vaultPath);
+    }
+  }
+
   // Effort status default (issue #3849): a status-bearing class
   // (ems__Effort or a subclass, detected by walking exo__Class_superClass
   // to ems__Effort — no hardcoded class list) gets a default
@@ -912,14 +959,14 @@ export function createCommand(): Command {
     .option("--body <text>", "Markdown body content (use '-' to read from stdin)")
     .option("--body-file <path>", "Read body content from file")
     .option("--dry-run", "Preview frontmatter without writing file")
-    .option("--created-by <uuid>", "Creator UUID (defaults to ExoAssistant)")
+    .option("--created-by <uuid>", "Creator UUID (defaults to ExoAssistant; an explicitly passed uid must exist in the vault — issue #4448)")
     .option("--status <name>", "ems__Effort_status for status-bearing classes (default: Backlog; e.g. Draft, Doing, Done). Errors for non-status-bearing classes.")
     .option("--no-status", "For a status-bearing class, do NOT inject the default ems__Effort_status — create a status-less prototype/template (issue #3928). No-op for a non-status-bearing class. Mutually exclusive with --status / --property ems__Effort_status.")
     .option("--yes", "Accepted for symmetry with the apply subcommands (create is non-interactive; no-op)")
     .option("--timezone <tz>", "Timezone for timestamps (defaults to Asia/Almaty)")
     .option(
       "--skip-wikilink-validation",
-      "Skip wikilink existence validation — for --property VALUES and for the --class reference written as exo__Instance_class (issue #4438)",
+      "Skip wikilink existence validation — for --property VALUES, for the --class reference written as exo__Instance_class (issue #4438) and for an explicit --created-by written as exo__Asset_createdBy (issue #4448)",
     )
     .option(
       "--validate",

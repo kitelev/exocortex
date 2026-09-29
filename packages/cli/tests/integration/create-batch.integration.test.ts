@@ -836,6 +836,19 @@ describe("req 1848dff9: `cli create-batch` — many assets, one invocation", () 
   it("B10: --created-by is the default for items without createdBy; an item's own createdBy wins @req:1848dff9-bb2e-43a9-95e7-d917d6cef552", async () => {
     const batchCreator = "dddd0000-0000-4000-8000-000000000001";
     const ownCreator = "eeee0000-0000-4000-8000-000000000001";
+    // Issue #4448 made an EXPLICIT creator ref existence-checked, and the batch
+    // passes `item.createdBy ?? batch.createdBy` through the same planCreate —
+    // so BOTH identities must resolve, as they would in a real vault. The
+    // in-batch case (an item naming an identity created by an earlier item) is
+    // covered separately in create-createdby-resolvable-4448.
+    write(vault, EMS_DIR, batchCreator, {
+      exo__Asset_uid: batchCreator,
+      exo__Asset_label: "batch creator identity",
+    });
+    write(vault, EMS_DIR, ownCreator, {
+      exo__Asset_uid: ownCreator,
+      exo__Asset_label: "own creator identity",
+    });
     const r = await runBatch(
       [
         { class: TASK_CLASS_UID, label: "Batch creator" },
