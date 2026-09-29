@@ -539,7 +539,7 @@ export function createBatchCommand(): Command {
     )
     .option(
       "--created-by <uuid>",
-      "Creator UUID for items that set no createdBy (defaults to ExoAssistant, as in create)",
+      "Creator UUID for items that set no createdBy (defaults to ExoAssistant, as in create); an explicitly passed uid must exist in the vault or be created by an item of this batch (issue #4448)",
     )
     .option(
       "--timezone <tz>",
@@ -547,7 +547,7 @@ export function createBatchCommand(): Command {
     )
     .option(
       "--skip-wikilink-validation",
-      "Skip wikilink existence validation, for --property VALUES and for each item's class reference (as in create)",
+      "Skip wikilink existence validation, for --property VALUES, for each item's class reference and for an explicit createdBy (as in create)",
     )
     .option(
       "--yes",
