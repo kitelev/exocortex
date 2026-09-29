@@ -48,8 +48,21 @@
  * a lone-CR file "remains no block at all … tracked as #4452 rather than widened
  * here". Both are now FALSE and are retracted here rather than left to rot — a
  * stale "we deliberately do not do this" reads as a proven fact to the next
- * reader. The alternation order is load-bearing: `\r\n` FIRST, so a CRLF fence
- * is consumed whole instead of leaving its `\n` at the head of the body.
+ * reader.
+ *
+ * ⛔ AND SO IS A CLAIM THIS VERY DOCBLOCK MADE FOR ONE ROUND: that the
+ * alternation order is "load-bearing — `\r\n` FIRST, so a CRLF fence is
+ * consumed whole". Plausible and FALSE, and the mutant written to lock it
+ * (`Q3_alternation_order_puts_cr_before_crlf`) reddened NOTHING, which is the
+ * proof rather than an opinion. Measured on all three encodings: with `\r`
+ * first, a CRLF fence matches as CR alone and the body comes back as
+ * `"\nkey: v"` instead of `"key: v"` — but `match[0].length` is IDENTICAL (16
+ * vs 16), because the engine backtracks into the second alternative to reach
+ * the closing fence, so `blockEnd` and therefore the write path and the body
+ * split are byte-identical; and YAML 1.1 loads both bodies to the same mapping,
+ * since a leading blank line is not content. The real reason to keep `\r\n`
+ * first is legibility of the returned body, NOT correctness — and both halves
+ * of the widening ARE load-bearing, each locked by its own mutant (Q1, Q2).
  *
  * ⛤ The groups are NON-capturing on purpose: group 1 stays the YAML body, so
  * every call site that reads `match[1]` is unaffected by the widening.

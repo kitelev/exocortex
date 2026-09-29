@@ -16,6 +16,17 @@
  * ⛔ Axis names are `B<n>` FIRST TOKEN on purpose — the mutant driver extracts
  *    redness from the jest `● <suite> › <name>` line, so the name is a machine
  *    key (integration-test-revert-verify §A47 / §A104). Prose goes after it.
+ *
+ * ⛤ TWO REQUIREMENTS LIVE IN THIS FILE, by `@req` tag, not by file split.
+ *    `c05a3565` (#4441) owns B1-B14 and B17 — LF, CRLF, a single BOM.
+ *    `74419202` (#4452) owns B15, B16 and B18-B25 — lone-CR fences and a RUN of
+ *    leading BOMs, read AND write. B15/B16 were `c05a3565`'s two "OUT OF SCOPE
+ *    — stays invisible" pins, naming its §Non-goals; #4452 closed both, so they
+ *    were FLIPPED here and re-tagged rather than left beside new parallel axes.
+ *    They stay in this file because their controls (B6/B7 no-fence and
+ *    fence-in-body, B10-B12 the LF/CRLF/BOM write paths, B13/B14 the body-link
+ *    pair) are the ones that must remain green, and an axis judged far from its
+ *    control is an axis whose over-widening nobody sees.
  */
 import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
 import fs from "fs-extra";
@@ -788,5 +799,34 @@ describe("Issue #4441 — CRLF/BOM-led frontmatter is recognised by the vault lo
 
     expect(result.triples).toEqual([]);
     expect(result.skippedFiles).toEqual([]);
+  });
+
+  it(`B25 a write to a file with a RUN of BOMs and NO block inserts the block after ONE U+FEFF ${REQ_4452}`, async () => {
+    // The OTHER branch of `replaceFrontmatter`, and the only axis that can see
+    // it on this requirement's shapes — B19/B20 both have a block to replace,
+    // and B17 covers the single-BOM case. Before #4452 that branch counted at
+    // most one byte, so the surplus BOMs would have been left stranded AFTER
+    // the inserted block: a byte-order mark that is not at byte 0 is not a
+    // byte-order mark, it is garbage in the body.
+    const vault = await vaultWith("b25-nbom-no-block", {
+      "nbom-plain.md": BOM + BOM + "# Just a note\n\nNo fence anywhere.\n",
+    });
+    const { adapter, file } = only(vault);
+
+    await adapter.updateFrontmatter(file, (current) => ({
+      ...current,
+      exo__Asset_label: "created",
+    }));
+
+    const after = await fs.readFile(path.join(vault, "nbom-plain.md"), "utf-8");
+
+    expect(after.startsWith(`${BOM}---\n`)).toBe(true);
+    expect(after.split(BOM)).toHaveLength(2);
+    expect(fenceCountAnyEol(after)).toBe(2);
+    const reread = only(vault);
+    expect(reread.adapter.getFrontmatter(reread.file)).toMatchObject({
+      exo__Asset_label: "created",
+    });
+    expect(after).toContain("# Just a note");
   });
 });
