@@ -295,7 +295,6 @@ export { parseYamlFrontmatterTolerant } from "./utilities/parseYamlFrontmatter";
 export {
   matchFrontmatterBlock,
   frontmatterBlockBody,
-  bomLength,
 } from "./utilities/frontmatterBlock";
 export type { FrontmatterBlockMatch } from "./utilities/frontmatterBlock";
 export { DateFormatter } from "./utilities/DateFormatter";

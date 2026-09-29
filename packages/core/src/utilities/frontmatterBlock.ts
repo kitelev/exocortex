@@ -3,22 +3,38 @@
  * is its body?" — shared, so the surfaces that ask it cannot disagree.
  *
  * ⛤ WHY THIS FILE EXISTS (req `1dfbd427-9a96-4fc2-a49e-146f6b2a46e5`, #4453).
- * The same predicate was written independently in FIVE places, and they had
- * already drifted into three different tolerances:
+ * The three PLUGIN sites decided it independently and two of them were LF-only,
+ * so the same `.md` file produced triples through the CLI (`\r?\n`-tolerant
+ * since #4450) and ZERO triples through the plugin — a parity defect by
+ * surface, not by data. On iPhone the plugin is the only surface there is.
  *
- *   | where | tolerance before #4453 |
+ *   | plugin site | before #4453 |
  *   |---|---|
- *   | `packages/cli` `FileSystemVaultAdapter.matchFrontmatterBlock` | `\r?\n` + BOM skip (#4450) |
- *   | `packages/core` `NoteToRDFConverter.extractBodyContent` | `\r?\n` + BOM skip (#4450) |
- *   | `packages/obsidian-plugin` `ObsidianVaultAdapter` | LF-only |
- *   | `packages/obsidian-plugin` `ObsidianFileSystemAdapter` | LF-only |
- *   | `packages/obsidian-plugin` `VaultRDFIndexer` | LF-only regex, but the whole content was BOM-stripped and CRLF-normalised BEFORE matching — tolerant by a DIFFERENT mechanism, undocumented as such and pinned by nothing |
+ *   | `ObsidianVaultAdapter` (read + the #4440 diagnostic) | LF-only |
+ *   | `ObsidianFileSystemAdapter.extractFrontmatter` | LF-only |
+ *   | `VaultRDFIndexer.parseFrontmatterFromContent` | LF-only regex, but the whole content was BOM-stripped and CRLF-normalised BEFORE matching — tolerant by a DIFFERENT mechanism, undocumented as such and pinned by nothing |
  *
- * So the same `.md` file produced triples through the CLI and zero triples
- * through the plugin — a parity defect by surface, not by data. The three
- * plugin sites now call this helper; the CLI adapter and `extractBodyContent`
- * are deliberate non-goals of that requirement (each named there, with its
- * reason and a follow-up).
+ * ⛔ THE SCOPE OF THIS HELPER IS THE PLUGIN'S THREE SITES — NOT THE REPO.
+ * An earlier draft of this comment said the predicate "was written in FIVE
+ * places" and that the repo goes "from five to three". Both were FALSE and are
+ * withdrawn here rather than left to rot: they were inherited from the
+ * requirement's own prose and repeated under the words "measured, not assumed"
+ * without anyone measuring. The actual census (2026-09-29, `packages/**` minus
+ * `node_modules`/`dist`): **109** `^---…---` regex literals, of which ~30 in
+ * production `src/`, in at least TWO tolerance shapes — `\r?\n`-tolerant
+ * (~22, e.g. `sync/ChangeDetector`, `ShapeLoader`, `GroundingExecutor`,
+ * `AtomicFrontmatterService`) and still LF-only (~8, e.g.
+ * `FrontmatterService.FRONTMATTER_REGEX`, `PropertyCleanupService`,
+ * `RenameToUidService`, `NodeFsAdapter`, `CandidateShaclValidator`).
+ *
+ * So this file converges the PLUGIN's three copies to zero. It does not, and
+ * does not claim to, converge the repo. Two of the LF-only survivors are live
+ * parity gaps with their own work items (found by the review of PR #4458):
+ * `CandidateShaclValidator` (its own comment asserts byte-identical parity with
+ * `FileSystemVaultAdapter`, false since #4450) and `NodeFsAdapter` (breaks
+ * `apply`'s create-instance resolvers for a CRLF/BOM-fenced referenced asset).
+ * `extractBodyContent` and `FrontmatterService.FRONTMATTER_REGEX` are named
+ * non-goals in the requirement, with reasons.
  */
 
 /**
@@ -36,7 +52,7 @@
 const FRONTMATTER_BLOCK = /^---\r?\n([\s\S]*?)\r?\n---/;
 
 /** Length of a leading U+FEFF (0 or 1) — a BOM only counts at index 0. */
-export function bomLength(content: string): number {
+function bomLength(content: string): number {
   return content.charCodeAt(0) === 0xfeff ? 1 : 0;
 }
 

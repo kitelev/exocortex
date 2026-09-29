@@ -17,11 +17,23 @@
  *          `NoteToRDFConverter.convertVaultWithValidation`, which is the parity
  *          property the requirement exists to restore.
  *
- * ⛤ On `parseYaml`: the shared Obsidian test double is a naive line parser, so
- * it accepts CRLF bodies trivially. That is fine for these axes — every one of
- * them turns on whether the BLOCK is recognised at all, which is decided before
- * any YAML is parsed. Where a body's *content* matters the axis asserts the
- * parsed keys, and the double handles `key: value` lines correctly.
+ * ⛤ On `parseYaml` — corrected after the review of PR #4458, which caught the
+ * earlier version of this note claiming more than it proved. The shared
+ * Obsidian double is a hand-rolled line parser whose tolerance of `\r` is an
+ * ACCIDENT of `String.prototype.trim()`, not evidence about Obsidian's own
+ * implementation. Since this change makes both `ObsidianVaultAdapter` and
+ * `VaultRDFIndexer` hand a `\r`-RETAINING body to the real `parseYaml` for the
+ * first time, that distinction matters:
+ *
+ *   - `C5` closes the substantive half with a REAL YAML implementation —
+ *     js-yaml, which this repo already uses for frontmatter
+ *     (`parseYamlFrontmatterTolerant`): a `\r`-retaining body parses to the
+ *     same mapping as its LF twin.
+ *   - ⛔ What remains open, stated rather than papered over: Obsidian's OWN
+ *     `parseYaml` is not exercised by any axis here — only in Docker e2e. The
+ *     commit body says so too. This is a test-fixture-realism limit, not a
+ *     known defect: js-yaml and the YAML spec both treat `\r\n` as a line
+ *     break.
  */
 import * as obsidian from "obsidian";
 import { App, MetadataCache, TFile, Vault } from "obsidian";
@@ -31,6 +43,7 @@ import {
   frontmatterBlockBody,
   matchFrontmatterBlock,
 } from "@kitelev/exocortex-core";
+import * as realYaml from "js-yaml";
 import { ObsidianVaultAdapter } from "../../../src/adapters/ObsidianVaultAdapter";
 import { ObsidianFileSystemAdapter } from "../../../src/adapters/ObsidianFileSystemAdapter";
 import { VaultRDFIndexer } from "../../../src/infrastructure/VaultRDFIndexer";
@@ -155,6 +168,23 @@ describe("#4453 — CRLF/BOM frontmatter on the plugin surface (req 1dfbd427)", 
       expect(BOM_CRLF.slice(0, m!.blockStart)).toBe(BOM);
       expect(BOM_CRLF.slice(m!.blockStart, m!.blockEnd)).toMatch(/^---/);
       expect(BOM_CRLF.slice(m!.blockStart, m!.blockEnd)).toMatch(/---$/);
+    });
+
+    it("C5 @req:1dfbd427-9a96-4fc2-a49e-146f6b2a46e5 a REAL YAML parser reads the \\r-retaining body to the same mapping as its LF twin", () => {
+      // The substantive half of the `\r`-verbatim decision, on a real YAML
+      // implementation rather than the hand-rolled double: js-yaml is what
+      // `parseYamlFrontmatterTolerant` (core) uses for frontmatter. Without
+      // this, the only evidence that retaining `\r` is safe came from a double
+      // whose tolerance is incidental (review of PR #4458).
+      const crlfBody = frontmatterBlockBody(CRLF);
+      const lfBody = frontmatterBlockBody(LF);
+      expect(crlfBody).toContain("\r");
+      expect(lfBody).not.toContain("\r");
+      expect(
+        realYaml.load(crlfBody as string, { schema: realYaml.YAML11_SCHEMA }),
+      ).toEqual(
+        realYaml.load(lfBody as string, { schema: realYaml.YAML11_SCHEMA }),
+      );
     });
 
     it.each([
