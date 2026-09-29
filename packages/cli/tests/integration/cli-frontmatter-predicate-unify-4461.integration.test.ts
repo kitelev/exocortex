@@ -478,32 +478,60 @@ describe("#4461 ratchet — the two further LF-only sites the census turned up",
     expect(body).toContain("[[in-body]]");
   });
 
-  it(`E2 registerOrderSpec picks up a CRLF-fenced default order-spec asset ${REQ}`, () => {
+  // ⛔ MULTI-ITEM ON PURPOSE, and the review of PR #4463 is why. The first
+  //    version of E2 used a ONE-item head and a ONE-item tail, and it was
+  //    VACUOUS for the real defect: `extractList`'s continuation token was
+  //    `\n?`, which on CRLF consumes nothing and terminates the group after the
+  //    FIRST item — and "truncate to the first item" is indistinguishable from
+  //    "return every item" when there is only one. The live default order-spec
+  //    asset carries several entries, so the one-item shape was the only shape
+  //    that could not see it.
+  const ORDER_SPEC_LINES = [
+    "exo__Asset_uid: 44610000-0000-4000-8000-000000000001",
+    "exo__FrontmatterOrderSpec_default: true",
+    "exo__FrontmatterOrderSpec_head:",
+    "  - exo__Asset_uid",
+    "  - exo__Asset_createdAt",
+    "  - exo__Instance_class",
+    "exo__FrontmatterOrderSpec_tail:",
+    "  - exo__Asset_label",
+    "  - aliases",
+    "exo__FrontmatterOrderSpec_middleStrategy: alphabetical",
+  ];
+  const EXPECTED_SPEC = {
+    head: ["exo__Asset_uid", "exo__Asset_createdAt", "exo__Instance_class"],
+    tail: ["exo__Asset_label", "aliases"],
+    middleStrategy: "alphabetical",
+  };
+  const orderSpecFile = (body: string) =>
+    ["---", body, "---", ""].join("\n");
+
+  it(`E2 registerOrderSpec loads a CRLF-fenced default order-spec WHOLE — every list item, not just the first ${REQ}`, () => {
     writeAll(root, {
       "assetspaces/exo/spec.md": crlf(
-        [
-          "---",
-          "exo__Asset_uid: 44610000-0000-4000-8000-000000000001",
-          "exo__FrontmatterOrderSpec_default: true",
-          "exo__FrontmatterOrderSpec_head:",
-          "  - exo__Asset_uid",
-          "exo__FrontmatterOrderSpec_tail:",
-          "  - exo__Asset_label",
-          "---",
-          "",
-        ].join("\n"),
+        orderSpecFile(ORDER_SPEC_LINES.join("\n")),
       ),
     });
 
     clearOrderSpecLoader();
     registerOrderSpecFromVault(root);
 
-    expect(loadDefaultSpec()).toEqual(
-      expect.objectContaining({
-        head: ["exo__Asset_uid"],
-        tail: ["exo__Asset_label"],
-      }),
-    );
+    expect(loadDefaultSpec()).toEqual(EXPECTED_SPEC);
+    clearOrderSpecLoader();
+  });
+
+  it(`E2b control — the LF form of the SAME spec yields the SAME result ${REQ}`, () => {
+    writeAll(root, {
+      "assetspaces/exo/spec.md": orderSpecFile(ORDER_SPEC_LINES.join("\n")),
+    });
+
+    clearOrderSpecLoader();
+    registerOrderSpecFromVault(root);
+
+    // ⛤ The pair is the point: E2 alone could be satisfied by a parser that
+    //    mangles BOTH encodings the same way. This says the CRLF answer is the
+    //    LF answer, not merely a self-consistent one.
+    expect(loadDefaultSpec()).toEqual(EXPECTED_SPEC);
     clearOrderSpecLoader();
   });
 

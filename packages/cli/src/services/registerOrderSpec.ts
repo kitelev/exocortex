@@ -79,8 +79,22 @@ function extractScalar(fm: string, key: string): string | null {
   return m ? m[1].trim() : null;
 }
 
+// ⛔ `\r?\n?`, not `\n?` — and this is load-bearing, not tidiness. `.` never
+// matches a line terminator, so on a CRLF list item `.*` stops before the `\r`;
+// a bare `\n?` then consumes NOTHING (the next char is `\r`), the `\r` is left
+// where the next `  -` repetition has to start, and the group terminates after
+// exactly ONE item — silently, for a list of any length. Found by the review of
+// PR #4463: this file became reachable with CRLF content the moment
+// `extractFrontmatter` started returning core's VERBATIM body, so the fix that
+// makes a CRLF order-spec VISIBLE would otherwise have made it silently WRONG.
+// ⛤ Only the CONTINUATION token changes: the HEADER's `\s*` already absorbs a
+// CRLF break (`\s` matches `\r`), so widening it too would be an extra claim for
+// nothing. And `extractScalar` needs no change either: JS multiline `$` DOES
+// match immediately before a bare `\r` (measured, not assumed) and `.trim()`
+// strips it from the captured value — which is why `middleStrategy` and the
+// `_default: true` flag parsed correctly all along and masked this from a read.
 function extractList(fm: string, key: string): string[] {
-  const re = new RegExp(`^${escapeRegex(key)}:\\s*\\n((?:  -.*\\n?)+)`, "m");
+  const re = new RegExp(`^${escapeRegex(key)}:\\s*\\n((?:  -.*\\r?\\n?)+)`, "m");
   const m = fm.match(re);
   if (!m) return [];
   return m[1]
