@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutants for issue #4464 — the two driver-reliability guards the four out-of-jest `*-pipe.harness.ts` files now share (`helpers/pipe-harness-guards.ts`). Subject is the HELPER because that is where the guards live after the consolidation: a mutant anchored in one harness could only speak for that harness, whereas one anchored here speaks for all four at once (integration-test-revert-verify §A117 — the mutant travels with the guard to its new carrier). The WIRING half — that each harness actually goes through the helper — is a separate subject and lives in pipe-harness-guards-4464.wiring.spec.json. ⛤ Unlike the four sibling `*.pipe.spec.json` files this one is CI-gated: its axes are plain fs/argv logic, so they run in `test-coverage-cli` even though the harnesses they protect cannot (the CLI jest job does not build `dist`). Expectation written BEFORE the run. Both defects were OBSERVED on the real tree first: `touch packages/cli/src/index.ts` + `--no-build` measured the pre-touch bundle in silence before the fix and refuses with `dist older than src … predates …` after it.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?)[: ]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/tests/integration/helpers/pipe-harness-guards.ts",
+  "harness": "cd \"$(dirname {subject})/../../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/pipe-harness-guards-4464.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_staleness_refusal_dropped": {
+      "from": "    if (stale !== null) throw new PipeHarnessBundleError(stale);",
+      "to": "    if (stale !== null) void stale;",
+      "expect": ["G1"],
+      "_note": "Keeps the staleness COMPUTATION and drops only the refusal — the shape `--no-build` had before #4464, where the sole check was `fs.existsSync(DIST)`. G1 reddens because `prepareBundle` then returns the stale bundle instead of throwing. G2 stays GREEN (a bundle newer than its inputs was always allowed through, so a guard that never refuses cannot be told from a correct one there) and G2b stays GREEN (the missing-bundle refusal is a separate throw, which is what says the staleness check did not simply subsume it). That pair is the control: without it, one red axis could not distinguish `--no-build` being broken outright from the staleness half being gone."
+    },
+    "M2_cleanup_out_of_finally": {
+      "from": "  try {\n    return await body();\n  } finally {\n    for (const p of cleanupPaths) {\n      fs.rmSync(p, { recursive: true, force: true });\n    }\n  }",
+      "to": "  const result = await body();\n  for (const p of cleanupPaths) {\n    fs.rmSync(p, { recursive: true, force: true });\n  }\n  return result;",
+      "expect": ["G3"],
+      "_note": "Exactly the pre-#4464 shape: cleanup as the last statement of the happy path rather than a `finally`, so a throwing axis leaks its temp tree under os.tmpdir() (LOW from the #4462 review). Type-preserving — the function still returns `Promise<T>` — because a mutant that failed to compile would print `Tests: 0` and read as `the axis does not differentiate` instead of as a lost guard (integration-test-revert-verify §A36/§A97). G3 reddens on its `existsSync === false` half; its `rejects.toThrow` half stays satisfied, which is what says the mutant removed the CLEANUP rather than the error propagation."
+    }
+  }
+}

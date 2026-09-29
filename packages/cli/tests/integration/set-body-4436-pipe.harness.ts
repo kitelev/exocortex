@@ -49,6 +49,7 @@ import { fileURLToPath } from "url";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { prepareBundleOrExit, runAxes } from "./helpers/pipe-harness-guards.js";
 
 // fileURLToPath, not new URL().pathname — the latter is not percent-decoded, so a
 // tree path containing a space would resolve wrongly.
@@ -56,13 +57,11 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PKG = path.resolve(HERE, "../..");
 const TREE = path.resolve(CLI_PKG, "../..");
 
-const argv = process.argv.slice(2);
-const distFlag = argv.indexOf("--dist");
-const DIST =
-  distFlag >= 0
-    ? path.resolve(argv[distFlag + 1])
-    : path.join(CLI_PKG, "dist/index.js");
-const NO_BUILD = argv.includes("--no-build");
+// `[--dist <index.js>] [--no-build]`, the rebuild, and the refusal to measure a
+// bundle older than what it was built from all live in the shared guard module
+// (issue #4464) — before it, `--no-build` checked only that the file existed, so
+// a stale bundle was measured in silence (harness-invocation-surface §A8).
+const DIST = prepareBundleOrExit(process.argv.slice(2), CLI_PKG);
 
 let pass = 0;
 let fail = 0;
@@ -74,22 +73,6 @@ const bad = (name: string, msg: string): void => {
   fail += 1;
   console.log(`❌ ${name} — ${msg}`);
 };
-
-/** Rebuild so a MUTATED copy of the tree is measured, not a stale bundle. */
-if (!NO_BUILD) {
-  const r = spawnSync("npm", ["run", "build", "-w", "@kitelev/exocortex-cli"], {
-    cwd: TREE,
-    encoding: "utf-8",
-  });
-  if (r.status !== 0) {
-    console.log(`❌ BUILD — rc=${r.status}\n${(r.stderr || "").slice(-2000)}`);
-    process.exit(1);
-  }
-}
-if (!fs.existsSync(DIST)) {
-  console.log(`❌ BUILD — no bundle at ${DIST}`);
-  process.exit(1);
-}
 
 // ---- fixture vault ---------------------------------------------------------
 const vault = fs.mkdtempSync(path.join(os.tmpdir(), "sb-pipe-"));
@@ -192,139 +175,171 @@ function runPiped(args: string[]): { rc: number; out: Buffer; err: Buffer } {
   };
 }
 
-// ---- S1: big preview through a stderr PIPE --------------------------------
-{
-  const before = fs.readFileSync(path.join(vault, bigRel));
-  const r = runPiped(dryRunArgs(bigRel, bigBodyFile));
-  const got = r.err.length;
-  const text = r.err.toString("utf-8");
-  if (r.rc !== 0) bad("S1", `rc=${r.rc}; stderr tail=${text.slice(-300)}`);
-  else if (got !== expectedBigBytes)
-    bad(
-      "S1",
-      `pipe delivered ${got} of ${expectedBigBytes} bytes (${((100 * (expectedBigBytes - got)) / expectedBigBytes).toFixed(1)}% lost)`,
-    );
-  else if (!text.includes(TAIL_MARKER))
-    bad("S1", "length matches but the tail marker is missing");
-  else if (!text.endsWith("--- END PREVIEW ---\n"))
-    bad("S1", "the preview does not end with the END PREVIEW line");
-  else if (!before.equals(fs.readFileSync(path.join(vault, bigRel))))
-    bad("S1", "--dry-run wrote the file");
-  else ok("S1", `${got} bytes of preview through a stderr pipe, tail intact`);
-}
-
-// ---- S2: control — same preview through a FILE redirect -------------------
-{
-  const errFile = path.join(vault, "big.err");
-  const fd = fs.openSync(errFile, "w");
-  const r = spawnSync(
-    process.execPath,
-    [DIST, ...dryRunArgs(bigRel, bigBodyFile)],
-    { cwd: TREE, stdio: ["ignore", "ignore", fd], timeout: 120_000 },
-  );
-  fs.closeSync(fd);
-  const delivered = fs.readFileSync(errFile);
-  if (r.status !== 0) bad("S2", `rc=${r.status}`);
-  else if (delivered.length !== expectedBigBytes)
-    bad(
-      "S2",
-      `file got ${delivered.length} of ${expectedBigBytes} — the EXPECTATION is wrong, not the pipe`,
-    );
-  else if (!delivered.equals(Buffer.from(expectedBigPreview, "utf8")))
-    bad("S2", "byte length matches but the content differs from the expectation");
-  else ok("S2", `${delivered.length} bytes to a file, byte-identical (control)`);
-}
-
-// ---- S3: --dry-run is a preview, not a write ------------------------------
-{
-  const before = fs.readFileSync(path.join(vault, bigRel));
-  const r = runPiped(dryRunArgs(bigRel, bigBodyFile));
-  const after = fs.readFileSync(path.join(vault, bigRel));
-  const echo = r.out.toString("utf-8");
-  if (r.rc !== 0) bad("S3", `rc=${r.rc}`);
-  else if (!before.equals(after)) bad("S3", "--dry-run modified the asset");
-  else if (!echo.includes('"changed":true'))
-    bad("S3", `stdout echo did not report the pending change: ${echo.trim().slice(0, 200)}`);
-  else ok("S3", "file byte-identical after --dry-run, rc=0, echo reports changed:true");
-}
-
-// ---- S4: control — the real WRITE path through a pipe ---------------------
-{
-  const r = runPiped([
-    "set-body",
-    smallRel,
-    "--vault",
-    vault,
-    "--body-file",
-    bigBodyFile,
-    "--skip-wikilink-validation",
-    "--frozen-clock",
-    FROZEN_ISO,
-    "--timezone",
-    "UTC",
-  ]);
-  const onDisk = fs.readFileSync(path.join(vault, smallRel), "utf-8");
-  const wantDoc = `${fmFor(SMALL_UID, FROZEN_STAMP)}\n${bigBody}`;
-  if (r.rc !== 0) bad("S4", `rc=${r.rc}; ${r.err.toString("utf-8").slice(-300)}`);
-  else {
-    try {
-      const parsed = JSON.parse(r.out.toString("utf-8")) as {
-        changed: boolean;
-        bodyBytes: number;
-      };
-      if (parsed.changed !== true) bad("S4", "echo says changed:false on a real change");
-      else if (parsed.bodyBytes !== Buffer.byteLength(bigBody, "utf8"))
-        bad("S4", `bodyBytes ${parsed.bodyBytes} != ${Buffer.byteLength(bigBody, "utf8")}`);
-      else if (onDisk !== wantDoc)
-        bad("S4", `written document differs (${Buffer.byteLength(onDisk, "utf8")} bytes on disk)`);
-      else ok("S4", `write path intact: ${parsed.bodyBytes} bytes on disk (control)`);
-    } catch (e) {
-      bad("S4", `stdout echo did not parse: ${(e as Error).message}`);
-    }
-  }
-}
-
-// ---- S5: small preview still complete -------------------------------------
-{
-  const r = runPiped(dryRunArgs(smallRel, smallBodyFile));
-  const got = r.err.length;
-  if (r.rc !== 0) bad("S5", `rc=${r.rc}`);
-  else if (got !== expectedSmallBytes)
-    bad("S5", `small preview got ${got} of ${expectedSmallBytes}`);
-  else ok("S5", `${got} bytes (below the buffer threshold)`);
-}
-
-// ---- S6: the no-change stderr notice arrives ------------------------------
-{
-  const before = fs.readFileSync(path.join(vault, sameRel));
-  const r = runPiped([
-    "set-body",
-    sameRel,
-    "--vault",
-    vault,
-    "--body-file",
-    smallBodyFile,
-    "--skip-wikilink-validation",
-    "--frozen-clock",
-    FROZEN_ISO,
-    "--timezone",
-    "UTC",
-  ]);
-  const after = fs.readFileSync(path.join(vault, sameRel));
-  const err = r.err.toString("utf-8");
-  const echo = r.out.toString("utf-8");
-  if (r.rc !== 0) bad("S6", `rc=${r.rc}`);
-  else if (!err.includes("no change"))
-    bad("S6", `the no-change notice did not arrive: stderr=${JSON.stringify(err.slice(0, 200))}`);
-  else if (!echo.includes('"changed":false'))
-    bad("S6", `echo did not report changed:false: ${echo.trim().slice(0, 200)}`);
-  else if (!before.equals(after)) bad("S6", "a no-op rewrote the file");
-  else ok("S6", "no-change notice delivered, file untouched, rc=0");
-}
-
 // tsx transpiles this harness to CJS, where top-level await is unavailable — S7 and
 // the verdict live in an async IIFE so the summary still prints AFTER the last axis.
-void (async (): Promise<void> => {
+// The axes sit in their own function so the temp tree is removed from a
+// `finally` (issue #4464): cleanup used to be the IIFE's last statement, so a
+// throwing axis leaked the directory under os.tmpdir().
+async function axes(): Promise<void> {
+  // ---- S1: big preview through a stderr PIPE --------------------------------
+  {
+    const before = fs.readFileSync(path.join(vault, bigRel));
+    const r = runPiped(dryRunArgs(bigRel, bigBodyFile));
+    const got = r.err.length;
+    const text = r.err.toString("utf-8");
+    if (r.rc !== 0) bad("S1", `rc=${r.rc}; stderr tail=${text.slice(-300)}`);
+    else if (got !== expectedBigBytes)
+      bad(
+        "S1",
+        `pipe delivered ${got} of ${expectedBigBytes} bytes (${((100 * (expectedBigBytes - got)) / expectedBigBytes).toFixed(1)}% lost)`,
+      );
+    else if (!text.includes(TAIL_MARKER))
+      bad("S1", "length matches but the tail marker is missing");
+    else if (!text.endsWith("--- END PREVIEW ---\n"))
+      bad("S1", "the preview does not end with the END PREVIEW line");
+    else if (!before.equals(fs.readFileSync(path.join(vault, bigRel))))
+      bad("S1", "--dry-run wrote the file");
+    else ok("S1", `${got} bytes of preview through a stderr pipe, tail intact`);
+  }
+
+  // ---- S2: control — same preview through a FILE redirect -------------------
+  {
+    const errFile = path.join(vault, "big.err");
+    const fd = fs.openSync(errFile, "w");
+    const r = spawnSync(
+      process.execPath,
+      [DIST, ...dryRunArgs(bigRel, bigBodyFile)],
+      { cwd: TREE, stdio: ["ignore", "ignore", fd], timeout: 120_000 },
+    );
+    fs.closeSync(fd);
+    const delivered = fs.readFileSync(errFile);
+    if (r.status !== 0) bad("S2", `rc=${r.status}`);
+    else if (delivered.length !== expectedBigBytes)
+      bad(
+        "S2",
+        `file got ${delivered.length} of ${expectedBigBytes} — the EXPECTATION is wrong, not the pipe`,
+      );
+    else if (!delivered.equals(Buffer.from(expectedBigPreview, "utf8")))
+      bad(
+        "S2",
+        "byte length matches but the content differs from the expectation",
+      );
+    else
+      ok("S2", `${delivered.length} bytes to a file, byte-identical (control)`);
+  }
+
+  // ---- S3: --dry-run is a preview, not a write ------------------------------
+  {
+    const before = fs.readFileSync(path.join(vault, bigRel));
+    const r = runPiped(dryRunArgs(bigRel, bigBodyFile));
+    const after = fs.readFileSync(path.join(vault, bigRel));
+    const echo = r.out.toString("utf-8");
+    if (r.rc !== 0) bad("S3", `rc=${r.rc}`);
+    else if (!before.equals(after)) bad("S3", "--dry-run modified the asset");
+    else if (!echo.includes('"changed":true'))
+      bad(
+        "S3",
+        `stdout echo did not report the pending change: ${echo.trim().slice(0, 200)}`,
+      );
+    else
+      ok(
+        "S3",
+        "file byte-identical after --dry-run, rc=0, echo reports changed:true",
+      );
+  }
+
+  // ---- S4: control — the real WRITE path through a pipe ---------------------
+  {
+    const r = runPiped([
+      "set-body",
+      smallRel,
+      "--vault",
+      vault,
+      "--body-file",
+      bigBodyFile,
+      "--skip-wikilink-validation",
+      "--frozen-clock",
+      FROZEN_ISO,
+      "--timezone",
+      "UTC",
+    ]);
+    const onDisk = fs.readFileSync(path.join(vault, smallRel), "utf-8");
+    const wantDoc = `${fmFor(SMALL_UID, FROZEN_STAMP)}\n${bigBody}`;
+    if (r.rc !== 0)
+      bad("S4", `rc=${r.rc}; ${r.err.toString("utf-8").slice(-300)}`);
+    else {
+      try {
+        const parsed = JSON.parse(r.out.toString("utf-8")) as {
+          changed: boolean;
+          bodyBytes: number;
+        };
+        if (parsed.changed !== true)
+          bad("S4", "echo says changed:false on a real change");
+        else if (parsed.bodyBytes !== Buffer.byteLength(bigBody, "utf8"))
+          bad(
+            "S4",
+            `bodyBytes ${parsed.bodyBytes} != ${Buffer.byteLength(bigBody, "utf8")}`,
+          );
+        else if (onDisk !== wantDoc)
+          bad(
+            "S4",
+            `written document differs (${Buffer.byteLength(onDisk, "utf8")} bytes on disk)`,
+          );
+        else
+          ok(
+            "S4",
+            `write path intact: ${parsed.bodyBytes} bytes on disk (control)`,
+          );
+      } catch (e) {
+        bad("S4", `stdout echo did not parse: ${(e as Error).message}`);
+      }
+    }
+  }
+
+  // ---- S5: small preview still complete -------------------------------------
+  {
+    const r = runPiped(dryRunArgs(smallRel, smallBodyFile));
+    const got = r.err.length;
+    if (r.rc !== 0) bad("S5", `rc=${r.rc}`);
+    else if (got !== expectedSmallBytes)
+      bad("S5", `small preview got ${got} of ${expectedSmallBytes}`);
+    else ok("S5", `${got} bytes (below the buffer threshold)`);
+  }
+
+  // ---- S6: the no-change stderr notice arrives ------------------------------
+  {
+    const before = fs.readFileSync(path.join(vault, sameRel));
+    const r = runPiped([
+      "set-body",
+      sameRel,
+      "--vault",
+      vault,
+      "--body-file",
+      smallBodyFile,
+      "--skip-wikilink-validation",
+      "--frozen-clock",
+      FROZEN_ISO,
+      "--timezone",
+      "UTC",
+    ]);
+    const after = fs.readFileSync(path.join(vault, sameRel));
+    const err = r.err.toString("utf-8");
+    const echo = r.out.toString("utf-8");
+    if (r.rc !== 0) bad("S6", `rc=${r.rc}`);
+    else if (!err.includes("no change"))
+      bad(
+        "S6",
+        `the no-change notice did not arrive: stderr=${JSON.stringify(err.slice(0, 200))}`,
+      );
+    else if (!echo.includes('"changed":false'))
+      bad(
+        "S6",
+        `echo did not report changed:false: ${echo.trim().slice(0, 200)}`,
+      );
+    else if (!before.equals(after)) bad("S6", "a no-op rewrote the file");
+    else ok("S6", "no-change notice delivered, file untouched, rc=0");
+  }
+
   // ---- S7: a reader that LEAVES EARLY must not turn rc 0 into a crash --------
   // The other half of "no process.exit(0)": the exit used to terminate the process
   // synchronously, BEFORE the OS delivered the asynchronous EPIPE that a closed
@@ -359,11 +374,17 @@ void (async (): Promise<void> => {
       });
       child.on("close", (code) => {
         clearTimeout(killer);
-        done(code === 0 && /EPIPE|Unhandled 'error'/.test(stderrText) ? "epipe-trace" : (code ?? -1));
+        done(
+          code === 0 && /EPIPE|Unhandled 'error'/.test(stderrText)
+            ? "epipe-trace"
+            : (code ?? -1),
+        );
       });
     });
-    if (rc === 0) ok("S7", "reader left after 200 bytes — rc=0, no EPIPE crash");
-    else if (rc === "timeout") bad("S7", "the process hung after the reader left");
+    if (rc === 0)
+      ok("S7", "reader left after 200 bytes — rc=0, no EPIPE crash");
+    else if (rc === "timeout")
+      bad("S7", "the process hung after the reader left");
     else if (rc === "epipe-trace")
       bad("S7", "rc=0 but an EPIPE stack trace reached the user");
     else
@@ -372,8 +393,10 @@ void (async (): Promise<void> => {
         `rc=${rc} — an early-closing reader crashes the command (origin/main returns 0 here)`,
       );
   }
+}
 
-  fs.rmSync(vault, { recursive: true, force: true });
+void (async (): Promise<void> => {
+  await runAxes([vault], axes);
   console.log(`PASS=${pass} FAIL=${fail}`);
   process.exitCode = fail > 0 ? 1 : 0;
 })();
