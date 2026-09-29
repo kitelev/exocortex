@@ -64,14 +64,33 @@
  * first is legibility of the returned body, NOT correctness — and both halves
  * of the widening ARE load-bearing, each locked by its own mutant (Q1, Q2).
  *
- * ⛤ The groups are NON-capturing on purpose: group 1 stays the YAML body, so
- * every call site that reads `match[1]` is unaffected by the widening.
+ * ⛔ TWO SEPARATE PATTERNS, NOT ONE — and that is the fix for an over-widening
+ * regression this work item introduced and its own review caught (measured, in
+ * both directions, before and after).
  *
- * ⛔ Never `.match()` raw content against this directly — go through
- * {@link matchFrontmatterBlock}. A BOM before `---` defeats the `^` anchor
- * exactly as a CRLF fence did.
+ * A single pattern with an alternation at BOTH fences lets the engine split ONE
+ * physical CRLF between them: for `---\r\n---\r\n<body>` — a CRLF file whose
+ * first two lines are both a bare `---`, i.e. two stacked horizontal rules — it
+ * takes `\r` as the opening terminator and the SAME sequence's `\n` as the
+ * closing one, yielding an empty "frontmatter block". Measured against
+ * `origin/main`: the old `\r?\n` predicate returns `null` there, because
+ * `\r?\n` is indivisible at each fence. Consequences were real on both sides —
+ * the two rules vanished from the indexed body, and the next property write
+ * spliced over them.
+ *
+ * Matching the opening fence FIRST, then searching the remainder, makes the
+ * reuse impossible by construction: the terminator is consumed once and the
+ * search for the closing fence starts after it. The genuinely empty block keeps
+ * working in all three encodings, because it has TWO separators to give
+ * (`---\n\n---`, `---\r\r---`, `---\r\n\r\n---`) — which is also what makes the
+ * behaviour symmetric across encodings, the property the single pattern broke
+ * for CRLF alone.
+ *
+ * ⛤ `OPENING_FENCE` is `^`-anchored; `CLOSING_FENCE` is deliberately NOT, since
+ * it is applied to the remainder and must find the first following fence.
  */
-const FRONTMATTER_BLOCK = /^---(?:\r\n|\r|\n)([\s\S]*?)(?:\r\n|\r|\n)---/;
+const OPENING_FENCE = /^---(?:\r\n|\r|\n)/;
+const CLOSING_FENCE = /(?:\r\n|\r|\n)---/;
 
 /**
  * Length of the leading U+FEFF RUN (0, 1, or N) — BOM bytes only count while
@@ -135,15 +154,21 @@ export function matchFrontmatterBlock(
   content: string,
 ): FrontmatterBlockMatch | null {
   const bom = leadingBomLength(content);
-  const match = FRONTMATTER_BLOCK.exec(bom === 0 ? content : content.slice(bom));
-  if (!match) return null;
-  // `^`-anchored and non-global ⇒ the match always begins at index 0 of the
-  // string we handed it, so the original offsets are that string's offsets
-  // shifted by the BOM.
+  const rest = bom === 0 ? content : content.slice(bom);
+  const opening = OPENING_FENCE.exec(rest);
+  if (!opening) return null;
+  // The opening terminator is now CONSUMED — the closing fence is searched in
+  // what follows it, so one physical CRLF can never serve as both (see the
+  // `OPENING_FENCE` docblock: that reuse was the over-widening regression).
+  const bodyStart = opening[0].length;
+  const closing = CLOSING_FENCE.exec(rest.slice(bodyStart));
+  if (!closing) return null;
+  // `OPENING_FENCE` is `^`-anchored, so the block begins at index 0 of `rest`
+  // and the original offsets are `rest`'s offsets shifted by the BOM run.
   return {
-    body: match[1],
+    body: rest.slice(bodyStart, bodyStart + closing.index),
     blockStart: bom,
-    blockEnd: bom + match[0].length,
+    blockEnd: bom + bodyStart + closing.index + closing[0].length,
   };
 }
 

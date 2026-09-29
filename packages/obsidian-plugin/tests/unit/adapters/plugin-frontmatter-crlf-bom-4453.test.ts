@@ -223,6 +223,37 @@ describe("#4453 — CRLF/BOM frontmatter on the plugin surface (req 1dfbd427)", 
         }
       },
     );
+
+    // ⛔ The over-widening #4452 introduced and its own review caught, pinned
+    //    HERE because this is where the predicate is exercised DIRECTLY. A
+    //    single pattern with an alternation at both fences let the engine split
+    //    ONE physical CRLF between them (`\r` closing the opening fence, the
+    //    same sequence's `\n` closing the closing one), so a CRLF file whose
+    //    first two lines are both a bare `---` read as an EMPTY block.
+    // ⛤ On the CLI side the read-level observable is USELESS for this — an
+    //    empty block parses to nothing, so `getFrontmatter` is null either way
+    //    (its axis there had to assert data loss on the WRITE path instead).
+    //    Through `frontmatterBlockBody` the difference is direct: `null`
+    //    (no block) versus `""` (empty block).
+    it.each([
+      ["CRLF", `---\r\n---\r\nActual body, two rules at top\r\n`],
+      ["LF", `---\n---\nActual body\n`],
+      ["CR", `---\r---\rActual body\r`],
+    ])(
+      "C7 @req:74419202-264e-4394-a634-0b36d47357f8 control — two stacked bare --- on a %s file are NOT a block: one line ending may not serve both fences",
+      (_name, content) => {
+        expect(frontmatterBlockBody(content)).toBeNull();
+      },
+    );
+
+    it("C8 @req:74419202-264e-4394-a634-0b36d47357f8 CONTROL a genuinely EMPTY block (TWO separators) is still recognised in all three encodings", () => {
+      // Pairs with C7: a fix that required `\r\n` at both fences would satisfy
+      // C7 and break the CR row here. An empty block has two separators to
+      // give, which is exactly what distinguishes it from C7's single one.
+      for (const content of ["---\n\n---\nbody\n", "---\r\n\r\n---\r\nbody\r\n", "---\r\r---\rbody\r"]) {
+        expect(frontmatterBlockBody(content)).toBe("");
+      }
+    });
   });
 
   describe("P — each plugin site, through its own entry point", () => {

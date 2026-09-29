@@ -829,4 +829,96 @@ describe("Issue #4441 — CRLF/BOM-led frontmatter is recognised by the vault lo
     });
     expect(after).toContain("# Just a note");
   });
+
+  it(`B26 CONTROL two stacked "---" on a CRLF file are NOT a block — one physical CRLF may not serve both fences ${REQ_4452}`, async () => {
+    // ⛔ The over-widening THIS requirement introduced and its own review caught.
+    //    A single pattern with an alternation at both fences let the engine
+    //    split one `\r\n` between them — `\r` closing the opening fence, the
+    //    same sequence's `\n` closing the closing one — so a CRLF file whose
+    //    first two lines are both a bare `---` (two stacked horizontal rules)
+    //    read as an EMPTY frontmatter block. Both consequences were real: the
+    //    two rules vanished from the indexed body, and the next property write
+    //    spliced over them. Measured against origin/main, whose indivisible
+    //    `\r?\n` returns null here — so this axis pins PARITY with main on an
+    //    input the widening was never meant to reach.
+    // ⛤ Its LF twin is B7's neighbour (`---\n---` is not a block either) and
+    //    its CR twin is B24's; this file had no axis for the shape in ANY
+    //    encoding, which is why the regression was invisible to 24 green axes.
+    // ⛔ THE OBSERVABLE HAD TO BE THE WRITE PATH, and finding that out cost a
+    //    vacuous first draft of this axis. Under the regression the spurious
+    //    block's body is EMPTY, so `getFrontmatter` returns null anyway (an
+    //    empty block parses to nothing), the diagnostic stays silent by design,
+    //    and the file contributes no triples either way — read-side assertions
+    //    are satisfied identically with and without the defect, and the mutant
+    //    Q7 duly reddened NOTHING. What genuinely differs is DATA LOSS: with
+    //    the regression `replaceFrontmatter` sees a block spanning the two
+    //    rules and SPLICES OVER THEM; without it, no block is found and the new
+    //    one is inserted ahead, leaving the user's text intact.
+    for (const [name, content, eol] of [
+      ["crlf", "---\r\n---\r\nActual body, two rules at top\r\n", "\r\n"],
+      ["lf", "---\n---\nActual body\n", "\n"],
+      ["cr", "---\r---\rActual body\r", "\r"],
+    ] as const) {
+      const vault = await vaultWith(`b26-${name}`, {
+        [`${name}-two-rules.md`]: content,
+      });
+      const { adapter, file } = only(vault);
+
+      await adapter.updateFrontmatter(file, (current) => ({
+        ...current,
+        exo__Asset_label: "patched",
+      }));
+
+      const after = await fs.readFile(
+        path.join(vault, `${name}-two-rules.md`),
+        "utf-8",
+      );
+
+      // The user's two rules and their body survive: the written file still
+      // contains the original text, in its original line endings.
+      expect({ case: name, kept: after.includes(`---${eol}---${eol}`) }).toEqual(
+        { case: name, kept: true },
+      );
+      expect({ case: name, body: after.includes("Actual body") }).toEqual({
+        case: name,
+        body: true,
+      });
+      // …and the patch itself landed, so this axis cannot be satisfied by a
+      // write that simply did nothing.
+      const reread = only(vault);
+      expect({
+        case: name,
+        label: reread.adapter.getFrontmatter(reread.file)?.exo__Asset_label,
+      }).toEqual({ case: name, label: "patched" });
+    }
+  });
+
+  it(`B27 CONTROL a genuinely EMPTY block is still recognised in all three encodings — the B26 fix must not over-narrow ${REQ_4452}`, async () => {
+    // Pairs with B26 exactly as B14 pairs with B13. `---\n\n---` is the blessed
+    // "no keys yet" shape (its own comment in getFrontmatterParseFailure says
+    // so), and it has TWO separators to give — which is what distinguishes it
+    // from B26's single CRLF and makes the behaviour symmetric across
+    // encodings. A fix that simply required `\r\n` at both fences would satisfy
+    // B26 and break this one for CR.
+    for (const [name, content] of [
+      ["lf", "---\n\n---\nbody\n"],
+      ["crlf", "---\r\n\r\n---\r\nbody\r\n"],
+      ["cr", "---\r\r---\rbody\r"],
+    ] as const) {
+      const vault = await vaultWith(`b27-${name}`, { [`${name}-empty.md`]: content });
+      const { adapter, file } = only(vault);
+      // An EMPTY block parses to nothing, so `getFrontmatter` is null — the
+      // observable that separates "block found, no keys" from "no block" is the
+      // diagnostic path, which stays silent on a blank body by design.
+      expect({ case: name, failure: adapter.getFrontmatterParseFailure(file) }).toEqual({
+        case: name,
+        failure: null,
+      });
+      const result = await convert(vault);
+      expect({ case: name, skipped: result.skippedFiles }).toEqual({
+        case: name,
+        skipped: [],
+      });
+    }
+  });
 });

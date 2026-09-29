@@ -14,16 +14,22 @@
   "red_re": "› (?:@req:[0-9a-f-]+ )?(B\\d+)[: ]",
   "mutants": {
     "Q1_fences_back_to_crlf_only": {
-      "from": "const FRONTMATTER_BLOCK = /^---(?:\\r\\n|\\r|\\n)([\\s\\S]*?)(?:\\r\\n|\\r|\\n)---/;\n",
-      "to": "const FRONTMATTER_BLOCK = /^---\\r?\\n([\\s\\S]*?)\\r?\\n---/;\n",
+      "from": "const OPENING_FENCE = /^---(?:\\r\\n|\\r|\\n)/;\nconst CLOSING_FENCE = /(?:\\r\\n|\\r|\\n)---/;\n",
+      "to": "const OPENING_FENCE = /^---\\r?\\n/;\nconst CLOSING_FENCE = /\\r?\\n---/;\n",
       "expect": ["B15", "B18", "B19", "B21", "B22", "B23"],
-      "_note": "The pre-#4452 predicate, verbatim. Reverts the lone-CR half ONLY — the BOM run is untouched — so the asymmetry between the two halves is visible in which axes redden. Expectation filled from the RUN, not predicted."
+      "_note": "The pre-#4452 predicate, verbatim. Reverts the lone-CR half ONLY — the BOM run is untouched — so the asymmetry between the two halves is visible in which axes redden. Expectation filled from the RUN, not predicted.\n⚤ ANCHOR RE-MIGRATED (review round 2): both patterns go back to `\\r?\\n`, which is exactly the pre-#4452 tolerance."
     },
     "Q2_bom_run_back_to_at_most_one": {
       "from": "  let n = 0;\n  while (content.charCodeAt(n) === 0xfeff) n += 1;\n  return n;\n",
       "to": "  return content.charCodeAt(0) === 0xfeff ? 1 : 0;\n",
       "expect": ["B16", "B20", "B23", "B25"],
       "_note": "The pre-#4452 `bomLength`, verbatim: at most one byte skipped. Type-preserving (still returns a number). Reverts the BOM half ONLY."
+    },
+    "Q7_one_pattern_lets_a_crlf_serve_both_fences": {
+      "from": "  const opening = OPENING_FENCE.exec(rest);\n",
+      "to": "  const single = /^---(?:\\r\\n|\\r|\\n)([\\s\\S]*?)(?:\\r\\n|\\r|\\n)---/.exec(rest);\n  if (!single)\n    return null;\n  if (single)\n    return { body: single[1], blockStart: bom, blockEnd: bom + single[0].length };\n  const opening = OPENING_FENCE.exec(rest);\n",
+      "expect": ["B26"],
+      "_note": "The regression this requirement's own review caught, restored verbatim as the single pattern with an alternation at BOTH fences. On `---\\r\\n---\\r\\n<body>` the engine splits one physical CRLF between the fences and reports an EMPTY block, so the two stacked rules vanish from the indexed body and the next write splices over them. Type-preserving (an early return of the same shape, the two-phase code left in place below it so nothing else changes). Expectation filled from the RUN.\n⚤ FROM THE RUN: exactly B26. ⛔ The FIRST draft of B26 asserted the read pair (`getFrontmatter` null, zero triples) and this mutant reddened NOTHING — not a weak axis but a fact about the defect: the spurious block's body is EMPTY, so an empty block parses to nothing and the read observables are identical with and without it. The axis was rewritten onto the WRITE path (does the user's text survive a property patch), which is where the loss actually is."
     }
   }
 }

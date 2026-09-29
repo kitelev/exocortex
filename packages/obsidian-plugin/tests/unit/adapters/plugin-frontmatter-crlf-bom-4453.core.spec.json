@@ -14,14 +14,15 @@
   "red_re": "● .*› ([CPX]\\d+) ",
   "mutants": {
     "N1_fences_back_to_literal_lf": {
-      "from": "const FRONTMATTER_BLOCK = /^---(?:\\r\\n|\\r|\\n)([\\s\\S]*?)(?:\\r\\n|\\r|\\n)---/;\n",
-      "to": "const FRONTMATTER_BLOCK = /^---\\n([\\s\\S]*?)\\n---/;\n",
+      "from": "const OPENING_FENCE = /^---(?:\\r\\n|\\r|\\n)/;\nconst CLOSING_FENCE = /(?:\\r\\n|\\r|\\n)---/;\n",
+      "to": "const OPENING_FENCE = /^---\\n/;\nconst CLOSING_FENCE = /\\n---/;\n",
       "expect": [
         "C1",
         "C2",
         "C3",
         "C5",
         "C6",
+        "C8",
         "P1",
         "P3",
         "P4",
@@ -29,7 +30,7 @@
         "X1",
         "X2"
       ],
-      "_note": "The pre-#4453 plugin predicate. Every CRLF axis reddens on every surface; the BOM+LF cases stay green, and that asymmetry is what proves the two halves of the fix are separately load-bearing. X2 reddens because an unrecognised block is 'no block at all', so the malformed file is reported as an invariant violation instead of an unparseable-frontmatter skip — the silent-drop class #4439/#4440 closed. ⛤ C5 also reddens once it exists, and the reason is read rather than smoothed over: with an LF-only predicate `frontmatterBlockBody(CRLF)` is null, so C5 ends up comparing js-yaml's parse of nothing against the LF mapping. Same class as the other corrections in this PR (integration-test-revert-verify §A44) — the expectation had been written before C5 was added, from the mutant's theme rather than from which axes execute after it lands.\n⚤ EXPECTATION WIDENED by req 74419202 (#4452), reason recorded rather than filled in silently (§A44): C6 is the axis #4452 added for the two shapes this predicate now reaches (lone-CR fences, a RUN of BOMs). Any mutant of the predicate's own half breaks it too — which is the point of ONE shared predicate, and the reason C6 lives in this spec's harness rather than in a separate one."
+      "_note": "The pre-#4453 plugin predicate. Every CRLF axis reddens on every surface; the BOM+LF cases stay green, and that asymmetry is what proves the two halves of the fix are separately load-bearing. X2 reddens because an unrecognised block is 'no block at all', so the malformed file is reported as an invariant violation instead of an unparseable-frontmatter skip — the silent-drop class #4439/#4440 closed. ⛤ C5 also reddens once it exists, and the reason is read rather than smoothed over: with an LF-only predicate `frontmatterBlockBody(CRLF)` is null, so C5 ends up comparing js-yaml's parse of nothing against the LF mapping. Same class as the other corrections in this PR (integration-test-revert-verify §A44) — the expectation had been written before C5 was added, from the mutant's theme rather than from which axes execute after it lands.\n⚤ EXPECTATION WIDENED by req 74419202 (#4452), reason recorded rather than filled in silently (§A44): C6 is the axis #4452 added for the two shapes this predicate now reaches (lone-CR fences, a RUN of BOMs). Any mutant of the predicate's own half breaks it too — which is the point of ONE shared predicate, and the reason C6 lives in this spec's harness rather than in a separate one.\n⚤ ANCHOR RE-MIGRATED (review round 2) — see the CLI twin M1.\n⚤ EXPECTATION WIDENED AGAIN (review round 2 of #4452), reason first: C8 is the new control asserting that a genuinely EMPTY block (TWO separators) is recognised in ALL THREE encodings. Fences back to a literal `\\n` breaks its CR row — `---\\r\\r---` stops being a block. So C8 belongs to the same half of the widening as C6 and reddens with it, which is what makes it a real pair for C7 rather than a restatement of it."
     },
     "N2_bom_never_skipped": {
       "from": "  let n = 0;\n  while (content.charCodeAt(n) === 0xfeff) n += 1;\n  return n;\n",
@@ -38,16 +39,16 @@
       "_note": "Type-preserving (still a number), so a BROKEN verdict cannot be mistaken for redness. Only the BOM axes redden: C2 is pure-CRLF, P4 and X2 use CRLF-only fixtures, C4's controls are unaffected.\n⚤ EXPECTATION WIDENED by req 74419202 (#4452), reason recorded rather than filled in silently (§A44): C6 is the axis #4452 added for the two shapes this predicate now reaches (lone-CR fences, a RUN of BOMs). Any mutant of the predicate's own half breaks it too — which is the point of ONE shared predicate, and the reason C6 lives in this spec's harness rather than in a separate one."
     },
     "N3_predicate_loses_its_start_anchor": {
-      "from": "const FRONTMATTER_BLOCK = /^---(?:\\r\\n|\\r|\\n)([\\s\\S]*?)(?:\\r\\n|\\r|\\n)---/;\n",
-      "to": "const FRONTMATTER_BLOCK = /---(?:\\r\\n|\\r|\\n)([\\s\\S]*?)(?:\\r\\n|\\r|\\n)---/;\n",
+      "from": "const OPENING_FENCE = /^---(?:\\r\\n|\\r|\\n)/;\nconst CLOSING_FENCE = /(?:\\r\\n|\\r|\\n)---/;\n",
+      "to": "const OPENING_FENCE = /---(?:\\r\\n|\\r|\\n)/;\nconst CLOSING_FENCE = /(?:\\r\\n|\\r|\\n)---/;\n",
       "expect": ["C4"],
-      "_note": "Guards the OVER-WIDENING direction — the class #4439's review caught once already. Without `^`, a `---` fence inside the BODY is read as the asset's frontmatter, and the doubled-BOM file becomes visible through its SECOND fence. Narrow by construction: C4 is the only axis carrying shapes that must stay unrecognised.\n⚤ `to` REPAIRED by req 74419202 (#4452) — the mutant, not the expectation. Its old `to` (`/---\\r?\\n…/`) dropped the anchor AND reverted the fences to `\\r?\\n` in one step, so after #4452 it was a MIXED mutant and reddened C6 for the SECOND reason (a lone-CR fence no longer matched at all) rather than for over-widening. Single-concern again: anchor only, three forms kept, expectation back to the over-widening control alone. The CLI twin M6 of `cli-frontmatter-predicate-unify-4461.core.spec.json` had the identical defect and the identical repair."
+      "_note": "Guards the OVER-WIDENING direction — the class #4439's review caught once already. Without `^`, a `---` fence inside the BODY is read as the asset's frontmatter, and the doubled-BOM file becomes visible through its SECOND fence. Narrow by construction: C4 is the only axis carrying shapes that must stay unrecognised.\n⚤ `to` REPAIRED by req 74419202 (#4452) — the mutant, not the expectation. Its old `to` (`/---\\r?\\n…/`) dropped the anchor AND reverted the fences to `\\r?\\n` in one step, so after #4452 it was a MIXED mutant and reddened C6 for the SECOND reason (a lone-CR fence no longer matched at all) rather than for over-widening. Single-concern again: anchor only, three forms kept, expectation back to the over-widening control alone. The CLI twin M6 of `cli-frontmatter-predicate-unify-4461.core.spec.json` had the identical defect and the identical repair.\n⚤ ANCHOR RE-MIGRATED (review round 2) — see the CLI twin M6."
     },
     "N4_body_gets_its_carriage_returns_stripped": {
-      "from": "    body: match[1],\n",
-      "to": "    body: match[1].replace(/\\r/g, \"\"),\n",
+      "from": "    body: rest.slice(bodyStart, bodyStart + closing.index),\n",
+      "to": "    body: rest.slice(bodyStart, bodyStart + closing.index).replace(/\\r/g, \"\"),\n",
       "expect": ["C2", "C5"],
-      "_note": "The plausible 'helpful' normalisation, rejected on purpose: stripping would silently rewrite user content AND make the returned offsets stop matching the returned text. Narrow by construction — C2 is the only axis that asserts the body verbatim. ⛤ C5 added after the review of PR #4458: it asserts the same decision on a REAL YAML implementation (js-yaml) rather than on the hand-rolled Obsidian double, whose `\\r` tolerance is incidental. N4 reddens both — C2 on the bytes, C5 on the parse."
+      "_note": "The plausible 'helpful' normalisation, rejected on purpose: stripping would silently rewrite user content AND make the returned offsets stop matching the returned text. Narrow by construction — C2 is the only axis that asserts the body verbatim. ⛤ C5 added after the review of PR #4458: it asserts the same decision on a REAL YAML implementation (js-yaml) rather than on the hand-rolled Obsidian double, whose `\\r` tolerance is incidental. N4 reddens both — C2 on the bytes, C5 on the parse.\n⚤ ANCHOR RE-MIGRATED (review round 2): the body is now sliced out of the remainder rather than taken from a capture group, so the mutant strips `\\r` from the slice. Same subject."
     },
     "N5_offsets_ignore_the_bom": {
       "from": "    blockStart: bom,\n",
