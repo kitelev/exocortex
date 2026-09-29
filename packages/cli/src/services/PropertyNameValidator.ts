@@ -172,15 +172,35 @@ export class PropertyNameValidator {
     encoding: "utf-8",
   ) => Promise<string>;
 
+  /**
+   * #4291 — resolves a READ filter over the tree {@link collect} walks:
+   * `shouldRead(absolutePath)` false ⇒ the file is skipped WITHOUT being read.
+   * `undefined` — the default, and what a stale / absent source returns —
+   * means every file is read, i.e. verbatim the pre-#4291 walk.
+   *
+   * The walk itself, its ORDER and the parsing are untouched, which is what
+   * keeps `ranges` (first ranged def in path order wins) and the `conflicts`
+   * diagnostic (names the FIRST conflicting twin in path order) byte-identical
+   * — those are the two outputs a path-order change would silently rewrite.
+   *
+   * Async because the filter is IO-backed: awaited ONCE per collect, before
+   * the walk, never per file.
+   */
+  private readonly scanFilter?: () => Promise<
+    ((absolutePath: string) => boolean) | undefined
+  >;
+
   constructor(
     private readonly vaultPath: string,
     options: {
       warn?: (msg: string) => void;
       readFile?: (filePath: string, encoding: "utf-8") => Promise<string>;
+      scanFilter?: () => Promise<((absolutePath: string) => boolean) | undefined>;
     } = {},
   ) {
     this.warn = options.warn ?? (() => undefined);
     this.readFileImpl = options.readFile;
+    this.scanFilter = options.scanFilter;
   }
 
   /**
@@ -247,6 +267,7 @@ export class PropertyNameValidator {
     // eslint-disable-next-line import/no-nodejs-modules
     const { readdir, readFile: readFileFs } = await import("fs/promises");
     const readFile = this.readFileImpl ?? readFileFs;
+    const shouldRead = this.scanFilter ? await this.scanFilter() : undefined;
 
     const classDefs: ClassDefRecord[] = [];
     const candidates: PropertyDefCandidate[] = [];
@@ -268,6 +289,13 @@ export class PropertyNameValidator {
         if (entry.isDirectory()) {
           await walk(full);
         } else if (entry.isFile() && entry.name.endsWith(".md")) {
+          // #4291 — skipped BEFORE the read, and after the sort above, so the
+          // surviving candidates keep their byte-ordered walk positions: the
+          // first-ranged-def-wins rule and the conflict diagnostic name the
+          // same defs they would without a filter.
+          if (shouldRead && !shouldRead(full)) {
+            continue;
+          }
           let content: string;
           try {
             content = await readFile(full, "utf-8");

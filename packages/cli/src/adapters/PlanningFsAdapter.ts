@@ -1,6 +1,7 @@
 import fs from "fs-extra";
 import path from "path";
 import { NodeFsAdapter } from "./NodeFsAdapter.js";
+import type { AssetLookupIndex } from "../cache/CacheManager.js";
 
 /**
  * Read-side memo over {@link NodeFsAdapter} for the READ-ONLY planning phase of
@@ -54,9 +55,24 @@ export class PlanningFsAdapter extends NodeFsAdapter {
   private readonly byLinkpath = new Map<string, Promise<string | null>>();
   private readonly byMetadataQuery = new Map<string, Promise<string[]>>();
 
-  constructor(rootPath: string) {
+  /**
+   * #4291 — an OPTIONAL single-key lookup index, plus the paths its source
+   * could not speak about. Injected (the CLI derives it from the persistent
+   * triple cache); `undefined` ⇒ every lookup scans, i.e. exactly the
+   * pre-#4291 behaviour.
+   */
+  private readonly lookupIndexSource?: () => Promise<AssetLookupIndex | undefined>;
+  private lookupIndexLoad?: Promise<AssetLookupIndex | undefined>;
+
+  constructor(
+    rootPath: string,
+    options: {
+      lookupIndex?: () => Promise<AssetLookupIndex | undefined>;
+    } = {},
+  ) {
     super(rootPath);
     this.root = rootPath;
+    this.lookupIndexSource = options.lookupIndex;
   }
 
   private memo<T>(
@@ -192,13 +208,91 @@ export class PlanningFsAdapter extends NodeFsAdapter {
     );
   }
 
+  /**
+   * #4291 — the paths a `{ exo__Asset_uid: <string> }` lookup has to CONSIDER,
+   * in `getMarkdownFiles()` order, or `null` when there is no usable index.
+   *
+   * ⛤ This narrows the CANDIDATE LIST, it does not answer the query: the
+   * caller still runs the base class's predicate, through the base class's
+   * metadata reader, over these paths in the base class's order — so the
+   * result is what a full scan would have returned, computed without reading
+   * the other ~17 000 files. That is a stronger guarantee than "the index says
+   * so", and it is why a duplicated uid needs no special case.
+   *
+   * The index's `unknownPaths` (entries the cache holds no triples for — 4 of
+   * 17 136 on the measured vault) are ALWAYS candidates: the cache does not
+   * know their uid, so only the predicate can decide. A vault dirty enough for
+   * that set to be large gets no narrowing at all rather than a slow one.
+   */
+  private async narrowedCandidates(
+    key: "exo__Asset_uid" | "exo__Asset_label",
+    value: string,
+  ): Promise<string[] | null> {
+    if (!this.lookupIndexSource) return null;
+    this.lookupIndexLoad ??= this.lookupIndexSource().catch(() => undefined);
+    const index = await this.lookupIndexLoad;
+    if (!index) return null;
+    if (index.unknownPaths.length > PlanningFsAdapter.MAX_UNKNOWN_PATHS) {
+      return null;
+    }
+    const source = key === "exo__Asset_uid" ? index.byUid : index.byLabel;
+    const wanted = new Set([...(source.get(value) ?? []), ...index.unknownPaths]);
+    if (wanted.size === 0) return [];
+    // `getMarkdownFiles()` is a readdir walk (memoised, no file reads); taking
+    // the order from it is what makes the narrowed answer order-identical to
+    // the scan's.
+    const all = await this.getMarkdownFiles();
+    return all.filter((file) => wanted.has(file));
+  }
+
+  /** Above this many cache-unjudgeable files, narrowing is not worth its slack. */
+  private static readonly MAX_UNKNOWN_PATHS = 200;
+
+  /**
+   * The two single-key query shapes `create` issues — `findFileByUID` and
+   * `EffortStatusResolver.resolveStatusUid` — and the only ones narrowing
+   * applies to. Anything else (a multi-key query, another key, a non-string
+   * value) takes the scan unchanged.
+   */
+  private static narrowableQuery(
+    query: Record<string, any>,
+  ): { key: "exo__Asset_uid" | "exo__Asset_label"; value: string } | null {
+    const keys = Object.keys(query);
+    if (keys.length !== 1) return null;
+    const key = keys[0];
+    if (key !== "exo__Asset_uid" && key !== "exo__Asset_label") return null;
+    const value = query[key];
+    return typeof value === "string" && value.length > 0 ? { key, value } : null;
+  }
+
   override async findFilesByMetadata(
     query: Record<string, any>,
   ): Promise<string[]> {
     const matches = await this.memo(
       this.byMetadataQuery,
       JSON.stringify(query),
-      () => super.findFilesByMetadata(query),
+      async () => {
+        const narrowable = PlanningFsAdapter.narrowableQuery(query);
+        const candidates =
+          narrowable === null
+            ? null
+            : await this.narrowedCandidates(narrowable.key, narrowable.value);
+        if (candidates === null) {
+          return super.findFilesByMetadata(query);
+        }
+        const found: string[] = [];
+        for (const file of candidates) {
+          try {
+            const metadata = await this.getFileMetadata(file);
+            if (this.matchesQuery(metadata, query)) {
+              found.push(file);
+            }
+          } catch {
+            continue;
+          }
+        }
+        return found;
+      },
     );
     return matches.slice();
   }
