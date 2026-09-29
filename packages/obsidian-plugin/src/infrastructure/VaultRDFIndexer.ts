@@ -20,6 +20,7 @@ import {
   type INotificationService,
   type IFile,
   IRI,
+  frontmatterBlockBody,
 } from "@kitelev/exocortex-core";
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
@@ -532,23 +533,34 @@ export class VaultRDFIndexer {
    * Mirrors `ObsidianVaultAdapter.extractFrontmatter` — `null` when there is
    * no block, it is empty, or the YAML is invalid.
    *
-   * A leading BOM and `\r\n` line endings are normalised first: this is the
-   * SOLE frontmatter parser on the post-sync reindex path (no metadataCache
-   * fallback), and `updateFileFromDisk` removes the path's prior triples
-   * BEFORE calling here — so a CRLF/BOM asset that fails to parse would not
-   * just stay stale, it would silently VANISH from the store until restart.
-   * Plugin/CLI/Obsidian write LF, so this is defensive against foreign-tool
-   * edits, not the common case.
+   * ⛤ CRLF fences and a single leading BOM are tolerated — and since req
+   * `1dfbd427` (#4453) by the SAME shared predicate the other two plugin sites
+   * use, not by a mechanism of its own. This site was ALREADY tolerant, but
+   * incidentally so: it normalised the whole content (`\uFEFF` strip + `\r\n`
+   * → `\n`) before matching an LF-only regex, which no test pinned, so a future
+   * refactor of that normalisation could have regressed it silently. The
+   * observable behaviour is unchanged; what changed is that it can no longer
+   * drift from the predicate the read paths use.
+   *
+   * ⚠ ONE consequence named rather than left implicit: the YAML body handed to
+   * the parser now RETAINS `\r` where it previously received `\n`. YAML treats
+   * `\r\n` as a line break, so the mapping is the same — pinned by an axis.
+   *
+   * This is the SOLE frontmatter parser on the post-sync reindex path (no
+   * metadataCache fallback), and `updateFileFromDisk` removes the path's prior
+   * triples BEFORE calling here — so a CRLF/BOM asset that failed to parse
+   * would not just stay stale, it would silently VANISH from the store until
+   * restart. Plugin/CLI/Obsidian write LF, so this is defensive against
+   * foreign-tool edits, not the common case.
    */
   private parseFrontmatterFromContent(
     content: string,
   ): Record<string, unknown> | null {
-    const normalised = content.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
-    const match = normalised.match(/^---\n([\s\S]*?)\n---/);
-    if (!match) {
+    const body = frontmatterBlockBody(content);
+    if (body === null) {
       return null;
     }
-    const yaml = match[1];
+    const yaml = body;
     if (!yaml || yaml.trim() === "") {
       return null;
     }

@@ -1,0 +1,23 @@
+{
+  "_doc": "Revert-verify WIRING mutant for req 1dfbd427 (#4453): the shared core predicate must be what this site actually asks. A spec on the core helper alone would stay green if a site kept its own regex — that is the defect (a shared helper nothing calls), not a hypothesis.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/infrastructure/VaultRDFIndexer.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/adapters/plugin-frontmatter-crlf-bom-4453.test.ts --verbose 2>&1",
+  "red_re": "● .*› ([CPX]\\d+) ",
+  "mutants": {
+    "W_site_keeps_its_own_lf_only_regex": {
+      "from": "    const body = frontmatterBlockBody(content);\n",
+      "to": "    const body = /^---\\n([\\s\\S]*?)\\n---/.exec(content)?.[1] ?? null;\n",
+      "expect": ["P6"],
+      "_note": "This site was ALREADY tolerant before #4453 — by whole-content normalisation that NO test pinned. This mutant is the regression the issue's own Risks section predicts: remove the normalisation without the shared predicate and CRLF/BOM assets VANISH from the store, because updateFileFromDisk drops the path's prior triples BEFORE parsing. P6 is now the pin."
+    }
+  }
+}

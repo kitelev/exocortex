@@ -1,0 +1,47 @@
+{
+  "_doc": "Revert-verify mutants for req 1dfbd427-9a96-4fc2-a49e-146f6b2a46e5 (issue #4453), the SHARED core predicate. Expectations written BEFORE the run. Axis names are the machine key (first token after the last `›`). ⛤ Three sibling specs mutate the three PLUGIN call sites — mutant-driver takes ONE subject, and a green core helper that nothing calls is exactly the defect those specs exist to exclude.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/utilities/frontmatterBlock.ts",
+  "harness": "cd \"$(dirname {subject})/../../../obsidian-plugin\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/adapters/plugin-frontmatter-crlf-bom-4453.test.ts --verbose 2>&1",
+  "red_re": "● .*› ([CPX]\\d+) ",
+  "mutants": {
+    "N1_fences_back_to_literal_lf": {
+      "from": "const FRONTMATTER_BLOCK = /^---\\r?\\n([\\s\\S]*?)\\r?\\n---/;\n",
+      "to": "const FRONTMATTER_BLOCK = /^---\\n([\\s\\S]*?)\\n---/;\n",
+      "expect": ["C1", "C2", "C3", "C5", "P1", "P3", "P4", "P6", "X1", "X2"],
+      "_note": "The pre-#4453 plugin predicate. Every CRLF axis reddens on every surface; the BOM+LF cases stay green, and that asymmetry is what proves the two halves of the fix are separately load-bearing. X2 reddens because an unrecognised block is 'no block at all', so the malformed file is reported as an invariant violation instead of an unparseable-frontmatter skip — the silent-drop class #4439/#4440 closed. ⛤ C5 also reddens once it exists, and the reason is read rather than smoothed over: with an LF-only predicate `frontmatterBlockBody(CRLF)` is null, so C5 ends up comparing js-yaml's parse of nothing against the LF mapping. Same class as the other corrections in this PR (integration-test-revert-verify §A44) — the expectation had been written before C5 was added, from the mutant's theme rather than from which axes execute after it lands."
+    },
+    "N2_bom_never_skipped": {
+      "from": "  return content.charCodeAt(0) === 0xfeff ? 1 : 0;\n",
+      "to": "  return 0;\n",
+      "expect": ["C1", "C3", "P1", "P3", "P6", "X1"],
+      "_note": "Type-preserving (still a number), so a BROKEN verdict cannot be mistaken for redness. Only the BOM axes redden: C2 is pure-CRLF, P4 and X2 use CRLF-only fixtures, C4's controls are unaffected."
+    },
+    "N3_predicate_loses_its_start_anchor": {
+      "from": "const FRONTMATTER_BLOCK = /^---\\r?\\n([\\s\\S]*?)\\r?\\n---/;\n",
+      "to": "const FRONTMATTER_BLOCK = /---\\r?\\n([\\s\\S]*?)\\r?\\n---/;\n",
+      "expect": ["C4"],
+      "_note": "Guards the OVER-WIDENING direction — the class #4439's review caught once already. Without `^`, a `---` fence inside the BODY is read as the asset's frontmatter, and the doubled-BOM file becomes visible through its SECOND fence. Narrow by construction: C4 is the only axis carrying shapes that must stay unrecognised."
+    },
+    "N4_body_gets_its_carriage_returns_stripped": {
+      "from": "    body: match[1],\n",
+      "to": "    body: match[1].replace(/\\r/g, \"\"),\n",
+      "expect": ["C2", "C5"],
+      "_note": "The plausible 'helpful' normalisation, rejected on purpose: stripping would silently rewrite user content AND make the returned offsets stop matching the returned text. Narrow by construction — C2 is the only axis that asserts the body verbatim. ⛤ C5 added after the review of PR #4458: it asserts the same decision on a REAL YAML implementation (js-yaml) rather than on the hand-rolled Obsidian double, whose `\\r` tolerance is incidental. N4 reddens both — C2 on the bytes, C5 on the parse."
+    },
+    "N5_offsets_ignore_the_bom": {
+      "from": "    blockStart: bom,\n",
+      "to": "    blockStart: 0,\n",
+      "expect": ["C3"],
+      "_note": "Keeps the BOM out of the MATCH but points the offsets at index 0, so a future write path splicing [blockStart, blockEnd) would eat the byte. Not reachable from today's read-only plugin call sites, which is exactly why it needs its own axis rather than relying on one."
+    }
+  }
+}
