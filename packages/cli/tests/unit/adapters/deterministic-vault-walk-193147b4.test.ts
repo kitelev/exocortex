@@ -41,11 +41,13 @@ const REQ = "265844b7-74db-44e4-98b9-37fe77407bdb";
 import {
   matchFrontmatterBlock,
   frontmatterBlockBody,
+  leadingBomLength,
 } from "../../../../core/src/utilities/frontmatterBlock.js";
 
 jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   matchFrontmatterBlock,
   frontmatterBlockBody,
+  leadingBomLength,
   IVaultAdapter: class {},
   IFile: class {},
   IFolder: class {},

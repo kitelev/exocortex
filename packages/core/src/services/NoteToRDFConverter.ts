@@ -11,6 +11,10 @@ import { RDFVocabularyMapper } from "../infrastructure/rdf/RDFVocabularyMapper";
 import { NullLogger } from "../infrastructure/NullLogger";
 import { vaultPathToIRI } from "../infrastructure/vault/iri";
 import {
+  matchFrontmatterBlock,
+  leadingBomLength,
+} from "../utilities/frontmatterBlock";
+import {
   Exo003Parser,
   Exo003MetadataType,
   type Exo003AnchorMetadata,
@@ -2115,19 +2119,35 @@ export class NoteToRDFConverter {
    * @returns Body content without frontmatter, or full content if no frontmatter
    */
   private extractBodyContent(content: string): string {
-    // ⛤ A leading BOM defeats the `^` anchor exactly as a CRLF fence used to
-    //    defeat the CLI adapter's block matcher (req `c05a3565`, #4441). This
-    //    regex was already `\r?\n`-tolerant — it is the precedent that fix
-    //    ported — but on a BOM-prefixed file it matched NOTHING, so the whole
-    //    frontmatter block came back AS BODY and its wikilinks were indexed a
-    //    second time as `exo:Asset_bodyLink`. Skipping the byte here is
-    //    match-local: this method only ever RETURNS a substring, it never
-    //    writes, so no file loses its BOM on account of this line.
-    const withoutBom =
-      content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
-    // Frontmatter pattern: starts with ---, ends with ---
-    const frontmatterPattern = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
-    return withoutBom.replace(frontmatterPattern, "");
+    // ⛤ THE SHARED PREDICATE, not a twin of it (req
+    //    `74419202-264e-4394-a634-0b36d47357f8`, #4452). This method used to
+    //    carry the last surviving copy: `\r?\n`-tolerant fences plus a skip of
+    //    at most ONE leading BOM — i.e. it agreed with `matchFrontmatterBlock`
+    //    only on the shapes that predicate accepted BEFORE #4452 widened it to
+    //    lone-CR fences and a RUN of BOMs.
+    //
+    //    ⛔ Keeping the copy would have made that divergence HOT rather than
+    //    latent: such an asset becomes indexable by the read path while this
+    //    method still fails to match its block, so the WHOLE frontmatter comes
+    //    back as body and every frontmatter wikilink is emitted a second time
+    //    as `exo:Asset_bodyLink` — precisely the defect axis B13 of req
+    //    `c05a3565` (#4441) declares a defect for the BOM case. The conversion
+    //    has a shipped precedent in this predicate's own consumer set:
+    //    `wikilinkExtraction.bodyOf` moved onto the helper in #4461 and needed
+    //    no change for #4452, which is the entire point of one predicate.
+    //
+    //    Match-local as before: this method only ever RETURNS a substring, it
+    //    never writes, so no file loses its BOM on account of this line.
+    const block = matchFrontmatterBlock(content);
+    // ⛤ No block: the previous form returned the BOM-STRIPPED content (it
+    //    `replace`d on `withoutBom`), so that is kept — byte-identical for one
+    //    byte, and a run is stripped for the same reason one was.
+    if (!block) return content.slice(leadingBomLength(content));
+    // `blockEnd` stops at the closing `---`; the ONE line ending that followed
+    // it belonged to the fence too, and the previous regex (`---\r?\n?`)
+    // consumed it. All three forms, for the same reason the fences accept all
+    // three.
+    return content.slice(block.blockEnd).replace(/^(?:\r\n|\r|\n)/, "");
   }
 
   /**

@@ -40,20 +40,45 @@
 /**
  * A leading `---` block; group 1 = its YAML body.
  *
- * CRLF-tolerant on BOTH fences. A fence still needs at least one `\n`: a
- * lone-CR file (classic pre-OS9 Mac line endings) remains "no block at all",
- * which is the CLI's residue too and is tracked as #4452 rather than widened
- * here — the two surfaces stay in step, including in what they do NOT accept.
+ * Tolerant of ALL THREE line-ending forms on BOTH fences — `\r\n`, `\n` and a
+ * bare `\r` (classic pre-OS9 Mac endings, a file with no `\n` anywhere).
+ *
+ * ⛔ WITHDRAWN (req `74419202-264e-4394-a634-0b36d47357f8`, #4452): the previous
+ * edition of this docblock said a fence "still needs at least one `\n`" and that
+ * a lone-CR file "remains no block at all … tracked as #4452 rather than widened
+ * here". Both are now FALSE and are retracted here rather than left to rot — a
+ * stale "we deliberately do not do this" reads as a proven fact to the next
+ * reader. The alternation order is load-bearing: `\r\n` FIRST, so a CRLF fence
+ * is consumed whole instead of leaving its `\n` at the head of the body.
+ *
+ * ⛤ The groups are NON-capturing on purpose: group 1 stays the YAML body, so
+ * every call site that reads `match[1]` is unaffected by the widening.
  *
  * ⛔ Never `.match()` raw content against this directly — go through
  * {@link matchFrontmatterBlock}. A BOM before `---` defeats the `^` anchor
  * exactly as a CRLF fence did.
  */
-const FRONTMATTER_BLOCK = /^---\r?\n([\s\S]*?)\r?\n---/;
+const FRONTMATTER_BLOCK = /^---(?:\r\n|\r|\n)([\s\S]*?)(?:\r\n|\r|\n)---/;
 
-/** Length of a leading U+FEFF (0 or 1) — a BOM only counts at index 0. */
-function bomLength(content: string): number {
-  return content.charCodeAt(0) === 0xfeff ? 1 : 0;
+/**
+ * Length of the leading U+FEFF RUN (0, 1, or N) — BOM bytes only count while
+ * they are still at the head of the content.
+ *
+ * ⛔ WITHDRAWN (req `74419202`, #4452): this used to skip AT MOST ONE byte, and
+ * said so ("0 or 1"). A doubled BOM — the artifact of a naive "ensure a BOM"
+ * tool that does not check for an existing one — therefore still defeated the
+ * `^` anchor and the whole asset read as "no block at all".
+ *
+ * ⛤ Exported because the CLI write path needs the SAME arithmetic to decide
+ * where the content proper begins (#4461 sanctioned either exporting this or
+ * keeping a local copy; a local copy is the drift this file exists to end).
+ * A run is skipped for MATCHING only — what a write path does with N>1 is that
+ * path's decision, recorded in its own docstring.
+ */
+export function leadingBomLength(content: string): number {
+  let n = 0;
+  while (content.charCodeAt(n) === 0xfeff) n += 1;
+  return n;
 }
 
 /**
@@ -75,24 +100,28 @@ export interface FrontmatterBlockMatch {
 }
 
 /**
- * Match a leading frontmatter block, tolerating CRLF fences and a single
- * leading BOM.
+ * Match a leading frontmatter block, tolerating CRLF **or lone-CR** fences and
+ * a RUN of leading BOMs.
  *
- * ⛤ A BOM is skipped for MATCHING ONLY. Exactly ONE is skipped: a doubled BOM
- * still defeats the `^` anchor, which keeps this in step with the CLI predicate
- * (#4452 owns that residue for both surfaces).
+ * ⛤ A BOM run is skipped for MATCHING ONLY, and `blockStart` reports its full
+ * length so a write path can decide for itself what to do with `N>1`.
+ * ⛔ WITHDRAWN (req `74419202`, #4452): "Exactly ONE is skipped: a doubled BOM
+ * still defeats the `^` anchor" was this docblock's claim and is no longer true.
  *
- * ⛤ The body is returned VERBATIM — `\r` is not stripped from it. YAML treats
- * `\r\n` as a line break, so a CRLF body parses to the same mapping; stripping
- * would be a second, silent normalisation of user content and would make the
- * returned offsets stop matching the returned text.
+ * ⛤ The body is returned VERBATIM — neither `\r` nor a lone-CR line ending is
+ * stripped from it. YAML 1.1 treats `\r\n` AND a bare `\r` as line breaks, so a
+ * CR-separated body parses to the same mapping as its LF twin (measured on
+ * js-yaml 5.3.0, the version `packages/cli` resolves — `a: 1\rb: 2\rc: three`
+ * loads to the same object as its `\n` form). Stripping would be a second,
+ * silent normalisation of user content and would make the returned offsets stop
+ * matching the returned text.
  *
  * @returns the block, or `null` when the content does not open with one
  */
 export function matchFrontmatterBlock(
   content: string,
 ): FrontmatterBlockMatch | null {
-  const bom = bomLength(content);
+  const bom = leadingBomLength(content);
   const match = FRONTMATTER_BLOCK.exec(bom === 0 ? content : content.slice(bom));
   if (!match) return null;
   // `^`-anchored and non-global ⇒ the match always begins at index 0 of the

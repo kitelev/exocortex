@@ -9,6 +9,7 @@ import {
   FrontmatterService,
   parseYamlFrontmatterTolerant,
   matchFrontmatterBlock,
+  leadingBomLength,
 } from "@kitelev/exocortex-core";
 import { rewriteInboundWikilinks } from "../utils/wikilinkRewriter.js";
 
@@ -587,20 +588,34 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     const existing = matchFrontmatterBlock(content);
 
     if (existing) {
-      return (
-        content.slice(0, existing.blockStart) +
-        block +
-        content.slice(existing.blockEnd)
-      );
+      // ⛤ EXACTLY ONE U+FEFF is written back, whatever N was on disk (req
+      // `74419202`, #4452, decision 2). `N>1` is corruption, not an authoring
+      // style — no consumer produces it — so carrying the run across would
+      // reproduce it on every save. This is the ONE normalisation this write
+      // path performs, and it is a deliberate ASYMMETRY against line endings,
+      // which it normalises NEVER (decision 1): a lone-CR file keeps its own
+      // style, the block is simply replaced whole, exactly as for LF/CRLF.
+      // ⛤ Keyed on `blockStart` — core's report of the run's length — rather
+      // than on a fresh probe of `content`, so "the write path honours the
+      // offsets the predicate returned" stays the load-bearing property (it is
+      // what mutant M4_write_path_drops_the_bom falsifies). `N === 1` and
+      // `N === 0` are byte-identical to the pre-#4452 behaviour.
+      const leadingBom = existing.blockStart > 0 ? "\uFEFF" : "";
+      return leadingBom + block + content.slice(existing.blockEnd);
     }
     // ⛔ NOT a second block predicate — that one is core's, imported above.
     // This is only "where does the content proper begin", needed because there
     // is no block to splice around: a new block goes AFTER a leading BOM so the
-    // byte stays first. core's `bomLength` is module-private; #4461 sanctions
-    // either exporting it or keeping this arithmetic local, and this work item
-    // is scoped out of `frontmatterBlock.ts` (see the PR body's follow-up).
-    const bom = content.charCodeAt(0) === 0xfeff ? 1 : 0;
-    return content.slice(0, bom) + `${block}\n` + content.slice(bom);
+    // byte stays first. ⛤ The arithmetic is core's too now — `leadingBomLength`
+    // is exported for exactly this call site (req `74419202`; #4461 sanctioned
+    // either exporting it or keeping a local copy, and the local copy was the
+    // drift the shared helper exists to end). It counts the whole RUN, so a
+    // doubled BOM on a block-less file no longer leaves its second byte
+    // stranded in the middle of the file.
+    const bomRun = leadingBomLength(content);
+    return (
+      (bomRun > 0 ? "\uFEFF" : "") + `${block}\n` + content.slice(bomRun)
+    );
   }
 
   /**

@@ -25,6 +25,17 @@ import { NoteToRDFConverter } from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../../src/adapters/FileSystemVaultAdapter.js";
 
 const REQ = "@req:c05a3565-7b8d-42dc-bc9f-7e71d47d9364";
+/**
+ * The SIBLING requirement (#4452): lone-CR fences and a RUN of leading BOMs, on
+ * read AND on write.
+ *
+ * ⛔ B15/B16 below carry THIS tag, not `REQ`. They used to pin `c05a3565`'s two
+ *    named §Non-goals as "stays invisible"; now that the gap is closed they
+ *    assert the new behaviour, so they are this requirement's evidence — and
+ *    leaving `c05a3565`'s tag on them would bind an Active requirement to an
+ *    assertion its own §Non-goals exclude. `c05a3565` keeps B1-B14/B17.
+ */
+const REQ_4452 = "@req:74419202-264e-4394-a634-0b36d47357f8";
 const BOM = "﻿";
 
 /** A minimal but genuinely VALID asset body (LF), modelled on the #2997 valid-tree fixture. */
@@ -62,6 +73,29 @@ function crlfFenced(yamlBody: string, body = "\nbody text\n"): string {
 
 function lfFenced(yamlBody: string, body = "\nbody text\n"): string {
   return `---\n${yamlBody}\n---\n${body}`;
+}
+
+/**
+ * `---\r<body>\r---\r<rest>` — classic pre-OS9 Mac endings, and the point is
+ * that the result contains **no `\n` at all**: that is what made such a file
+ * invisible to a `\r?\n` predicate (req `74419202`, #4452).
+ */
+function crFenced(yamlBody: string, body = "\rbody text\r"): string {
+  return `---\r${yamlBody.replace(/\n/g, "\r")}\r---\r${body}`;
+}
+
+/**
+ * Fence lines on ANY of the three line-ending forms.
+ *
+ * ⛔ A separate predicate from {@link fenceCount} on purpose, not a widening of
+ *    it: that one is the measuring instrument of `c05a3565`'s axes and changing
+ *    it would put this work item's fingerprints on their verdict. This one
+ *    normalises CR/CRLF to LF first, so a lone-CR file — which has no `\n` for
+ *    `^…$` to anchor against — is measured at all.
+ */
+function fenceCountAnyEol(content: string): number {
+  const normalised = content.replace(/\r\n|\r/g, "\n");
+  return (normalised.match(/^﻿*---$/gm) ?? []).length;
 }
 
 /**
@@ -465,55 +499,293 @@ describe("Issue #4441 — CRLF/BOM-led frontmatter is recognised by the vault lo
     ).toContain("some-body-target");
   });
 
-  // ── The two encodings this fix deliberately does NOT reach ────────────────
-  // Both were surfaced by the review of this PR. They are pinned, not fixed:
-  // the widened predicate is `\r?\n` and a SINGLE leading U+FEFF, and saying so
-  // in an executable axis is what keeps the requirement's prose from drifting
-  // into "regardless of its line endings".
+  // ── The two encodings #4441 deliberately did NOT reach — NOW CLOSED ───────
+  // B15/B16 were surfaced by the review of PR #4450 and pinned as
+  // "stays invisible", naming req `c05a3565`'s two §Non-goals and their work
+  // item #4452. Req `74419202` (#4452) closes both, so these axes are FLIPPED
+  // rather than left beside new parallel ones: an axis that asserted the old
+  // limit cannot survive the limit being lifted, and a fix whose diff only ADDS
+  // axes leaves the old verdict standing as the repo's stated intent.
   //
-  // ⛤ These are ABSENCE-OF-EFFECT axes, like B6/B8: green under every mutant of
-  //    this PR by construction. Their product is the pin, not a flip — and the
-  //    pin is what a later session needs in order to see that the gap is known
-  //    rather than overlooked.
+  // ⛔ Their tag changed with their meaning — see `REQ_4452` above.
 
-  it(`B15 OUT OF SCOPE lone-CR fences stay invisible — the fix reaches \\r?\\n, not bare \\r ${REQ}`, async () => {
-    // Classic pre-OS9 Mac line endings: `\r` with no `\n` anywhere. The block
-    // predicate requires a `\n`, so such a file is still read as "no block at
-    // all" — the same silent-invisibility class as #4441, entered through a
-    // third door.
-    // ⛔ Only the READ pair is pinned. The write consequence (an unrelated
-    //    property patch PREPENDS a second block, leaving the original as body
-    //    text) is a live defect, not a desired state, and pinning it as expected
-    //    would freeze it. That consequence is why lone-CR needs its own
-    //    requirement rather than a widening tacked onto this one.
-    const vault = await vaultWith("b15-lone-cr", {
-      "lone-cr.md": "---\rkey: value\r---\rbody\r",
-    });
+  it(`B15 a VALID lone-CR-fenced asset is indexed — no \\n anywhere, triples > 0, no skip entry ${REQ_4452}`, async () => {
+    // Classic pre-OS9 Mac line endings: `\r` with no `\n` in the whole file.
+    // Both fences and the YAML body are CR-separated, and js-yaml 1.1 treats a
+    // bare `\r` as a line break (measured on js-yaml 5.3.0, the version
+    // `packages/cli` resolves), so the body parses to the same mapping as its
+    // LF twin.
+    const content = crFenced(VALID_YAML);
+    expect(content).not.toContain("\n");
+
+    const vault = await vaultWith("b15-lone-cr", { "lone-cr.md": content });
     const { adapter, file } = only(vault);
 
-    expect(adapter.getFrontmatter(file)).toBeNull();
+    expect(adapter.getFrontmatter(file)).not.toBeNull();
+    // Valid AND parseable ⇒ the diagnostic path has nothing to report.
     expect(adapter.getFrontmatterParseFailure(file)).toBeNull();
 
     const result = await convert(vault);
-    expect(result.triples).toEqual([]);
+
     expect(result.skippedFiles).toEqual([]);
+    expect(result.summary.indexed).toBe(1);
+    // ⛔ Not merely "some triples": the asset's OWN label, so an over-wide
+    //    change that emits only the filename triple cannot satisfy this
+    //    (the same reason B1/B13 assert the label).
+    expect(
+      result.triples.some(
+        (t) =>
+          (t.predicate as { value: string }).value.endsWith("Asset_label") &&
+          (t.object as { value: string }).value ===
+            "CRLF/BOM repro — issue #4441",
+      ),
+    ).toBe(true);
   });
 
-  it(`B16 OUT OF SCOPE a DOUBLE BOM stays invisible — exactly one U+FEFF is skipped ${REQ}`, async () => {
+  it(`B16 a VALID asset preceded by a RUN of BOMs is indexed — N ≥ 2 U+FEFF are skipped ${REQ_4452}`, async () => {
     // Two stacked BOM bytes — the artifact of a naive "ensure a BOM" tool that
-    // does not check for an existing one. `bomLength` skips at most one, so the
-    // second still defeats the `^` anchor. The requirement says "a leading
-    // U+FEFF", singular; this axis is what makes that word load-bearing instead
-    // of incidental.
+    // does not check for an existing one. `leadingBomLength` now counts the
+    // whole run, so the `^` anchor is reached.
     const vault = await vaultWith("b16-double-bom", {
       "double-bom.md": BOM + BOM + lfFenced(VALID_YAML),
     });
     const { adapter, file } = only(vault);
 
-    expect(adapter.getFrontmatter(file)).toBeNull();
+    expect(adapter.getFrontmatter(file)).not.toBeNull();
     expect(adapter.getFrontmatterParseFailure(file)).toBeNull();
 
     const result = await convert(vault);
+
+    expect(result.skippedFiles).toEqual([]);
+    expect(result.summary.indexed).toBe(1);
+    expect(
+      result.triples.some(
+        (t) =>
+          (t.predicate as { value: string }).value.endsWith("Asset_label") &&
+          (t.object as { value: string }).value ===
+            "CRLF/BOM repro — issue #4441",
+      ),
+    ).toBe(true);
+  });
+
+  it(`B18 a MALFORMED lone-CR-fenced asset is NAMED in the skip list and THROWS in strict mode ${REQ_4452}`, async () => {
+    // Parity with B3/B5: "visible" has to mean "accounted for", not just
+    // "sometimes indexed". A block that is present but does not parse must be
+    // NAMED — otherwise widening the predicate would move the file from one
+    // kind of silence to another.
+    const vault = await vaultWith("b18-lone-cr-bad", {
+      "lone-cr-bad.md": crFenced(MALFORMED_YAML),
+    });
+
+    const result = await convert(vault);
+
+    expect(result.skippedFiles).toHaveLength(1);
+    expect(result.skippedFiles[0].path).toContain("lone-cr-bad.md");
+    expect(result.skippedFiles[0].reason.length).toBeGreaterThan(0);
+    expect(result.summary.skipped).toBe(1);
+
+    await expect(convert(vault, true)).rejects.toThrow();
+  });
+
+  it(`B19 a property write on a lone-CR file REPLACES the block and keeps the file's own line endings ${REQ_4452}`, async () => {
+    // The write half, and the reason this needed its own requirement rather
+    // than a widening tacked onto #4441: before the fix `replaceFrontmatter`
+    // saw no block here and PREPENDED a second one, leaving the original
+    // pseudo-frontmatter as body text — silent data loss on an ordinary patch.
+    const vault = await vaultWith("b19-cr-write", {
+      "cr-write.md": crFenced(VALID_YAML, "\rbody stays\r"),
+    });
+    const { adapter, file } = only(vault);
+
+    await adapter.updateFrontmatter(file, (current) => ({
+      ...current,
+      exo__Asset_label: "patched",
+    }));
+
+    const after = await fs.readFile(path.join(vault, "cr-write.md"), "utf-8");
+
+    // Exactly ONE block: two fence lines, not four.
+    expect(fenceCountAnyEol(after)).toBe(2);
+    // Unreturned keys survive and the patched one is applied — asserted on the
+    // RE-PARSED frontmatter, so this axis is about patch semantics rather than
+    // about the serialiser's quoting policy.
+    const reread = only(vault);
+    expect(reread.adapter.getFrontmatter(reread.file)).toMatchObject({
+      exo__Asset_uid: "4441a11d-0000-4000-8000-00000000000",
+      exo__Asset_label: "patched",
+    });
+    // Decision 1 of req `74419202`: NOTHING is normalised. The body after the
+    // block keeps its bare CRs, so the file is still a lone-CR file.
+    expect(after).toContain("\rbody stays\r");
+    expect(after.slice(after.indexOf("body stays"))).not.toContain("\n");
+  });
+
+  it(`B20 a property write on a file with a RUN of BOMs leaves EXACTLY ONE U+FEFF ${REQ_4452}`, async () => {
+    // Decision 2 of req `74419202`, and the ONE place this write path
+    // normalises: `N>1` is corruption, not a style, so it is not carried
+    // across. The asymmetry against B19 is deliberate and named in the
+    // requirement's §Non-goals.
+    const vault = await vaultWith("b20-double-bom-write", {
+      "double-bom-write.md":
+        BOM + BOM + BOM + lfFenced(VALID_YAML, "\nbody stays\n"),
+    });
+    const { adapter, file } = only(vault);
+
+    await adapter.updateFrontmatter(file, (current) => ({
+      ...current,
+      exo__Asset_label: "patched",
+    }));
+
+    const after = await fs.readFile(
+      path.join(vault, "double-bom-write.md"),
+      "utf-8",
+    );
+
+    expect(after.charCodeAt(0)).toBe(0xfeff);
+    // ⛔ The assertion that makes "exactly one" load-bearing: the SECOND
+    //    character must already be the fence, and no U+FEFF may survive
+    //    anywhere else (a run carried into the body would be garbage, not a
+    //    byte-order mark).
+    expect(after.startsWith(`${BOM}---\n`)).toBe(true);
+    expect(after.split(BOM)).toHaveLength(2);
+    expect(fenceCountAnyEol(after)).toBe(2);
+    const reread = only(vault);
+    expect(reread.adapter.getFrontmatter(reread.file)).toMatchObject({
+      exo__Asset_uid: "4441a11d-0000-4000-8000-00000000000",
+      exo__Asset_label: "patched",
+    });
+    expect(after).toContain("body stays");
+  });
+
+  it(`B21 a lone-CR asset does not get its FRONTMATTER wikilinks indexed as BODY links ${REQ_4452}`, async () => {
+    // The §Scope half of req `74419202`: `NoteToRDFConverter.extractBodyContent`
+    // was the last TWIN of the block predicate (its own `\r?\n` regex plus a
+    // one-BOM skip). Widening the read predicate without it would index such an
+    // asset AND hand its whole frontmatter to the body-wikilink scanner —
+    // exactly the defect B13 declares a defect for the BOM case.
+    const vault = await vaultWith("b21-cr-bodylink", {
+      "cr-bodylink.md": crFenced(VALID_YAML, "\rNo wikilink in this body.\r"),
+    });
+
+    const result = await convert(vault);
+
+    const bodyLinks = result.triples.filter((t) =>
+      (t.predicate as { value: string }).value.endsWith("Asset_bodyLink"),
+    );
+    expect(bodyLinks.map((t) => (t.object as { value: string }).value)).toEqual(
+      [],
+    );
+    // ⛔ Control on the SAME axis (B13's lesson): an empty list is satisfied
+    //    vacuously by a file that produced NOTHING, and `summary.indexed`
+    //    counts files − skipped, so it cannot tell them apart either. The
+    //    asset's own label triple is the predicate absence cannot satisfy.
+    expect(result.summary.indexed).toBe(1);
+    expect(
+      result.triples.some(
+        (t) =>
+          (t.predicate as { value: string }).value.endsWith("Asset_label") &&
+          (t.object as { value: string }).value ===
+            "CRLF/BOM repro — issue #4441",
+      ),
+    ).toBe(true);
+  });
+
+  it(`B22 CONTROL a lone-CR asset WITH a real body wikilink still gets it indexed ${REQ_4452}`, async () => {
+    // Pairs with B21 exactly as B14 pairs with B13: an over-wide "return
+    // nothing as body" change would satisfy B21 and break this one.
+    const vault = await vaultWith("b22-cr-realbodylink", {
+      "cr-realbodylink.md": crFenced(
+        VALID_YAML,
+        "\rSee [[some-body-target]] here.\r",
+      ),
+    });
+
+    const result = await convert(vault);
+
+    const bodyLinks = result.triples.filter((t) =>
+      (t.predicate as { value: string }).value.endsWith("Asset_bodyLink"),
+    );
+    expect(
+      bodyLinks.map((t) => (t.object as { value: string }).value),
+    ).toContain("some-body-target");
+  });
+
+  it(`B23 the read path and the diagnostic path agree on the TWO NEW encodings too ${REQ_4452}`, async () => {
+    // B9's shape, extended to this requirement's shapes: the pair
+    // (getFrontmatter, getFrontmatterParseFailure) must agree, so a fix applied
+    // to only one of the two paths lands here.
+    const cases: Array<{
+      filename: string;
+      content: string;
+      expectParsed: boolean;
+    }> = [
+      {
+        filename: "cr-valid.md",
+        content: crFenced(VALID_YAML),
+        expectParsed: true,
+      },
+      {
+        filename: "nbom-valid.md",
+        content: BOM + BOM + lfFenced(VALID_YAML),
+        expectParsed: true,
+      },
+      {
+        filename: "crbom-valid.md",
+        content: BOM + BOM + crFenced(VALID_YAML),
+        expectParsed: true,
+      },
+      {
+        filename: "cr-bad.md",
+        content: crFenced(MALFORMED_YAML),
+        expectParsed: false,
+      },
+      {
+        filename: "nbom-bad.md",
+        content: BOM + BOM + lfFenced(MALFORMED_YAML),
+        expectParsed: false,
+      },
+    ];
+
+    for (const c of cases) {
+      const vault = await vaultWith("b23", { [c.filename]: c.content });
+      const { adapter, file } = only(vault);
+
+      const parsed = adapter.getFrontmatter(file);
+      const failure = adapter.getFrontmatterParseFailure(file);
+
+      if (c.expectParsed) {
+        expect({ case: c.filename, parsed: parsed !== null }).toEqual({
+          case: c.filename,
+          parsed: true,
+        });
+        expect({ case: c.filename, failure }).toEqual({
+          case: c.filename,
+          failure: null,
+        });
+      } else {
+        expect({ case: c.filename, parsed }).toEqual({
+          case: c.filename,
+          parsed: null,
+        });
+        expect({
+          case: c.filename,
+          named: failure !== null && failure.reason.length > 0,
+        }).toEqual({ case: c.filename, named: true });
+      }
+    }
+  });
+
+  it(`B24 CONTROL a lone-CR note with NO fence stays silent, and a lone-CR "---" that is not an opening fence stays silent ${REQ_4452}`, async () => {
+    // The over-widening direction, on the new encoding: B6/B7 assert it for LF,
+    // and without this pair "recognises a bare \r" could be satisfied by a
+    // predicate that lost its `^` anchor or matched any `---` at all.
+    const vault = await vaultWith("b24-cr-controls", {
+      "cr-nofence.md": "Just a note.\rNothing fenced here.\r",
+      "cr-fence-in-body.md": "intro\r\r---\rnot: frontmatter\r---\r\rmore\r",
+    });
+
+    const result = await convert(vault);
+
     expect(result.triples).toEqual([]);
     expect(result.skippedFiles).toEqual([]);
   });

@@ -19,11 +19,13 @@ import { FrontmatterService } from "../../../../core/src/utilities/FrontmatterSe
 import {
   matchFrontmatterBlock,
   frontmatterBlockBody,
+  leadingBomLength,
 } from "../../../../core/src/utilities/frontmatterBlock.js";
 
 jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   matchFrontmatterBlock,
   frontmatterBlockBody,
+  leadingBomLength,
   IVaultAdapter: class {},
   IFile: class {},
   IFolder: class {},

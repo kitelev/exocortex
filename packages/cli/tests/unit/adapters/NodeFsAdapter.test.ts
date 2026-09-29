@@ -17,6 +17,7 @@ const mockGlob = jest.fn();
 import {
   matchFrontmatterBlock,
   frontmatterBlockBody,
+  leadingBomLength,
 } from "../../../../core/src/utilities/frontmatterBlock.js";
 
 jest.unstable_mockModule("glob", () => ({
@@ -26,6 +27,7 @@ jest.unstable_mockModule("glob", () => ({
 jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   matchFrontmatterBlock,
   frontmatterBlockBody,
+  leadingBomLength,
   FileNotFoundError: class FileNotFoundError extends Error {
     constructor(msg: string) {
       super(`File not found: ${msg}`);

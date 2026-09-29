@@ -190,12 +190,37 @@ describe("#4453 — CRLF/BOM frontmatter on the plugin surface (req 1dfbd427)", 
     it.each([
       ["a note with no fence", NO_FENCE],
       ["a fence that is not at position 0", FENCE_IN_BODY],
-      ["lone-CR fences (#4452 territory)", LONE_CR],
-      ["a DOUBLED BOM (#4452 territory)", DOUBLE_BOM],
     ])(
       "C4 @req:1dfbd427-9a96-4fc2-a49e-146f6b2a46e5 control — %s stays unrecognised",
       (_name, content) => {
         expect(frontmatterBlockBody(content)).toBeNull();
+      },
+    );
+
+    // ⛔ FLIPPED, not extended (req `74419202-264e-4394-a634-0b36d47357f8`,
+    //    #4452). `LONE_CR` and `DOUBLE_BOM` were the third and fourth rows of
+    //    C4 above, asserting that the predicate does NOT reach them — the
+    //    executable half of `1dfbd427`'s and `c05a3565`'s shared "#4452
+    //    territory" non-goal. #4452 closed that gap in the SAME shared helper,
+    //    so a control asserting the old limit cannot stay: it would pin a
+    //    limit that no longer exists. They move here, with the new tag.
+    //
+    // ⛤ This is the whole plugin-side delivery of #4452: no plugin SOURCE file
+    //    is touched. The three plugin sites read through `matchFrontmatterBlock`
+    //    since `1dfbd427`, so they gain both shapes by construction — which is
+    //    what one shared predicate is for. The #4440 diagnostic half remains a
+    //    separate work item on a separate surface.
+    it.each([
+      ["lone-CR fences", LONE_CR],
+      ["a DOUBLED BOM", DOUBLE_BOM],
+    ])(
+      "C6 @req:74419202-264e-4394-a634-0b36d47357f8 recognises %s — the plugin surface inherits it from the shared predicate",
+      (_name, content) => {
+        const body = frontmatterBlockBody(content);
+        expect(body).not.toBeNull();
+        for (const line of FM_LINES) {
+          expect(body).toContain(line);
+        }
       },
     );
   });
