@@ -33,6 +33,12 @@ const EFFORT_CLASS_UID = "086f71fa-dd30-4284-90cf-e609f2a6c461";
 const BACKLOG_UID = "753a44d5-846c-4b82-9196-4fd9a4d48777";
 const DRAFT_UID = "c42245d0-01de-4c35-bfcf-d910445ea28e";
 const EXOASSISTANT_UID = "4ef3962d-b8a7-42b5-bd28-88ec846f1d13";
+// Explicit --created-by target. Issue #4448 made an EXPLICIT creator ref
+// existence-checked, so the fixture must carry the identity it names — a
+// production-shape vault does. (The ExoAssistant DEFAULT stays unchecked;
+// that fail-open half has its own negative-control axis in
+// create-createdby-resolvable-4448.integration.test.ts.)
+const CUSTOM_CREATOR_UID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 // Non-status-bearing class (its superClass points at exo__Asset, which the
 // fixture does NOT define → the walk terminates without reaching ems__Effort).
 const CONCEPT_CLASS_UID = "c0c0c0c0-1111-2222-3333-444444444444";
@@ -107,6 +113,11 @@ describe("Issue #3849: `cli create` sets default ems__Effort_status + createdBy"
     fs.writeFileSync(
       path.join(emsDir, `${EXOASSISTANT_UID}.md`),
       md({ exo__Asset_uid: EXOASSISTANT_UID, exo__Asset_label: "ExoAssistant" }),
+    );
+    // Explicit --created-by identity (issue #4448 — the ref must resolve).
+    fs.writeFileSync(
+      path.join(emsDir, `${CUSTOM_CREATOR_UID}.md`),
+      md({ exo__Asset_uid: CUSTOM_CREATOR_UID, exo__Asset_label: "a.custom" }),
     );
 
     fs.mkdirSync(path.join(vault, "01 Inbox"), { recursive: true });
@@ -206,7 +217,7 @@ describe("Issue #3849: `cli create` sets default ems__Effort_status + createdBy"
   });
 
   it("--created-by <uid> overrides the ExoAssistant default @req:b341020e-8f27-452b-9df6-da4247408b2e", async () => {
-    const customCreator = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    const customCreator = CUSTOM_CREATOR_UID;
     const out = await runCreate(CONCEPT_CLASS_UID, ["--created-by", customCreator]);
 
     expectNaturalExit(out.exit);
