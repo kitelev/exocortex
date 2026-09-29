@@ -2,6 +2,7 @@ import { basename, extname } from "path";
 import {
   NoteToRDFConverter,
   parseYamlFrontmatterTolerant,
+  frontmatterBlockBody,
   DomainTriple,
   type IFile,
 } from "@kitelev/exocortex-core";
@@ -48,9 +49,6 @@ export interface CandidateConformanceResult {
    */
   warnings: ShaclConformanceViolation[];
 }
-
-/** Matches the frontmatter block of an assembled asset (same regex the adapter uses). */
-const FRONTMATTER_REGEX = /^---\n([\s\S]*?)\n---/;
 
 /**
  * Runs the SAME SHACL-lite pipeline as `validate schema --shapes-mode` against a
@@ -253,18 +251,26 @@ function syntheticFile(relPath: string): IFile {
 /**
  * Parse the candidate's frontmatter with the SAME tolerant parser
  * `FileSystemVaultAdapter.getFrontmatter` applies when reading a real file back
- * (byte-identical block regex + `parseYamlFrontmatterTolerant`), so the
+ * — the SAME block predicate BY CONSTRUCTION (both import core's
+ * `frontmatterBlockBody`) plus `parseYamlFrontmatterTolerant`, so the
  * candidate's triples equal the ones a post-write `convertVault` would emit —
  * with the deliberate exception of the SKIP case: where `convertVault` silently
  * drops an unindexable file, the gate reports it as a violation (see
  * `validateCandidate`). Returns `null` when the content has no frontmatter block
  * (the converter then yields no triples — nothing to validate).
+ *
+ * ⛔ THE PARITY SENTENCE ABOVE USED TO BE A CLAIM, AND IT WAS FALSE (#4459).
+ * It said "byte-identical block regex" while this file kept the pre-#4441
+ * LF-only literal and the adapter had moved to `\r?\n`+BOM in #4450. A
+ * CRLF-fenced or BOM-led candidate therefore parsed to `null` here — "no
+ * frontmatter block … nothing to validate" — while the SAME bytes on disk
+ * produce real triples. That is a FALSE NEGATIVE in the permissive direction:
+ * the dry-run gate waved through a write whose post-write triples violate
+ * SHACL, and nothing surfaced. The sentence is now true BY DERIVATION (one
+ * import, one copy) rather than by assertion.
  */
 function extractFrontmatter(content: string): Record<string, unknown> | null {
-  const match = content.match(FRONTMATTER_REGEX);
-  if (!match) return null;
-  return parseYamlFrontmatterTolerant(match[1]) as Record<
-    string,
-    unknown
-  > | null;
+  const body = frontmatterBlockBody(content);
+  if (body === null) return null;
+  return parseYamlFrontmatterTolerant(body) as Record<string, unknown> | null;
 }
