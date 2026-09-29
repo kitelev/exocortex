@@ -57,11 +57,12 @@
  *
  * Prints `✅ C<n>` / `❌ C<n>` per axis and `PASS=<n> FAIL=<n>`; exit 1 on failure.
  */
-import { spawn, spawnSync } from "child_process";
+import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { prepareBundleOrExit, runAxes } from "./helpers/pipe-harness-guards.js";
 
 // fileURLToPath, not new URL().pathname — the latter is not percent-decoded, so a
 // tree path containing a space would resolve wrongly.
@@ -69,13 +70,11 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PKG = path.resolve(HERE, "../..");
 const TREE = path.resolve(CLI_PKG, "../..");
 
-const argv = process.argv.slice(2);
-const distFlag = argv.indexOf("--dist");
-const DIST =
-  distFlag >= 0
-    ? path.resolve(argv[distFlag + 1])
-    : path.join(CLI_PKG, "dist/index.js");
-const NO_BUILD = argv.includes("--no-build");
+// `[--dist <index.js>] [--no-build]`, the rebuild, and the refusal to measure a
+// bundle older than what it was built from all live in the shared guard module
+// (issue #4464) — before it, `--no-build` checked only that the file existed, so
+// a stale bundle was measured in silence (harness-invocation-surface §A8).
+const DIST = prepareBundleOrExit(process.argv.slice(2), CLI_PKG);
 
 /** Generous per-run budget. Measured runs land near 0.3 s. */
 const RUN_TIMEOUT_MS = 120_000;
@@ -93,22 +92,6 @@ const bad = (name: string, msg: string): void => {
   fail += 1;
   console.log(`❌ ${name} — ${msg}`);
 };
-
-/** Rebuild so a MUTATED copy of the tree is measured, not a stale bundle. */
-if (!NO_BUILD) {
-  const r = spawnSync("npm", ["run", "build", "-w", "@kitelev/exocortex-cli"], {
-    cwd: TREE,
-    encoding: "utf-8",
-  });
-  if (r.status !== 0) {
-    console.log(`❌ BUILD — rc=${r.status}\n${(r.stderr || "").slice(-2000)}`);
-    process.exit(1);
-  }
-}
-if (!fs.existsSync(DIST)) {
-  console.log(`❌ BUILD — no bundle at ${DIST}`);
-  process.exit(1);
-}
 
 // ---- fixture ---------------------------------------------------------------
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "cb-pipe-"));
@@ -225,7 +208,10 @@ const EPIPE_TRACE = /EPIPE|Unhandled 'error'/;
 
 // tsx transpiles this harness to CJS, where top-level await is unavailable — every
 // axis and the verdict live in an async IIFE so the summary prints AFTER the last one.
-void (async (): Promise<void> => {
+// The axes sit in their own function so the scratch tree can be removed from a
+// `finally` (issue #4464); before that, cleanup was the IIFE's last statement and a
+// throwing axis leaked the directory under os.tmpdir().
+async function axes(): Promise<void> {
   // ---- C1: the REAL path, stdout reader gone before the echo -----------------
   {
     const vault = freshVault("c1");
@@ -374,8 +360,10 @@ void (async (): Promise<void> => {
         `guarded sibling \`create --dry-run\` survives the same departure at ${r.seenErr} B (probe canary)`,
       );
   }
+}
 
-  fs.rmSync(scratch, { recursive: true, force: true });
+void (async (): Promise<void> => {
+  await runAxes([scratch], axes);
   console.log(`PASS=${pass} FAIL=${fail}`);
   process.exitCode = fail > 0 ? 1 : 0;
 })();

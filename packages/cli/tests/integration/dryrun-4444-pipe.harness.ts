@@ -88,6 +88,7 @@ import { fileURLToPath } from "url";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { prepareBundleOrExit, runAxes } from "./helpers/pipe-harness-guards.js";
 
 // fileURLToPath, not new URL().pathname — the latter is not percent-decoded, so a
 // tree path containing a space would resolve wrongly.
@@ -95,13 +96,11 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PKG = path.resolve(HERE, "../..");
 const TREE = path.resolve(CLI_PKG, "../..");
 
-const argv = process.argv.slice(2);
-const distFlag = argv.indexOf("--dist");
-const DIST =
-  distFlag >= 0
-    ? path.resolve(argv[distFlag + 1])
-    : path.join(CLI_PKG, "dist/index.js");
-const NO_BUILD = argv.includes("--no-build");
+// `[--dist <index.js>] [--no-build]`, the rebuild, and the refusal to measure a
+// bundle older than what it was built from all live in the shared guard module
+// (issue #4464) — before it, `--no-build` checked only that the file existed, so
+// a stale bundle was measured in silence (harness-invocation-surface §A8).
+const DIST = prepareBundleOrExit(process.argv.slice(2), CLI_PKG);
 
 /** Generous per-run budget. Axis ·6 asserts the far tighter real figure. */
 const RUN_TIMEOUT_MS = 120_000;
@@ -118,22 +117,6 @@ const bad = (name: string, msg: string): void => {
   fail += 1;
   console.log(`❌ ${name} — ${msg}`);
 };
-
-/** Rebuild so a MUTATED copy of the tree is measured, not a stale bundle. */
-if (!NO_BUILD) {
-  const r = spawnSync("npm", ["run", "build", "-w", "@kitelev/exocortex-cli"], {
-    cwd: TREE,
-    encoding: "utf-8",
-  });
-  if (r.status !== 0) {
-    console.log(`❌ BUILD — rc=${r.status}\n${(r.stderr || "").slice(-2000)}`);
-    process.exit(1);
-  }
-}
-if (!fs.existsSync(DIST)) {
-  console.log(`❌ BUILD — no bundle at ${DIST}`);
-  process.exit(1);
-}
 
 // ---- fixture vault ---------------------------------------------------------
 const vault = fs.mkdtempSync(path.join(os.tmpdir(), "dryrun-4444-"));
@@ -230,7 +213,10 @@ function runToFile(args: string[], outFile: string): Run {
  */
 const canonicalise = (s: string): string =>
   s
-    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, "<UID>")
+    .replace(
+      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g,
+      "<UID>",
+    )
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/g, "<TS>");
 
 /** Byte-count of every .md under the vault — a cheap "nothing was created" probe. */
@@ -270,14 +256,24 @@ const BLOCKS: Block[] = [
     label: "set-property",
     deterministic: true,
     dryRun: [
-      "set-property", spRel,
-      "--property", "exo__Asset_note", "--value", "NEW",
-      "--frozen-clock", FROZEN,
+      "set-property",
+      spRel,
+      "--property",
+      "exo__Asset_note",
+      "--value",
+      "NEW",
+      "--frozen-clock",
+      FROZEN,
     ],
     real: [
-      "set-property", spRel,
-      "--property", "exo__Asset_note", "--value", "NEW",
-      "--frozen-clock", FROZEN,
+      "set-property",
+      spRel,
+      "--property",
+      "exo__Asset_note",
+      "--value",
+      "NEW",
+      "--frozen-clock",
+      FROZEN,
     ],
     checkRealEffect: (echo) => {
       const onDisk = fs.readFileSync(path.join(vault, spRel), "utf-8");
@@ -287,8 +283,10 @@ const BLOCKS: Block[] = [
       // subject on its first run — the axis, not the command, was wrong.
       if (!/^exo__Asset_note:[ \t]*"?NEW"?[ \t]*$/m.test(onDisk))
         return "the new value is not on disk";
-      if (!onDisk.includes(TAIL_MARKER)) return "the body tail was lost by the write";
-      if (!echo.includes('"changed":true')) return `echo did not report changed:true: ${echo.slice(0, 160)}`;
+      if (!onDisk.includes(TAIL_MARKER))
+        return "the body tail was lost by the write";
+      if (!echo.includes('"changed":true'))
+        return `echo did not report changed:true: ${echo.slice(0, 160)}`;
       return null;
     },
   },
@@ -297,20 +295,29 @@ const BLOCKS: Block[] = [
     label: "remove-property",
     deterministic: true,
     dryRun: [
-      "remove-property", rpRel,
-      "--property", "exo__Asset_note",
-      "--frozen-clock", FROZEN,
+      "remove-property",
+      rpRel,
+      "--property",
+      "exo__Asset_note",
+      "--frozen-clock",
+      FROZEN,
     ],
     real: [
-      "remove-property", rpRel,
-      "--property", "exo__Asset_note",
-      "--frozen-clock", FROZEN,
+      "remove-property",
+      rpRel,
+      "--property",
+      "exo__Asset_note",
+      "--frozen-clock",
+      FROZEN,
     ],
     checkRealEffect: (echo) => {
       const onDisk = fs.readFileSync(path.join(vault, rpRel), "utf-8");
-      if (onDisk.includes("exo__Asset_note:")) return "the property is still on disk";
-      if (!onDisk.includes(TAIL_MARKER)) return "the body tail was lost by the write";
-      if (!echo.includes('"removed":true')) return `echo did not report removed:true: ${echo.slice(0, 160)}`;
+      if (onDisk.includes("exo__Asset_note:"))
+        return "the property is still on disk";
+      if (!onDisk.includes(TAIL_MARKER))
+        return "the body tail was lost by the write";
+      if (!echo.includes('"removed":true'))
+        return `echo did not report removed:true: ${echo.slice(0, 160)}`;
       return null;
     },
   },
@@ -320,16 +327,22 @@ const BLOCKS: Block[] = [
     deterministic: false,
     dryRun: [
       "create",
-      "--class", "1b20a8f0-d745-4e93-91db-4531b3df120e",
-      "--label", "Dry-run pipe probe",
-      "--body-file", bodyFile,
+      "--class",
+      "1b20a8f0-d745-4e93-91db-4531b3df120e",
+      "--label",
+      "Dry-run pipe probe",
+      "--body-file",
+      bodyFile,
       "--skip-wikilink-validation",
     ],
     real: [
       "create",
-      "--class", "1b20a8f0-d745-4e93-91db-4531b3df120e",
-      "--label", "Dry-run pipe probe (real)",
-      "--body-file", bodyFile,
+      "--class",
+      "1b20a8f0-d745-4e93-91db-4531b3df120e",
+      "--label",
+      "Dry-run pipe probe (real)",
+      "--body-file",
+      bodyFile,
       "--skip-wikilink-validation",
     ],
     checkRealEffect: (echo) => {
@@ -341,9 +354,11 @@ const BLOCKS: Block[] = [
       }
       if (!parsed.path) return "echo carried no path";
       const created = path.join(vault, parsed.path);
-      if (!fs.existsSync(created)) return `the echoed path does not exist: ${parsed.path}`;
+      if (!fs.existsSync(created))
+        return `the echoed path does not exist: ${parsed.path}`;
       const onDisk = fs.readFileSync(created, "utf-8");
-      if (!onDisk.includes(TAIL_MARKER)) return "the created asset lost the body tail";
+      if (!onDisk.includes(TAIL_MARKER))
+        return "the created asset lost the body tail";
       return null;
     },
   },
@@ -362,81 +377,112 @@ interface Timing {
 }
 const timings: Record<string, Timing[]> = {};
 
-for (const block of BLOCKS) {
-  const [idPipe, idFile, idReadOnly, idReal, , idNatural] = block.ids;
-  const t: Timing[] = [];
-  timings[idNatural] = t;
-
-  const dryArgs = [...block.dryRun, "--vault", vault, "--dry-run"];
-
-  // ---- ·2 FILE control FIRST: it is the oracle the pipe run is compared against,
-  //         and it also proves the preview is built at all.
-  const fileOut = path.join(vault, `${block.label}.preview`);
-  const fileRun = runToFile(dryArgs, fileOut);
-  t.push({ what: "--dry-run → file", ms: fileRun.ms, rc: fileRun.rc });
-  const fileText = fileRun.err.toString("utf-8");
-  if (fileRun.rc !== 0) bad(idFile, `rc=${fileRun.rc}`);
-  else if (!fileText.includes(TAIL_MARKER))
-    bad(idFile, "the FILE preview is missing the fixture tail marker — the preview itself is broken");
-  else if (fileRun.err.length < BIG_BODY_BYTES)
-    bad(idFile, `FILE preview ${fileRun.err.length} B < the ${BIG_BODY_BYTES} B body it must contain`);
-  else ok(idFile, `${fileRun.err.length} B to a file (control), tail intact`);
-
-  // ---- ·1 the same preview through a real stderr PIPE
-  const pipeRun = runPiped(dryArgs);
-  t.push({ what: "--dry-run → pipe", ms: pipeRun.ms, rc: pipeRun.rc });
-  const pipeText = pipeRun.err.toString("utf-8");
-  if (pipeRun.rc !== 0) bad(idPipe, `rc=${pipeRun.rc}; stderr tail=${pipeText.slice(-200)}`);
-  else if (!pipeText.includes(TAIL_MARKER))
-    bad(
-      idPipe,
-      `pipe delivered ${pipeRun.err.length} of ${fileRun.err.length} B and the tail marker is ABSENT` +
-        ` (${((100 * (fileRun.err.length - pipeRun.err.length)) / Math.max(1, fileRun.err.length)).toFixed(1)}% lost)`,
-    );
-  else if (pipeRun.err.length < BIG_BODY_BYTES)
-    bad(idPipe, `pipe preview ${pipeRun.err.length} B < the ${BIG_BODY_BYTES} B body it must contain`);
-  else if (
-    block.deterministic
-      ? pipeText !== fileText
-      : canonicalise(pipeText) !== canonicalise(fileText)
-  )
-    bad(
-      idPipe,
-      block.deterministic
-        ? `pipe and file previews differ under --frozen-clock (${pipeRun.err.length} vs ${fileRun.err.length} B)`
-        : `pipe and file previews differ after canonicalising uid/timestamps (${pipeRun.err.length} vs ${fileRun.err.length} B)`,
-    );
-  else
-    ok(
-      idPipe,
-      `${pipeRun.err.length} B through a stderr pipe, tail intact, ${block.deterministic ? "byte-identical to" : "canonically equal to"} the file control`,
-    );
-
-  // ---- ·3 --dry-run is read-only
-  const before = markdownFiles().map((p) => `${p}:${fs.readFileSync(p).length}`);
-  const roRun = runPiped(dryArgs);
-  t.push({ what: "--dry-run (read-only probe)", ms: roRun.ms, rc: roRun.rc });
-  const after = markdownFiles().map((p) => `${p}:${fs.readFileSync(p).length}`);
-  if (roRun.rc !== 0) bad(idReadOnly, `rc=${roRun.rc}`);
-  else if (before.join("|") !== after.join("|"))
-    bad(idReadOnly, "the --dry-run preview changed the vault");
-  else ok(idReadOnly, `vault byte-identical after --dry-run (${before.length} assets), rc=0`);
-
-  // ---- ·4 the real path still works through a pipe
-  const realRun = runPiped([...block.real, "--vault", vault]);
-  t.push({ what: "real path → pipe", ms: realRun.ms, rc: realRun.rc });
-  if (realRun.rc !== 0) bad(idReal, `rc=${realRun.rc}; stderr tail=${realRun.err.toString("utf-8").slice(-200)}`);
-  else {
-    const problem = block.checkRealEffect(realRun.out.toString("utf-8").trim());
-    if (problem) bad(idReal, problem);
-    else ok(idReal, "the real path is unaffected: echo parses, effect on disk correct, rc=0");
-  }
-}
-
 // tsx transpiles this harness to CJS, where top-level await is unavailable — the
 // early-reader axes and the verdict live in an async IIFE so the summary still
 // prints AFTER the last axis.
-void (async (): Promise<void> => {
+// The axes sit in their own function so the temp tree is removed from a
+// `finally` (issue #4464): cleanup used to be the IIFE's last statement, so a
+// throwing axis leaked the directory under os.tmpdir().
+async function axes(): Promise<void> {
+  for (const block of BLOCKS) {
+    const [idPipe, idFile, idReadOnly, idReal, , idNatural] = block.ids;
+    const t: Timing[] = [];
+    timings[idNatural] = t;
+
+    const dryArgs = [...block.dryRun, "--vault", vault, "--dry-run"];
+
+    // ---- ·2 FILE control FIRST: it is the oracle the pipe run is compared against,
+    //         and it also proves the preview is built at all.
+    const fileOut = path.join(vault, `${block.label}.preview`);
+    const fileRun = runToFile(dryArgs, fileOut);
+    t.push({ what: "--dry-run → file", ms: fileRun.ms, rc: fileRun.rc });
+    const fileText = fileRun.err.toString("utf-8");
+    if (fileRun.rc !== 0) bad(idFile, `rc=${fileRun.rc}`);
+    else if (!fileText.includes(TAIL_MARKER))
+      bad(
+        idFile,
+        "the FILE preview is missing the fixture tail marker — the preview itself is broken",
+      );
+    else if (fileRun.err.length < BIG_BODY_BYTES)
+      bad(
+        idFile,
+        `FILE preview ${fileRun.err.length} B < the ${BIG_BODY_BYTES} B body it must contain`,
+      );
+    else ok(idFile, `${fileRun.err.length} B to a file (control), tail intact`);
+
+    // ---- ·1 the same preview through a real stderr PIPE
+    const pipeRun = runPiped(dryArgs);
+    t.push({ what: "--dry-run → pipe", ms: pipeRun.ms, rc: pipeRun.rc });
+    const pipeText = pipeRun.err.toString("utf-8");
+    if (pipeRun.rc !== 0)
+      bad(idPipe, `rc=${pipeRun.rc}; stderr tail=${pipeText.slice(-200)}`);
+    else if (!pipeText.includes(TAIL_MARKER))
+      bad(
+        idPipe,
+        `pipe delivered ${pipeRun.err.length} of ${fileRun.err.length} B and the tail marker is ABSENT` +
+          ` (${((100 * (fileRun.err.length - pipeRun.err.length)) / Math.max(1, fileRun.err.length)).toFixed(1)}% lost)`,
+      );
+    else if (pipeRun.err.length < BIG_BODY_BYTES)
+      bad(
+        idPipe,
+        `pipe preview ${pipeRun.err.length} B < the ${BIG_BODY_BYTES} B body it must contain`,
+      );
+    else if (
+      block.deterministic
+        ? pipeText !== fileText
+        : canonicalise(pipeText) !== canonicalise(fileText)
+    )
+      bad(
+        idPipe,
+        block.deterministic
+          ? `pipe and file previews differ under --frozen-clock (${pipeRun.err.length} vs ${fileRun.err.length} B)`
+          : `pipe and file previews differ after canonicalising uid/timestamps (${pipeRun.err.length} vs ${fileRun.err.length} B)`,
+      );
+    else
+      ok(
+        idPipe,
+        `${pipeRun.err.length} B through a stderr pipe, tail intact, ${block.deterministic ? "byte-identical to" : "canonically equal to"} the file control`,
+      );
+
+    // ---- ·3 --dry-run is read-only
+    const before = markdownFiles().map(
+      (p) => `${p}:${fs.readFileSync(p).length}`,
+    );
+    const roRun = runPiped(dryArgs);
+    t.push({ what: "--dry-run (read-only probe)", ms: roRun.ms, rc: roRun.rc });
+    const after = markdownFiles().map(
+      (p) => `${p}:${fs.readFileSync(p).length}`,
+    );
+    if (roRun.rc !== 0) bad(idReadOnly, `rc=${roRun.rc}`);
+    else if (before.join("|") !== after.join("|"))
+      bad(idReadOnly, "the --dry-run preview changed the vault");
+    else
+      ok(
+        idReadOnly,
+        `vault byte-identical after --dry-run (${before.length} assets), rc=0`,
+      );
+
+    // ---- ·4 the real path still works through a pipe
+    const realRun = runPiped([...block.real, "--vault", vault]);
+    t.push({ what: "real path → pipe", ms: realRun.ms, rc: realRun.rc });
+    if (realRun.rc !== 0)
+      bad(
+        idReal,
+        `rc=${realRun.rc}; stderr tail=${realRun.err.toString("utf-8").slice(-200)}`,
+      );
+    else {
+      const problem = block.checkRealEffect(
+        realRun.out.toString("utf-8").trim(),
+      );
+      if (problem) bad(idReal, problem);
+      else
+        ok(
+          idReal,
+          "the real path is unaffected: echo parses, effect on disk correct, rc=0",
+        );
+    }
+  }
+
   for (const block of BLOCKS) {
     const idEarly = block.ids[4];
     const idNatural = block.ids[5];
@@ -493,8 +539,13 @@ void (async (): Promise<void> => {
       // axes EXECUTE, not about the mutant's theme).
       rcOwnedByAnotherAxis: true,
     });
-    if (verdict === 0) ok(idEarly, `reader left after 200 B — rc=0, no EPIPE crash (${earlyMs} ms)`);
-    else if (verdict === "timeout") bad(idEarly, "the process hung after the reader left");
+    if (verdict === 0)
+      ok(
+        idEarly,
+        `reader left after 200 B — rc=0, no EPIPE crash (${earlyMs} ms)`,
+      );
+    else if (verdict === "timeout")
+      bad(idEarly, "the process hung after the reader left");
     else if (verdict === "epipe-trace")
       bad(idEarly, "rc=0 but an EPIPE stack trace reached the user");
     else
@@ -514,7 +565,10 @@ void (async (): Promise<void> => {
     const over = runs.filter((r) => r.ms > NATURAL_TERMINATION_BUDGET_MS);
     const badRc = runs.filter((r) => !r.rcOwnedByAnotherAxis && r.rc !== 0);
     if (runs.length < 5)
-      bad(idNatural, `only ${runs.length} runs recorded — earlier axes did not execute`);
+      bad(
+        idNatural,
+        `only ${runs.length} runs recorded — earlier axes did not execute`,
+      );
     else if (over.length > 0)
       bad(
         idNatural,
@@ -522,7 +576,10 @@ void (async (): Promise<void> => {
           over.map((r) => `${r.what}=${r.ms}ms`).join(", "),
       );
     else if (badRc.length > 0)
-      bad(idNatural, `non-zero exit on: ${badRc.map((r) => `${r.what}=rc${r.rc}`).join(", ")}`);
+      bad(
+        idNatural,
+        `non-zero exit on: ${badRc.map((r) => `${r.what}=rc${r.rc}`).join(", ")}`,
+      );
     else
       ok(
         idNatural,
@@ -530,8 +587,10 @@ void (async (): Promise<void> => {
           `rc=0 on the ${runs.filter((r) => !r.rcOwnedByAnotherAxis).length} this axis owns`,
       );
   }
+}
 
-  fs.rmSync(vault, { recursive: true, force: true });
+void (async (): Promise<void> => {
+  await runAxes([vault], axes);
   console.log(`PASS=${pass} FAIL=${fail}`);
   process.exitCode = fail > 0 ? 1 : 0;
 })();
