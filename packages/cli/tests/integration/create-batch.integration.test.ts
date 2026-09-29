@@ -53,6 +53,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { Readable } from "stream";
+import { expectNaturalExit } from "./helpers/exit-assertions.js";
 
 const { createBatchCommand } =
   await import("../../src/commands/create-batch.js");
@@ -468,7 +469,7 @@ describe("req 1848dff9: `cli create-batch` — many assets, one invocation", () 
 
     for (const c of cases) {
       const single = await runCreate(c.flags);
-      expect(single.exit).toEqual([0]);
+      expectNaturalExit(single.exit);
       const s = single.out![0];
 
       const batch = await runBatch([c.item]);

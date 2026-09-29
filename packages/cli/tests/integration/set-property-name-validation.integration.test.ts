@@ -24,6 +24,7 @@ import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { expectNaturalExit, expectRefused } from "./helpers/exit-assertions.js";
 
 const { setPropertyCommand } = await import("../../src/commands/set-property.js");
 const { PropertyNameValidator } = await import(
@@ -144,7 +145,7 @@ describe("RFC 430e84f1 P2: `cli set-property` validates NON-guarded property NAM
     const before = targetContent();
     await runSet("nonExisting__Prop", "x");
 
-    expect(exitCodes).not.toContain(0);
+    expectRefused(exitCodes);
     expect(exitCodes).toContain(2); // INVALID_ARGUMENTS
     const stderr = errorSpy.mock.calls.flat().join("\n");
     expect(stderr).toContain("Unknown property");
@@ -155,7 +156,7 @@ describe("RFC 430e84f1 P2: `cli set-property` validates NON-guarded property NAM
   it(`rejects a KNOWN-PREFIX MISSPELLED non-guarded name and fuzzy-suggests @req:${REQ}`, async () => {
     await runSet("concept__Concept_relatedTo", "x");
 
-    expect(exitCodes).not.toContain(0);
+    expectRefused(exitCodes);
     const stderr = errorSpy.mock.calls.flat().join("\n");
     expect(stderr).toContain("concept__Concept_related"); // the suggestion
   });
@@ -163,7 +164,7 @@ describe("RFC 430e84f1 P2: `cli set-property` validates NON-guarded property NAM
   it(`a REAL non-guarded property passes — no false-positive @req:${REQ}`, async () => {
     await runSet("concept__Concept_related", `[[${VALID_TARGET}]]`);
 
-    expect(exitCodes).toContain(0);
+    expectNaturalExit(exitCodes);
     expect(exitCodes).not.toContain(2);
     expect(targetContent()).toContain("concept__Concept_related");
   });
@@ -171,7 +172,7 @@ describe("RFC 430e84f1 P2: `cli set-property` validates NON-guarded property NAM
   it(`a GUARDED property keeps its dedicated-command refusal, NOT "Unknown property" (validation runs AFTER guard) @req:${REQ}`, async () => {
     await runSet("ems__Effort_status", "x");
 
-    expect(exitCodes).not.toContain(0);
+    expectRefused(exitCodes);
     const stderr = errorSpy.mock.calls.flat().join("\n");
     expect(stderr).toContain("dedicated guarded command");
     expect(stderr).not.toContain("Unknown property"); // guard fired first, not name-validation

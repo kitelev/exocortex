@@ -4,6 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import { FrontmatterService } from "@kitelev/exocortex-core";
 import { PropertyNameValidator } from "../services/PropertyNameValidator.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
+import { guardStdioAgainstClosedReader } from "../utils/stdioClosedReader.js";
 import {
   VaultNotFoundError,
   InvalidArgumentsError,
@@ -148,6 +149,12 @@ export function removePropertyCommand(): Command {
       "Accepted for symmetry with the apply/create subcommands (remove-property is non-interactive; no-op)",
     )
     .action(async (pathArg: string, options: RemovePropertyOptions) => {
+      // ⛔ FIRST statement, and the paired half of dropping process.exit(0) at the
+      // end of the success path (#4444) — see the comment at that removal. Without
+      // the guard, the exit-less path lets an asynchronous EPIPE from a reader that
+      // left early become an uncaught exception (rc=1 + a Node stack trace);
+      // measured on `get-body` in #4447 and on `set-body` in #4443.
+      guardStdioAgainstClosedReader();
       try {
         const vaultPath = resolve(options.vault);
         if (!existsSync(vaultPath)) {
@@ -305,7 +312,18 @@ export function removePropertyCommand(): Command {
         };
         process.stdout.write(JSON.stringify(output) + "\n");
 
-        process.exit(0);
+        // ⛔ NO process.exit(0) here — the process must end naturally so stderr
+        // DRAINS. The `--dry-run` preview is the whole rebuilt document, i.e.
+        // UNBOUNDED, and `process.exit` does not wait for an asynchronous write;
+        // stderr is asynchronous whenever it is a pipe, which is how a preview is
+        // read. Measured on the built bundle with a 605 686-byte asset: to a FILE
+        // 605 708 bytes arrived, through a PIPE only 65 700 — 89.2 % silently lost
+        // from a surface whose entire purpose is to be read before applying
+        // (dry-run-preview-not-real-output).
+        //
+        // Nothing here holds the event loop open (the only I/O is synchronous), so
+        // the action falling off its end is sufficient and the exit code stays 0 —
+        // measured per path in dryrun-4444-pipe.harness.ts.
       } catch (error) {
         ErrorHandler.handle(error as Error);
       }
