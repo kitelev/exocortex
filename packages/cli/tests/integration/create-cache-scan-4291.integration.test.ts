@@ -24,6 +24,7 @@
  *   C8  a vault modified after the cache was written → no narrowing (full walk), same output
  *   C9  a label-less property def, named by its basename, survives the narrowing
  *   C10 a label the consumer accepts but the cache's own TBOX_FORM rejects is still read
+ *   C11 create-batch narrows too — it plans through the context's adapter, not its own
  *
  * Revert-verify (mutants applied to a COPY of the tree by the driver spec
  * `tests/integration/create-cache-scan-4291.spec.json`): manifest diff ignored →
@@ -37,6 +38,7 @@ import path from "path";
 import os from "os";
 import { realpathSync } from "fs";
 import { createCommand } from "../../src/commands/create.js";
+import { createBatchCommand } from "../../src/commands/create-batch.js";
 import { CacheManager } from "../../src/cache/CacheManager.js";
 import { PlanningFsAdapter } from "../../src/adapters/PlanningFsAdapter.js";
 import { ShapeLoader } from "@kitelev/exocortex-core";
@@ -92,18 +94,22 @@ describe("#4291 create serves its vault scans from the persistent cache", () => 
     stdoutChunks = [];
     stderrChunks = [];
     exitCodes = [];
-    jest
-      .spyOn(process.stdout, "write")
-      .mockImplementation((chunk: unknown): boolean => {
-        stdoutChunks.push(String(chunk));
+    // (re-created here, and the mocks below close over THESE instances)
+    // ⛔ The write callback MUST fire: like a real stream, `create-batch` waits
+    // for the flush before it exits, so a mock that swallows the callback hangs
+    // the command instead of failing it (create-batch.integration.test.ts B13).
+    const writeTo = (sink: string[]) =>
+      ((chunk: unknown, encodingOrCallback?: unknown, callback?: unknown) => {
+        sink.push(String(chunk));
+        const done =
+          typeof encodingOrCallback === "function"
+            ? encodingOrCallback
+            : callback;
+        if (typeof done === "function") (done as () => void)();
         return true;
-      });
-    jest
-      .spyOn(process.stderr, "write")
-      .mockImplementation((chunk: unknown): boolean => {
-        stderrChunks.push(String(chunk));
-        return true;
-      });
+      }) as unknown as typeof process.stdout.write;
+    jest.spyOn(process.stdout, "write").mockImplementation(writeTo(stdoutChunks));
+    jest.spyOn(process.stderr, "write").mockImplementation(writeTo(stderrChunks));
     consoleErrorSpy = jest
       .spyOn(console, "error")
       .mockImplementation(() => undefined);
@@ -241,9 +247,11 @@ describe("#4291 create serves its vault scans from the persistent cache", () => 
   }
 
   async function runCreate(root: string, args: string[]): Promise<Run> {
-    stdoutChunks = [];
-    stderrChunks = [];
-    exitCodes = [];
+    // ⛔ In place: the write mock closes over THESE arrays, so reassigning them
+    // orphans the mock and every capture comes back empty.
+    stdoutChunks.length = 0;
+    stderrChunks.length = 0;
+    exitCodes.length = 0;
     consoleErrorSpy.mockClear();
     readSpy.mockClear();
     await createCommand().parseAsync(["node", "create", ...args, "--vault", root]);
@@ -440,6 +448,53 @@ describe("#4291 create serves its vault scans from the persistent cache", () => 
     expect(a.errors.join("\n")).not.toContain("Unknown property");
     expect(b.errors.join("\n")).not.toContain("Unknown property");
     expect(preview(b)).toBe(preview(a));
+  });
+
+  it("C11 create-batch narrows too — it plans through the context's adapter", async () => {
+    const root = buildVault();
+    await indexVault(root);
+
+    const batchFile = path.join(root, "batch-4291.json");
+    fs.writeFileSync(
+      batchFile,
+      JSON.stringify([
+        {
+          class: CLASS_TASK,
+          label: "batch probe A",
+          properties: { exo__Asset_isDefinedBy: `[[${ONTO}]]`, ems__Task_required: "a" },
+        },
+        {
+          class: CLASS_TASK,
+          label: "batch probe B",
+          properties: { exo__Asset_isDefinedBy: `[[${ONTO}]]`, ems__Task_required: "b" },
+        },
+      ]),
+    );
+
+    stdoutChunks.length = 0;
+    stderrChunks.length = 0;
+    exitCodes.length = 0;
+    readSpy.mockClear();
+    await createBatchCommand().parseAsync(
+      [batchFile, "--vault", root, "--dry-run"],
+      { from: "user" },
+    );
+    const reads: string[] = readSpy.mock.calls.map((c: unknown[]) =>
+      String(c[0]).replace(/\\/g, "/"),
+    );
+
+    // `create-batch` exits explicitly, 0 on success (unlike `create`, which
+    // returns); anything else is a refusal and would make the read counts
+    // meaningless.
+    expect(exitCodes).toEqual([0]);
+    // ⛔ The axis the orchestrator's review asked for: without the context's
+    // adapter, `create-batch` builds its own — which has no lookup index, so it
+    // pays the cache read AND scans the corpus for every uid / label lookup,
+    // i.e. strictly worse than before this PR. Nothing else here would catch
+    // it: every other axis drives `create`, whose fixtures were built for it.
+    expect([...new Set<string>(reads)].filter((f) => f.startsWith("abox/"))).toEqual([]);
+    // Non-vacuous: the batch really did plan (it reads the TBox it needs).
+    expect(reads).toContain(`tbox/${CLASS_TASK}.md`);
   });
 
   it("C8 a vault modified after the cache was written gets no narrowing, and the same output", async () => {

@@ -9,7 +9,7 @@ import {
   type GenericAssetCreationConfig,
 } from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
-import { PlanningFsAdapter } from "../adapters/PlanningFsAdapter.js";
+import type { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
@@ -346,7 +346,12 @@ function parseItems(
  */
 async function checkCallerUids(
   items: BatchItem[],
-  fsAdapter: PlanningFsAdapter,
+  // #4291 — the ADAPTER interface, not the memoising subclass: this uses only
+  // `getMarkdownFiles` / `getFileMetadata`, and the caller now hands it the
+  // context's adapter (which is the memoising one, and carries the cache-backed
+  // lookup index). The narrower type never enforced the memoisation it was
+  // documenting; the expectation stays stated above instead.
+  fsAdapter: NodeFsAdapter,
 ): Promise<ItemFailure[]> {
   const failures: ItemFailure[] = [];
   const seen = new Map<string, number>();
