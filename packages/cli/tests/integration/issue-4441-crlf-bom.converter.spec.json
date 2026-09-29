@@ -1,0 +1,23 @@
+{
+  "_doc": "Revert-verify mutant for req c05a3565-7b8d-42dc-bc9f-7e71d47d9364 (issue #4441), core half. `extractBodyContent` was ALREADY `\\r?\\n`-tolerant — it is the precedent the CLI fix ported — but a BOM defeats its `^` anchor too, so a BOM-prefixed asset had its whole frontmatter returned AS BODY and its frontmatter wikilinks emitted a second time as exo:Asset_bodyLink. Separate spec because mutant-driver takes ONE subject file.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/NoteToRDFConverter.ts",
+  "harness": "cd \"$(dirname {subject})/../../../cli\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/issue-4441-crlf-bom-frontmatter.integration.test.ts 2>&1",
+  "red_re": "› (?:@req:[0-9a-f-]+ )?(B\\d+)[: ]",
+  "mutants": {
+    "M5_body_bom_not_skipped": {
+      "from": "    const withoutBom =\n      content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;\n",
+      "to": "    const withoutBom = content;\n",
+      "expect": ["B13"],
+      "_note": "B14 stays GREEN on purpose: with the whole file treated as body, the REAL body wikilink is still found, so only the 'frontmatter links must NOT leak into the body index' axis can see this. The pair is what keeps an over-wide 'return nothing as body' from satisfying B13."
+    }
+  }
+}

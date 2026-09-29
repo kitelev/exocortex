@@ -2050,9 +2050,19 @@ export class NoteToRDFConverter {
    * @returns Body content without frontmatter, or full content if no frontmatter
    */
   private extractBodyContent(content: string): string {
+    // ⛤ A leading BOM defeats the `^` anchor exactly as a CRLF fence used to
+    //    defeat the CLI adapter's block matcher (req `c05a3565`, #4441). This
+    //    regex was already `\r?\n`-tolerant — it is the precedent that fix
+    //    ported — but on a BOM-prefixed file it matched NOTHING, so the whole
+    //    frontmatter block came back AS BODY and its wikilinks were indexed a
+    //    second time as `exo:Asset_bodyLink`. Skipping the byte here is
+    //    match-local: this method only ever RETURNS a substring, it never
+    //    writes, so no file loses its BOM on account of this line.
+    const withoutBom =
+      content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
     // Frontmatter pattern: starts with ---, ends with ---
     const frontmatterPattern = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
-    return content.replace(frontmatterPattern, "");
+    return withoutBom.replace(frontmatterPattern, "");
   }
 
   /**
