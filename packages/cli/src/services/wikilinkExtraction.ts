@@ -11,6 +11,8 @@
  *   the edge target is the linkpath.
  */
 
+import { matchFrontmatterBlock } from "@kitelev/exocortex-core";
+
 /** Matches both `[[target]]` and `![[target]]` (embeds are edges too). */
 const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
 
@@ -90,11 +92,22 @@ export function collectFrontmatterStrings(value: unknown): string[] {
 
 /**
  * Body of a markdown file = everything after the frontmatter block (or the
- * whole content when there is none). Mirrors NodeFsAdapter frontmatter regex.
+ * whole content when there is none).
+ *
+ * ⛤ Shares `NodeFsAdapter`'s predicate BY CONSTRUCTION (#4461 ratchet) — the
+ * doc used to say "Mirrors NodeFsAdapter frontmatter regex" while both kept
+ * their own LF-only literal. On a CRLF-fenced or BOM-led file the match failed
+ * and the WHOLE content came back as body, so every frontmatter wikilink was
+ * ALSO emitted as a body link — the same double-count `NoteToRDFConverter`
+ * fixed for the BOM case in #4441.
+ *
+ * `blockEnd` is an offset into the ORIGINAL string (the BOM is accounted for),
+ * so the slice is exact where a `match[0].length` on a BOM-stripped copy would
+ * be off by one.
  */
 export function bodyOf(content: string): string {
-  const match = content.match(/^---\n[\s\S]*?\n---/);
-  return match ? content.slice(match[0].length) : content;
+  const block = matchFrontmatterBlock(content);
+  return block ? content.slice(block.blockEnd) : content;
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   IFrontmatter,
   FrontmatterService,
   parseYamlFrontmatterTolerant,
+  matchFrontmatterBlock,
 } from "@kitelev/exocortex-core";
 import { rewriteInboundWikilinks } from "../utils/wikilinkRewriter.js";
 
@@ -164,7 +165,7 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     // ⛤ The SAME normalized matcher the read path used (BOM skipped, `\r?\n`
     //    fences) — by construction, not by a parallel regex that could drift.
     const blockBody =
-      FileSystemVaultAdapter.matchFrontmatterBlock(content)?.body;
+      matchFrontmatterBlock(content)?.body;
     if (blockBody === undefined) return null;
     // ⛤ A body with NO CONTENT LINE — only blanks and `#` comments — means what
     //    the blessed empty block `---\n\n---` means: "no keys yet". js-yaml
@@ -183,7 +184,7 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     //    резолвит `packages/cli` (⛔ не корневой 4.3.1 — verify-before-assert §A18).
     //    ⛤ Хвостовой `\r` допускается, и с req `c05a3565` (#4441) это стало
     //    несущим: прежняя редакция этой строки объясняла допуск тем, что «чисто-CRLF
-    //    файл отсекается раньше — его `FRONTMATTER_BLOCK` не видит вовсе».
+    //    файл отсекается раньше — его блочный предикат не видит вовсе».
     //    ⛔ Обоснование СНЯТО — матчер теперь CRLF-толерантен, поэтому сюда доходит
     //    и блок, у которого в CRLF и фенсы, и тело. Допуск от этого не меняется
     //    (голая `\r`-строка — та же пустая строка, а не контент), но держится он
@@ -243,7 +244,7 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     // "no keys yet"; only a block with a non-blank body that still yields no
     // mapping is unreadable.
     const blockBody =
-      FileSystemVaultAdapter.matchFrontmatterBlock(content)?.body;
+      matchFrontmatterBlock(content)?.body;
     if (parsed === null && blockBody !== undefined && blockBody.trim() !== "") {
       throw new Error(
         `updateFrontmatter: frontmatter of ${file.path} is not parseable — refusing to patch (re-serialising would overwrite the unreadable block)`,
@@ -511,65 +512,29 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
   }
 
   /**
-   * A leading `---` block; group 1 = its YAML body.
+   * ⛤ The block predicate lives in core — `matchFrontmatterBlock`
+   * (`packages/core/src/utilities/frontmatterBlock.ts`, req `1dfbd427`, #4453).
    *
-   * CRLF-tolerant on BOTH fences, mirroring
-   * `NoteToRDFConverter.extractBodyContent`, which has carried the `\r?\n` form
-   * all along (req `c05a3565`, #4441). Until then this constant — the one that
-   * decides whether a block EXISTS at all — was anchored to a literal `\n`, so
-   * a valid asset written with CRLF was not a parse failure but a
-   * "no block found": zero triples, and no entry in the skip list either.
+   * Until #4461 this class carried its own copy: same shape, same tolerance
+   * (`\r?\n` on both fences, one leading U+FEFF skipped for MATCHING only,
+   * original-string offsets so a write splices around the BOM instead of
+   * eating it). Two copies that agree are a latent drift, not a resolved one —
+   * the plugin's three copies agreed too, right up until two of them did not
+   * (#4453), and this class's own read/diagnostic pair had already drifted once
+   * on a nearby predicate (#4439 review). ⛔ So the cure is structural: NO site
+   * here may ask "is a block present?" for itself.
    *
-   * ⛔ Never `.match()` raw content against this directly — go through
-   * {@link matchFrontmatterBlock}. A BOM before `---` defeats the `^` anchor
-   * exactly as a CRLF fence did, and the write path needs the original-string
-   * offsets that helper returns.
+   * The read path ({@link extractFrontmatter}), the diagnostic path
+   * ({@link getFrontmatterParseFailure}) and the write path
+   * ({@link replaceFrontmatter}) all go through that one import. The core
+   * helper returns `blockStart`/`blockEnd` into the ORIGINAL string precisely
+   * so the write path can keep splicing by index (its docstring says so) — the
+   * migration changed no behaviour, which is what req `c05a3565`'s 17 axes
+   * B1-B17 assert, unchanged.
    */
-  private static readonly FRONTMATTER_BLOCK = /^---\r?\n([\s\S]*?)\r?\n---/;
-
-  /** Length of a leading U+FEFF (0 or 1) — a BOM only counts at index 0. */
-  private static bomLength(content: string): number {
-    return content.charCodeAt(0) === 0xfeff ? 1 : 0;
-  }
-
-  /**
-   * The ONE answer to "does this content open with a frontmatter block, and
-   * what is its body?" — shared by the read path ({@link extractFrontmatter}),
-   * the diagnostic path ({@link getFrontmatterParseFailure}) and the write path
-   * ({@link replaceFrontmatter}).
-   *
-   * Shared BY CONSTRUCTION, not by three parallel edits: the read/diagnostic
-   * pair already drifted once on a nearby predicate (#4439 review), and the
-   * only structural cure is that neither can ask the question for itself.
-   *
-   * A leading BOM is skipped for MATCHING ONLY. `blockStart`/`blockEnd` are
-   * offsets into the ORIGINAL string, so the write path can splice around the
-   * block and leave the byte where the user put it — patching one unrelated
-   * property must not silently strip a file's BOM.
-   */
-  private static matchFrontmatterBlock(content: string): {
-    body: string;
-    /** Offsets into the ORIGINAL `content` (i.e. BOM already accounted for). */
-    blockStart: number;
-    blockEnd: number;
-  } | null {
-    const bom = FileSystemVaultAdapter.bomLength(content);
-    const match = FileSystemVaultAdapter.FRONTMATTER_BLOCK.exec(
-      bom === 0 ? content : content.slice(bom),
-    );
-    if (!match) return null;
-    // `^`-anchored and non-global ⇒ the match always begins at index 0 of the
-    // string we handed it, so the original offsets are that string's offsets
-    // shifted by the BOM.
-    return {
-      body: match[1],
-      blockStart: bom,
-      blockEnd: bom + match[0].length,
-    };
-  }
 
   private extractFrontmatter(content: string): IFrontmatter | null {
-    const block = FileSystemVaultAdapter.matchFrontmatterBlock(content);
+    const block = matchFrontmatterBlock(content);
 
     if (!block) {
       return null;
@@ -619,7 +584,7 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     });
     const block = `---\n${frontmatterYaml.trim()}\n---`;
 
-    const existing = FileSystemVaultAdapter.matchFrontmatterBlock(content);
+    const existing = matchFrontmatterBlock(content);
 
     if (existing) {
       return (
@@ -628,7 +593,13 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
         content.slice(existing.blockEnd)
       );
     }
-    const bom = FileSystemVaultAdapter.bomLength(content);
+    // ⛔ NOT a second block predicate — that one is core's, imported above.
+    // This is only "where does the content proper begin", needed because there
+    // is no block to splice around: a new block goes AFTER a leading BOM so the
+    // byte stays first. core's `bomLength` is module-private; #4461 sanctions
+    // either exporting it or keeping this arithmetic local, and this work item
+    // is scoped out of `frontmatterBlock.ts` (see the PR body's follow-up).
+    const bom = content.charCodeAt(0) === 0xfeff ? 1 : 0;
     return content.slice(0, bom) + `${block}\n` + content.slice(bom);
   }
 

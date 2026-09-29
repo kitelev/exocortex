@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, existsSync } from "fs";
 import { join } from "path";
 import {
   registerOrderSpecLoader,
+  frontmatterBlockBody,
   type FrontmatterOrderSpec,
 } from "@kitelev/exocortex-core";
 
@@ -61,9 +62,15 @@ function scanDirForDefault(dir: string): FrontmatterOrderSpec | null {
   return null;
 }
 
+// ⛤ core's predicate (#4461 ratchet): the LF-only literal that used to sit
+// here made a CRLF-fenced or BOM-led order-spec asset invisible, so the vault's
+// canonical frontmatter ordering was silently not applied to any asset `create`
+// or `apply` wrote. Same predicate, same mechanism as #4459/#4460 — no work
+// item of its own, surfaced by the LF-only-fence census of `packages/cli/src`
+// (the ratchet axis asserts that census is now empty, so this comment must not
+// spell the literal out — it would satisfy the grep it exists to keep at zero).
 function extractFrontmatter(content: string): string | null {
-  const m = content.match(/^---\n([\s\S]*?)\n---/);
-  return m ? m[1] : null;
+  return frontmatterBlockBody(content);
 }
 
 function extractScalar(fm: string, key: string): string | null {

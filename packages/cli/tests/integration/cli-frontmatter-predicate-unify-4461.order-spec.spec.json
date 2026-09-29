@@ -1,0 +1,26 @@
+{
+  "_doc": "WIRING mutant for the first of the two ratchet sites surfaced by the LF-only-fence census of packages/cli/src (#4461's AC extends the census beyond adapters/).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/services/registerOrderSpec.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/cli-frontmatter-predicate-unify-4461.integration.test.ts --verbose 2>&1",
+  "red_re": "› ([CDE]\\d+[a-z]?) ",
+  "mutants": {
+    "W_order_spec_keeps_its_own_lf_only_regex": {
+      "from": "function extractFrontmatter(content: string): string | null {\n  return frontmatterBlockBody(content);\n}",
+      "to": "function extractFrontmatter(content: string): string | null {\n  const m = content.match(/^---\\n([\\s\\S]*?)\\n---/);\n  return m ? m[1] : null;\n}",
+      "expect": [
+        "E2",
+        "E3"
+      ],
+      "_note": "Ratchet site, no work item of its own. Pre-fix a CRLF-fenced order-spec asset was invisible, so the vault's canonical frontmatter ordering was silently not applied to anything `create`/`apply` wrote. Narrow by construction: E2 is the only axis that loads an order spec. ⛤ E3 (the ratchet) reddens under this mutant AND under every other WIRING mutant of this work item, and that was NOT in the first prediction — it was derived from the mutant's THEME rather than from which axes EXECUTE after it lands (integration-test-revert-verify §A44). The reason is structural and is good news: each WIRING mutant re-introduces the literal `/^---\\n` into `packages/cli/src`, which is exactly the form E3 asserts is extinct. So E3 is a live ratchet with a demonstrated flip, not a pin — it would be satisfiable by a broken grep otherwise, and its own canary only proves the predicate, not that anything can trip it."
+    }
+  }
+}

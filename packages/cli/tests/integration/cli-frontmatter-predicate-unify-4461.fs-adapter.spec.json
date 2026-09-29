@@ -1,0 +1,29 @@
+{
+  "_doc": "WIRING mutant for #4460 — `NodeFsAdapter.extractFrontmatter` must decide \"is a block present?\" through core's predicate. Its `protected` modifier keeps CachingNodeFsAdapter / TripleStoreIndexedFsAdapter / PlanningFsAdapter on ONE implementation (audit #3384 H4 family); the drift happened one level UP, against the loader.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/adapters/NodeFsAdapter.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/cli-frontmatter-predicate-unify-4461.integration.test.ts --verbose 2>&1",
+  "red_re": "› ([CDE]\\d+[a-z]?) ",
+  "mutants": {
+    "W_fs_adapter_keeps_its_own_lf_only_regex": {
+      "from": "    const body = frontmatterBlockBody(content);\n\n    if (body === null) {\n",
+      "to": "    const m = /^---\\n([\\s\\S]*?)\\n---/.exec(content);\n    const body = m ? m[1] : null;\n\n    if (body === null) {\n",
+      "expect": [
+        "D1",
+        "D2",
+        "D3",
+        "D5",
+        "E3"
+      ],
+      "_note": "#4460 WIRING: the pre-#4441 LF-only predicate back in `extractFrontmatter`. D1/D2 (findFilesByMetadata over a CRLF / BOM asset) and D3 (a REAL `apply` create-instance resolving its label-form targetClass against a CRLF-fenced class file) redden. D5 reddens through its non-vacuity assertion — both adapters agree on `{}`, but the CRLF file no longer has the label key, which is the whole point of that clause. D4 (no block ⇒ `{}`) is the unchanged contract and is green in both directions. ⛤ E3 (the ratchet) reddens under this mutant AND under every other WIRING mutant of this work item, and that was NOT in the first prediction — it was derived from the mutant's THEME rather than from which axes EXECUTE after it lands (integration-test-revert-verify §A44). The reason is structural and is good news: each WIRING mutant re-introduces the literal `/^---\\n` into `packages/cli/src`, which is exactly the form E3 asserts is extinct. So E3 is a live ratchet with a demonstrated flip, not a pin — it would be satisfiable by a broken grep otherwise, and its own canary only proves the predicate, not that anything can trip it."
+    }
+  }
+}
