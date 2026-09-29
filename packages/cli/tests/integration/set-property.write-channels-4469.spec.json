@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutants for issue #4469 / req 2d072437-c19d-49a4-ae89-f20b6185571f — the COMMAND surface. The subject is core's FrontmatterService (that is where the fix lives), but the harness drives the REAL `set-property` command against a temp vault and judges the bytes on disk, so these mutants answer the question the unit spec cannot: does the fix REACH the surface a user runs (integration-test-revert-verify §A66)? Note cli-jest maps @kitelev/exocortex-core onto core/src (measured 2026-09-29), so no core rebuild is needed between mutants. Expectations written BEFORE the run.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› (CH\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/utilities/FrontmatterService.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/set-property.write-channels-4469.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_updateProperty_back_to_lf_only_predicate": {
+      "from": "    const block = matchFrontmatterBlock(content);\n    const serialized = this.serializeValue(property, value);",
+      "to": "    const lfOnly = /^---\\n([\\s\\S]*?)\\n---/.exec(content);\n    const block = lfOnly\n      ? { body: lfOnly[1], blockStart: 0, blockEnd: lfOnly[0].length }\n      : null;\n    const serialized = this.serializeValue(property, value);",
+      "expect": ["CH30", "CH31", "CH32"],
+      "_note": "Reproduces the measured defect of the published v17.7.13 through the real command: a second block is prepended on the lone-CR, N-BOM and CRLF assets. CH33 (pure LF) stays green — the control."
+    },
+    "M5_new_line_always_lf": {
+      "from": "    const eol = FrontmatterService.blockEol(content, block);\n    const span = FrontmatterService.findPropertyLineSpan(lines, property);",
+      "to": "    const eol = \"\\n\";\n    const span = FrontmatterService.findPropertyLineSpan(lines, property);",
+      "expect": ["CH30", "CH32"],
+      "_note": "The block is still replaced correctly (so the fence count is right and CH31 stays green — the N-BOM fixture is LF), but the written line arrives with a foreign ending: a MIXED block on disk, which is the second state model the requirement's decision 2 forbids."
+    }
+  }
+}

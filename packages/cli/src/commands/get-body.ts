@@ -99,7 +99,8 @@ export function getBodyCommand(): Command {
 
         const fm = new FrontmatterService();
         const parsed = fm.parse(original);
-        if (!parsed.exists) {
+        const leading = FrontmatterService.leadingBlock(original);
+        if (!parsed.exists || !leading) {
           throw new Error(
             `No frontmatter block found in ${vaultRelative}; get-body prints the body that FOLLOWS the frontmatter block.`,
           );
@@ -124,17 +125,26 @@ export function getBodyCommand(): Command {
           );
         }
 
-        // The body is whatever follows the frontmatter block. The block is
-        // reconstructed exactly as FRONTMATTER_REGEX matched it
-        // (`---\n<yaml>\n---`, the trailing newline NOT captured), which is the
-        // same reconstruction set-body writes back — that identity is what makes
-        // the round trip a no-op rather than an approximation.
-        const frontmatterBlock = `---\n${parsed.content}\n---`;
-        const afterBlock = original.slice(frontmatterBlock.length);
-        // Drop the single separator newline set-body puts between the block and
-        // the body (tolerating CRLF, which set-body normalises to LF on write).
-        // A file ending right at the closing `---` has no separator and no body.
-        const body = afterBlock.replace(/^\r?\n/, "");
+        // The body is whatever follows the frontmatter block, and where the
+        // block ENDS is asked of the one accessor that knows
+        // (`FrontmatterService.leadingBlock`, #4469).
+        //
+        // ⛔ This used to slice by the LENGTH of a hand-rebuilt
+        // `` `---\n${parsed.content}\n---` ``. That length equals the real one
+        // only for an LF file with no BOM, so once #4469 widened `parse()` the
+        // reader started printing part of its own frontmatter as body. Measured
+        // on the branch dist before this fix, body = `"THE REAL BODY"`:
+        //   CRLF     → `"--\r\nTHE REAL BODY"`   (two dashes of the fence leaked)
+        //   lone-CR  → `"\rTHE REAL BODY"`
+        //   3×BOM    → `"---\nTHE REAL BODY"`     (the whole closing fence)
+        // and every one of them exited 0, so a consumer piping `get-body` into
+        // another command had no way to notice.
+        const afterBlock = original.slice(leading.end);
+        // Drop the single separator that set-body puts between the block and the
+        // body — spaces/tabs the closing fence may trail, then ONE line ending in
+        // any of the three forms. A file ending right at the closing `---` has
+        // neither separator nor body.
+        const body = afterBlock.replace(/^[^\S\r\n]*(?:\r\n|\r|\n)/, "");
 
         if (options.json) {
           process.stdout.write(

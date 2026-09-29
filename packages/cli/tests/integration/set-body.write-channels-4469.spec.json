@@ -1,0 +1,35 @@
+{
+  "_doc": "Revert-verify mutants for the CALLER half of issue #4469 / req 2d072437-c19d-49a4-ae89-f20b6185571f. `set-body` hand-rebuilt the frontmatter block as `---\\n<body>\\n---` and glued the body on with a bare `\\n`; that was dead-but-harmless while `FrontmatterService.parse()` refused every non-LF shape, and this work item's own widening made it HOT. MB1 restores the whole hand-reconstruction (block AND separator); MB2 restores only the separator, which is what separates 'the block's bytes are preserved' from 'the seam after it is the file's own' — two guarantees, two axes. Expectations written BEFORE the run. MB3 pins the third seam — the terminator appended AFTER the body — which the first two rounds left as a bare LF and which the orchestrator's own run on b458e181 measured as the single foreign line ending in an otherwise CRLF/lone-CR file.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› (CH\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/set-body.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/set-body.write-channels-4469.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "MB1_hand_rebuilt_block_restored": {
+      "from": "        const { text: frontmatterBlock, eol } = leading;",
+      "to": "        const frontmatterBlock = `---\\n${fm.parse(original).content}\\n---`;\n        const eol = \"\\n\";",
+      "expect": ["CH40", "CH41", "CH42", "CH44"],
+      "_note": "Exactly the pre-#4469 line, including its hardcoded LF fences and the dropped BOM. CH43 (pure LF) stays green — on an LF file the reconstruction happens to be byte-identical, which is precisely why the bug survived until the predicate was widened. ⛤ CH44 is listed because it MEASURABLY reddens, and the reason is mechanical rather than thematic (integration-test-revert-verify §A44): this mutant does not only restore the fences, it also pins `eol` to a literal \"\\n\", and `eol` is what the body's trailing terminator is built from — so one mutant legitimately breaks three seams. MB2 and MB3 are the pointed ones, each reddening exactly one."
+    },
+    "MB2_separator_back_to_a_bare_lf": {
+      "from": "        const rebuilt = `${frontmatterBlock}${eol}${bodyPart}`;",
+      "to": "        const rebuilt = `${frontmatterBlock}\\n${bodyPart}`;",
+      "expect": ["CH42"],
+      "_note": "The block itself is preserved, only the seam after the closing fence reverts to a bare LF. CH40 measures the block ALONE (up to the closing fence) so it stays green; CH42 asserts the seam. That the two split cleanly is what shows they are separate guarantees rather than one."
+    },
+    "MB3_body_terminator_back_to_a_bare_lf": {
+      "from": "            ? /(?:\\r\\n|\\r|\\n)$/.test(newBody)\n              ? newBody\n              : `${newBody}${eol}`",
+      "to": "            ? newBody.endsWith(\"\\n\")\n              ? newBody\n              : `${newBody}\\n`",
+      "expect": ["CH44"],
+      "_note": "The pre-fix terminator: a hardcoded LF appended after the body, which on a CRLF or lone-CR asset was the ONE foreign line ending in the file (measured on the dist: CRLF → crlf=5 lf=1, lone-CR → cr=5 lf=1). CH40/CH42 stay green because they measure the block and the seam BEFORE the body — the terminator AFTER it is a third, separate guarantee, which is why it gets its own axis rather than being folded into theirs. CH43 (pure LF) stays green: for an LF file both forms are byte-identical."
+    }
+  }
+}

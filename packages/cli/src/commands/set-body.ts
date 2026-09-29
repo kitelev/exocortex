@@ -170,15 +170,22 @@ export function setBodyCommand(): Command {
 
         // The frontmatter block MUST exist (guaranteed by the uid check above).
         const fm = new FrontmatterService();
-        const parsed = fm.parse(original);
-        if (!parsed.exists) {
+        const leading = FrontmatterService.leadingBlock(original);
+        if (!leading) {
           throw new Error(
             `No frontmatter block found in ${vaultRelative}; set-body preserves the frontmatter and only rewrites the body.`,
           );
         }
-        // Reconstruct the exact original frontmatter block (byte-identical to
-        // FRONTMATTER_REGEX's match: `---\n<yaml>\n---`).
-        const frontmatterBlock = `---\n${parsed.content}\n---`;
+        // The block's ACTUAL bytes, not a reconstruction (#4469). This used to
+        // read `` `---\n${parse(original).content}\n---` `` with the comment
+        // "byte-identical to FRONTMATTER_REGEX's match" — true only while
+        // `FrontmatterService` refused anything but LF fences and no BOM. #4469
+        // widened `parse()` onto the shared predicate, which turned that
+        // reconstruction from dead-but-harmless into live corruption: measured
+        // on a lone-CR asset it emitted `---\n…\rkeep__me…\n---` (one file, two
+        // line-ending styles inside one block) and on a 2-BOM asset it dropped
+        // the mark entirely.
+        const { text: frontmatterBlock, eol } = leading;
 
         // Resolve the new body. `\n` escapes are expanded ONLY for the inline
         // `--body "a\nb"` form, which is what issue #2288 asked for: a single shell
@@ -216,13 +223,25 @@ export function setBodyCommand(): Command {
         // new body (ensure a trailing newline for a non-empty body). Then, if
         // anything changed, bump exo__Asset_updatedAt — updateProperty re-matches ONLY the frontmatter
         // block, leaving the just-written body intact.
+        // ⛔ The trailing terminator is the FILE's, not a bare `\n` (#4469). On a
+        // CRLF or lone-CR asset the hardcoded LF was the single foreign line
+        // ending in the whole file — a mixed-EOL file introduced by the very
+        // write that preserves the block's own endings everywhere else.
+        // Measured on the dist before this line changed: CRLF file → crlf=5,
+        // lf=1 (tail `---\r\nnew body\n`); lone-CR → cr=5, lf=1.
+        // A body that ALREADY ends in a terminator of any of the three forms is
+        // left alone rather than given a second one; for an LF file both
+        // branches are byte-identical to the previous behaviour.
         const bodyPart =
           newBody.length > 0
-            ? newBody.endsWith("\n")
+            ? /(?:\r\n|\r|\n)$/.test(newBody)
               ? newBody
-              : `${newBody}\n`
+              : `${newBody}${eol}`
             : "";
-        const rebuilt = `${frontmatterBlock}\n${bodyPart}`;
+        // The separator between the block and the body is the FILE's own line
+        // ending (#4469) — a bare `\n` here is what put a lone LF straight after
+        // a CRLF closing fence.
+        const rebuilt = `${frontmatterBlock}${eol}${bodyPart}`;
 
         // A no-op (the rebuilt content is byte-identical to the file — same body
         // INCLUDING the trailing newline set-body itself writes) is NOT a
