@@ -383,6 +383,34 @@ describe("Issue #4441 — CRLF/BOM-led frontmatter is recognised by the vault lo
     expect(after.endsWith("\nbody stays\n")).toBe(true);
   });
 
+  it(`B17 a write to a BOM-prefixed file with NO block inserts the block AFTER the BOM ${REQ}`, async () => {
+    // The other branch of `replaceFrontmatter`, and the only axis that can see
+    // it: B10/B11/B12 all have an existing block to replace. Prepending would
+    // leave the BOM stranded in the middle of the file — a byte-order mark that
+    // is not at byte 0 is not a byte-order mark, it is garbage in the body.
+    const vault = await vaultWith("b17-bom-no-block", {
+      "bom-plain.md": BOM + "# Just a note\n\nNo fence anywhere.\n",
+    });
+    const { adapter, file } = only(vault);
+
+    await adapter.updateFrontmatter(file, (current) => ({
+      ...current,
+      exo__Asset_label: "created",
+    }));
+
+    const after = await fs.readFile(path.join(vault, "bom-plain.md"), "utf-8");
+
+    expect(after.charCodeAt(0)).toBe(0xfeff);
+    // The block opens on the very first line, sharing it with the BOM.
+    expect(after.startsWith(`${BOM}---\n`)).toBe(true);
+    expect(fenceCount(after)).toBe(2);
+    const reread = only(vault);
+    expect(reread.adapter.getFrontmatter(reread.file)).toMatchObject({
+      exo__Asset_label: "created",
+    });
+    expect(after).toContain("# Just a note");
+  });
+
   it(`B13 a BOM-prefixed asset does not get its FRONTMATTER wikilinks indexed as BODY links ${REQ}`, async () => {
     // The second half of the same gap, in `NoteToRDFConverter.extractBodyContent`:
     // its regex was already CRLF-tolerant, but a BOM defeats the `^` anchor, so

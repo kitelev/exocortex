@@ -22,8 +22,8 @@
     "M2_bom_never_skipped": {
       "from": "    return content.charCodeAt(0) === 0xfeff ? 1 : 0;\n",
       "to": "    return 0;\n",
-      "expect": ["B2", "B5", "B9", "B10", "B13", "B14"],
-      "_note": "Type-preserving (still returns a number), so no type-narrowing is lost and a BROKEN verdict cannot be confused with redness (§A36/§A97). Every BOM axis reddens; the pure-CRLF and pure-LF axes stay green."
+      "expect": ["B2", "B5", "B9", "B10", "B13", "B14", "B17"],
+      "_note": "Type-preserving (still returns a number), so no type-narrowing is lost and a BROKEN verdict cannot be confused with redness (§A36/§A97). Every BOM axis reddens — including B17, whose no-block branch then prepends BEFORE the byte; that one was not in the first expectation because the prediction was made from the mutant's THEME rather than from which axes execute after it lands (§A44, the second time in this spec). The pure-CRLF and pure-LF axes stay green."
     },
     "M3_diagnostic_path_gets_its_own_regex": {
       "from": "    const blockBody =\n      FileSystemVaultAdapter.matchFrontmatterBlock(content)?.body;\n    if (blockBody === undefined) return null;\n",
@@ -36,6 +36,12 @@
       "to": "  private static readonly FRONTMATTER_BLOCK = /---\\r?\\n([\\s\\S]*?)\\r?\\n---/;\n",
       "expect": ["B7", "B16"],
       "_note": "Guards the OVER-WIDENING direction — the class the #4439 review already caught once. Without `^`, a `---` fence sitting inside a code block in the BODY is read as the asset's frontmatter (B7). ⛤ B16 (a DOUBLED BOM) reddens too, and that was NOT predicted: the expectation had been derived from this mutant's THEME («over-widening lets body fences in») rather than from which axes actually execute after it is applied — integration-test-revert-verify §A44. Dropping the anchor also lets the `---` that follows the SECOND BOM match, so the doubled-BOM file becomes visible and B16's `getFrontmatter() === null` fails. The discrepancy is recorded rather than smoothed over, and it is good news: it proves B16 is a real axis with a flip, not only a pin. ⛤ B6, B8 and B15 stay green under every mutant here BY CONSTRUCTION — they assert the ABSENCE of a side effect, and such an axis is legitimately green in both directions (integration-test-revert-verify §ось на ОТСУТСТВИЕ побочного эффекта). Their product is the pin itself, not a flip."
+    },
+    "M7_no_block_branch_prepends_before_the_bom": {
+      "from": "    const bom = FileSystemVaultAdapter.bomLength(content);\n    return content.slice(0, bom) + `${block}\\n` + content.slice(bom);\n",
+      "to": "    return `${block}\\n${content}`;\n",
+      "expect": ["B17"],
+      "_note": "The pre-fix form of the OTHER branch of replaceFrontmatter — the one taken when there is no existing block. Prepending leaves the BOM stranded in the middle of the file, where it is not a byte-order mark but garbage in the body. Narrow by construction: B10/B11/B12 all have a block to replace, so B17 is the only axis that reaches this branch at all. Added after the orchestrator's review named it as the one uncovered branch of the diff."
     },
     "M4_write_path_drops_the_bom": {
       "from": "      blockStart: bom,\n",
