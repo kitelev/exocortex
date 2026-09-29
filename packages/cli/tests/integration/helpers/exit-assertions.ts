@@ -10,10 +10,13 @@
  * asynchronous whenever they are a PIPE, which is exactly how a `--dry-run` preview
  * is read (`| less`, `| head`, captured by a wrapper). The preview these commands
  * write is the WHOLE rebuilt document, so it was cut at the pipe buffer — measured
- * on the built bundle with a 605 686-byte asset: `set-property` delivered 73 728 of
- * 605 729 bytes, `remove-property` 73 728 of 605 708, `create` 65 536 of 605 895 —
- * 87.8-89.2 % silently lost from a surface whose entire purpose is to be read
- * before applying (dry-run-preview-not-real-output).
+ * on the built bundle with a 605 686-byte asset: each of the three delivered only
+ * 65 536 bytes of ~605 700 through a pipe (8/8 runs) with the tail marker absent —
+ * ≈89 % silently lost from a surface whose entire purpose is to be read before
+ * applying (dry-run-preview-not-real-output). ⛔ The byte count is a dated
+ * observation, not a property of the commands: the same sources cut at 73 728 on
+ * the pre-#4444 bundle. The durable claim is the mechanism — the write stops at
+ * whatever the pipe buffer accepted before the exit landed.
  *
  * ⛔ `expect(codes).toContain(0)` therefore cannot stay: with the exit gone, the
  * success path records NO exit call at all, so the array is empty. Replacing it

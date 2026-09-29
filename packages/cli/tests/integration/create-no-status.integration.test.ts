@@ -186,7 +186,6 @@ describe("Issue #3928: `cli create --no-status` suppresses the default ems__Effo
     const out = await runCreate(TASK_PROTOTYPE_UID, ["--no-status"]);
 
     expectNaturalExit(out.exit);
-    expect(out.exit).not.toContain(1);
     expect(out.uuid).not.toBe("");
     // The default Backlog was suppressed — no status of any form.
     expect(out.content).not.toContain("ems__Effort_status");
@@ -224,7 +223,6 @@ describe("Issue #3928: `cli create --no-status` suppresses the default ems__Effo
     const out = await runCreate(CONCEPT_CLASS_UID, ["--no-status"]);
 
     expectNaturalExit(out.exit);
-    expect(out.exit).not.toContain(1);
     expect(out.uuid).not.toBe("");
     // No status was injected anyway; --no-status is a no-op here.
     expect(out.content).not.toContain("ems__Effort_status");

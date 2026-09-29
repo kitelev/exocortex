@@ -1097,8 +1097,14 @@ export function createCommand(): Command {
         // `process.exit` does not wait for an asynchronous write, while stderr is
         // asynchronous whenever it is a pipe. Measured on the built bundle with a
         // 549 528-byte `--body-file`: to a FILE 605 895 bytes arrived, through a
-        // PIPE only 65 658 — 89.2 % silently lost. #4444 measured the two property
-        // verbs and named this one by code identity; this is its own measurement.
+        // PIPE only 65 536 (8/8 runs, merged tree with the exit re-added), tail
+        // marker absent — ≈89 % silently lost. #4444 measured the two property verbs
+        // and named this one by code identity; this is its own measurement.
+        // ⛔ The byte count is not a property of the command — the same pattern cut
+        // at 73 728 on the pre-#4444 bundle. Stable is the MECHANISM: the write stops
+        // at whatever the pipe buffer accepted before the exit landed. (An earlier
+        // revision of this comment said 65 658, a third value for one figure;
+        // corrected after review.)
         //
         // Nothing here holds the event loop open: the writes are synchronous, and
         // the optional `--write-through` cache fold is awaited above and is

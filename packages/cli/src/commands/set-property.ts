@@ -494,9 +494,17 @@ export function setPropertyCommand(): Command {
         // and stderr is asynchronous whenever it is a PIPE, which is exactly how a
         // `--dry-run` preview is read (`| less`, `| head`, captured by a wrapper).
         // The preview is UNBOUNDED — it is the whole rebuilt document — so it is
-        // cut at the 64 KiB pipe buffer. Measured on the built bundle with a
-        // 605 686-byte asset: to a FILE 605 729 bytes arrived, through a PIPE only
-        // 65 714 — 89.2 % silently lost. `--dry-run` exists to be READ BEFORE
+        // cut at the pipe buffer, and the tail never arrives. Measured on the built
+        // bundle with a 605 686-byte asset: to a FILE 605 729 bytes arrived, through
+        // a PIPE only 65 536 (8/8 runs, merged tree with the exit re-added) — the
+        // fixture's tail marker absent, ≈89 % lost.
+        // ⛔ The BYTE COUNT is not a property of this command: the same source cut at
+        // 73 728 on the pre-#4444 bundle. What is stable is the MECHANISM — the write
+        // stops at whatever the pipe buffer accepted before the exit landed — so cite
+        // the mechanism, not the number. (An earlier revision of this comment claimed
+        // 65 714 / 89.2 %, a figure the #4444 PR itself had already retracted as a
+        // shell artefact; corrected after review.)
+        // `--dry-run` exists to be READ BEFORE
         // APPLYING, so a truncated preview is a decision surface that lies: the
         // operator sees a document ending at the buffer and concludes the asset is
         // shorter than it is (dry-run-preview-not-real-output).

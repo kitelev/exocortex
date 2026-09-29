@@ -200,7 +200,6 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
     ]);
 
     expectNaturalExit(out.exit);
-    expect(out.exit).not.toContain(1);
     // Boolean serialises bare (YAML-native), NOT quoted.
     expect(out.content).toContain("concept__Movie_watched: true");
     expect(out.content).not.toContain('concept__Movie_watched: "true"');
@@ -257,7 +256,6 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
     ]);
 
     expectNaturalExit(out.exit);
-    expect(out.exit).not.toContain(1);
     // Canonical bare `aliases:` key updated in place with all 3 values.
     expect(out.content).toContain("aliases:");
     expect(out.content).toContain("  - Dreyfus Model");

@@ -253,7 +253,6 @@ describe(`req 501cdf2c: \`set-property\` refuses an EMPTY value (junk \`prop: ""
     ]);
 
     expectNaturalExit(out.exit);
-    expect(out.exit).not.toContain(1);
 
     // Round-trips through the real YAML reader with the space intact.
     const fm = parseFrontmatter(out.content);
