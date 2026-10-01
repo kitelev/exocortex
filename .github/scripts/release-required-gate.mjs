@@ -124,7 +124,8 @@ export function decide({ requiredContexts, checkRuns, workflowConclusion }) {
     failing: [],
   });
 
-  if (!Array.isArray(requiredContexts) || requiredContexts.length === 0) return fallback();
+  if (!Array.isArray(requiredContexts) || requiredContexts.length === 0)
+    return fallback();
 
   const latest = latestByName(Array.isArray(checkRuns) ? checkRuns : []);
 
@@ -135,7 +136,8 @@ export function decide({ requiredContexts, checkRuns, workflowConclusion }) {
     const f = fallback();
     f.reason =
       "check-runs listing empty while the required set is not — the measurement, not the " +
-      "commit, is at fault; " + f.reason;
+      "commit, is at fault; " +
+      f.reason;
     return f;
   }
 
@@ -239,21 +241,24 @@ export function auditVerdict({
     return {
       rc: 0,
       verdict: "NOTHING-TO-RELEASE",
-      message: "no commits since the last tag — a green run that correctly publishes nothing.",
+      message:
+        "no commits since the last tag — a green run that correctly publishes nothing.",
     };
   }
   if (tagExists === true) {
     return {
       rc: 0,
       verdict: "ALREADY-RELEASED",
-      message: "the computed tag already exists — already published, nothing to do.",
+      message:
+        "the computed tag already exists — already published, nothing to do.",
     };
   }
 
   return {
     rc: 0,
     verdict: "RELEASED",
-    message: "required set green, commits present, tag fresh — the release ran.",
+    message:
+      "required set green, commits present, tag fresh — the release ran.",
   };
 }
 
@@ -289,25 +294,66 @@ export function auditMain() {
 
   const summary = process.env.GITHUB_STEP_SUMMARY;
   if (summary) {
-    appendFileSync(summary, `### Release audit (#4488)\n\n**${result.verdict}** — ${result.message}\n`);
+    appendFileSync(
+      summary,
+      `### Release audit (#4488)\n\n**${result.verdict}** — ${result.message}\n`,
+    );
   }
   return result.rc;
 }
 
 /* ────────────────────────────── I/O side (exercised by the axes via a fetch stub) ────────── */
 
+/**
+ * ⛤ The base URL comes from `GITHUB_API_URL`, which GitHub Actions sets on every runner (it
+ * exists for GHES, where api.github.com is the wrong host). Reading it is platform conformance,
+ * not a test seam — and it is what lets the axes drive THIS function against a local server, so
+ * the header and paging behaviour below are covered on the real path rather than stubbed away
+ * (integration-test-revert-verify §A59: a seam that routes the production branch around the axes
+ * leaves it unproven).
+ */
+const API_BASE = (
+  process.env.GITHUB_API_URL || "https://api.github.com"
+).replace(/\/+$/, "");
+
+/**
+ * ⚠ Stale answers are real, and the guard against them is one header.
+ *
+ * MEASURED 2026-10-01: an Actions *listing* URL
+ * (`/actions/workflows/ci.yml/runs?branch=main&event=push&per_page=40`) served a window stale by
+ * 12 days — `newest=2026-09-19` while runs from `2026-10-01` existed — and `Cache-Control:
+ * no-cache` returned the fresh one. The cache key includes the FULL URL: the same URL with a
+ * different `per_page` was already answering fresh at that moment.
+ *
+ * ⛔ The RATE is not measured, and the obvious protocol cannot measure it: fetching one URL twice
+ * (plain, then no-cache) warms the cache with the FIRST request, so the state that produces the
+ * divergence is destroyed by the act of looking — 25 pairs across three endpoints gave 0
+ * divergences, which is a property of that protocol, not of the world.
+ *
+ * ⛤ The header is set anyway, and the reason is the COST ASYMMETRY rather than a measured rate:
+ * it costs nothing — no token, no latency beyond the request itself, no configuration — while the
+ * damage is a FALSE VERDICT ABOUT A RELEASE, which whoever reads it takes for a fact about the
+ * world. An unmeasured rate would be a reason to withhold a guard that cost something; it is not
+ * a reason to withhold a free one.
+ *
+ * ⛔ And "the gate only reads POINTWISE endpoints, and it is fail-closed on absent data" does NOT
+ * cover this on its own — that argument was weighed and found too weak to stand alone. Fail-closed
+ * handles a stale answer that comes back EMPTY (`judged=false` ⇒ fall back to the old predicate).
+ * It does nothing about a stale answer that comes back NON-EMPTY but OLD: a `/branches/main` reply
+ * listing yesterday's 13 contexts instead of today's 14 would let a release through without gating
+ * on the new required check — a silently WRONG release, the very trade this fix exists to avoid.
+ */
 async function api(path, token, { tries = 3 } = {}) {
   let lastErr = null;
   for (let attempt = 1; attempt <= tries; attempt += 1) {
     try {
-      const res = await fetch(`https://api.github.com${path}`, {
+      const res = await fetch(`${API_BASE}${path}`, {
         headers: {
           Accept: "application/vnd.github+json",
           Authorization: `Bearer ${token}`,
           "X-GitHub-Api-Version": "2022-11-28",
-          // ⛤ MEASURED 2026-10-01: the same Actions listing URL served a window stale by 12
-          // days until asked not to cache (`newest=2026-09-19` against an actual `2026-10-01`). A gate
-          // that reads a stale required set would gate on yesterday's protection.
+          // See this function's header: free, and the damage it guards against is a false
+          // verdict about a release.
           "Cache-Control": "no-cache",
         },
       });
@@ -319,14 +365,19 @@ async function api(path, token, { tries = 3 } = {}) {
     } catch (err) {
       lastErr = err;
     }
-    if (attempt < tries) await new Promise((r) => setTimeout(r, 1500 * attempt));
+    const backoff = Number(process.env.GATE_RETRY_BACKOFF_MS ?? 1500);
+    if (attempt < tries)
+      await new Promise((r) => setTimeout(r, backoff * attempt));
   }
   return { ok: false, error: String(lastErr?.message ?? lastErr) };
 }
 
 /** `.protection.required_status_checks.contexts` of the default branch, or null. */
 export async function fetchRequiredContexts(repo, branch, token) {
-  const res = await api(`/repos/${repo}/branches/${encodeURIComponent(branch)}`, token);
+  const res = await api(
+    `/repos/${repo}/branches/${encodeURIComponent(branch)}`,
+    token,
+  );
   if (!res.ok) return { contexts: null, error: res.error };
   const contexts = res.body?.protection?.required_status_checks?.contexts;
   if (!Array.isArray(contexts)) {
@@ -354,7 +405,8 @@ export async function fetchCheckRuns(repo, sha, token) {
     );
     if (!res.ok) return { checkRuns: null, error: res.error };
     const batch = res.body?.check_runs;
-    if (!Array.isArray(batch)) return { checkRuns: null, error: "check_runs absent in response" };
+    if (!Array.isArray(batch))
+      return { checkRuns: null, error: "check_runs absent in response" };
     out.push(...batch);
     const total = Number(res.body?.total_count ?? out.length);
     if (out.length >= total || batch.length === 0) break;
@@ -383,7 +435,9 @@ export async function main() {
   }
 
   const req = await fetchRequiredContexts(repo, branch, token);
-  const runs = req.contexts ? await fetchCheckRuns(repo, sha, token) : { checkRuns: [] };
+  const runs = req.contexts
+    ? await fetchCheckRuns(repo, sha, token)
+    : { checkRuns: [] };
 
   const verdict = decide({
     requiredContexts: req.contexts,
