@@ -9,6 +9,7 @@
 **File:** `.github/workflows/ci.yml`
 
 **Changes:**
+
 ```yaml
 on:
   pull_request:
@@ -18,6 +19,7 @@ on:
 ```
 
 **Effect:** CI workflows now trigger automatically on:
+
 - `opened` - When PR is created (including Draft)
 - `synchronize` - When new commits are pushed
 - `reopened` - When closed PR is reopened
@@ -28,6 +30,7 @@ on:
 **Status:** ✅ Configured via GitHub API
 
 **Settings Applied:**
+
 ```json
 {
   "allow_merge_commit": false,
@@ -38,6 +41,7 @@ on:
 ```
 
 **Effect:**
+
 - ✅ **Squash merge ONLY** - All commits combined into single new commit
 - ✅ **Combined with `required_linear_history: true`** - Ensures linear history (no merge commits)
 - ✅ **Combined with `strict: true`** - Requires branch to be up-to-date before merge (manual rebase needed)
@@ -46,11 +50,13 @@ on:
 - ✅ **Auto-merge enabled** - PRs can be auto-merged when checks pass
 
 **What actually happens during squash merge:**
+
 1. GitHub creates a NEW commit on top of main with combined changes
 2. This is NOT a git rebase - it's a new commit
 3. Linear history is maintained (no merge commit branches)
 
 **Developer workflow:**
+
 ```bash
 # If main has changed, manually update your branch:
 git fetch origin main
@@ -63,35 +69,32 @@ gh pr merge --squash
 
 ### 3. Branch Protection Rules
 
-**Status:** ✅ Already configured (no changes needed)
+**Status:** ✅ Configured on `main`
 
-**Current Protection on `main` branch:**
-```json
-{
-  "required_status_checks": {
-    "strict": true,
-    "contexts": ["build-and-test", "e2e-tests"]
-  },
-  "enforce_admins": true,
-  "required_linear_history": true,
-  "allow_force_pushes": false,
-  "allow_deletions": false
-}
+⛔ **This page no longer restates the protection payload — it reads it out.** Until #4494 the
+block here named a two-element required set (`build-and-test`, `e2e-tests`) as the _current_ protection,
+while the live required set had been 14 different contexts (measured 2026-10-02). A payload
+pasted into a document is a signature next to the mechanism, not the mechanism, and nothing
+makes the two disagree loudly.
+
+```bash
+# the required-check set (changes whenever CI jobs are added/renamed/retired):
+gh api repos/kitelev/exocortex/branches/main/protection/required_status_checks \
+  --jq '.contexts | sort | .[]'
+
+# the whole policy, including admin enforcement and history rules (needs admin):
+gh api repos/kitelev/exocortex/branches/main/protection
 ```
 
-**Effect:**
-- ✅ **Required checks:** build-and-test + e2e-tests must pass
-- ✅ **Strict mode:** Branch must be up-to-date with main before merge
-- ✅ **Linear history:** Only rebase/squash merges allowed
-- ✅ **Admins follow rules:** No bypass for administrators
-- ❌ **Force push disabled:** Cannot rewrite main history
-- ❌ **Deletions disabled:** Cannot delete main branch
+**How to change it, and why not by script:** see
+[`.github/BRANCH_PROTECTION.md`](BRANCH_PROTECTION.md).
 
 ### 4. GitHub Actions Permissions
 
 **Status:** ✅ Configured
 
 **Settings:**
+
 ```json
 {
   "enabled": true,
@@ -101,6 +104,7 @@ gh pr merge --squash
 ```
 
 **Effect:**
+
 - ✅ Actions enabled for all workflows
 - ✅ All GitHub Actions allowed (no restrictions)
 - ℹ️ Default permissions: read-only (workflows request specific permissions)
@@ -114,6 +118,7 @@ gh pr merge --squash
 **Location:** Repository Settings > Actions > General > Fork pull request workflows
 
 **Recommended Setting:**
+
 - Select: **"Require approval for first-time contributors who recently created their account"**
 
   OR (for private repo / trusted contributors only):
@@ -123,6 +128,7 @@ gh pr merge --squash
 **Why:** This determines if fork PRs require manual approval before running workflows. Since this is your personal repository and you're the primary contributor, you likely want workflows to run automatically.
 
 **Steps to configure:**
+
 1. Go to: https://github.com/kitelev/exocortex/settings/actions
 2. Scroll to "Fork pull request workflows from outside collaborators"
 3. Select your preferred option (recommended: "first-time contributors" or "run automatically")
@@ -174,7 +180,8 @@ gh api repos/kitelev/exocortex/actions/permissions | jq '{enabled, allowed_actio
 # Create Draft PR
 gh pr create --draft --title "feat: new feature" --body "WIP"
 
-# Workflows trigger automatically (build-and-test + e2e-tests)
+# CI triggers automatically; the required set is read from the API
+# (see .github/BRANCH_PROTECTION.md)
 # No manual approval needed (you are the repo owner)
 ```
 
@@ -194,6 +201,7 @@ gh pr merge 123 --auto
 ```
 
 **What happens during squash merge:**
+
 1. ✅ GitHub creates NEW commit on top of main with all your changes
 2. ✅ All your commits are combined into this one commit
 3. ✅ Linear history is maintained (no merge commit branches)
@@ -201,7 +209,8 @@ gh pr merge 123 --auto
 **Note:** This is NOT git rebase - GitHub creates a new commit. If you want your commits rebased, do `git rebase origin/main` manually before merging.
 
 **Requirements:**
-- ✅ All checks must pass (build-and-test + e2e-tests)
+
+- ✅ All **required** checks must pass (live set: see `.github/BRANCH_PROTECTION.md`)
 - ✅ Branch must be up-to-date with main (`strict: true` enforces this)
 - ✅ Linear history maintained (squash merge + no merge commits)
 - ✅ Auto-merge when conditions met

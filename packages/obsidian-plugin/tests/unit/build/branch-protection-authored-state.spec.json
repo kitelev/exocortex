@@ -1,0 +1,47 @@
+{
+  "_doc": "Revert-verify for issue #4494 — the branch protection of `main` must be DERIVED, never authored. Subject is `.github/BRANCH_PROTECTION.md`, the LIVE CARRIER of the defect: the retired script `.github/scripts/setup-branch-protection.sh` was dangerous only because this document told you to run it. Axes B1-B9 live in branch-protection-authored-state.test.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout; recorded run in the PR body. ⛔ NOTHING here — no axis, no mutant — calls a protection-mutating endpoint: every predicate is collected on the TEXT a carrier hands a human, never on applying it. ⛤ B5/B6/B7 deliberately carry NO mutant, and not because they are weak: B5 is a PRESENCE axis whose needle legitimately occurs three times in the subject (a single anchor cannot remove them all), and B6/B7 key on the CONTENTS OF THE TREE (an added orphan script / a re-created retired script), which a text mutation of one file cannot express. Their flip was predjavlen by a recorded manual flip on a COPY of the tree — see the PR body — and their predicates are additionally exercised on fixtures by B9.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/.github/BRANCH_PROTECTION.md",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/..\" && CI=true node ./node_modules/jest/bin/jest.js --config packages/obsidian-plugin/jest.config.js packages/obsidian-plugin/tests/unit/build/branch-protection-authored-state.test.ts --coverageThreshold='{}' --verbose 2>&1",
+  "red_re": "› (B\\d+\\w*) ",
+  "mutants": {
+    "M1_reinstate_the_whole_setup_instruction": {
+      "_why": "The defect exactly as it lived: a document instructing a FULL-REPLACE PUT whose payload is authored. THREE axes must see it, because the damage was in four fields and an axis on the context list alone judges a quarter of it.",
+      "from": "Use the **GitHub UI**: _Settings → Branches → `main` → Edit_.",
+      "to": "Use the **GitHub UI**: _Settings → Branches → `main` → Edit_.\n\n### Method 1: Automated Script (Recommended)\n\n```bash\ngh api \\\n  --method PUT \\\n  -H \"Accept: application/vnd.github+json\" \\\n  \"/repos/kitelev/exocortex/branches/main/protection\" \\\n  --input - <<EOF\n{\n  \"required_status_checks\": {\n    \"strict\": true,\n    \"contexts\": [\"build-and-test\", \"e2e-tests\"]\n  },\n  \"enforce_admins\": true,\n  \"required_linear_history\": true\n}\nEOF\n```\n",
+      "expect": ["B1", "B2", "B3"]
+    },
+    "M3_retranscribe_the_count_as_a_fact": {
+      "_why": "The second carrier's shape: docs/reference/ci/required-checks.md — the page the repo DECLARES as its single source — said 13 while the live set had 14. A bare count stated as a fact is the thing banned, anywhere under the scanned roots, so re-introducing the sentence HERE must redden B4: the ratchet is on the class, not on the one page that happened to carry it.",
+      "from": "If the snapshot page and the API disagree, **the API wins** — fix the page.",
+      "to": "If the snapshot page and the API disagree, **the API wins** — fix the page.\n\nThere are **14 required status checks** on `main`.",
+      "expect": ["B4"]
+    },
+    "M4_author_only_the_context_list": {
+      "_why": "Separates B1 from B2/B3: a payload fragment with ONLY the context list, no PUT instruction and no policy fields. If B1 did not discriminate on its own, M1's three reds would not tell us which axis saw what.",
+      "from": "## Verifying protection works",
+      "to": "```json\n{\n  \"contexts\": [\"build-and-test\", \"e2e-tests\"]\n}\n```\n\n## Verifying protection works",
+      "expect": ["B1"]
+    },
+    "M5_instruct_only_the_full_replace_put": {
+      "_why": "Separates B2: an instruction to PUT the protection object with no payload shown at all. The endpoint being a full replace is the whole hazard — a reader who assembles the body themselves reproduces the defect without copying a literal.",
+      "from": "## What happens on PR merge?",
+      "to": "```bash\ngh api --method PUT repos/kitelev/exocortex/branches/main/protection --input protection.json\n```\n\n## What happens on PR merge?",
+      "expect": ["B2"]
+    },
+    "M6_author_only_the_policy_fields": {
+      "_why": "Separates B3 — the axis that covers the three NON-contexts fields the script also overwrote (enforce_admins, required_linear_history, required_pull_request_reviews). Without its own mutant, the 'all four fields' claim would rest on M1 alone, where B1 could be the only axis actually firing.",
+      "from": "## Troubleshooting",
+      "to": "```json\n{\n  \"enforce_admins\": true,\n  \"required_linear_history\": true\n}\n```\n\n## Troubleshooting",
+      "expect": ["B3"]
+    }
+  }
+}
