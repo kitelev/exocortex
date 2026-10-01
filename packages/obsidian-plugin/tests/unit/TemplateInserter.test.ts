@@ -150,6 +150,73 @@ describe("extractTemplateBody — strip leading frontmatter", () => {
   });
 });
 
+/**
+ * #4482 — the PLUGIN half of the shared-predicate conversion. The fix lives in
+ * core (`stripTemplateFrontmatter`), and these axes exist because the plugin is
+ * a SECOND user-facing surface reached by two distinct actions — the editor
+ * "Insert template" command (`resolveTemplateForInsert`, `ExocortexPlugin:4731`)
+ * and the plugin's TemplateLoaderPort for `body_template` groundings
+ * (`extractTemplateBody`, `ExocortexPlugin:745`). Both go through
+ * `vault.cachedRead`, which exists on MOBILE as well as desktop, so there is no
+ * platform-gated path here and the Desktop↔Mobile Command Parity invariant is
+ * satisfied BY CONSTRUCTION rather than by a second implementation — these axes
+ * are what makes that claim measured instead of asserted.
+ *
+ * ⛤ Axis names are `P<N>` as the FIRST token: the machine key the mutant driver
+ * extracts, deliberately distinct from the core half's `T<N>`.
+ */
+describe("extractTemplateBody — shared predicate conversion, plugin surface (#4482)", () => {
+  beforeEach(() => {
+    clearResolvers();
+    installDefaultResolvers();
+  });
+
+  it("P1 strips a lone-CR fenced template instead of leaking its frontmatter", () => {
+    const content = `---\rexo__Asset_uid: x\rexo__Asset_label: T\r---\r## Plan`;
+    expect(extractTemplateBody(content)).toBe("## Plan");
+    expect(extractTemplateBody(content)).not.toContain("exo__Asset_uid");
+  });
+
+  it("P2 strips a BOM-prefixed template (one BOM and a run of three)", () => {
+    for (const bom of ["\uFEFF", "\uFEFF\uFEFF\uFEFF"]) {
+      const content = `${bom}---\nexo__Asset_uid: x\n---\n## Plan`;
+      expect(extractTemplateBody(content)).toBe("## Plan");
+    }
+  });
+
+  it("P3 the editor insert path resolves tokens in the BODY of a lone-CR template, not in its frontmatter", () => {
+    registerResolver("nowDate", () => "2026-06-20");
+    // `$nowDate` appears in BOTH the frontmatter and the body. Before the fix
+    // the whole file was the "body", so the frontmatter line was inserted into
+    // the note AND its token was resolved there too.
+    const content = `---\rexo__Asset_label: $nowDate\r---\r## Log\r- opened $nowDate`;
+    const inserted = resolveTemplateForInsert(content);
+    expect(inserted).toBe("## Log\r- opened 2026-06-20");
+    expect(inserted).not.toContain("exo__Asset_label");
+  });
+
+  it("P5 strips a mixed-EOL fenced template on the plugin surface too", () => {
+    // Core axis T12's plugin twin (review of PR #4490, MEDIUM). Both plugin
+    // entries reach the same core function, so the independence of the two
+    // fences has to be pinned on this surface as well — otherwise a
+    // "symmetry" simplification would leak the template's frontmatter into an
+    // inserted note with every plugin axis still green.
+    const content = "---\nexo__Asset_uid: x\r---\r## Plan";
+    expect(extractTemplateBody(content)).toBe("## Plan");
+    expect(extractTemplateBody(content)).not.toContain("exo__Asset_uid");
+  });
+
+  it("P4 LF/CRLF control — the plugin surface is byte-identical to origin/main", () => {
+    expect(
+      extractTemplateBody(`---\nexo__Asset_label: T\n---\n## Plan\n- step`),
+    ).toBe("## Plan\n- step");
+    expect(
+      extractTemplateBody(`---\r\nexo__Asset_label: T\r\n---\r\n## Plan\r\n- step`),
+    ).toBe("## Plan\r\n- step");
+    expect(extractTemplateBody("## Just a body\n- x")).toBe("## Just a body\n- x");
+  });
+});
+
 describe("resolveTemplateForInsert — strip frontmatter + resolve tokens", () => {
   beforeEach(() => {
     clearResolvers();
