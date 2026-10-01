@@ -219,6 +219,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        # Issue #4475: 12 of the 229 mutant-driver specs (28 mutants) anchor on vault
+        # assets inside packages/exoas-*. Without the submodules those subjects are
+        # absent and `check-spec-anchors.mjs` exits 2 ("not judged") rather than
+        # pretending a narrower sweep is a clean one. The three submodules total ~4 MB
+        # and six other jobs in this file already check them out recursively; lint
+        # measured 71 s on main@88a8c4e0 against the 2-minute budget.
+        with:
+          submodules: recursive
 
       - name: Setup Node & install deps
         uses: ./.github/actions/setup-node-pnpm
@@ -294,6 +302,22 @@ jobs:
       # is the explicit, req-justified withdrawal (RFC 0003 everything-req-first).
       - name: Guard coverage-threshold monotonicity
         run: node scripts/check-coverage-monotonic.mjs
+
+      # Issue #4475 — the revert-verify layer itself had no gate. The 229 *.spec.json
+      # under packages/ are what proves the axes they name can go RED; an anchor whose
+      # `from` no longer occurs in its subject makes mutant-driver.py refuse the
+      # mutation, and the axes keep passing while nothing verifies them. No jest
+      # testMatch covers *.spec.json, so no required check saw it, and the author-side
+      # sweep (~/.claude/bin/spec-anchor-sweep.py) judges ONLY the subjects a branch
+      # touched — exactly the hole: #4352 edited CacheManager.ts and retired an anchor
+      # in a FOREIGN spec. MEASURED over the corpus's whole life (2026-09-18..09-29,
+      # 125 commits): >=1 dead anchor on 61% of commits, 8 episodes, the foreign one
+      # alive for 68 consecutive commits. This sweep is full-corpus and costs 0.23 s
+      # (it counts substrings; it runs no mutants). It is a RATCHET over a baseline of
+      # dead-anchor keys — a pre-existing one prints and does not block an uninvolved
+      # PR — and is fail-loud in both directions. Baseline at introduction: 0 keys.
+      - name: Guard mutant-driver spec anchors
+        run: node scripts/check-spec-anchors.mjs
 
   docs-link-check:
     runs-on: ubuntu-latest
