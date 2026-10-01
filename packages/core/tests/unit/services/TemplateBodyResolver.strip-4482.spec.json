@@ -1,0 +1,36 @@
+{
+  "_doc": "Revert-verify mutants for #4482 — `stripTemplateFrontmatter` converted onto the shared `matchFrontmatterBlock`. Run from the repo root after replacing the path placeholders: python3 -I ~/.claude/bin/mutant-driver.py <this file>. Axis names are T<N>, matching the FIRST token of each test title, so they cannot collide with the A<N>/B<N> halves of the sibling conversions (#4473).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/TemplateBodyResolver.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../..\" && node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/services/TemplateBodyResolver.test.ts --verbose 2>&1",
+  "red_re": "›\\s+(T\\d+[a-z]?)\\s",
+  "_note_control_axes": "T9 and T10 carry no mutant of their own BY DESIGN — their product is that this conversion did NOT widen recognition. T9 pins the canonical over-widening shape `---\\r\\n---\\r\\n<body>` (two stacked rules sharing ONE physical CRLF, the shape that produced the HIGH in PR #4468): the old local regex and `matchFrontmatterBlock` BOTH return null there, so the content is verbatim before and after, and T9's silence under every mutant IS that parity proof (integration-test-revert-verify §A118). T10 pins the documented no-block behaviours. T7/T8 ARE the LF/CRLF byte-parity controls required by AC3 and they stay green under M1 — narrowing the predicate back to `^---\\r?\\n` cannot touch the LF or CRLF path, which is exactly why the defect survived five conversions with a green suite.",
+  "mutants": {
+    "M1_restores_the_local_narrow_predicate": {
+      "from": "  const block = matchFrontmatterBlock(content);",
+      "to": "  const block = /^---\\r?\\n/.test(content)\n    ? matchFrontmatterBlock(content)\n    : null;",
+      "expect": ["T1", "T2", "T3", "T4", "T5", "T6", "T11"],
+      "_note": "Type-preserving reproduction of the pre-#4482 reach. The old `/^---\\r?\\n[\\s\\S]*?\\r?\\n---\\r?\\n?/` recognised neither a lone-CR fence (`\\r?\\n` is indivisible, so it needs at least one `\\n`) nor a BOM-prefixed one (`^---` cannot reach past `U+FEFF`) nor an empty block whose separators are bare CRs — on all of those the match was null and the content came back VERBATIM, frontmatter included. T7/T8/T9/T10 stay green: the LF and CRLF paths are byte-identical under this mutant, which is the measured reason the defect was invisible."
+    },
+    "M2_drops_the_separating_terminator": {
+      "from": "  return separator ? afterBlock.slice(separator[0].length) : afterBlock;",
+      "to": "  return afterBlock;",
+      "expect": ["T1", "T3", "T4", "T5", "T6", "T7", "T8"],
+      "_note": "The block is recognised but its trailing terminator is kept, so every body opens with a blank line — the half of the contract the old `\\r?\\n?` tail carried. T2 stays green by construction (nothing follows the block, so there is no terminator to consume), and so do T9/T10 (no block at all) and T11 (the BOM goes with the block either way)."
+    },
+    "M3_narrows_the_separating_terminator_to_LF": {
+      "from": "const SEPARATING_TERMINATOR = /^(?:\\r\\n|\\n|\\r)/;",
+      "to": "const SEPARATING_TERMINATOR = /^\\n/;",
+      "expect": ["T1", "T5", "T6", "T8"],
+      "_note": "Isolates the THREE-form tail from the three-form fence recognition: the block is found on every encoding, but only an LF separator is consumed, so a CRLF body keeps its `\\r\\n` (T8) and a lone-CR body keeps its `\\r` (T1/T5/T6). T3/T4 stay green — their fences and separator are LF, only the BOM differs — which is what makes this mutant distinguishable from M1 rather than a duplicate of it."
+    }
+  }
+}

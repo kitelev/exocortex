@@ -143,6 +143,110 @@ describe("stripTemplateFrontmatter (Веха 3 — template body = file body)", 
   });
 });
 
+/**
+ * #4482 — `stripTemplateFrontmatter` was the SIXTH local copy of the leading
+ * frontmatter predicate and never moved onto the shared `matchFrontmatterBlock`
+ * (#4452/#4453). Its `/^---\r?\n…\r?\n---\r?\n?/` needed at least one `\n`
+ * (`\r?\n` is indivisible) and could not reach past a `U+FEFF`, so on a
+ * lone-CR-fenced or BOM-prefixed template the match was `null`, the content came
+ * back VERBATIM, and the TEMPLATE's own frontmatter was inserted into the target
+ * note's body as text — through three production consumers (`apply`'s
+ * TemplateLoaderPort, the plugin's TemplateLoaderPort, the editor "Insert
+ * template" command).
+ *
+ * ⛤ Axis names are `T<N>` as the FIRST token of each title: they are the machine
+ * key the mutant driver extracts (`red_re`), and the prefix cannot collide with
+ * the `A<N>`/`B<N>` halves of the sibling conversions (#4473).
+ *
+ * ⛤ T7/T8/T9/T10 are CONTROLS — their product is that this conversion changed
+ * NOTHING on the LF and CRLF paths and did not widen recognition onto the
+ * canonical over-widening shape. Recorded in the spec's `_note_control_axes`.
+ */
+describe("stripTemplateFrontmatter — shared predicate conversion (#4482)", () => {
+  it("T1 strips a lone-CR fenced block, consuming the separating CR (AC1)", () => {
+    expect(stripTemplateFrontmatter("---\rexo__Asset_uid: x\r---\r## Plan")).toBe(
+      "## Plan",
+    );
+  });
+
+  it("T2 returns an empty body for a lone-CR block with nothing after it", () => {
+    expect(stripTemplateFrontmatter("---\rexo__Asset_uid: x\r---")).toBe("");
+  });
+
+  it("T3 strips a block behind ONE leading BOM (AC2)", () => {
+    expect(
+      stripTemplateFrontmatter("\uFEFF---\nexo__Asset_uid: x\n---\n## Plan"),
+    ).toBe("## Plan");
+  });
+
+  it("T4 strips a block behind a RUN of three BOMs (AC2)", () => {
+    // Same `leadingBomLength` arithmetic `FrontmatterService.leadingBlock` uses:
+    // a RUN is recognised, not just a single byte.
+    expect(
+      stripTemplateFrontmatter(
+        "\uFEFF\uFEFF\uFEFF---\nexo__Asset_uid: x\n---\n## Plan",
+      ),
+    ).toBe("## Plan");
+  });
+
+  it("T5 strips a block that is BOTH BOM-prefixed and lone-CR fenced", () => {
+    expect(
+      stripTemplateFrontmatter("\uFEFF---\rexo__Asset_uid: x\r---\r## Plan"),
+    ).toBe("## Plan");
+  });
+
+  it("T6 strips an EMPTY block whose separators are bare CRs", () => {
+    expect(stripTemplateFrontmatter("---\r\r---\r## Plan")).toBe("## Plan");
+  });
+
+  it("T7 LF control — byte-identical to origin/main", () => {
+    expect(
+      stripTemplateFrontmatter("---\nexo__Asset_uid: x\n---\n## Plan\n- step"),
+    ).toBe("## Plan\n- step");
+    expect(stripTemplateFrontmatter("---\na: b\n---\n")).toBe("");
+    expect(stripTemplateFrontmatter("---\na: b\n---")).toBe("");
+  });
+
+  it("T8 CRLF control — byte-identical to origin/main, the body keeps its CRs", () => {
+    expect(
+      stripTemplateFrontmatter("---\r\na: b\r\n---\r\n## Plan\r\n- x"),
+    ).toBe("## Plan\r\n- x");
+    expect(stripTemplateFrontmatter("---\r\na: b\r\n---")).toBe("");
+  });
+
+  it("T9 canonical over-widening shape stays 'no block' — two fences, ONE physical CRLF (Risk 1)", () => {
+    // `---\r\n---\r\n<body>`: two stacked horizontal rules sharing one CRLF.
+    // The OLD local regex returned null (`\r?\n` is indivisible at each fence)
+    // and `matchFrontmatterBlock` returns null too (the opening terminator is
+    // consumed before the closing fence is searched) — so the content is
+    // returned verbatim both before and after the conversion. This exact shape
+    // produced the HIGH in PR #4468.
+    const input = "---\r\n---\r\n## Plan";
+    expect(stripTemplateFrontmatter(input)).toBe(input);
+  });
+
+  it("T10 content with no block at all is returned unchanged (AC4)", () => {
+    expect(stripTemplateFrontmatter("## Just a body")).toBe("## Just a body");
+    expect(stripTemplateFrontmatter("---")).toBe("---");
+    expect(stripTemplateFrontmatter("---\nonly body")).toBe("---\nonly body");
+    // A BOM with no block behind it is content, not a block to strip.
+    expect(stripTemplateFrontmatter("\uFEFF## Body")).toBe("\uFEFF## Body");
+  });
+
+  it("T11 the template file's BOM is never re-emitted into the stripped body", () => {
+    // The BOM is a property of the TEMPLATE file, not of the body that gets
+    // placed into a DIFFERENT note, so it goes with the block it precedes — for
+    // a run of three exactly as for one. (The "collapse a run to one" half of
+    // `FrontmatterService.leadingBlock`'s policy is a WRITER's decision and has
+    // no counterpart in this reader.)
+    for (const bom of ["\uFEFF", "\uFEFF\uFEFF\uFEFF"]) {
+      expect(
+        stripTemplateFrontmatter(`${bom}---\na: b\n---\n## Plan`),
+      ).not.toContain("\uFEFF");
+    }
+  });
+});
+
 describe("resolveTemplateBody — inline date format + offset tokens (Веха 5)", () => {
   // Pin "now" to a fixed LOCAL noon so date assertions are TZ-independent.
   // 2026-06-21 is a Sunday.

@@ -1,0 +1,36 @@
+{
+  "_doc": "Revert-verify mutants for #4482, PLUGIN half — the same core subject (`stripTemplateFrontmatter`) judged through the plugin's own surface (`extractTemplateBody` / `resolveTemplateForInsert`), because the plugin is a SECOND user-facing consumer with two distinct actions. Run from the repo root after replacing the path placeholders: python3 -I ~/.claude/bin/mutant-driver.py <this file>. Axis names are P<N>, the FIRST token of each test title, distinct from the core half's T<N>.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/TemplateBodyResolver.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../..\" && node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/obsidian-plugin/jest.config.js packages/obsidian-plugin/tests/unit/TemplateInserter.test.ts --verbose 2>&1",
+  "red_re": "›\\s+(P\\d+[a-z]?)\\s",
+  "_note_reach": "The plugin jest config maps `^@kitelev/exocortex-core$` to `<rootDir>/../core/src/index.ts`, so this harness reaches the EDITED core source rather than a built `dist` — that is why a core-subject mutant can redden a plugin axis at all (harness-invocation-surface §A8). P4 is the LF/CRLF byte-parity control for the plugin surface and stays green under M1.",
+  "mutants": {
+    "M1_restores_the_local_narrow_predicate": {
+      "from": "  const block = matchFrontmatterBlock(content);",
+      "to": "  const block = /^---\\r?\\n/.test(content)\n    ? matchFrontmatterBlock(content)\n    : null;",
+      "expect": ["P1", "P2", "P3"],
+      "_note": "The pre-#4482 reach. P1/P2 show the template's own frontmatter leaking into the inserted body; P3 shows the editor path additionally RESOLVING a `$token` inside that leaked frontmatter line. P4 stays green — the LF and CRLF paths were never affected, which is why two plugin actions shipped this defect under a green suite."
+    },
+    "M2_drops_the_separating_terminator": {
+      "from": "  return separator ? afterBlock.slice(separator[0].length) : afterBlock;",
+      "to": "  return afterBlock;",
+      "expect": ["P1", "P2", "P3", "P4"],
+      "_note": "Every inserted body would open with a blank line — the plugin surface is where a user SEES that immediately, so all four axes carry it."
+    },
+    "M3_narrows_the_separating_terminator_to_LF": {
+      "from": "const SEPARATING_TERMINATOR = /^(?:\\r\\n|\\n|\\r)/;",
+      "to": "const SEPARATING_TERMINATOR = /^\\n/;",
+      "expect": ["P1", "P3", "P4"],
+      "_note": "Only an LF separator is consumed: the lone-CR axes (P1/P3) and the CRLF half of the control (P4) keep a leading terminator, while P2 — LF fences behind a BOM — stays green, which distinguishes this mutant from M1."
+    }
+  }
+}

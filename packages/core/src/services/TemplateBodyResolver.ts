@@ -35,6 +35,7 @@ import {
   isResolverModifierAware,
   type ResolverContext,
 } from "./SubstitutionResolverRegistry";
+import { matchFrontmatterBlock } from "../utilities/frontmatterBlock";
 
 // Ensure the default resolver vocabulary is installed even if no other module
 // (GroundingExecutor / the editor inserter) imported it first. Idempotent —
@@ -111,20 +112,69 @@ export function resolveTemplateBody(
 }
 
 /**
+ * One leading line terminator, in any of the three forms — what the block's
+ * CLOSING fence is followed by when a body comes after it.
+ *
+ * ⛤ Consumed so the inserted/copied body does not open with a blank line. The
+ * form is read from the file rather than assumed: the closing fence's own
+ * terminator need not match the opening one in a hand-edited file, so this is
+ * deliberately NOT `FrontmatterService.leadingBlock().eol` (which reports the
+ * OPENING fence's style — the right answer for a WRITER inserting a line INTO
+ * the block, and the wrong one for a reader slicing after it).
+ */
+const SEPARATING_TERMINATOR = /^(?:\r\n|\n|\r)/;
+
+/**
  * Strip the leading YAML frontmatter block, returning the markdown body. When
- * no frontmatter is present the whole content is the body. A single newline
+ * no frontmatter is present the whole content is the body. A single terminator
  * separating the closing `---` from the body is consumed so the body does not
- * start with a blank line. `\r?\n` tolerates CRLF (Windows vaults).
+ * start with a blank line.
  *
  * Single source for "an exotemplate__Template asset's body is its file body"
  * — reused by the plugin editor inserter, the plugin TemplateLoaderPort, and
  * the CLI TemplateLoaderPort (one strip, no per-consumer regex drift).
  *
+ * ⛔ WITHDRAWN (#4482): the previous edition of this docblock said "`\r?\n`
+ * tolerates CRLF (Windows vaults)" and left it there, which read as a statement
+ * of the tolerance this function HAS. It carried its OWN
+ * `/^---\r?\n[\s\S]*?\r?\n---\r?\n?/` — the sixth copy of a predicate
+ * `matchFrontmatterBlock` has owned since #4452/#4453 — and `\r?\n` is
+ * indivisible, so it needs at least one `\n`: a lone-CR-fenced template (classic
+ * pre-OS9 Mac endings, no `\n` anywhere) matched NOTHING, and neither did a
+ * BOM-prefixed one (`^---` cannot reach past `U+FEFF`). The match was `null`,
+ * this function returned the content VERBATIM, and the TEMPLATE's own
+ * frontmatter — `exo__Asset_uid`, `exo__Instance_class`, every property — was
+ * inserted into the target note's body as text. Three production consumers
+ * reached it: `apply`'s TemplateLoaderPort, the plugin's TemplateLoaderPort
+ * (`ExocortexPlugin` → `extractTemplateBody`) and the editor "Insert template"
+ * command (`resolveTemplateForInsert`).
+ *
+ * ⛤ BOM policy — a RUN of N leading `U+FEFF` is recognised, identical to
+ * `FrontmatterService.leadingBlock` because both ask the SAME `leadingBomLength`
+ * arithmetic through `matchFrontmatterBlock`. The "collapse a run to exactly
+ * ONE" half of that policy has no counterpart here and is deliberately NOT
+ * reimplemented: this is a READER whose result is a body placed into a DIFFERENT
+ * file, so the BOM — a property of the template file, not of its body — is
+ * dropped with the block it precedes, for N=3 exactly as for N=1.
+ *
+ * ⛤ The canonical over-widening input is UNCHANGED, measured rather than assumed
+ * (#4468's HIGH, #4482 Risk 1): `---\r\n---\r\n<body>` — two stacked horizontal
+ * rules sharing ONE physical CRLF — is "no block" for the old local regex
+ * (`\r?\n` is indivisible at each fence) AND for `matchFrontmatterBlock` (the
+ * opening terminator is consumed before the closing fence is searched), so the
+ * content comes back verbatim both before and after this conversion.
+ *
  * NOTE — distinct from `utilities/sparqlBlock.stripFrontmatter`, which keeps a
- * leading newline (`\nbody`). This one consumes the separating newline so the
- * inserted/copied block does not start blank, and is CRLF-tolerant.
+ * leading newline (`\nbody`). This one consumes the separating terminator so the
+ * inserted/copied block does not start blank.
  */
 export function stripTemplateFrontmatter(content: string): string {
-  const match = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
-  return match ? content.slice(match[0].length) : content;
+  const block = matchFrontmatterBlock(content);
+  if (!block) return content;
+  // `blockEnd` is the offset in the ORIGINAL string just past the closing
+  // `---`, so a leading BOM run is already accounted for and no reconstruction
+  // length is involved.
+  const afterBlock = content.slice(block.blockEnd);
+  const separator = SEPARATING_TERMINATOR.exec(afterBlock);
+  return separator ? afterBlock.slice(separator[0].length) : afterBlock;
 }
