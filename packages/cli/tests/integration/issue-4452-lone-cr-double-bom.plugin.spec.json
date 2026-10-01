@@ -1,0 +1,23 @@
+{
+  "_doc": "Req 74419202 (#4452) — the over-widening its own review caught, pinned on the PLUGIN harness because that is where the shared predicate is exercised DIRECTLY (`frontmatterBlockBody`). ⛔ On the CLI surface the read-level observable cannot see it at all: the spurious block's body is EMPTY, so `getFrontmatter` is null either way — the CLI axis (B26) had to assert DATA LOSS on the write path instead, and its mutant Q7 lives in the sibling `.core` spec. Two surfaces, two observables, one defect.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/utilities/frontmatterBlock.ts",
+  "harness": "cd \"$(dirname {subject})/../../../obsidian-plugin\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/adapters/plugin-frontmatter-crlf-bom-4453.test.ts --verbose 2>&1",
+  "red_re": "● .*› ([CPX]\\d+) ",
+  "mutants": {
+    "Q8_one_pattern_lets_a_crlf_serve_both_fences": {
+      "from": "  const opening = OPENING_FENCE.exec(rest);\n",
+      "to": "  const single = /^---(?:\\r\\n|\\r|\\n)([\\s\\S]*?)(?:\\r\\n|\\r|\\n)---/.exec(rest);\n  if (!single)\n    return null;\n  if (single)\n    return { body: single[1], blockStart: bom, blockEnd: bom + single[0].length };\n  const opening = OPENING_FENCE.exec(rest);\n",
+      "expect": ["C7"],
+      "_note": "Same mutation as the sibling Q7, judged on the plugin harness: `frontmatterBlockBody` returns `\"\"` (an empty block) where it must return `null` (no block). Expectation filled from the RUN.\n⚤ FROM THE RUN: exactly C7. The same mutation is visible at the read level HERE because `frontmatterBlockBody` distinguishes `null` (no block) from `\"\"` (empty block) — the distinction the CLI's asset-level read pair collapses."
+    }
+  }
+}

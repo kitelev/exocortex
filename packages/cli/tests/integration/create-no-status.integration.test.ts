@@ -26,6 +26,7 @@ import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { expectNaturalExit } from "./helpers/exit-assertions.js";
 
 const { createCommand } = await import("../../src/commands/create.js");
 
@@ -184,8 +185,7 @@ describe("Issue #3928: `cli create --no-status` suppresses the default ems__Effo
   it("--no-status on a status-bearing prototype → NO ems__Effort_status @req:d214c122-e09b-4826-a827-242c5e5745a1", async () => {
     const out = await runCreate(TASK_PROTOTYPE_UID, ["--no-status"]);
 
-    expect(out.exit).toContain(0);
-    expect(out.exit).not.toContain(1);
+    expectNaturalExit(out.exit);
     expect(out.uuid).not.toBe("");
     // The default Backlog was suppressed — no status of any form.
     expect(out.content).not.toContain("ems__Effort_status");
@@ -197,7 +197,7 @@ describe("Issue #3928: `cli create --no-status` suppresses the default ems__Effo
   it("WITHOUT --no-status the #3849 Backlog default is unchanged (backward-compat) @req:d214c122-e09b-4826-a827-242c5e5745a1", async () => {
     const out = await runCreate(TASK_PROTOTYPE_UID, []);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     // The default DOES fire without the flag → proves the suppression above is
     // non-vacuous (the flag is what removes it).
     expect(out.content).toContain(`ems__Effort_status: "[[${BACKLOG_UID}]]"`);
@@ -222,8 +222,7 @@ describe("Issue #3928: `cli create --no-status` suppresses the default ems__Effo
   it("--no-status on a non-status-bearing class → harmless no-op success @req:d214c122-e09b-4826-a827-242c5e5745a1", async () => {
     const out = await runCreate(CONCEPT_CLASS_UID, ["--no-status"]);
 
-    expect(out.exit).toContain(0);
-    expect(out.exit).not.toContain(1);
+    expectNaturalExit(out.exit);
     expect(out.uuid).not.toBe("");
     // No status was injected anyway; --no-status is a no-op here.
     expect(out.content).not.toContain("ems__Effort_status");

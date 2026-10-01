@@ -1,0 +1,27 @@
+{
+  "_doc": "Revert-verify mutant for issue #4438 / ticket a3f3939c on the DIAGNOSTIC (ClassRefNotFoundError). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). The gate has two deliverables: the refusal (pinned in create-class-resolvable-4438.create.spec.json) and the message that makes the refusal actionable — the caller usually HAS the right first 8 characters, so the `find … -name '<prefix>*.md'` hint is what turns the refusal into a two-second repair. M4 drops that hint while keeping both interpolations referenced (a bare removal would leave `prefix` unused → a compile BROKEN, which is the absence of a measurement, not a measurement). It reds K2 alone; K1 stays GREEN, which is what separates the two deliverables. Recorded runs: see PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/services/ClassResolverService.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --verbose tests/integration/create-class-resolvable-4438.integration.test.ts 2>&1",
+  "mutants": {
+    "M4_the_find_hint_is_dropped_from_the_refusal_message": {
+      "from": "        `Find the real UID:  find '${vaultPath}' -name '${prefix}*.md'\\n` +",
+      "to": "        `${vaultPath} ${prefix}\\n` +",
+      "expect": ["K2"]
+    },
+    "M5_the_message_loses_the_substring_that_decides_the_exit_code": {
+      "from": "      `Class [[${classUid}]] not found in vault${asTyped} \u2014 ` +",
+      "to": "      `Class [[${classUid}]] is absent from the vault${asTyped} \u2014 ` +",
+      "expect": ["K10"]
+    }
+  }
+}

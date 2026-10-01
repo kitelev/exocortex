@@ -290,6 +290,14 @@ export {
 // duplicated mapping key → the whole asset collapses to {} at every read
 // (invisible & unrepairable). Retries `{ json: true }` (last-wins) on throw.
 export { parseYamlFrontmatterTolerant } from "./utilities/parseYamlFrontmatter";
+// The ONE "is a frontmatter block present?" predicate (req `1dfbd427`, #4453) —
+// CRLF-tolerant fences + a single leading BOM skipped for matching.
+export {
+  matchFrontmatterBlock,
+  frontmatterBlockBody,
+  leadingBomLength,
+} from "./utilities/frontmatterBlock";
+export type { FrontmatterBlockMatch } from "./utilities/frontmatterBlock";
 export { DateFormatter } from "./utilities/DateFormatter";
 export { WikiLinkHelpers } from "./utilities/WikiLinkHelpers";
 // Class subsumption over frontmatter `exo__Class_superClass` edges (req

@@ -34,7 +34,20 @@ const REQ = "265844b7-74db-44e4-98b9-37fe77407bdb";
 // Same barrel mock as the sibling suite for this subject
 // (tests/unit/adapters/FileSystemVaultAdapter.test.ts): the real core carriers
 // are imported from source, past the mock.
+// #4461: the block predicate now lives in core and the SUT imports it from the
+// barrel, so this explicit-export mock must provide it. Imported from SOURCE,
+// like `parseYamlFrontmatterTolerant` above/below: a stub would answer "no
+// block" and the mock would stop mirroring production (test-fixture-realism).
+import {
+  matchFrontmatterBlock,
+  frontmatterBlockBody,
+  leadingBomLength,
+} from "../../../../core/src/utilities/frontmatterBlock.js";
+
 jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
+  matchFrontmatterBlock,
+  frontmatterBlockBody,
+  leadingBomLength,
   IVaultAdapter: class {},
   IFile: class {},
   IFolder: class {},

@@ -8,7 +8,10 @@ import {
 import path from "path";
 import { randomBytes } from "crypto";
 import * as yaml from "js-yaml";
-import { parseYamlFrontmatterTolerant } from "@kitelev/exocortex-core";
+import {
+  matchFrontmatterBlock,
+  parseYamlFrontmatterTolerant,
+} from "@kitelev/exocortex-core";
 
 export type AtomicUpdateFailureReason =
   | "verify-mismatch"
@@ -38,17 +41,47 @@ export interface AtomicUpdateResult {
   error?: string;
 }
 
-const FRONTMATTER_RE = /^---\s*\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n([\s\S]*))?$/;
+/**
+ * Trailing spaces/tabs on the CLOSING fence plus the ONE line ending that
+ * separates it from the body — `matchFrontmatterBlock` ends the block at the
+ * closing `---` itself, so this is what the body starts after.
+ *
+ * ⛤ Only ONE line ending is consumed (#4469). The regex this replaced ended in
+ * `---\s*(?:\r?\n(…))?$`, whose greedy `\s*` swallows EVERY blank line between
+ * the fence and the first body text — so `---\n\n\nbody` came back as `body` and
+ * the two blank lines were gone from the rewritten file. Nothing depended on
+ * that loss; keeping it would be copying a defect forward.
+ */
+const BODY_LEAD = /^[^\S\r\n]*(?:\r\n|\r|\n)/;
 
 interface ParsedFile {
   frontmatter: Record<string, unknown>;
   body: string;
+  /** A leading U+FEFF to put back — exactly one, whatever the run's length. */
+  bom: string;
 }
 
+/**
+ * ⛤ The block is recognised by `matchFrontmatterBlock` — core's ONE predicate
+ * (#4469). The local `FRONTMATTER_RE` this replaced was LF/CRLF-only and
+ * defeated by a leading BOM, so `claim` / `spawn` answered `no-frontmatter` on a
+ * valid lone-CR or BOM-prefixed asset: fail-CLOSED rather than the data loss the
+ * text path had, but still a channel that disagreed with the read path about
+ * what a frontmatter block IS.
+ *
+ * ⛔ ONE deliberate narrowing: the old regex also accepted trailing whitespace on
+ * the OPENING fence (`--- \n`), which the shared predicate does not. Measured
+ * 2026-09-29 across the three canonical vaults (54 818 assets): **0** carriers of
+ * that shape — and since the READ path (`NoteToRDFConverter`, the adapters)
+ * already uses the shared predicate, such a file is not in the graph at all, so
+ * accepting it here only let a write reach an asset nothing else could see.
+ */
 function parseFile(content: string): ParsedFile | null {
-  const match = content.match(FRONTMATTER_RE);
-  if (!match) return null;
-  const [, fm, body = ""] = match;
+  const block = matchFrontmatterBlock(content);
+  if (!block) return null;
+  const fm = block.body;
+  const body = content.slice(block.blockEnd).replace(BODY_LEAD, "");
+  const bom = block.blockStart > 0 ? "\uFEFF" : "";
   // Read-modify-WRITE path — try the strict parse first (empty & non-dup files
   // stay byte-identical). A duplicated YAML key makes `yaml.load` THROW; recover
   // it last-wins via the tolerant parser (#3901 / #3800) so an atomic update
@@ -67,15 +100,19 @@ function parseFile(content: string): ParsedFile | null {
     }
   }
   if (parsed === null || parsed === undefined) {
-    return { frontmatter: {}, body };
+    return { frontmatter: {}, body, bom };
   }
   if (typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("frontmatter is not a YAML mapping");
   }
-  return { frontmatter: parsed as Record<string, unknown>, body };
+  return { frontmatter: parsed as Record<string, unknown>, body, bom };
 }
 
-function serializeFile(fm: Record<string, unknown>, body: string): string {
+function serializeFile(
+  fm: Record<string, unknown>,
+  body: string,
+  bom: string,
+): string {
   // `quoteStyle: "double"` is the js-yaml 5 option (this package resolves
   // 5.3.0; `quotingType` is the js-yaml 4 spelling, ignored here): scalars
   // js-yaml must quote come out double-quoted — the vault convention. Locked
@@ -87,7 +124,12 @@ function serializeFile(fm: Record<string, unknown>, body: string): string {
     noRefs: true,
   });
   const trailing = body.length > 0 ? body : "";
-  return `---\n${dumped}---\n${trailing}`;
+  // ⛤ The BOM survives the rewrite, collapsed to exactly ONE (#4469) — the
+  // same policy `FileSystemVaultAdapter.replaceFrontmatter` applies on the
+  // adapter path (req `74419202`). Dropping it would silently re-encode a
+  // file the user deliberately marked; keeping the run would preserve an
+  // artifact that defeats every `^`-anchored reader.
+  return `${bom}---\n${dumped}---\n${trailing}`;
 }
 
 /**
@@ -142,7 +184,7 @@ export function atomicUpdateFrontmatter(
     }
 
     const merged = { ...parsed.frontmatter, ...updates };
-    const newContent = serializeFile(merged, parsed.body);
+    const newContent = serializeFile(merged, parsed.body, parsed.bom);
 
     writeFileSync(tmpPath, newContent, "utf8");
     renameSync(tmpPath, filePath);

@@ -13,6 +13,41 @@ export class WikilinkNotFoundError extends Error {
 }
 
 /**
+ * Error thrown when an EXPLICIT `--created-by` named a UID that has NO file in
+ * the vault — the `exo__Asset_createdBy` sibling of `ClassRefNotFoundError`
+ * (ticket 36bd4ee0, issue #4448).
+ *
+ * Same mechanism as the class half (#4438): `exo__Asset_createdBy` is assembled
+ * by the core creation service DOWNSTREAM of `propertyValues`, so the
+ * {@link WikilinkValidator.validatePropertyValues} call in `planCreate` never
+ * inspected it. `create --created-by beef0000-0000-4000-8000-000000000111`
+ * therefore exited 0 and wrote an asset whose creator pointed at nothing.
+ *
+ * ⛤ Scoped to the EXPLICIT flag. The ExoAssistant default is a product
+ * constant, not caller input, and stays unvalidated (fail-open) — a minimal
+ * vault without that identity file must still be writable.
+ *
+ * The message names the unresolved UID and the command that finds the real one,
+ * because the caller typically HAS the right first 8 characters. `not found` is
+ * load-bearing: `ErrorHandler.classifyMessage` maps it to
+ * `ExitCodes.FILE_NOT_FOUND` (3), the code the dangling-property and
+ * dangling-class refusals already exit with.
+ */
+export class CreatedByRefNotFoundError extends Error {
+  constructor(createdByUid: string, vaultPath: string) {
+    const prefix = createdByUid.slice(0, 8);
+    super(
+      `Creator [[${createdByUid}]] not found in vault (--created-by ${createdByUid}) — ` +
+        `exo__Asset_createdBy would be a dangling reference.\n` +
+        `An identity UID is 36 characters; a partially-remembered one lands here.\n` +
+        `Find the real UID:  find '${vaultPath}' -name '${prefix}*.md'\n` +
+        `Or pass --skip-wikilink-validation to create the reference anyway.`,
+    );
+    this.name = "CreatedByRefNotFoundError";
+  }
+}
+
+/**
  * Validates that wikilinks in property values reference existing files in the vault.
  *
  * Wikilink format: `[[uuid|label]]` or `[[uuid]]`
@@ -82,6 +117,34 @@ export class WikilinkValidator {
 
     for (const wikilink of wikilinks) {
       await this.validateWikilink(wikilink.uuid, wikilink.label);
+    }
+  }
+
+  /**
+   * Does a single wikilink TARGET exist in the vault? — the same question
+   * {@link validateValue} asks, answered without throwing so a caller can raise
+   * its own domain-specific error (ticket a3f3939c / issue #4438: `create`
+   * needs a CLASS-specific refusal naming the `--class` argument, not the
+   * generic "wikilink not found").
+   *
+   * Reuses {@link validateWikilink} verbatim, so the resolution rules — UID
+   * filename first, `exo__Asset_uid` frontmatter scan as the fallback,
+   * linkpath (basename/label/aliases) for a non-UUID reference, and the
+   * in-batch `pendingUids` — stay in ONE place. A second, hand-rolled
+   * "does the file exist" check would be exactly the drift this avoids.
+   *
+   * @param target - The wikilink target (a UUID, or a label-form linkpath)
+   * @returns true when the target resolves in the vault (or is pending in this batch)
+   */
+  async targetExists(target: string): Promise<boolean> {
+    try {
+      await this.validateWikilink(target);
+      return true;
+    } catch (error) {
+      if (error instanceof WikilinkNotFoundError) {
+        return false;
+      }
+      throw error;
     }
   }
 

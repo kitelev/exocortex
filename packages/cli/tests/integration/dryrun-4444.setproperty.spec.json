@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutants for issue #4444 — the DELIVERED-PREVIEW half of `--dry-run` for `set-property`. Separate spec per command because the mutant driver mutates ONE subject, and a mutant in one command must redden ONLY that command's axes — which is what proves the three fixes are independent rather than one shared code path. The axis needs a REAL process with a REAL stderr pipe on the BUILT bundle, which jest cannot provide (its axes mock process.stderr.write and process.exit). ⛔ This spec and its harness run LOCALLY and under the mutant driver, NOT in CI: the CLI jest job does not build dist, and the harness is not named `*-verify.{sh,py}` so verify-harness-runner does not sweep it either (harness-invocation-surface §A19 — naming that inapplicability out loud rather than leaving it to be read as an oversight). Same shape as set-body-4436.pipe.spec.json and get-body-9de09856.pipe.spec.json, which locked the two siblings in #4443 and #4447. Expectations written BEFORE the run, and the RED state was OBSERVED on the pre-fix bundle with a 605 686-byte asset (stderr captured ALONE, stdout on a separate handle): each of the three delivered only 65 536 bytes of ~605 700 through a pipe (8/8 runs), tail marker absent — ≈89 % lost. ⛔ That byte count is a dated observation, not a property of the commands: the same sources cut at 73 728 on the pre-#4444 bundle, so the durable claim is the MECHANISM (the write stops at whatever the pipe buffer accepted before the exit landed) and the invariant the axes actually assert is that the tail marker never arrives. ⛔ The first pass of that measurement reported ~65 700 for each because the shell form `cmd 2>&1 >/dev/null | cat` leaks stdout into the same pipe under zsh MULTIOS; the harness uses two distinct OS handles so it cannot make that mistake. The harness rebuilds by default so a mutated copy of the tree is measured, not a stale bundle.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "❌ (T\\d+)",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/set-property.ts",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && npx tsx packages/cli/tests/integration/dryrun-4444-pipe.harness.ts 2>&1",
+  "mutants": {
+    "M1_process_exit_after_echo": {
+      "from": "        process.stdout.write(JSON.stringify(output) + \"\\n\");\n",
+      "to": "        process.stdout.write(JSON.stringify(output) + \"\\n\");\n        process.exit(0);\n",
+      "expect": ["T1"],
+      "_note": "Restores the pre-fix pattern: process.exit(0) at the end of the success path. It does not wait for an asynchronous write to drain, and stderr IS asynchronous when it is a pipe — so the unbounded --dry-run preview is cut at the pipe buffer and the fixture's tail marker never arrives. Only T1 reddens, and the rest staying GREEN is what proves the axis measures PIPE DRAINING rather than 'building the preview at all': the FILE control never reaches the buffer, the read-only and real-path axes read the ~150-byte stdout echo, which can never truncate, and the other two commands' twelve axes are untouched — that last part is the per-command isolation this spec exists to show. ⚤ T5 also stays GREEN under this mutant, and that is load-bearing rather than a gap: the exit terminates the process BEFORE the asynchronous EPIPE arrives, which is exactly why the crash only became reachable once the exit was dropped."
+    },
+    "M2_stdio_epipe_guard_removed": {
+      "from": "      guardStdioAgainstClosedReader();\n",
+      "to": "",
+      "expect": ["T5"],
+      "_note": "Removes the EPIPE guard that the exit-less success path requires. process.exit(0) used to terminate the process BEFORE the OS delivered the asynchronous EPIPE a closed reader causes; without the exit AND without this guard, that EPIPE is an unhandled 'error' event — an uncaught exception, rc=1 plus a Node stack trace — on the very scenario the truncation fix exists for (`--dry-run | less`, quit with `q`). Dropping the exit WITHOUT this guard is therefore a net regression, which is why both halves land together (measured on the siblings: origin/main rc=0, the naive exit-less fix rc=1, 5/5 each). Only T5 reddens: every other axis reads its stream to EOF, so none of them can model a reader that leaves."
+    }
+  }
+}

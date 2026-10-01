@@ -272,14 +272,14 @@ npx @kitelev/exocortex-cli index --vault ~/vault --stats
 
 **Options:**
 
-| Option            | Default | Description                                                    |
-| ----------------- | ------- | -------------------------------------------------------------- |
-| `--vault <path>`  | cwd     | Path to Obsidian vault                                         |
-| `--output <type>` | `text`  | Response format: `text` or `json`                              |
-| `--stats`         | off     | Show cache statistics after building                           |
-| `--force`         | off     | Force rebuild even if the cache is valid                       |
-| `--strict`        | off     | Fail on the first invalid IRI instead of skipping              |
-| `--no-inference`  | —       | Disable RDFS `subClassOf` inference materialization            |
+| Option            | Default | Description                                         |
+| ----------------- | ------- | --------------------------------------------------- |
+| `--vault <path>`  | cwd     | Path to Obsidian vault                              |
+| `--output <type>` | `text`  | Response format: `text` or `json`                   |
+| `--stats`         | off     | Show cache statistics after building                |
+| `--force`         | off     | Force rebuild even if the cache is valid            |
+| `--strict`        | off     | Fail on the first invalid IRI instead of skipping   |
+| `--no-inference`  | —       | Disable RDFS `subClassOf` inference materialization |
 
 ### validate
 
@@ -293,15 +293,15 @@ npx @kitelev/exocortex-cli validate <schema|vault> [options]
 
 Check frontmatter properties against the ontology (schema linting), or run SHACL-lite shapes validation with `--shapes-mode`. Exits `1` if violations are found.
 
-| Option            | Default | Description                                                                            |
-| ----------------- | ------- | -------------------------------------------------------------------------------------- |
-| `--vault <path>`  | cwd     | Path to Obsidian vault                                                                 |
-| `--output <type>` | `text`  | Response format: `text` or `json`                                                      |
-| `--staged`        | off     | Only validate git-staged `.md` files (for pre-commit hooks)                            |
-| `--use-cache`     | off     | Use the persistent triple cache                                                        |
-| `--shapes-mode`   | off     | Run SHACL-lite shapes validation instead of schema linting                             |
-| `--format <type>` | `text`  | Shapes-mode output format: `text`, `json`, `earl`                                      |
-| `--class <iri>`   | —       | Only validate assets whose `exo__Instance_class` matches this IRI/slug                 |
+| Option            | Default | Description                                                            |
+| ----------------- | ------- | ---------------------------------------------------------------------- |
+| `--vault <path>`  | cwd     | Path to Obsidian vault                                                 |
+| `--output <type>` | `text`  | Response format: `text` or `json`                                      |
+| `--staged`        | off     | Only validate git-staged `.md` files (for pre-commit hooks)            |
+| `--use-cache`     | off     | Use the persistent triple cache                                        |
+| `--shapes-mode`   | off     | Run SHACL-lite shapes validation instead of schema linting             |
+| `--format <type>` | `text`  | Shapes-mode output format: `text`, `json`, `earl`                      |
+| `--class <iri>`   | —       | Only validate assets whose `exo__Instance_class` matches this IRI/slug |
 
 ```bash
 # Strict SHACL-lite validation of the whole vault
@@ -350,7 +350,7 @@ npx @kitelev/exocortex-cli create --class ztlk__PermanentNote --label "My Note" 
 | `--body <text>`              | —             | Markdown body content (use `-` to read from stdin)                                                                                            |
 | `--body-file <path>`         | —             | Read body content from a file                                                                                                                 |
 | `--dry-run`                  | off           | Preview the exact file content (stderr) without writing                                                                                       |
-| `--created-by <uuid>`        | —             | Creator UUID                                                                                                                                  |
+| `--created-by <uuid>`        | —             | Creator UUID; refused when it has no file in the vault (#4448)                                                                                |
 | `--timezone <tz>`            | `Asia/Almaty` | Timezone for timestamps                                                                                                                       |
 | `--skip-wikilink-validation` | off           | Skip wikilink existence validation                                                                                                            |
 | `--validate`                 | off           | SHACL-lite conformance gate BEFORE writing (refuses a non-conformant asset)                                                                   |
@@ -424,7 +424,7 @@ generate-items | npx @kitelev/exocortex-cli create-batch - --vault ~/vault --dry
 | `<file>`                     | **required**  | The JSON file, or `-` for stdin (read to the end, no time limit; a terminal is refused) |
 | `--vault <path>`             | cwd           | Path to Obsidian vault                                                                  |
 | `--dry-run`                  | off           | Plan and validate every item, preview each one's exact bytes (stderr), write nothing    |
-| `--created-by <uuid>`        | —             | Creator for items that set no `createdBy`                                               |
+| `--created-by <uuid>`        | —             | Creator for items that set no `createdBy`; must exist (#4448)                           |
 | `--timezone <tz>`            | `Asia/Almaty` | Timezone for timestamps                                                                 |
 | `--skip-wikilink-validation` | off           | Skip wikilink existence validation                                                      |
 | `--yes`                      | —             | Accepted for symmetry (no-op)                                                           |

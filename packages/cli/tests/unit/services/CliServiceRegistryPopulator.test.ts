@@ -46,6 +46,17 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => {
   // never invokes the service body, so a shape stub is sufficient for the
   // transitive import to resolve under ESM mocking.
   const extractAssetReference = (_value: unknown): string | null => null;
+  // #4473: `rewriteFrontmatterScalars` (the duplicateAsset factory in
+  // `@kitelev/exocortex-services`) now asks the SHARED frontmatter predicate
+  // instead of carrying its own regex, so `matchFrontmatterBlock` is imported
+  // at module-evaluation time through this same mocked specifier. The
+  // deps-omitted path tested here never invokes the factory body, so a shape
+  // stub returning null ("content opens with no block") is sufficient for the
+  // transitive import to resolve under ESM mocking. ⛔ A manual factory must
+  // name every export its consumers import — a missing one is a link-time
+  // `SyntaxError: ... does not provide an export named ...`, not a silent
+  // undefined.
+  const matchFrontmatterBlock = (_content: string): null => null;
   return {
     ServiceRegistry,
     FrontmatterService,
@@ -53,6 +64,7 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => {
     DateFormatter,
     iriToVaultPath,
     extractAssetReference,
+    matchFrontmatterBlock,
   };
 });
 

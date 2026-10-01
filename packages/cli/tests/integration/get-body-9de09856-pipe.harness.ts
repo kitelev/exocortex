@@ -35,14 +35,18 @@
  *      channel and the real bytes
  *   P5 a small body still arrives complete (guards against a fix that only works
  *      above the buffer threshold)
+ *   P6 a reader that LEAVES EARLY (`| head -c 200`, `| less` quit with `q`) still
+ *      gets rc=0 and no EPIPE stack trace — the OTHER half of dropping
+ *      process.exit(0), shipped in #4447
  *
  * Prints `✅ P<n>` / `❌ P<n>` per axis and `PASS=<n> FAIL=<n>`; exit 1 on failure.
  */
-import { spawnSync } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { fileURLToPath } from "url";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { prepareBundleOrExit, runAxes } from "./helpers/pipe-harness-guards.js";
 
 // fileURLToPath, not new URL().pathname — the latter is not percent-decoded, so a
 // tree path containing a space would resolve wrongly (round-2 review LOW).
@@ -50,13 +54,11 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PKG = path.resolve(HERE, "../..");
 const TREE = path.resolve(CLI_PKG, "../..");
 
-const argv = process.argv.slice(2);
-const distFlag = argv.indexOf("--dist");
-const DIST =
-  distFlag >= 0
-    ? path.resolve(argv[distFlag + 1])
-    : path.join(CLI_PKG, "dist/index.js");
-const NO_BUILD = argv.includes("--no-build");
+// `[--dist <index.js>] [--no-build]`, the rebuild, and the refusal to measure a
+// bundle older than what it was built from all live in the shared guard module
+// (issue #4464) — before it, `--no-build` checked only that the file existed, so
+// a stale bundle was measured in silence (harness-invocation-surface §A8).
+const DIST = prepareBundleOrExit(process.argv.slice(2), CLI_PKG);
 
 let pass = 0;
 let fail = 0;
@@ -68,22 +70,6 @@ const bad = (name: string, msg: string): void => {
   fail += 1;
   console.log(`❌ ${name} — ${msg}`);
 };
-
-/** Rebuild so a MUTATED copy of the tree is measured, not a stale bundle. */
-if (!NO_BUILD) {
-  const r = spawnSync("npm", ["run", "build", "-w", "@kitelev/exocortex-cli"], {
-    cwd: TREE,
-    encoding: "utf-8",
-  });
-  if (r.status !== 0) {
-    console.log(`❌ BUILD — rc=${r.status}\n${(r.stderr || "").slice(-2000)}`);
-    process.exit(1);
-  }
-}
-if (!fs.existsSync(DIST)) {
-  console.log(`❌ BUILD — no bundle at ${DIST}`);
-  process.exit(1);
-}
 
 // ---- fixture vault ---------------------------------------------------------
 const vault = fs.mkdtempSync(path.join(os.tmpdir(), "gb-pipe-"));
@@ -138,92 +124,172 @@ function runPiped(args: string[]): { rc: number; out: Buffer; err: string } {
   };
 }
 
-// ---- P1: big body through a PIPE ------------------------------------------
-{
-  const r = runPiped(["get-body", bigRel, "--vault", vault]);
-  const got = r.out.length;
-  if (r.rc !== 0) bad("P1", `rc=${r.rc}; stderr=${r.err.slice(-300)}`);
-  else if (got !== expectedBig)
-    bad(
-      "P1",
-      `pipe delivered ${got} of ${expectedBig} bytes (${((100 * (expectedBig - got)) / expectedBig).toFixed(1)}% lost)`,
+// tsx transpiles this harness to CJS, where top-level await is unavailable — P6 and
+// the verdict live in an async IIFE so the summary still prints AFTER the last axis.
+// The axes sit in their own function so the temp tree is removed from a
+// `finally` (issue #4464): cleanup used to be the IIFE's last statement, so a
+// throwing axis leaked the directory under os.tmpdir().
+async function axes(): Promise<void> {
+  // ---- P1: big body through a PIPE ------------------------------------------
+  {
+    const r = runPiped(["get-body", bigRel, "--vault", vault]);
+    const got = r.out.length;
+    if (r.rc !== 0) bad("P1", `rc=${r.rc}; stderr=${r.err.slice(-300)}`);
+    else if (got !== expectedBig)
+      bad(
+        "P1",
+        `pipe delivered ${got} of ${expectedBig} bytes (${((100 * (expectedBig - got)) / expectedBig).toFixed(1)}% lost)`,
+      );
+    else if (!r.out.toString("utf-8").includes(TAIL_MARKER))
+      bad("P1", "length matches but the tail marker is missing");
+    else ok("P1", `${got} bytes through a pipe, tail intact`);
+  }
+
+  // ---- P2: control — same body through a FILE redirect ----------------------
+  {
+    const outFile = path.join(vault, "big.out");
+    const fd = fs.openSync(outFile, "w");
+    const r = spawnSync(
+      process.execPath,
+      [DIST, "get-body", bigRel, "--vault", vault],
+      {
+        cwd: TREE,
+        stdio: ["ignore", fd, "pipe"],
+        timeout: 120_000,
+      },
     );
-  else if (!r.out.toString("utf-8").includes(TAIL_MARKER))
-    bad("P1", "length matches but the tail marker is missing");
-  else ok("P1", `${got} bytes through a pipe, tail intact`);
-}
+    fs.closeSync(fd);
+    const got = fs.statSync(outFile).size;
+    if (r.status !== 0) bad("P2", `rc=${r.status}`);
+    else if (got !== expectedBig)
+      bad("P2", `file got ${got} of ${expectedBig}`);
+    else ok("P2", `${got} bytes to a file (control)`);
+  }
 
-// ---- P2: control — same body through a FILE redirect ----------------------
-{
-  const outFile = path.join(vault, "big.out");
-  const fd = fs.openSync(outFile, "w");
-  const r = spawnSync(process.execPath, [DIST, "get-body", bigRel, "--vault", vault], {
-    cwd: TREE,
-    stdio: ["ignore", fd, "pipe"],
-    timeout: 120_000,
-  });
-  fs.closeSync(fd);
-  const got = fs.statSync(outFile).size;
-  if (r.status !== 0) bad("P2", `rc=${r.status}`);
-  else if (got !== expectedBig) bad("P2", `file got ${got} of ${expectedBig}`);
-  else ok("P2", `${got} bytes to a file (control)`);
-}
-
-// ---- P3: --json through a PIPE parses and matches the raw form ------------
-{
-  const r = runPiped(["get-body", bigRel, "--vault", vault, "--json"]);
-  if (r.rc !== 0) bad("P3", `rc=${r.rc}`);
-  else {
-    try {
-      const parsed = JSON.parse(r.out.toString("utf-8")) as {
-        bodyBytes: number;
-        body: string;
-      };
-      if (parsed.bodyBytes !== expectedBig)
-        bad("P3", `bodyBytes ${parsed.bodyBytes} != ${expectedBig}`);
-      else if (parsed.body !== bigBody)
-        bad("P3", "parsed body differs from the fixture body");
-      else ok("P3", `--json complete and parseable (${parsed.bodyBytes} bytes)`);
-    } catch (e) {
-      bad("P3", `--json did not parse through a pipe: ${(e as Error).message}`);
+  // ---- P3: --json through a PIPE parses and matches the raw form ------------
+  {
+    const r = runPiped(["get-body", bigRel, "--vault", vault, "--json"]);
+    if (r.rc !== 0) bad("P3", `rc=${r.rc}`);
+    else {
+      try {
+        const parsed = JSON.parse(r.out.toString("utf-8")) as {
+          bodyBytes: number;
+          body: string;
+        };
+        if (parsed.bodyBytes !== expectedBig)
+          bad("P3", `bodyBytes ${parsed.bodyBytes} != ${expectedBig}`);
+        else if (parsed.body !== bigBody)
+          bad("P3", "parsed body differs from the fixture body");
+        else
+          ok("P3", `--json complete and parseable (${parsed.bodyBytes} bytes)`);
+      } catch (e) {
+        bad(
+          "P3",
+          `--json did not parse through a pipe: ${(e as Error).message}`,
+        );
+      }
     }
+  }
+
+  // ---- P4: round trip over a real pipe on a >64 KiB body --------------------
+  {
+    const got = runPiped(["get-body", bigRel, "--vault", vault]);
+    const bodyFile = path.join(vault, "rt-body.md");
+    fs.writeFileSync(bodyFile, got.out);
+    const before = fs.readFileSync(path.join(vault, bigRel));
+    const back = runPiped([
+      "set-body",
+      bigRel,
+      "--vault",
+      vault,
+      "--body-file",
+      bodyFile,
+      "--skip-wikilink-validation",
+    ]);
+    const after = fs.readFileSync(path.join(vault, bigRel));
+    const echo = back.out.toString("utf-8");
+    if (back.rc !== 0)
+      bad("P4", `set-body rc=${back.rc}; ${back.err.slice(-300)}`);
+    else if (!echo.includes('"changed":false'))
+      bad("P4", `round trip modified the asset: ${echo.trim().slice(0, 200)}`);
+    else if (!before.equals(after))
+      bad("P4", "file changed although changed:false");
+    else ok("P4", "round trip over a real pipe is a no-op on a 300 KiB body");
+  }
+
+  // ---- P5: small body still complete ----------------------------------------
+  {
+    const r = runPiped(["get-body", smallRel, "--vault", vault]);
+    const want = Buffer.byteLength(smallBody, "utf8");
+    if (r.rc !== 0) bad("P5", `rc=${r.rc}`);
+    else if (r.out.length !== want)
+      bad("P5", `small body got ${r.out.length} of ${want}`);
+    else ok("P5", `${want} bytes (below the buffer threshold)`);
+  }
+
+  // ---- P6: a reader that LEAVES EARLY must not turn rc 0 into a crash --------
+  // The other half of "no process.exit(0)" (#4447; #4434 landed only the first).
+  // The exit used to terminate the process synchronously, BEFORE the OS delivered
+  // the asynchronous EPIPE that a closed reader causes. Without it AND without
+  // guardStdioAgainstClosedReader(), that EPIPE is an unhandled 'error' event on
+  // stdout — an uncaught exception: rc=1 plus a stack trace, on the very channel
+  // this command documents (`get-body <p> | head -c 200`). Measured on the built
+  // bundle, 549 528-byte body: reader-to-EOF rc=0 (549 528 B); reader leaving after
+  // 200 B WITHOUT the guard rc=1 + "Error: write EPIPE" 5/5; the already-guarded
+  // sibling `set-body --dry-run` on the same invocation rc=0 3/3 (canary: the probe
+  // itself is sound, the guard is the differentiator). This axis reddens when the
+  // guard call is removed.
+  {
+    const rc = await new Promise<number | string>((done) => {
+      const child = spawn(
+        process.execPath,
+        [DIST, "get-body", bigRel, "--vault", vault],
+        { cwd: TREE, stdio: ["ignore", "pipe", "pipe"] },
+      );
+      let seen = 0;
+      let stderrText = "";
+      // ⛔ A timeout, not hygiene: natural termination is exactly what this harness
+      // measures, so a subject that HANGS is an expected failure mode — and without
+      // a timeout the harness hangs with it, which is indistinguishable from "the
+      // axis does not differentiate" (integration-test-revert-verify §A70/§A116).
+      const killer = setTimeout(() => {
+        child.kill("SIGKILL");
+        done("timeout");
+      }, 120_000);
+      child.stderr.on("data", (chunk: Buffer) => {
+        stderrText += chunk.toString("utf-8");
+      });
+      child.stdout.on("data", (chunk: Buffer) => {
+        seen += chunk.length;
+        // Leave once a prefix has been read — exactly what `| head -c 200` or a
+        // reader quitting `less` does to the writer still mid-body.
+        if (seen >= 200) child.stdout.destroy();
+      });
+      child.on("close", (code) => {
+        clearTimeout(killer);
+        done(
+          code === 0 && /EPIPE|Unhandled 'error'/.test(stderrText)
+            ? "epipe-trace"
+            : (code ?? -1),
+        );
+      });
+    });
+    if (rc === 0)
+      ok("P6", "reader left after 200 bytes — rc=0, no EPIPE crash");
+    else if (rc === "timeout")
+      bad("P6", "the process hung after the reader left");
+    else if (rc === "epipe-trace")
+      bad("P6", "rc=0 but an EPIPE stack trace reached the user");
+    else
+      bad(
+        "P6",
+        `rc=${rc} — an early-closing reader crashes the command (the guard is what keeps it 0)`,
+      );
   }
 }
 
-// ---- P4: round trip over a real pipe on a >64 KiB body --------------------
-{
-  const got = runPiped(["get-body", bigRel, "--vault", vault]);
-  const bodyFile = path.join(vault, "rt-body.md");
-  fs.writeFileSync(bodyFile, got.out);
-  const before = fs.readFileSync(path.join(vault, bigRel));
-  const back = runPiped([
-    "set-body",
-    bigRel,
-    "--vault",
-    vault,
-    "--body-file",
-    bodyFile,
-    "--skip-wikilink-validation",
-  ]);
-  const after = fs.readFileSync(path.join(vault, bigRel));
-  const echo = back.out.toString("utf-8");
-  if (back.rc !== 0) bad("P4", `set-body rc=${back.rc}; ${back.err.slice(-300)}`);
-  else if (!echo.includes('"changed":false'))
-    bad("P4", `round trip modified the asset: ${echo.trim().slice(0, 200)}`);
-  else if (!before.equals(after)) bad("P4", "file changed although changed:false");
-  else ok("P4", "round trip over a real pipe is a no-op on a 300 KiB body");
-}
-
-// ---- P5: small body still complete ----------------------------------------
-{
-  const r = runPiped(["get-body", smallRel, "--vault", vault]);
-  const want = Buffer.byteLength(smallBody, "utf8");
-  if (r.rc !== 0) bad("P5", `rc=${r.rc}`);
-  else if (r.out.length !== want)
-    bad("P5", `small body got ${r.out.length} of ${want}`);
-  else ok("P5", `${want} bytes (below the buffer threshold)`);
-}
-
-fs.rmSync(vault, { recursive: true, force: true });
-console.log(`PASS=${pass} FAIL=${fail}`);
-process.exitCode = fail > 0 ? 1 : 0;
+void (async (): Promise<void> => {
+  await runAxes([vault], axes);
+  console.log(`PASS=${pass} FAIL=${fail}`);
+  process.exitCode = fail > 0 ? 1 : 0;
+})();

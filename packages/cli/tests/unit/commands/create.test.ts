@@ -11,6 +11,16 @@ const {
 } = await import("../../../../core/src/services/NoteToRDFConverter.js");
 
 // Mock uuid (transitively a GenericAssetCreationService dependency)
+// #4461: the block predicate now lives in core and the SUT imports it from the
+// barrel, so this explicit-export mock must provide it. Imported from SOURCE,
+// like `parseYamlFrontmatterTolerant` above/below: a stub would answer "no
+// block" and the mock would stop mirroring production (test-fixture-realism).
+import {
+  matchFrontmatterBlock,
+  frontmatterBlockBody,
+  leadingBomLength,
+} from "../../../../core/src/utilities/frontmatterBlock.js";
+
 jest.unstable_mockModule("uuid", () => ({
   v4: jest.fn(() => "mock-uuid"),
 }));
@@ -19,6 +29,9 @@ jest.unstable_mockModule("uuid", () => ({
 // The create command's action is not exercised here (only option registration),
 // so a stub service class is enough to satisfy the ESM named-import binding.
 jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
+  matchFrontmatterBlock,
+  frontmatterBlockBody,
+  leadingBomLength,
   DateFormatter: { toLocalTimestamp: jest.fn(() => "2026-03-23T12:00:00") },
   MetadataHelpers: { buildFileContent: jest.fn(() => "---\n---\n") },
   GenericAssetCreationService: class GenericAssetCreationService {},

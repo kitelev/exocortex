@@ -563,8 +563,16 @@ Body`;
       const content = "---\r\nfoo: bar\r\nstatus: draft\r\n---\r\nBody";
       const result = service.parse(content);
 
-      // The regex expects \n, so CRLF won't match
-      expect(result.exists).toBe(false);
+      // ⛔ FLIPPED by #4469 (req 2d072437-c19d-49a4-ae89-f20b6185571f). This
+      // assertion used to read `toBe(false)` with the comment "the regex expects
+      // \n, so CRLF won't match" — it PINNED the defect: `updateProperty` then
+      // decided "no block here" and PREPENDED a second one, leaving the original
+      // frontmatter as body text. The class now recognises the block through
+      // core's shared `matchFrontmatterBlock`, so a CRLF asset is seen, and the
+      // body comes back verbatim — terminators included, which is what lets the
+      // rewrite keep the file's own line-ending style.
+      expect(result.exists).toBe(true);
+      expect(result.content).toBe("foo: bar\r\nstatus: draft");
     });
 
     it("should handle unicode characters in values", () => {

@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "fs";
 import { FrontmatterService } from "@kitelev/exocortex-core";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
+import { guardStdioAgainstClosedReader } from "../utils/stdioClosedReader.js";
 
 interface GetBodyOptions {
   vault: string;
@@ -47,6 +48,22 @@ export function getBodyCommand(): Command {
       "Print {path, bodyBytes, body} as JSON instead of the raw body",
     )
     .action(async (pathArg: string, options: GetBodyOptions) => {
+      // ⛔ FIRST statement of the action, and the second half of "no
+      // process.exit(0)" below (#4447). #4434 landed only the first half: the exit
+      // used to terminate the process synchronously, BEFORE the OS delivered the
+      // asynchronous EPIPE that a reader closing its end mid-write causes. Without
+      // the exit AND without this guard, that EPIPE is an unhandled 'error' event
+      // on stdout — an uncaught exception: rc=1 plus a Node stack trace printed to
+      // the user, on the very channel this command documents
+      // (`get-body <p> | head -c 200`, `| less` quit with `q`). Measured on the
+      // built bundle with a 549 528-byte body:
+      //     reader reads to EOF                  rc=0, 549 528 bytes
+      //     reader leaves after 200 B, no guard  rc=1 + "Error: write EPIPE"  5/5
+      //     `set-body` (guard shipped in #4443)  rc=0                         3/3
+      // Locked by the real-pipe axis P6 in get-body-9de09856-pipe.harness.ts; the
+      // jest axes CANNOT see it (they mock process.stdout.write, so no pipe and no
+      // reader ever exist — integration-test-revert-verify §A66).
+      guardStdioAgainstClosedReader();
       try {
         const vaultPath = resolve(options.vault);
         if (!existsSync(vaultPath)) {
@@ -82,7 +99,8 @@ export function getBodyCommand(): Command {
 
         const fm = new FrontmatterService();
         const parsed = fm.parse(original);
-        if (!parsed.exists) {
+        const leading = FrontmatterService.leadingBlock(original);
+        if (!parsed.exists || !leading) {
           throw new Error(
             `No frontmatter block found in ${vaultRelative}; get-body prints the body that FOLLOWS the frontmatter block.`,
           );
@@ -107,17 +125,26 @@ export function getBodyCommand(): Command {
           );
         }
 
-        // The body is whatever follows the frontmatter block. The block is
-        // reconstructed exactly as FRONTMATTER_REGEX matched it
-        // (`---\n<yaml>\n---`, the trailing newline NOT captured), which is the
-        // same reconstruction set-body writes back — that identity is what makes
-        // the round trip a no-op rather than an approximation.
-        const frontmatterBlock = `---\n${parsed.content}\n---`;
-        const afterBlock = original.slice(frontmatterBlock.length);
-        // Drop the single separator newline set-body puts between the block and
-        // the body (tolerating CRLF, which set-body normalises to LF on write).
-        // A file ending right at the closing `---` has no separator and no body.
-        const body = afterBlock.replace(/^\r?\n/, "");
+        // The body is whatever follows the frontmatter block, and where the
+        // block ENDS is asked of the one accessor that knows
+        // (`FrontmatterService.leadingBlock`, #4469).
+        //
+        // ⛔ This used to slice by the LENGTH of a hand-rebuilt
+        // `` `---\n${parsed.content}\n---` ``. That length equals the real one
+        // only for an LF file with no BOM, so once #4469 widened `parse()` the
+        // reader started printing part of its own frontmatter as body. Measured
+        // on the branch dist before this fix, body = `"THE REAL BODY"`:
+        //   CRLF     → `"--\r\nTHE REAL BODY"`   (two dashes of the fence leaked)
+        //   lone-CR  → `"\rTHE REAL BODY"`
+        //   3×BOM    → `"---\nTHE REAL BODY"`     (the whole closing fence)
+        // and every one of them exited 0, so a consumer piping `get-body` into
+        // another command had no way to notice.
+        const afterBlock = original.slice(leading.end);
+        // Drop the single separator that set-body puts between the block and the
+        // body — spaces/tabs the closing fence may trail, then ONE line ending in
+        // any of the three forms. A file ending right at the closing `---` has
+        // neither separator nor body.
+        const body = afterBlock.replace(/^[^\S\r\n]*(?:\r\n|\r|\n)/, "");
 
         if (options.json) {
           process.stdout.write(
@@ -159,6 +186,12 @@ export function getBodyCommand(): Command {
         // process.exit, so no pipe and no flush is ever exercised
         // (integration-test-revert-verify §A66 — the axes judge an intermediate
         // record, the product is the DELIVERED effect).
+        //
+        // ⛤ Dropping the exit is only HALF the fix: it also stops terminating the
+        // process before an asynchronous EPIPE can arrive. The paired half is
+        // guardStdioAgainstClosedReader() at the top of this action (#4447) —
+        // without it this command exits 1 with a stack trace whenever the reader
+        // leaves early, which is ordinary use of a pipe.
       } catch (error) {
         ErrorHandler.handle(error as Error);
       }

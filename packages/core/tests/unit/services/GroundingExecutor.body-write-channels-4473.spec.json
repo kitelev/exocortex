@@ -1,0 +1,48 @@
+{
+  "_doc": "Revert-verify mutants for #4473 — `GroundingExecutor`'s BODY write channels (`replaceBody` / `extractBody`, reached by the `body_template` grounding step and by `create_instance`'s `cloneTargetBody` + `userInput.body` literal path). Run from the repo root after replacing the path placeholders: python3 -I ~/.claude/bin/mutant-driver.py <this file>. Axis names are A<N>, matching the test titles.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/GroundingExecutor.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../..\" && node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/services/GroundingExecutor.body-write-channels-4473.test.ts --verbose 2>&1",
+  "red_re": "›\\s+(A\\d+[a-z]?)\\s",
+  "_note_control_axes": "A4 (LF byte-parity) and A7/A8/A9 carry NO mutant of their own BY DESIGN, and that is their product rather than a hole (integration-test-revert-verify §A118). A4's subject is that the conversion changed NOTHING on the LF path, so a mutant restoring the pre-#4473 implementation must leave it GREEN — its silence under M1/M2/M3 IS the parity proof. A7/A8 are the same statement for `extractBody` (CRLF/LF were already correct before the fix). A9 pins the pre-existing `req 454ccedf` axis B8 contract (a frontmatter-less target invents no block), which this work item did not change either.",
+  "mutants": {
+    "M1_replaceBody_restores_the_local_narrow_predicate": {
+      "from": "    const leading = FrontmatterService.leadingBlock(content);\n    if (!leading) return body;\n    return `${leading.text}${leading.eol}${body}`;",
+      "to": "    const m = content.match(/^---\\r?\\n[\\s\\S]*?\\r?\\n---/);\n    const leading = m\n      ? {\n          text: m[0],\n          eol: content.startsWith(\"\\r\\n\", 3) ? \"\\r\\n\" : \"\\n\",\n          end: m[0].length,\n        }\n      : null;\n    if (!leading) return body;\n    return `${leading.text}${leading.eol}${body}`;",
+      "expect": ["A1", "A2", "A10"],
+      "_note": "The IDENTITY-LOSS half of #4473, isolated: the seam logic is kept intact so only the PREDICATE narrows. `\\r?\\n` needs at least one `\\n` and `^---` cannot reach past a BOM, so a lone-CR / BOM asset falls into `return body` and the file loses its frontmatter. A3 (the CRLF seam) must stay GREEN here — that is what makes this mutant's red set distinguishable from M2's. ⛤ This mutant is also what proved A10 was VACUOUS for the identity defect on its first run: the round trip CLOSED on the corrupted asset, because a frontmatter-less intermediate makes `extractBody` return the whole file, so `extractBody(replaceBody(x)) === x` held while the asset's identity was gone. A10 now asserts the trip happens on an ASSET, which is why it is in this expect-set at all."
+    },
+    "M2_replaceBody_restores_the_bare_LF_seam": {
+      "from": "    return `${leading.text}${leading.eol}${body}`;",
+      "to": "    return `${leading.text}${\"\\n\"}${body}`;",
+      "expect": ["A3"],
+      "_note": "The SEAM half, isolated: the predicate stays shared (so A1/A2 keep their frontmatter) and only the inserted line ending reverts to an unconditional LF — the mixed-terminator defect on every CRLF asset. Type-preserving: still a template literal of three string parts."
+    },
+    "M3_extractBody_restores_the_local_narrow_predicate": {
+      "from": "    const leading = FrontmatterService.leadingBlock(content);\n    if (!leading) return content;\n    return content\n      .slice(leading.end)\n      .replace(GroundingExecutor.LEADING_EOL, \"\");",
+      "to": "    const m = content.match(/^---\\r?\\n[\\s\\S]*?\\r?\\n---/);\n    if (!m) return content;\n    return content.slice(m[0].length).replace(/^\\r?\\n/, \"\");",
+      "expect": ["A5", "A6", "A10"],
+      "_note": "The mirror defect: with no match the WHOLE source file is returned as `the body`, so `cloneTargetBody` copies the source's frontmatter INTO the clone's body. This is why A5/A6 assert on the BODY half specifically — a whole-file `toContain(\"exo__Asset_uid\")` is satisfied by the corruption itself."
+    },
+    "M4_extractBody_slices_by_the_reconstruction_length": {
+      "from": "      .slice(leading.end)",
+      "to": "      .slice(leading.text.length)",
+      "expect": ["A6"],
+      "_note": "`end` is the offset in the ORIGINAL string; `text.length` is the length of a block whose BOM RUN was normalised to one. They differ by exactly the collapsed bytes, so a 2-BOM source leaks a dash of the closing fence into the body — the defect `get-body` shipped before #4469. Reddens A6 ALONE: with a 0- or 1-BOM source the two values coincide, which is why A10's BOM leg (one BOM) stays green and the axis is adressed rather than ambient."
+    },
+    "M5_leading_eol_cannot_strip_a_lone_CR": {
+      "from": "  private static readonly LEADING_EOL = /^(?:\\r\\n|\\r|\\n)/;",
+      "to": "  private static readonly LEADING_EOL = /^\\r?\\n/;",
+      "expect": ["A5", "A10"],
+      "_note": "The third, quietest half: even with the right predicate and the right offset, `/^\\r?\\n/` cannot swallow a lone-CR seam (it is indivisible and needs an `\\n`), so the separator stays glued to the first body line. Only a BYTE-EXACT body assertion sees this — a `toContain` would not, which is why A5/A6 were tightened to `toBe`."
+    }
+  }
+}

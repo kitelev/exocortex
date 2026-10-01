@@ -1,0 +1,65 @@
+{
+  "_doc": "§A117 MIGRATION. #4461 moved `FileSystemVaultAdapter`'s block predicate into core; the four mutants that anchored into the deleted in-class copy (M1/M2/M4/M6 of issue-4441-crlf-bom.adapter.spec.json) travel WITH the guard rather than being deleted — otherwise req c05a3565's axes would keep only a wiring proof and lose the proof of the predicate's own strength on the CLI surface. Subject is core, harness is the CLI's B-axes: that pairing is exactly what no existing spec covers (#4458's core spec runs the PLUGIN's axes). ⛔ The CORE FILE IS NOT EDITED by this work item — the driver mutates a COPY (ZERO-GIT-TOUCH).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/utilities/frontmatterBlock.ts",
+  "harness": "cd \"$(dirname {subject})/../../../cli\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/issue-4441-crlf-bom-frontmatter.integration.test.ts --verbose 2>&1",
+  "red_re": "› (?:@req:[0-9a-f-]+ )?(B\\d+)[: ]",
+  "mutants": {
+    "M1_fences_back_to_literal_lf": {
+      "from": "const OPENING_FENCE = /^---(?:\\r\\n|\\r|\\n)/;\nconst CLOSING_FENCE = /(?:\\r\\n|\\r|\\n)---/;\n",
+      "to": "const OPENING_FENCE = /^---\\n/;\nconst CLOSING_FENCE = /\\n---/;\n",
+      "expect": [
+        "B1",
+        "B3",
+        "B4",
+        "B9",
+        "B11",
+        "B15",
+        "B18",
+        "B19",
+        "B21",
+        "B22",
+        "B23"
+      ],
+      "_note": "MIGRATED from issue-4441-crlf-bom.adapter.spec.json M1 when the predicate moved to core (#4461). Same guard, same carrier-independent expectation: only the CRLF axes redden, the BOM skip is untouched, so BOM+LF shapes stay green — the asymmetry that proves the two halves are separately load-bearing.\n⚤ EXPECTATION WIDENED by req 74419202 (#4452), reason recorded rather than filled in silently (§A44): this mutant returns the predicate to a LITERAL `\\n`, so it now also reverts the lone-CR half that #4452 added — B15/B18/B19/B21/B22/B23 are that half's axes. The BOM skip is still untouched, so every BOM axis stays green, which is the asymmetry the original note claims as this mutant's product and it survives the widening.\n⚤ ANCHOR RE-MIGRATED (same work item, review round 2): the predicate became TWO patterns so one physical CRLF cannot serve both fences — the over-widening this req first introduced and its own review caught. Same guard (fences back to a literal `\\n`), both halves now."
+    },
+    "M2_bom_never_skipped": {
+      "from": "  let n = 0;\n  while (content.charCodeAt(n) === 0xfeff) n += 1;\n  return n;\n",
+      "to": "  return 0;\n",
+      "expect": [
+        "B2",
+        "B5",
+        "B9",
+        "B10",
+        "B13",
+        "B14",
+        "B16",
+        "B17",
+        "B20",
+        "B23",
+        "B25"
+      ],
+      "_note": "MIGRATED from the adapter spec's M2 when the predicate moved to core (#4461). Every BOM axis reddens; the pure-CRLF and pure-LF axes stay green.\n⛔ CORRECTION, recorded rather than smoothed: the first draft of this note dropped B17 from the inherited expectation and argued that after #4461 core's `bomLength` «no longer governs the no-block insert branch», since that branch keeps its own one-expression offset. The PROGN disagreed — B17 reddens. The reasoning was right about the WRITE and wrong about the axis: B17 also READS THE FILE BACK (`getFrontmatter` after `updateFrontmatter`), and the read-back goes through core. So B17 has TWO independent guards, and they are not redundant — this one covers «the inserted block is still findable», the adapter spec's M7 covers «the block is inserted AFTER the byte». Type-preserving (still returns a number).\n⚤ EXPECTATION WIDENED by req 74419202 (#4452): returning 0 now also reverts the BOM-RUN half, so the N-BOM axes B16/B20/B23/B25 join the single-BOM ones. Pure-CRLF and pure-LF axes stay green, unchanged."
+    },
+    "M4_write_path_drops_the_bom": {
+      "from": "    blockStart: bom,\n",
+      "to": "    blockStart: 0,\n",
+      "expect": ["B10", "B20"],
+      "_note": "MIGRATED from the adapter spec's M4. Keeps the BOM out of the MATCH but lets the splice start at 0, so an unrelated property write silently eats the byte. Narrow by construction: only the BOM round-trip axis can see it.\n⚤ EXPECTATION WIDENED by req 74419202 (#4452), and this mutant got STRONGER rather than stale: the write path was re-keyed onto `existing.blockStart > 0` precisely so that reporting 0 still eats the byte (the alternative — a fresh `leadingBomLength(content)` probe in the write path — would have made this mutant vacuous). B20 is the N-BOM round-trip axis, which sees the same loss."
+    },
+    "M6_predicate_loses_its_start_anchor": {
+      "from": "const OPENING_FENCE = /^---(?:\\r\\n|\\r|\\n)/;\nconst CLOSING_FENCE = /(?:\\r\\n|\\r|\\n)---/;\n",
+      "to": "const OPENING_FENCE = /---(?:\\r\\n|\\r|\\n)/;\nconst CLOSING_FENCE = /(?:\\r\\n|\\r|\\n)---/;\n",
+      "expect": ["B7", "B24"],
+      "_note": "MIGRATED from the adapter spec's M6. Guards the OVER-WIDENING direction: without `^` a `---` fence inside a code block in the BODY is read as frontmatter (B7), and the `---` after a DOUBLED BOM matches too, so B16's pin flips (that second effect was not predicted in the original spec either — §A44 — and is recorded rather than smoothed).\n⚤ `to` REPAIRED by req 74419202 (#4452) — the mutant, not the expectation. Its old `to` (`/---\\r?\\n…/`) removed the anchor AND reverted the fences to `\\r?\\n` in one step, so after #4452 it was a MIXED mutant: the lone-CR axes reddened for the second reason, while B16 fell out (it no longer pins «double BOM invisible» — it now asserts the opposite) and the new lone-CR over-widening control was never reached, because a CR fence did not match at all. Restoring a single-concern mutant (anchor only, three forms kept) puts the subject back: measured, it reddens EXACTLY the two over-widening controls B7 and B24, and nothing else.\n⚤ ANCHOR RE-MIGRATED (review round 2): `^` dropped from the OPENING pattern, the three forms kept — still single-concern."
+    }
+  }
+}
