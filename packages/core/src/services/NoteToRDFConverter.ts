@@ -11,6 +11,10 @@ import { RDFVocabularyMapper } from "../infrastructure/rdf/RDFVocabularyMapper";
 import { NullLogger } from "../infrastructure/NullLogger";
 import { vaultPathToIRI } from "../infrastructure/vault/iri";
 import {
+  matchFrontmatterBlock,
+  leadingBomLength,
+} from "../utilities/frontmatterBlock";
+import {
   Exo003Parser,
   Exo003MetadataType,
   type Exo003AnchorMetadata,
@@ -325,7 +329,34 @@ export class NoteToRDFConverter {
    * const triples = await converter.convertNote(file);
    * ```
    */
-  async convertNote(file: IFile): Promise<Triple[]> {
+  /**
+   * @param resolvedFrontmatter - frontmatter the CALLER has already resolved
+   *   through the same tier this method would use. Passing it skips a second,
+   *   identical resolution (on a cold metadataCache that is a second full disk
+   *   read of the same file); omitting it keeps the previous behaviour exactly.
+   *
+   *   ⛔ `undefined` means "not supplied", `null` means "resolved, and there is
+   *   none" — they are NOT interchangeable: collapsing them would make a
+   *   genuinely frontmatter-less file trigger a fresh resolution on every call.
+   *
+   *   ⛤ Why the parameter instead of the loop calling
+   *   `convertNoteFromFrontmatter` directly: `convertNote` is the seam two
+   *   already-merged requirements measure re-parsing through
+   *   (`jest.spyOn(NoteToRDFConverter.prototype, "convertNote")` — req
+   *   `42812747` cache-manifest delta, req `cb707868` `--use-cache`
+   *   write-through). Moving the vault walk off that seam left both of them
+   *   counting zero while the loader was working perfectly — 7 green-looking
+   *   axes that had silently stopped measuring anything. Their assertions read
+   *   `mock.calls[i][0].path`, so an added SECOND argument is invisible to
+   *   them, while a changed call site is not.
+   */
+  async convertNote(
+    file: IFile,
+    resolvedFrontmatter?: Record<string, unknown> | null,
+  ): Promise<Triple[]> {
+    if (resolvedFrontmatter !== undefined) {
+      return this.convertNoteFromFrontmatter(file, resolvedFrontmatter);
+    }
     // Tier 1 of RFC 8f93ff95 (req 7d00a60b): the asset's OWN frontmatter must not
     // be gated on Obsidian's metadataCache. On a cold cache getFrontmatter()
     // returns null, convertNoteFromFrontmatter short-circuits to [], and the whole
@@ -1023,6 +1054,7 @@ export class NoteToRDFConverter {
     // Notice toasts instead of one per skipped file.
     let invariantViolationCount = 0;
     let invalidIriCount = 0;
+    let unparseableFrontmatterCount = 0;
 
     // FileSpace skip (onto-RFC 18808c73 Phase 5, ExoSync Phase C): spaces
     // declared `exo__FileSpace` in the vault have their mount folders
@@ -1098,7 +1130,75 @@ export class NoteToRDFConverter {
         // malformed asset can never leak partial triples into the store
         // (which previously tripped the SPARQL executor with
         // "Literals cannot appear in subject position").
-        const frontmatter = this.vault.getFrontmatter(file);
+        // Resolved ONCE, through the same disk-fallback tier `convertNote`
+        // uses below — not twice, and not through the cache-only reader.
+        //
+        // Two things depend on this being the fallback tier (req `fe50da38`,
+        // #4440 — the plugin half of the skip-list promise):
+        //
+        //  1. MEANING. On a cold metadataCache the cache-only reader returns
+        //     null for EVERY file, so `!frontmatter` said nothing about the
+        //     file — the parse-failure probe below would have been asked about
+        //     well-formed assets (it answers "no failure", so no file is
+        //     mis-reported, but the question is vacuous).
+        //  2. COST. That vacuous question costs one full disk read per file on
+        //     the plugin's cold eager walk (12k+ files on a phone), and then
+        //     `convertNote` read the very same file AGAIN through its own
+        //     fallback — two reads where one is needed. Resolving here and
+        //     handing the result to `convertNoteFromFrontmatter` keeps the walk
+        //     at ONE read per file and leaves the probe for the files that are
+        //     genuinely frontmatter-less (17 of 54 314 on the canonical corpus).
+        //
+        // Feature-detected exactly as `convertNote` does it: an adapter without
+        // the fallback tier (the CLI one reads the filesystem directly; the
+        // in-memory test doubles have no disk) keeps the cached reader.
+        const frontmatter = this.vault.getFrontmatterWithFallback
+          ? await this.vault.getFrontmatterWithFallback(file)
+          : this.vault.getFrontmatter(file);
+
+        // A null frontmatter has TWO causes, and only one is a defect: the file
+        // has no block at all (a plain note — legitimately not an asset), or it
+        // has one that does NOT parse (a malformed asset). Without this branch
+        // the second fell through to `convertNote`, which produced zero triples
+        // and threw nothing — so the file was dropped with NO `skippedFiles`
+        // entry and NO log line, while every other rejection was named. That
+        // made the "N file(s) skipped" list silently non-exhaustive, and any
+        // gate reading it took the part for the whole (measured 2026-09-27,
+        // vault-exodev: 2 assets missing from a 6-entry list).
+        //
+        // Feature-detected: an adapter without the capability keeps the
+        // previous behaviour exactly (see IVaultFrontmatterManager).
+        //
+        // ⛔ `await` is load-bearing, not cosmetic: the capability MAY return a
+        // promise (the plugin's only read API is async — see the port). Without
+        // it the promise OBJECT is truthy, so every frontmatter-less plain note
+        // would be reported as skipped with `reason: undefined` — the exact
+        // false-positive the three-outcome split exists to prevent. `await` on
+        // the CLI's synchronous value, and on the `undefined` of an adapter
+        // without the capability, changes nothing.
+        if (!frontmatter) {
+          const parseFailure = await this.vault.getFrontmatterParseFailure?.(
+            file,
+          );
+          if (parseFailure) {
+            if (strict) {
+              throw new Error(
+                `Unparseable frontmatter in "${file.path}": ${parseFailure.reason}`,
+              );
+            }
+            skippedFiles.push({
+              path: file.path,
+              reason: `Unparseable frontmatter: ${parseFailure.reason}`,
+            });
+            unparseableFrontmatterCount++;
+            this.logger.info(
+              `Skipping file with unparseable frontmatter: ${file.path}`,
+              { reason: parseFailure.reason },
+            );
+            continue;
+          }
+        }
+
         const violation = frontmatter
           ? this.validateExocortexAsset(frontmatter, file.basename)
           : null;
@@ -1123,7 +1223,11 @@ export class NoteToRDFConverter {
           continue;
         }
 
-        const candidate = await this.convertNote(file);
+        // Reuses the frontmatter resolved above — without it `convertNote`
+        // resolves the same file a second time through the same tier, for the
+        // same answer. Still `convertNote`, on purpose: it is the seam two
+        // other requirements count re-parsed files through (see its docstring).
+        const candidate = await this.convertNote(file, frontmatter);
         allTriples.push(...candidate);
         if (options.onFileTriples) {
           try {
@@ -1164,6 +1268,12 @@ export class NoteToRDFConverter {
       this.logger.warn(
         `Skipped ${invariantViolationCount} file${invariantViolationCount === 1 ? "" : "s"} with invariant violations during indexing (paths in developer console)`,
         { count: invariantViolationCount },
+      );
+    }
+    if (unparseableFrontmatterCount > 0) {
+      this.logger.warn(
+        `Skipped ${unparseableFrontmatterCount} file${unparseableFrontmatterCount === 1 ? "" : "s"} with unparseable frontmatter during indexing (paths in developer console)`,
+        { count: unparseableFrontmatterCount },
       );
     }
     if (invalidIriCount > 0) {
@@ -1913,7 +2023,8 @@ export class NoteToRDFConverter {
     // skips the type triple entirely (ShaclLiteValidator only processes
     // `obj.type === 'iri'`), leaving the asset apparently classless and
     // emitting false `sh:class` violations against any referencing asset.
-    // The file IRI is still traversable by `TripleClassHierarchy` via
+    // The file IRI is still traversable by the CLI's `TripleClassHierarchy`
+    // (`packages/cli/src/commands/validate-schema.ts`) via the
     // `exo__Class_superClass` triples emitted by the class file itself.
     if (this.isUUID(classRef)) {
       const resolvedFile = this.vault.getFirstLinkpathDest(classRef, "");
@@ -2008,9 +2119,35 @@ export class NoteToRDFConverter {
    * @returns Body content without frontmatter, or full content if no frontmatter
    */
   private extractBodyContent(content: string): string {
-    // Frontmatter pattern: starts with ---, ends with ---
-    const frontmatterPattern = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
-    return content.replace(frontmatterPattern, "");
+    // ⛤ THE SHARED PREDICATE, not a twin of it (req
+    //    `74419202-264e-4394-a634-0b36d47357f8`, #4452). This method used to
+    //    carry the last surviving copy: `\r?\n`-tolerant fences plus a skip of
+    //    at most ONE leading BOM — i.e. it agreed with `matchFrontmatterBlock`
+    //    only on the shapes that predicate accepted BEFORE #4452 widened it to
+    //    lone-CR fences and a RUN of BOMs.
+    //
+    //    ⛔ Keeping the copy would have made that divergence HOT rather than
+    //    latent: such an asset becomes indexable by the read path while this
+    //    method still fails to match its block, so the WHOLE frontmatter comes
+    //    back as body and every frontmatter wikilink is emitted a second time
+    //    as `exo:Asset_bodyLink` — precisely the defect axis B13 of req
+    //    `c05a3565` (#4441) declares a defect for the BOM case. The conversion
+    //    has a shipped precedent in this predicate's own consumer set:
+    //    `wikilinkExtraction.bodyOf` moved onto the helper in #4461 and needed
+    //    no change for #4452, which is the entire point of one predicate.
+    //
+    //    Match-local as before: this method only ever RETURNS a substring, it
+    //    never writes, so no file loses its BOM on account of this line.
+    const block = matchFrontmatterBlock(content);
+    // ⛤ No block: the previous form returned the BOM-STRIPPED content (it
+    //    `replace`d on `withoutBom`), so that is kept — byte-identical for one
+    //    byte, and a run is stripped for the same reason one was.
+    if (!block) return content.slice(leadingBomLength(content));
+    // `blockEnd` stops at the closing `---`; the ONE line ending that followed
+    // it belonged to the fence too, and the previous regex (`---\r?\n?`)
+    // consumed it. All three forms, for the same reason the fences accept all
+    // three.
+    return content.slice(block.blockEnd).replace(/^(?:\r\n|\r|\n)/, "");
   }
 
   /**

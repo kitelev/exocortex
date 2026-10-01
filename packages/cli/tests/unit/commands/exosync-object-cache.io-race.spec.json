@@ -1,0 +1,20 @@
+{
+  "_doc": "Revert-verify for req 086df113, subject = the Node storage adapter. Axis B15 in exosync-object-cache.test.ts pins the per-CALL temp name: the engine's existing bounded blob pool (BLOB_FETCH_CONCURRENCY = 6) already reaches the same cache key from one process.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/services/nodeObjectCacheIO.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-object-cache.test.ts 2>&1",
+  "red_re": "› (B\\d+\\w*) ",
+  "mutants": {
+    "M1_temp_name_per_process_only": {
+      "_note": "Restores the reviewed defect: two concurrent writers in ONE process share the temp path and can leave a torn entry, which the integrity check then reports as corruption of a store this feature corrupted itself.",
+      "from": "      const tmp = `${target}.${process.pid}-${randomUUID()}.tmp`;\n",
+      "to": "      const tmp = `${target}.${process.pid}.tmp`;\n",
+      "expect": ["B15"]
+    }
+  }
+}

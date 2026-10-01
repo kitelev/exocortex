@@ -2,6 +2,16 @@ import { jest } from "@jest/globals";
 import { Command } from "commander";
 
 // Mock CacheManager (transitively depends on exocortex, fs-extra)
+// #4461: the block predicate now lives in core and the SUT imports it from the
+// barrel, so this explicit-export mock must provide it. Imported from SOURCE,
+// like `parseYamlFrontmatterTolerant` above/below: a stub would answer "no
+// block" and the mock would stop mirroring production (test-fixture-realism).
+import {
+  matchFrontmatterBlock,
+  frontmatterBlockBody,
+  leadingBomLength,
+} from "../../../../core/src/utilities/frontmatterBlock.js";
+
 jest.unstable_mockModule("../../../src/cache/CacheManager.js", () => ({
   CacheManager: jest.fn(() => ({
     validateVault: jest.fn(() => []),
@@ -11,6 +21,9 @@ jest.unstable_mockModule("../../../src/cache/CacheManager.js", () => ({
 
 // Mock exocortex (CacheManager dependency + validate-schema dependency)
 jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
+  matchFrontmatterBlock,
+  frontmatterBlockBody,
+  leadingBomLength,
   NoteToRDFConverter: jest.fn(),
   Triple: jest.fn(),
   IRI: jest.fn(),

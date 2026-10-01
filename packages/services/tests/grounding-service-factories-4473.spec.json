@@ -1,0 +1,36 @@
+{
+  "_doc": "Revert-verify mutants for #4473 AC6/AC7 — `rewriteFrontmatterScalars`, the `duplicateAsset` service_call write path. Run from the repo root after replacing the path placeholders: python3 -I ~/.claude/bin/mutant-driver.py <this file>. Axis names are B<N>, matching the test titles, so they cannot collide with the core half's A<N> in a combined run.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/services/src/grounding-service-factories.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../..\" && node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/services/jest.config.js --verbose 2>&1",
+  "red_re": "›\\s+(B\\d+[a-z]?)\\s",
+  "_note_control_axes": "B4 (the LF byte-parity control) and B5 (the fail-closed throw) carry no mutant of their own BY DESIGN — their product is that the conversion changed NOTHING there, so their silence under S1/S2/S3 is the proof (integration-test-revert-verify §A118). B5 in particular must stay green under S1: narrowing the predicate makes the throw fire MORE often, never less, so the fail-closed guarantee cannot be weakened by any of these mutants.",
+  "mutants": {
+    "S1_restores_the_local_narrow_predicate": {
+      "from": "  const block = matchFrontmatterBlock(content);",
+      "to": "  const block = /^---\\r?\\n/.test(content)\n    ? matchFrontmatterBlock(content)\n    : null;",
+      "expect": ["B2", "B3"],
+      "_note": "Type-preserving reproduction of the pre-#4473 reach: the old `/^---\\r?\\n(…)\\r?\\n---/` recognised neither a lone-CR fence (`\\r?\\n` is indivisible) nor a BOM-prefixed one (`^---`), so `duplicateAsset` threw for both. Fail-CLOSED, hence B1/B4/B5 stay green — the asset was simply undupliable."
+    },
+    "S2_splits_the_block_body_on_a_bare_LF": {
+      "from": "    .split(FRONTMATTER_BODY_LINE)",
+      "to": "    .split(\"\\n\")",
+      "expect": ["B1", "B2"],
+      "_note": "On CRLF every UNTOUCHED line keeps its own trailing `\\r`, so re-joining with the block's `\\r\\n` emits `\\r\\r\\n` — which the bare-LF assertion alone cannot see, hence B1's explicit `not.toContain(\"\\r\\r\")`. On a lone-CR body there is no boundary at all: the whole block is ONE line, its first key matches, and every other key is DISCARDED (B2)."
+    },
+    "S3_rejoins_the_block_body_with_a_bare_LF": {
+      "from": "    rewrittenLines.join(eol) +",
+      "to": "    rewrittenLines.join(\"\\n\") +",
+      "expect": ["B1", "B2"],
+      "_note": "The other half of the EOL defect, isolated from the split: the lines are cut correctly but re-joined with an unconditional LF, so a CRLF block gets a bare LF after every key (B1) and a lone-CR block gets LFs introduced into a file that had none (B2's `not.toContain(\"\\n\")`)."
+    }
+  }
+}

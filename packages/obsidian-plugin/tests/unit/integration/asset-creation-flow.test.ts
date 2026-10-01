@@ -418,7 +418,17 @@ describe("Asset Creation Flow (Integration)", () => {
       { className: "ems__Area", expectedFolder: "areas" },
       { className: "ems__Meeting", expectedFolder: "meetings" },
       { className: "exo__Event", expectedFolder: "events" },
-      { className: "ims__Concept", expectedFolder: "concepts" },
+      // #4365 — was `expectedFolder: "concepts"`, pinning a DEAD mapping:
+      // `ims__` is the retired namespace (live class: `concept__Concept`,
+      // 0 carriers across all three canonical vaults), so the map entry could
+      // never match. It is removed rather than renamed — concepts live in
+      // three different assetspaces, so a literal folder here would
+      // reintroduce #4357.
+      //
+      // ⛤ This is the THIRD copy of the same table (core unit, core
+      // integration, and here). Three tests pinning one dead key is why it
+      // read as alive for so long.
+      { className: "ims__Concept", expectedFolder: "assets" },
       { className: "custom__Unknown", expectedFolder: "assets" },
     ];
 

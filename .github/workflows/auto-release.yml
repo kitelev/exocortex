@@ -38,6 +38,14 @@ jobs:
           echo "Commits since $LAST_TAG:"
           echo "$COMMITS"
 
+          # #4409 — the bump decision also needs the BODIES, because the
+          # canonical Conventional-Commits way to declare a break is a
+          # `BREAKING CHANGE:` FOOTER, which `%s` cannot contain. Collected as a
+          # SECOND, separate pass on purpose: `commits.txt` stays subject-only
+          # because the changelog step consumes it, and mixing bodies in would
+          # silently rewrite the release notes.
+          git log $LAST_TAG..HEAD --pretty=format:"%B" --no-merges > commit_bodies.txt
+
           # Check if there are any commits
           if [ -z "$COMMITS" ]; then
             echo "No new commits since last release"
@@ -56,8 +64,20 @@ jobs:
         run: |
           COMMITS=$(cat commits.txt)
 
-          # Check for BREAKING CHANGE
-          if echo "$COMMITS" | grep -qE "(BREAKING CHANGE|^[a-z]+\!:)"; then
+          # Check for BREAKING CHANGE — both spec-conformant declarations (#4409).
+          #
+          # 1. Subject marker `type!:` OR `type(scope)!:`. The optional
+          #    `(\([^)]*\))?` is the whole fix for the historical miss: the old
+          #    anchor `^[a-z]+\!:` required `!` to follow the letters directly,
+          #    so every scoped declaration slipped through and shipped as a
+          #    patch. Measured on origin/main: 6 such commits, all invisible.
+          # 2. Footer `BREAKING CHANGE:` in the body, read from the separate
+          #    bodies file. Anchored to the line start (and allowing the
+          #    hyphenated spelling the spec also lists) — an unanchored match
+          #    would fire on prose like "this is not a BREAKING CHANGE, but…",
+          #    which is exactly the false positive widening the input invites.
+          if echo "$COMMITS" | grep -qE "^[a-z]+(\([^)]*\))?!:" \
+            || grep -qE "^BREAKING[ -]CHANGE:" commit_bodies.txt; then
             echo "Detected BREAKING CHANGE → major bump"
             echo "type=major" >> $GITHUB_OUTPUT
           # Check for feat:

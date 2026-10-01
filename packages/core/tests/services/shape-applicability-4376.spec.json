@@ -1,0 +1,52 @@
+{
+  "_doc": "Revert-verify mutants for #4376 (sh:domain applicability cached per class set + getAllShapes hoisted out of the per-subject loop). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/core/tests/services/shape-applicability-4376.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's ShaclLiteValidator.ts and runs the validator suite; `expect` names the axes that MUST go red). Axis keys are the S<N> prefixes of the it() titles — `red_re` reads them; the file's other suites use T<N>/V<N>, so S is free.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/ShaclLiteValidator.ts",
+  "symlink_node_modules": ["node_modules", "packages/core/node_modules"],
+  "harness": "cd \"$(dirname {subject})/../../../..\" && node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/services/ShaclLiteValidator.test.ts 2>&1",
+  "red_re": "› (S\\d+) ",
+  "mutants": {
+    "M1_getAllShapes_not_hoisted": {
+      "_note": "Undoes the hoist alone — the cache still works, so only the materialisation count moves. S1 is the sole axis that can see it, which is why S1 asserts a COUNT rather than an outcome.",
+      "from": "    const applicable = allShapes.filter(",
+      "to": "    const applicable = registry.getAllShapes().filter(",
+      "expect": ["S1"]
+    },
+    "M2_cache_never_hits": {
+      "_note": "Lookup key can never match, so applicability is recomputed for every subject while the write path and the verdicts stay correct. Only the counting axes see it — the same shape as M1 in the #4369 spec.",
+      "from": "    const cached = applicableShapesByClassKey.get(key);",
+      "to": "    const cached = applicableShapesByClassKey.get(key + '\\u0000never');",
+      "expect": ["S2", "S4"]
+    },
+    "M3_key_conflates_different_class_sets": {
+      "_note": "Keys on the SIZE of the class set, so two different single-class subjects share an entry and the second inherits the first's verdict. This is the mutant that matters: a too-coarse key is the way this optimisation turns into a correctness bug. S4 joins the measured set because its three subjects no longer share one key either (two of them carry two classes, the third three).",
+      "from": "    const key = [...new Set(classes)]\n      .sort()\n      .map((c) => `${c.length}:${c}`)\n      .join('');",
+      "to": "    const key = String(classes.length);",
+      "expect": ["S3", "S4"]
+    },
+    "M4_key_keeps_order_and_duplicates": {
+      "_note": "Same anchor as M3, different splice — the driver applies each mutant to a pristine copy, so sharing an anchor is fine. Keeps the length-prefixing (so this is NOT a collision test) and drops only the sort and the de-duplication, splitting one logical class set across three cache entries.",
+      "from": "    const key = [...new Set(classes)]\n      .sort()\n      .map((c) => `${c.length}:${c}`)\n      .join('');",
+      "to": "    const key = classes.map((c) => `${c.length}:${c}`).join('');",
+      "expect": ["S4"]
+    },
+    "M5_domainless_shapes_stop_applying": {
+      "_note": "Guards the branch that makes a shape with an empty sh:domain apply to every subject — including subjects with no resolvable class, which is the only population S5 can distinguish it on.",
+      "from": "        shape.domain.length === 0 ||",
+      "to": "        false ||",
+      "expect": ["S5"]
+    },
+    "M6_subclass_path_dropped_from_the_filter": {
+      "_note": "Without this mutant S6 was green under every other one — vacuous. It removes the hierarchy consultation from the cached filter, so only an EXACT class match applies; S6's subject is a subclass of the domain, and S2's ask-list becomes empty. S4 is in the measured set as well — its ask-list also empties, which I predicted as [S2, S6] and corrected against the run rather than the other way round.",
+      "from": "            (sc) => sc === domainClass || hierarchy.isSubClassOf(sc, domainClass),",
+      "to": "            (sc) => sc === domainClass,",
+      "expect": ["S2", "S4", "S6"]
+    },
+    "M7_separator_key_instead_of_length_prefixed": {
+      "_note": "The shape the first revision shipped: a `\\u0000`-separated key. It is not injective for arbitrary strings, and the comment that justified it claimed a guarantee this codebase does not enforce (IRI.isValidIRI and Namespace.PROPERTY_KEY_RE both accept an embedded NUL). Kept as a mutant rather than as prose so the length-prefixed form has something that can make it red — S7 feeds two class sets whose separator-joined keys collide.",
+      "from": "    const key = [...new Set(classes)]\n      .sort()\n      .map((c) => `${c.length}:${c}`)\n      .join('');",
+      "to": "    const key = [...new Set(classes)].sort().join('\\u0000');",
+      "expect": ["S7"]
+    }
+  }
+}

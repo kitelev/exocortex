@@ -46,7 +46,13 @@ const PROTOTYPE_CLASS_UID = "868c2297-42ac-4397-bac1-465a1ef793b8";
 /** A class whose superClass IS the ontology class — subsumption must accept it. */
 const SUB_ONTOLOGY_CLASS_UID = "11111111-2222-4333-8444-555555555555";
 const SUB_ONTOLOGY_ANCHOR_UID = "66666666-7777-4888-8999-aaaaaaaaaaaa";
-const NOTE_CLASS_UID = "65b58c34-7451-4b89-bea3-483f7c65fe73"; // pass-through
+/**
+ * The class every `create` here is given. It is WRITTEN into the fixture below:
+ * since issue #4438 `create` refuses a `--class` uid that has no file in the
+ * vault, so a bare pass-through uid would make every axis fail on the class
+ * instead of reaching the isDefinedBy guard under test.
+ */
+const NOTE_CLASS_UID = "65b58c34-7451-4b89-bea3-483f7c65fe73";
 const TARGET_UID = "d1d1d1d1-0000-4000-8000-000000000001";
 
 const DIR = "assetspaces/kitelev/exoas-my/kitelev";
@@ -86,6 +92,8 @@ describe("Ticket d8c3c86b: isDefinedBy must resolve to an exo__Ontology", () => 
       `exo__Asset_label: $kitelev\nexo__Instance_class:\n  - "[[${ONTOLOGY_CLASS}]]"\n`,
     );
     writeAsset(PROTOTYPE_CLASS_UID, `exo__Asset_label: ems__SessionPrototype\n`);
+    // The class `create` is invoked with — see NOTE_CLASS_UID's docblock.
+    writeAsset(NOTE_CLASS_UID, `exo__Asset_label: ztlk__Note\n`);
     writeAsset(
       PROTOTYPE_UID,
       `exo__Asset_label: Сон\nexo__Instance_class:\n  - "[[${PROTOTYPE_CLASS_UID}]]"\n`,

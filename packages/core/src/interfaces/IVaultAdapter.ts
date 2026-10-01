@@ -82,6 +82,51 @@ export interface IVaultFrontmatterManager {
    */
   getFrontmatterWithFallback?(file: IFile): Promise<IFrontmatter | null>;
   /**
+   * WHY `getFrontmatter` returned null — reported ONLY for the one cause that
+   * is a defect.
+   *
+   * Reading a file's frontmatter block has THREE outcomes, and they are kept
+   * apart on purpose — the same three `updateFrontmatter` already distinguishes
+   * on the WRITE side (see `FileSystemVaultAdapter.updateFrontmatter`): no block
+   * at all → a plain note, legitimately not an asset; a block that parses → an
+   * asset; a block that is PRESENT but does not parse → a MALFORMED asset.
+   *
+   * The read path collapsed all three into `null`, so the third became
+   * invisible: the loader dropped the file while recording nothing — no
+   * `skippedFiles` entry, no log line — although files rejected for every OTHER
+   * reason were named. A reader of "N file(s) skipped by the vault loader" took
+   * that list for the whole answer, and any gate counting "zero violations"
+   * counted it over a graph missing those files (measured 2026-09-27,
+   * vault-exodev: 2 assets absent from a 6-entry skip list).
+   *
+   * Returns the parse failure — carrying the parser's OWN message, so the
+   * reason is derived from the mechanism rather than authored — for the third
+   * case, and `null` for the other two.
+   *
+   * OPTIONAL for the same reason as `getFrontmatterWithFallback`: a platform
+   * capability, not a universal contract. An adapter that never sees the raw
+   * block (the in-memory test ones) has nothing to answer with, so callers
+   * feature-detect and keep today's behaviour when it is absent.
+   *
+   * ⛤ MAY RETURN A PROMISE (req `fe50da38`, #4440 — the plugin half). The
+   * earlier wording of the line above named "a metadata-cache-backed one" as an
+   * adapter that cannot answer; that was true of `metadataCache` and FALSE of
+   * the adapter — `ObsidianVaultAdapter` reads raw content through
+   * `vault.read`, which is Obsidian's ONLY read API and is **async on every
+   * platform** (there is no sync counterpart, and Node `fs` is forbidden on
+   * mobile by the Desktop↔Mobile parity invariant). A sync-only signature would
+   * therefore have excluded the plugin BY CONSTRUCTION and left the skip list
+   * permanently non-exhaustive on the surface most users actually run.
+   *
+   * Widening (not a second async-named capability) keeps ONE question with ONE
+   * answer: every caller must `await` the result, which is a no-op for the
+   * synchronous CLI implementation and for the `undefined` of an adapter that
+   * does not implement it at all.
+   */
+  getFrontmatterParseFailure?(
+    file: IFile,
+  ): { reason: string } | null | Promise<{ reason: string } | null>;
+  /**
    * Write the keys `updater` returns into the file's frontmatter (req
    * `2a020489`; the plugin half of the dialect is req `de7131ae`).
    *

@@ -23,6 +23,7 @@ import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { expectNaturalExit } from "./helpers/exit-assertions.js";
 
 const { createCommand } = await import("../../src/commands/create.js");
 
@@ -32,6 +33,12 @@ const EFFORT_CLASS_UID = "086f71fa-dd30-4284-90cf-e609f2a6c461";
 const BACKLOG_UID = "753a44d5-846c-4b82-9196-4fd9a4d48777";
 const DRAFT_UID = "c42245d0-01de-4c35-bfcf-d910445ea28e";
 const EXOASSISTANT_UID = "4ef3962d-b8a7-42b5-bd28-88ec846f1d13";
+// Explicit --created-by target. Issue #4448 made an EXPLICIT creator ref
+// existence-checked, so the fixture must carry the identity it names — a
+// production-shape vault does. (The ExoAssistant DEFAULT stays unchecked;
+// that fail-open half has its own negative-control axis in
+// create-createdby-resolvable-4448.integration.test.ts.)
+const CUSTOM_CREATOR_UID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 // Non-status-bearing class (its superClass points at exo__Asset, which the
 // fixture does NOT define → the walk terminates without reaching ems__Effort).
 const CONCEPT_CLASS_UID = "c0c0c0c0-1111-2222-3333-444444444444";
@@ -107,6 +114,11 @@ describe("Issue #3849: `cli create` sets default ems__Effort_status + createdBy"
       path.join(emsDir, `${EXOASSISTANT_UID}.md`),
       md({ exo__Asset_uid: EXOASSISTANT_UID, exo__Asset_label: "ExoAssistant" }),
     );
+    // Explicit --created-by identity (issue #4448 — the ref must resolve).
+    fs.writeFileSync(
+      path.join(emsDir, `${CUSTOM_CREATOR_UID}.md`),
+      md({ exo__Asset_uid: CUSTOM_CREATOR_UID, exo__Asset_label: "a.custom" }),
+    );
 
     fs.mkdirSync(path.join(vault, "01 Inbox"), { recursive: true });
 
@@ -169,8 +181,7 @@ describe("Issue #3849: `cli create` sets default ems__Effort_status + createdBy"
   it("status-bearing class → default Backlog + createdBy ExoAssistant @req:b341020e-8f27-452b-9df6-da4247408b2e", async () => {
     const out = await runCreate(TASK_CLASS_UID, []);
 
-    expect(out.exit).toContain(0);
-    expect(out.exit).not.toContain(1);
+    expectNaturalExit(out.exit);
     // Default status = Backlog (scalar UID-canon wikilink).
     expect(out.content).toContain(`ems__Effort_status: "[[${BACKLOG_UID}]]"`);
     // Default creator = ExoAssistant.
@@ -180,7 +191,7 @@ describe("Issue #3849: `cli create` sets default ems__Effort_status + createdBy"
   it("--status Draft → Draft status (status-bearing) @req:b341020e-8f27-452b-9df6-da4247408b2e", async () => {
     const out = await runCreate(TASK_CLASS_UID, ["--status", "Draft"]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     expect(out.content).toContain(`ems__Effort_status: "[[${DRAFT_UID}]]"`);
     // The default Backlog must NOT also appear.
     expect(out.content).not.toContain(BACKLOG_UID);
@@ -189,7 +200,7 @@ describe("Issue #3849: `cli create` sets default ems__Effort_status + createdBy"
   it("non-status-bearing class → no status, still createdBy @req:b341020e-8f27-452b-9df6-da4247408b2e", async () => {
     const out = await runCreate(CONCEPT_CLASS_UID, []);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     expect(out.content).not.toContain("ems__Effort_status");
     // createdBy default applies to every class (not status-gated).
     expect(out.content).toContain(`exo__Asset_createdBy: "[[${EXOASSISTANT_UID}]]"`);
@@ -206,10 +217,10 @@ describe("Issue #3849: `cli create` sets default ems__Effort_status + createdBy"
   });
 
   it("--created-by <uid> overrides the ExoAssistant default @req:b341020e-8f27-452b-9df6-da4247408b2e", async () => {
-    const customCreator = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    const customCreator = CUSTOM_CREATOR_UID;
     const out = await runCreate(CONCEPT_CLASS_UID, ["--created-by", customCreator]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     expect(out.content).toContain(`exo__Asset_createdBy: "[[${customCreator}]]"`);
     expect(out.content).not.toContain(EXOASSISTANT_UID);
   });
@@ -217,8 +228,7 @@ describe("Issue #3849: `cli create` sets default ems__Effort_status + createdBy"
   it("--yes is accepted (no 'unknown option'; create succeeds) @req:b341020e-8f27-452b-9df6-da4247408b2e", async () => {
     const out = await runCreate(CONCEPT_CLASS_UID, ["--yes"]);
 
-    expect(out.exit).toContain(0);
-    expect(out.exit).not.toContain(1);
+    expectNaturalExit(out.exit);
     expect(out.uuid).not.toBe("");
   });
 
@@ -229,7 +239,7 @@ describe("Issue #3849: `cli create` sets default ems__Effort_status + createdBy"
       "--skip-wikilink-validation",
     ]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     expect(out.content).toContain(`ems__Effort_status: "[[${DRAFT_UID}]]"`);
     // The Backlog default must NOT override an explicit value.
     expect(out.content).not.toContain(BACKLOG_UID);

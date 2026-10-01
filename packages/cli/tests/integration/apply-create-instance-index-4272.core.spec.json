@@ -10,10 +10,11 @@
   "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/cache/loadVaultTriples.test.ts tests/integration/apply-create-instance-index-4272.integration.test.ts 2>&1",
   "red_re": "› ([UI]\\d+\\w*) ",
   "mutants": {
-    "P1_convertVault_drops_the_onFileTriples_observer": {
-      "from": "      onFileTriples: options.onFileTriples,\n    });\n    return result.triples;",
-      "to": "      onFileTriples: undefined,\n    });\n    return result.triples;",
-      "expect": ["U11", "I1"]
+    "P1_walk_stops_notifying_the_onFileTriples_observer": {
+      "_note": "⛤ Мутант ПЕРЕНЕСЁН с проводки на НЕСУЩУЮ строку (#4408), и вот замер, из которого это следует. Прежняя форма правила `convertVault` — обёртку, которая прокидывает observer в `convertVaultWithDetails`. Она краснила НИ ОДНОЙ оси, и это было ЗАКОННО: в проде обёртку зовёт ровно один call-site (`packages/cli/src/commands/find.ts:150`) и зовёт её БЕЗ observer'а, а все настоящие потребители (`loadVaultTriples.ts:146`, `CacheManager.ts:974/1158`) передают `onFileTriples` напрямую в `convertVaultWithDetails`, минуя мутируемую строку. То есть это была мёртвая проводка, а не незапертый гвард. ⛔ Диагноз «ось не различает» и «гвард defensive» оба НЕ подходили — точка мутации была не та (§A43: ноль красных ⇒ переносить мутацию к гварду, а не усиливать ось). Несущая строка — сам вызов observer'а внутри обхода; её снятие краснит пять осей, потому что один механизм питает и zeroTriplePaths (U11), и индексацию (I1*). Замерено на этом харнессе: контроль 11/11 зелёных, мутант 5 failed.",
+      "from": "            options.onFileTriples(file, candidate);\n",
+      "to": "",
+      "expect": ["I1", "I1c", "I1d", "I1e", "U11"]
     }
   }
 }

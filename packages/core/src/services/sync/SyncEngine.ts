@@ -782,7 +782,17 @@ export class SyncEngine {
       const timer = this.activeTimer;
       if (timer === null) return raw(req);
       timer.bumpRest();
-      return timer.time(classifyRestPhase(req), () => raw(req));
+      return timer.time(classifyRestPhase(req), async () => {
+        const res = await raw(req);
+        // req e5e45283 — read the quota GitHub reports on a SUCCESSFUL
+        // response. Until now `x-ratelimit-*` was only read just before
+        // throwing, so the remaining budget surfaced exactly when it was
+        // already gone. A failing call still rethrows untouched (this line is
+        // simply not reached), and its headers keep travelling on the error
+        // via `enrichRateLimitError`.
+        timer.observeQuota(res.headers);
+        return res;
+      });
     };
   }
 

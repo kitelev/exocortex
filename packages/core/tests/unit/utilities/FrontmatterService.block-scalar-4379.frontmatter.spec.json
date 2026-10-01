@@ -1,0 +1,53 @@
+{
+  "_doc": "Revert-verify mutants for issue #4379 — a top-level block scalar read as its RAW text, and the consumers of that read. Mutants are type-preserving (an impossible-but-valid condition / `x || f(x)` keeping the import used), never `if (false)` (integration-test-revert-verify §A36). `red_re` anchors on the `● <suite> › [Xn]` header (§A44/§A104). Subject: FrontmatterService.ts.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/utilities/FrontmatterService.block-scalar-4379.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/utilities/FrontmatterService.ts",
+  "mutants": {
+    "M1_header_not_opened": {
+      "_note": "The pre-#4379 reading: the header is stored but its body is never absorbed, so every reader sees `|-`.",
+      "from": "        scalarBodyKey = key;\n",
+      "to": "        scalarBodyKey = null;\n",
+      "expect": [
+        "P1",
+        "P2",
+        "P3",
+        "P4",
+        "P5",
+        "D1",
+        "U1",
+        "W1",
+        "W2",
+        "S1",
+        "I1"
+      ]
+    },
+    "M2_body_check_after_items": {
+      "_note": "Body lines shaped like items / comments fall through to the list branches — the two LIVE sub-shapes (f212f1b9, 12f27c54).",
+      "from": "      if (scalarBodyKey !== null) {\n",
+      "to": "      if (scalarBodyKey !== null && !/^ {0,2}- |^[ \\t]+#/.test(line)) {\n",
+      "expect": ["P2", "D1", "W2"]
+    },
+    "M3_inner_blank_dropped": {
+      "_note": "A blank line inside the body is swallowed instead of kept (0 live carriers — ratchet).",
+      "from": "            ...pendingBlanks,\n",
+      "to": "",
+      "expect": ["P3"]
+    },
+    "M4_trailing_blank_absorbed": {
+      "_note": "A blank line is absorbed eagerly, so the blank after the body joins it — the write side (`findPropertyLineSpan`) does not own it.",
+      "from": "        if (line.trim() === \"\") {\n          pendingBlanks.push(line);\n          continue;\n        }\n        if (/^[ \\t]/.test(line)) {\n          result[scalarBodyKey]",
+      "to": "        if (line.trim() === \"\") {\n          result[scalarBodyKey] = [result[scalarBodyKey] as string, line].join(\"\\n\");\n          continue;\n        }\n        if (/^[ \\t]/.test(line)) {\n          result[scalarBodyKey]",
+      "expect": ["P4"]
+    }
+  }
+}

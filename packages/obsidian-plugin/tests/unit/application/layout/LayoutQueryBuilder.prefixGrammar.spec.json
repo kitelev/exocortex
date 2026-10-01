@@ -1,0 +1,38 @@
+{
+  "_doc": "Revert-verify for #4401: a Layout filter on a camelCase / hyphenated / digit-bearing namespace must produce a query that both COMPACTS the name and DECLARES its prefix. Axes D1 (compacted) / D1b (declared) / D2 (unrelated namespaces stay undeclared) / D3 (the always-on table keeps its order — the DoD's byte-identity clause) / D4 (a reused builder does not leak a namespace) in packages/obsidian-plugin/tests/unit/application/layout/LayoutQueryBuilder.prefixGrammar.test.ts. The harness ALSO runs the pre-existing 48-case LayoutQueryBuilder.test.ts: it is the control for existing exo/ems output, so a fix that changed it reddens here rather than in production. Measured 2026-09-26: control 54/54 green. ⛤ D1 and D1b are deliberately separate — folded into one assert, M1 and M2 would redden the same axis name and the matrix could not show that BOTH halves are pinned.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/application/layout/LayoutQueryBuilder.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/application/layout/LayoutQueryBuilder 2>&1",
+  "red_re": "› .*?\\b(D\\d+\\w*)\\b",
+  "mutants": {
+    "M1_narrow_grammar_restored": {
+      "_note": "Возврат к локальному узкому регэкспу. Краснеют ОБЕ половины, и это следствие механизма, а не смешение осей: неразобранное имя не компактится (D1) и потому не регистрирует префикс, который нечего объявлять (D1b). Предсказание «только D1» было неверным — исправлено по прогону, а не подогнано: мутант бьёт в общий корень обеих половин, тогда как M2 и M4 бьют только во вторую.",
+      "from": "    const parsed = Namespace.fromPropertyKey(name);\n",
+      "to": "    const parsed = /^([a-z]+)__(.+)$/.test(name)\n      ? Namespace.fromPropertyKey(name)\n      : null;\n",
+      "expect": ["D1", "D1b"]
+    },
+    "M2_declaration_dropped": {
+      "_note": "Грамматика остаётся починенной, но объявляется только захардкоженная таблица — ровно тот случай, о котором предупреждает тикет: «починка только п.1 даёт регэксп, который выглядит починенным и молча не работает». Краснеет РОВНО D1b.",
+      "from": "    return [...declared, ...extra].join(\"\\n\");\n",
+      "to": "    return declared.join(\"\\n\");\n",
+      "expect": ["D1b"]
+    },
+    "M3_reset_removed": {
+      "_note": "Снимает сброс состояния в начале build(). Краснеет РОВНО D4: одиночный запрос по-прежнему корректен, течёт только второй прогон того же инстанса.",
+      "from": "    this.usedPrefixes = new Set<string>();\n",
+      "to": "",
+      "expect": ["D4"]
+    },
+    "M4_prefixes_built_before_body": {
+      "_note": "Моделирует ПРЕЖНИЙ ПОРЯДОК — buildPrefixes() до сборки тела. Просто передвинуть строку одной заменой нельзя (переменная осталась бы неопределённой и мутант упал бы компиляцией, то есть дал BROKEN вместо замера), поэтому мутант воспроизводит НАБЛЮДАЕМОЕ следствие того порядка: на момент объявления множество использованных префиксов пусто. Логика объявления при этом цела — краснеет РОВНО D1b. Мутант запирает порядок, который иначе держался бы только комментарием.",
+      "from": "      const prefixes = includePrefixes ? this.buildPrefixes() : \"\";\n",
+      "to": "      this.usedPrefixes = new Set<string>();\n      const prefixes = includePrefixes ? this.buildPrefixes() : \"\";\n",
+      "expect": ["D1b"]
+    }
+  }
+}

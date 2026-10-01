@@ -26,6 +26,7 @@
  * just syncs and reads the breakdown; no debug toggle to flip.
  */
 
+import type { HeaderGetter } from "../../infrastructure/github/rateLimitHeaders";
 import type { RestCommitRequest } from "../../infrastructure/github/restCommit";
 
 /**
@@ -69,11 +70,44 @@ export interface SyncPhaseCounts {
   restCalls: number;
 }
 
+/**
+ * GitHub primary-quota state as GitHub itself reported it, read from the
+ * `x-ratelimit-*` headers of a **successful** response (req e5e45283).
+ *
+ * ⛔ Why not `GET /rate_limit`: that endpoint is blind here — `gh`'s OAuth app
+ * token makes it report a different pool (`used=0 remaining=5000` measured
+ * against actual 379 and 2468 on 2026-09-26). The only trustworthy number is
+ * the one attached to a response we actually made.
+ *
+ * ⚠ This is a STATE, not a count — it is never summed. Aggregating two repos'
+ * timings keeps the FRESHER snapshot (see {@link addTimings}); adding them
+ * would produce a number GitHub never sent.
+ */
+export interface RateLimitSnapshot {
+  /** `x-ratelimit-limit` — the pool ceiling (5000 user / higher for an app). */
+  limit: number | null;
+  /** `x-ratelimit-remaining` — what is left in the current window. */
+  remaining: number | null;
+  /** `x-ratelimit-used` — spent in the current window. */
+  used: number | null;
+  /** `x-ratelimit-reset` — epoch SECONDS at which the window rolls over. */
+  resetEpoch: number | null;
+  /** Clock reading when this snapshot was taken (freshness discriminator). */
+  observedAt: number;
+}
+
 /** Immutable timing snapshot for one AS, attached to its `RepoSyncResult`. */
 export interface SyncPhaseTimings {
   /** Wall-clock milliseconds accumulated per phase. */
   durations: Record<SyncPhase, number>;
   counts: SyncPhaseCounts;
+  /**
+   * Last quota state GitHub reported during this run, or `undefined` when no
+   * response carried the headers (offline transport, test fake, or every read
+   * served from the immutable-object cache — a cache hit makes no request, so
+   * it reports no quota). Consumers print `n/a` rather than inventing a number.
+   */
+  quota?: RateLimitSnapshot;
 }
 
 /** Clock injected for deterministic tests; defaults to `Date.now` in prod. */
@@ -114,6 +148,8 @@ export function classifyRestPhase(req: RestCommitRequest): SyncPhase {
 export class SyncPhaseTimer {
   private readonly durations = zeroDurations();
   private readonly counts = zeroCounts();
+  /** Last quota GitHub reported this run; `undefined` until a response carries it. */
+  private quota: RateLimitSnapshot | undefined = undefined;
 
   constructor(private readonly now: NowFn) {}
 
@@ -147,11 +183,51 @@ export class SyncPhaseTimer {
     this.counts.restCalls++;
   }
 
+  /**
+   * Record the quota GitHub reported on a response (req e5e45283). Called for
+   * EVERY response the transport returns, success included — that is the whole
+   * point: until now `x-ratelimit-*` was read only just before throwing, so the
+   * remaining budget became visible exactly when it had already run out.
+   *
+   * Transparent and total: a transport that surfaces no headers, or a response
+   * whose headers carry nothing numeric, leaves the previous snapshot intact
+   * (a cache hit must not erase what the last real response told us). Never
+   * throws — a malformed header degrades to `null`, not to a failed sync.
+   */
+  observeQuota(headers: HeaderGetter | undefined): void {
+    if (headers === undefined) return;
+    const num = (name: string): number | null => {
+      let raw: string | null | undefined;
+      try {
+        raw = headers(name);
+      } catch {
+        return null;
+      }
+      if (raw === null || raw === undefined || raw.trim() === "") return null;
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : null;
+    };
+    const limit = num("x-ratelimit-limit");
+    const remaining = num("x-ratelimit-remaining");
+    const used = num("x-ratelimit-used");
+    const resetEpoch = num("x-ratelimit-reset");
+    // Nothing numeric arrived → keep the last real observation.
+    if (limit === null && remaining === null && used === null) return;
+    this.quota = pickQuota(this.quota, {
+      limit,
+      remaining,
+      used,
+      resetEpoch,
+      observedAt: this.now(),
+    });
+  }
+
   /** Immutable copy of the accumulated state at the moment of call. */
   snapshot(): SyncPhaseTimings {
     return {
       durations: { ...this.durations },
       counts: { ...this.counts },
+      ...(this.quota === undefined ? {} : { quota: { ...this.quota } }),
     };
   }
 }
@@ -175,6 +251,9 @@ export function addTimings(
 ): SyncPhaseTimings {
   const durations = zeroDurations();
   for (const p of SYNC_PHASES) durations[p] = a.durations[p] + b.durations[p];
+  // ⛔ Quota is STATE, not a count: summing two `remaining` values would print
+  // a number GitHub never sent. Keep the FRESHER observation instead.
+  const quota = fresherQuota(a.quota, b.quota);
   return {
     durations,
     counts: {
@@ -183,7 +262,53 @@ export function addTimings(
       filesWritten: a.counts.filesWritten + b.counts.filesWritten,
       restCalls: a.counts.restCalls + b.counts.restCalls,
     },
+    ...(quota === undefined ? {} : { quota }),
   };
+}
+
+/**
+ * Choose between two quota observations (either may be absent).
+ *
+ * ⛔ NOT simply "the later one". Requests run concurrently — the engine fetches
+ * blobs through a bounded worker pool — so the order responses ARRIVE is not
+ * the order GitHub served them. A request issued first can resolve last and
+ * carry a HIGHER remaining, and taking it because it was observed later would
+ * report more headroom than actually exists.
+ *
+ * Within one window (same `resetEpoch`) the quota only ever drains, so the
+ * more-depleted reading is the truer one — and erring toward less headroom is
+ * the safe direction for a number people use to decide whether to run more
+ * work. Across windows (the reset rolled over) the later observation wins,
+ * because the older one describes a window that no longer exists.
+ */
+function fresherQuota(
+  a: RateLimitSnapshot | undefined,
+  b: RateLimitSnapshot | undefined,
+): RateLimitSnapshot | undefined {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  return pickQuota(a, b);
+}
+
+/** Same rule as {@link fresherQuota}, for two present observations. */
+function pickQuota(
+  prev: RateLimitSnapshot | undefined,
+  next: RateLimitSnapshot,
+): RateLimitSnapshot {
+  if (prev === undefined) return next;
+  const sameWindow =
+    prev.resetEpoch !== null &&
+    next.resetEpoch !== null &&
+    prev.resetEpoch === next.resetEpoch;
+  if (sameWindow) {
+    if (prev.remaining !== null && next.remaining !== null) {
+      return next.remaining <= prev.remaining ? next : prev;
+    }
+    if (prev.used !== null && next.used !== null) {
+      return next.used >= prev.used ? next : prev;
+    }
+  }
+  return next.observedAt >= prev.observedAt ? next : prev;
 }
 
 /**
@@ -223,6 +348,25 @@ export function fmtMs(ms: number): string {
 }
 
 /**
+ * Render the observed GitHub quota (req e5e45283): `quota 4871/5000, reset
+ * 22:41` — or the literal `quota n/a` when no response reported it.
+ *
+ * ⛔ `n/a` is printed, never silently omitted: an absent line is
+ * indistinguishable from "plenty left", which is exactly the misreading that
+ * made the 2026-09-26 incident take a wrong diagnosis.
+ */
+export function formatQuota(q: RateLimitSnapshot | undefined): string {
+  if (q === undefined) return "quota n/a";
+  const left = q.remaining === null ? "?" : String(q.remaining);
+  const cap = q.limit === null ? "?" : String(q.limit);
+  if (q.resetEpoch === null) return `quota ${left}/${cap}`;
+  const reset = new Date(q.resetEpoch * 1000);
+  const hh = String(reset.getHours()).padStart(2, "0");
+  const mm = String(reset.getMinutes()).padStart(2, "0");
+  return `quota ${left}/${cap}, reset ${hh}:${mm}`;
+}
+
+/**
  * Concise one-line aggregate for the summary toast (iPhone-readable): total +
  * the non-zero phases sorted descending with each phase's share. Empty string
  * when nothing was timed (clean no-op with zero IO — never happens in
@@ -241,7 +385,9 @@ export function formatTimingsLine(t: SyncPhaseTimings): string {
     );
   return `⏱ ExoSync ${fmtMs(total)} — ${parts.join(" · ")} (${
     t.counts.filesHashed
-  } hashed, ${t.counts.filesRead} read, ${t.counts.restCalls} REST)`;
+  } hashed, ${t.counts.filesRead} read, ${t.counts.restCalls} REST, ${formatQuota(
+    t.quota,
+  )})`;
 }
 
 /**
@@ -257,5 +403,7 @@ export function formatRepoTimings(
     totalMs(t),
   )} — ${parts.join(" ")} | hashed ${t.counts.filesHashed} read ${
     t.counts.filesRead
-  } written ${t.counts.filesWritten} REST ${t.counts.restCalls}`;
+  } written ${t.counts.filesWritten} REST ${t.counts.restCalls} | ${formatQuota(
+    t.quota,
+  )}`;
 }

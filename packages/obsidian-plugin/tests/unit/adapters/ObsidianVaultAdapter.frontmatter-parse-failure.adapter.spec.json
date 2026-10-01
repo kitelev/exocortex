@@ -1,0 +1,47 @@
+{
+  "_doc": "Revert-verify mutants for req fe50da38-4798-46e6-bb0a-b4b88596c340 (issue #4440), ObsidianVaultAdapter half. The expectations below were written BEFORE the run (sparql-iri-form-pre-verify §A18). Axis names are the machine key: red_re reads the name right after the last `›`, so every axis is named A<n>/B<n> as its FIRST token (integration-test-revert-verify §A47/§A104). ⛤ The NoteToRDFConverter half cannot live here — mutant-driver takes ONE subject — it is ObsidianVaultAdapter.frontmatter-parse-failure.converter.spec.json. ⛔ 'capability entirely absent' is NOT a mutant here: deleting the method makes the suite reference a non-existent member, which is a BROKEN verdict, not a red axis (§A97). M1 is its behavioural equivalent — the method exists and never reports.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/adapters/ObsidianVaultAdapter.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/adapters/ObsidianVaultAdapter.frontmatter-parse-failure.test.ts --verbose 2>&1",
+  "red_re": "● .*› ([AB]\\d+) ",
+  "mutants": {
+    "M1_adapter_never_reports": {
+      "from": "    try {\n      parseYaml(body);\n      // Parsed into SOMETHING that is not a usable frontmatter mapping: a bare\n      // scalar or `null`. Name the requirement, not just the shape.\n      return { reason: \"frontmatter is not a mapping\" };\n    } catch (error) {\n      return {\n        reason:\n          error instanceof Error ? error.message.split(\"\\n\")[0] : String(error),\n      };\n    }\n",
+      "to": "    try {\n      parseYaml(body);\n      return null;\n    } catch {\n      return null;\n    }\n",
+      "expect": ["A5", "A6", "B1"],
+      "_note": "The pre-#4440 world in behavioural form: the adapter is blind, so a malformed asset is dropped with no skip-list entry. Type-preserving (both branches still return the declared union). The CONTROL axes stay green by construction — they assert silence, which a blind adapter also produces; that asymmetry is what makes them controls rather than duplicates of A5."
+    },
+    "M2_collapse_no_block_into_a_failure": {
+      "from": "    // Outcome 1 — no block at all: a plain note, legitimately not an asset.\n    if (body === null) return null;\n",
+      "to": "    // Outcome 1 — no block at all: a plain note, legitimately not an asset.\n    if (body === null) return { reason: \"no frontmatter\" };\n",
+      "expect": ["A1", "B2", "B7"],
+      "_note": "The OVER-WIDE fix the requirement's acceptance names explicitly as the risk: report any null frontmatter. A report-only acceptance would pass it, which is why A1/B2 exist. A7 stays green — an unreadable file returns before this line. ⛤ B7 also reddens, reason read rather than smoothed over: once a plain note is reported as a failure the loop `continue`s it, so it never reaches convertNote and B7's per-file list loses it. Same class as the converter spec's C1/C2 corrections (integration-test-revert-verify §A44) — the prediction came from the mutant's theme, not from which axes execute after it lands."
+    },
+    "M3_drop_the_no_content_line_predicate": {
+      "from": "    if (!hasContentLine) return null;\n",
+      "to": "    if (false && !hasContentLine) return null;\n",
+      "expect": ["A3", "A4"],
+      "_note": "Both legitimate 'no keys yet' shapes — the blessed empty block and a comment-only body — become reported noise. `false &&` keeps the expression's form (and `hasContentLine` used), so no type-narrowing is lost."
+    },
+    "M4_author_the_reason_instead_of_taking_the_parser_s": {
+      "from": "        reason:\n          error instanceof Error ? error.message.split(\"\\n\")[0] : String(error),\n",
+      "to": "        reason: \"invalid frontmatter\",\n",
+      "expect": ["A5", "B1"],
+      "_note": "The reason must be DERIVED from the mechanism, not authored — an authored string cannot drift from the parser because it never agreed with it in the first place. B1 reddens because the skip-list entry stops carrying the diagnosis the user needs."
+    },
+    "M5_claim_an_unreadable_file_is_a_parse_failure": {
+      "from": "      // Unreadable or gone — that is not a PARSE failure, and claiming one\n      // would put a wrong reason in front of the user.\n      return null;\n",
+      "to": "      return { reason: \"unreadable\" };\n",
+      "expect": ["A7"],
+      "_note": "Narrow by construction: only the missing-file axis reaches the read's catch. Guards against putting a wrong REASON in front of the user for a file that is merely gone (a race with a delete, an unreadable mount)."
+    }
+  }
+}

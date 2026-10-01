@@ -5,6 +5,7 @@ import type {
   OntologyPropertyDefinition,
 } from '@plugin/application/services/OntologySchemaService';
 import { PropertyFieldType, FilenameValidator } from "@kitelev/exocortex-core";
+import { Namespace } from "@kitelev/exocortex-core/domain/models/rdf";
 import {
   PropertyFieldFactory,
   type PropertyFieldInstance,
@@ -572,8 +573,10 @@ export class DynamicAssetCreationModal extends Modal {
    * Converts internal class name to human-readable display name.
    */
   private getDisplayClassName(className: string): string {
-    // Remove prefix (ems__, exo__, etc.)
-    const withoutPrefix = className.replace(/^[a-z]+__/, "");
+    // Remove the namespace prefix — any prefix the SHARED grammar accepts
+    // (`aiKnow__`, `tbank-nessy__`, `exo003__`), not only `[a-z]+` (#4393).
+    const withoutPrefix =
+      Namespace.fromPropertyKey(className)?.localName ?? className;
     // Convert underscores to spaces and add proper spacing for camelCase
     return withoutPrefix
       .replace(/_/g, " ")

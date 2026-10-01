@@ -25,6 +25,7 @@ import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { expectNaturalExit } from "./helpers/exit-assertions.js";
 
 const { setPropertyCommand } = await import("../../src/commands/set-property.js");
 
@@ -166,7 +167,7 @@ describe("Ticket 6ffac10e: `cli set-property` no-op leaves the file byte-identic
 
   /** Assert the fixture is in the "set once under clock A" state. */
   function expectStampedA(first: RunResult): void {
-    expect(first.exit).toContain(0);
+    expectNaturalExit(first.exit);
     expect(first.content).toContain(`exo__Asset_updatedAt: ${STAMP_A}`);
     expect(first.echo.changed).toBe(true);
     expect(first.echo.updatedAt).toBe(STAMP_A);
@@ -174,8 +175,7 @@ describe("Ticket 6ffac10e: `cli set-property` no-op leaves the file byte-identic
 
   /** The full no-op post-condition against the bytes written by the first call. */
   function expectNoop(first: RunResult, second: RunResult): void {
-    expect(second.exit).toContain(0);
-    expect(second.exit).not.toContain(1);
+    expectNaturalExit(second.exit);
     // Byte-identical to what the FIRST call wrote — updatedAt still A, not B.
     expect(second.bytes.equals(first.bytes)).toBe(true);
     expect(second.content).toContain(`exo__Asset_updatedAt: ${STAMP_A}`);
@@ -216,7 +216,7 @@ describe("Ticket 6ffac10e: `cli set-property` no-op leaves the file byte-identic
       ["--property", "youtube__Video_channel", "--value", "Another Channel"],
       CLOCK_B,
     );
-    expect(second.exit).toContain(0);
+    expectNaturalExit(second.exit);
     expect(second.content).toMatch(/youtube__Video_channel: "?Another Channel"?\n/);
     expect(second.content).toContain(`exo__Asset_updatedAt: ${STAMP_B}`);
     expect(second.content).not.toContain(STAMP_A);
@@ -251,7 +251,7 @@ describe("Ticket 6ffac10e: `cli set-property` no-op leaves the file byte-identic
       ],
       CLOCK_B,
     );
-    expect(second.exit).toContain(0);
+    expectNaturalExit(second.exit);
     expect(second.content).toContain(`  - "[[${PARENT_B}]]"\n  - "[[${PARENT_A}]]"`);
     expect(second.content).toContain(`exo__Asset_updatedAt: ${STAMP_B}`);
     expect(second.echo.changed).toBe(true);
@@ -264,7 +264,7 @@ describe("Ticket 6ffac10e: `cli set-property` no-op leaves the file byte-identic
 
     fs.utimesSync(movieAbs(), OLD_MTIME, OLD_MTIME);
     const second = await run([...scalarArgs, "--dry-run"], CLOCK_B);
-    expect(second.exit).toContain(0);
+    expectNaturalExit(second.exit);
     expect(second.bytes.equals(first.bytes)).toBe(true);
     expect(second.mtimeMs).toBe(OLD_MTIME.getTime());
     expect(second.stderr).toContain("--- DRY RUN PREVIEW ---");

@@ -1,0 +1,24 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "red_re": "› (V\\d+\\w*) ",
+  "_doc": "Revert-verify for req b6eef8ef (#4274), subject packages/cli/src/cache/loadVaultTriples.ts. Axes V1-V5 in packages/cli/tests/integration/skipped-files-apply-resolve-b6eef8ef.integration.test.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout (with submodules initialised).",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/cache/loadVaultTriples.ts",
+  "harness": "cd \"$(dirname {subject})/../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/skipped-files-apply-resolve-b6eef8ef.integration.test.ts -t 'V[0-9] ' 2>&1",
+  "mutants": {
+    "M4_cache_branch_always_silent": {
+      "from": "  if (!loaded.zeroTriplePaths.includes(vaultRelative)) return null;\n",
+      "to": "  if (!loaded.zeroTriplePaths.includes(vaultRelative) || vaultRelative.length >= 0) return null;\n",
+      "expect": ["V4"]
+    },
+    "M5_target_match_inverted": {
+      "from": "    const hit = skipped.find((f) => f.path === vaultRelative);\n",
+      "to": "    const hit = skipped.find((f) => f.path !== vaultRelative);\n",
+      "expect": ["V1", "V2", "V3"]
+    }
+  }
+}

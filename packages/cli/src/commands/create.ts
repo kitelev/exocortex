@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { resolve } from "path";
+import { resolve, relative as relativePath } from "path";
 import { existsSync } from "fs";
 import { readFileSync } from "fs";
 import {
@@ -14,11 +14,18 @@ import {
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { PlanningFsAdapter } from "../adapters/PlanningFsAdapter.js";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
-import { ClassResolverService } from "../services/ClassResolverService.js";
-import { WikilinkValidator } from "../services/WikilinkValidator.js";
+import {
+  ClassResolverService,
+  ClassRefNotFoundError,
+} from "../services/ClassResolverService.js";
+import {
+  WikilinkValidator,
+  CreatedByRefNotFoundError,
+} from "../services/WikilinkValidator.js";
 import { PropertyNameValidator } from "../services/PropertyNameValidator.js";
 import { EffortStatusResolver } from "../services/EffortStatusResolver.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
+import { guardStdioAgainstClosedReader } from "../utils/stdioClosedReader.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
 import {
   ShaclConformanceError,
@@ -31,7 +38,7 @@ import {
   pickCanonicalHome,
   type ClassNeighbourScan,
 } from "../executors/folderRepairHelpers.js";
-import type { CacheManager } from "../cache/CacheManager.js";
+import type { AssetLookupIndex, CacheManager } from "../cache/CacheManager.js";
 import { assertNoFrontmatterCopy } from "./bodyFrontmatterGuard.js";
 import { assertIsDefinedByIsOntology } from "./isDefinedByRangeGuard.js";
 
@@ -409,6 +416,11 @@ export class CreateContext {
   private propertyNameValidatorInstance?: PropertyNameValidator;
   private statusResolverInstance?: EffortStatusResolver;
   private shapeRegistryLoad?: Promise<ShapeRegistry>;
+  private tboxScanFilterLoad?: Promise<
+    ((absolutePath: string) => boolean) | undefined
+  >;
+  private assetUidIndexLoad?: Promise<AssetLookupIndex | undefined>;
+  private cacheManagerLoad?: Promise<CacheManager>;
   private readonly neighbourScans = new Map<string, Promise<ClassNeighbourScan>>();
 
   constructor(vaultPath: string, options: CreateContextOptions = {}) {
@@ -423,8 +435,54 @@ export class CreateContext {
 
   get fsAdapter(): NodeFsAdapter {
     this.fsAdapterInstance ??=
-      this.options.fsAdapter ?? new PlanningFsAdapter(this.vaultPath);
+      this.options.fsAdapter ??
+      new PlanningFsAdapter(this.vaultPath, {
+        // #4291 — the anchor lookup (`findFileByUID` → `findFilesByMetadata`)
+        // reads every file's frontmatter to find ONE asset. The cache already
+        // holds `exo__Asset_uid` per file; hand it over so the lookup narrows
+        // its candidates instead of scanning. `undefined` ⇒ today's scan.
+        lookupIndex: () => this.assetLookupIndex(),
+      });
     return this.fsAdapterInstance;
+  }
+
+  /**
+   * #4291 — the cache-derived lookup index, resolved once per invocation.
+   * Shares nothing with {@link tboxScanFilter} but the cache file, which
+   * `CacheManager` reads once per instance.
+   */
+  private assetLookupIndex(): Promise<AssetLookupIndex | undefined> {
+    this.assetUidIndexLoad ??= (async () => {
+      try {
+        const index = await (await this.cacheManager()).assetLookupIndex();
+        return index ?? undefined;
+      } catch {
+        return undefined;
+      }
+    })();
+    return this.assetUidIndexLoad;
+  }
+
+  /**
+   * The ONE `CacheManager` of this invocation (#4264 + #4291).
+   *
+   * Every consumer that touches the cache goes through this instance — the two
+   * #4291 lookups here, and `--validate` / `--write-through` in the command
+   * half — because `CacheManager` only skips re-reading `triples.json` (95.8 MB
+   * on the measured vault) for a caller holding the SAME instance. Two
+   * instances would parse it twice and hand back identical data.
+   *
+   * ⛤ #4291 widened this deliberately: before it, a bare `create` never loaded
+   * the cache module at all, and the narrow module graph of the default path
+   * was the reason. That trade is now the other way round — the default path
+   * is exactly the one whose corpus pass the cache removes.
+   */
+  cacheManager(): Promise<CacheManager> {
+    this.cacheManagerLoad ??= (async () => {
+      const { CacheManager } = await import("../cache/CacheManager.js");
+      return new CacheManager(this.vaultPath);
+    })();
+    return this.cacheManagerLoad;
   }
 
   get classResolver(): ClassResolverService {
@@ -457,12 +515,46 @@ export class CreateContext {
       : undefined;
   }
 
+  /**
+   * #4291 — the READ filter both TBox scans share, resolved ONCE per
+   * invocation and memoised (they run one after the other, so without this the
+   * cache would be read twice).
+   *
+   * `undefined` — a stale, legacy or absent cache, any failure — means "read
+   * every file", i.e. exactly the pre-#4291 walk. That is what makes the
+   * optimisation cache-OPPORTUNISTIC: no cache is ever built here, because
+   * building one parses the corpus and would make the cold path slower than
+   * the walk it replaces.
+   */
+  private tboxScanFilter(): Promise<((absolutePath: string) => boolean) | undefined> {
+    this.tboxScanFilterLoad ??= (async () => {
+      try {
+        const paths = await (await this.cacheManager()).tboxScanPaths();
+        if (paths === null) return undefined;
+        // The scans walk with absolute paths; the cache records vault-relative
+        // ones. Resolve the vault root ONCE and compare on the relative tail,
+        // so a symlinked / non-normalised `--vault` cannot silently reject
+        // every file (which would look like "the TBox is empty", not an error).
+        const root = resolve(this.vaultPath);
+        return (absolutePath: string): boolean => {
+          const relative = relativePath(root, absolutePath);
+          return paths.has(relative);
+        };
+      } catch {
+        // Fail-open: an unreadable cache must cost a full walk, never a throw.
+        return undefined;
+      }
+    })();
+    return this.tboxScanFilterLoad;
+  }
+
   get propertyNameValidator(): PropertyNameValidator {
     this.propertyNameValidatorInstance ??= new PropertyNameValidator(
       this.vaultPath,
       {
         warn: (msg) => this.warn(`⚠ ${msg}\n`),
         readFile: this.sharedReader,
+        scanFilter: () => this.tboxScanFilter(),
       },
     );
     return this.propertyNameValidatorInstance;
@@ -482,6 +574,7 @@ export class CreateContext {
   shapeRegistry(): Promise<ShapeRegistry> {
     this.shapeRegistryLoad ??= ShapeLoader.loadFromVaultFS(this.vaultPath, {
       readFile: this.sharedReader,
+      scanFilter: () => this.tboxScanFilter(),
     }).catch(() => new ShapeRegistry());
     return this.shapeRegistryLoad;
   }
@@ -593,6 +686,75 @@ export async function planCreate(
 
   // Resolve class short name → UUID (UID pass-through if already a UUID).
   const classUid = await classResolver.resolve(vaultPath, options.class);
+
+  // Ticket a3f3939c / issue #4438 — the resolved class MUST exist in the vault.
+  //
+  // ⛔ A short name is checked by the resolver's index lookup, but a FULL UUID
+  // was passed through unchecked, and `exo__Instance_class` is assembled by the
+  // core service DOWNSTREAM of `propertyValues` — so the WikilinkValidator call
+  // below never saw it. A partially-remembered UID therefore created an asset
+  // pointing at nothing, rc=0, with no diagnostic anywhere: `validate schema
+  // --shapes-mode` does not report an unresolvable class either (measured: the
+  // violation/warning counts were identical before and after a manual repair).
+  // The PreToolUse `validate-wikilinks` hook cannot cover this by construction
+  // — a CLI create goes through Bash, not Write/Edit — so the gate has to live
+  // here.
+  //
+  // Same escape as every other reference this command writes:
+  // `--skip-wikilink-validation`. The class ref IS a wikilink, so a second flag
+  // would split one guarantee across two switches. Resolution is delegated to
+  // the validator (`targetExists`), which also honours the in-batch
+  // `pendingUids` — a `create-batch` item may legitimately instance a class
+  // created by an earlier item of the SAME batch.
+  if (!options.skipWikilinkValidation) {
+    if (!(await wikilinkValidator.targetExists(classUid))) {
+      throw new ClassRefNotFoundError(classUid, options.class, vaultPath);
+    }
+  }
+
+  // Ticket 36bd4ee0 / issue #4448 — an EXPLICIT `--created-by` MUST exist too.
+  //
+  // ⛔ The SAME mechanism as the class half above, on a sibling property:
+  // `exo__Asset_createdBy` is assembled by the core service DOWNSTREAM of
+  // `propertyValues`, so the `validatePropertyValues` call further down never
+  // inspected it either. Measured on this checkout before the gate:
+  // `create --created-by beef0000-0000-4000-8000-000000000111` exited 0 and
+  // wrote the asset; `find <vault> -name 'beef0000*'` returned 0 while the same
+  // find on a real identity uid returned 1.
+  //
+  // ⛤ Gated on `options.createdBy`, so the scope is the CALLER'S INPUT and the
+  // ExoAssistant default is excluded BY CONSTRUCTION, not by a second
+  // condition: the default is applied further down as
+  // `options.createdBy || DEFAULT_CREATED_BY_UID`, and it is a product
+  // constant, not input. A minimal vault that does not carry that identity file
+  // must stay writable (fail-open) — asserted as a negative control axis, and
+  // it is clause 4 of req b341020e's Gherkin ("the created asset has
+  // exo__Asset_createdBy set to the ExoAssistant wikilink", unconditional).
+  //
+  // Escape, probe and batch coverage are the class half's, deliberately:
+  // `--skip-wikilink-validation` (the creator ref IS a wikilink — a second flag
+  // would split one guarantee across two switches), `targetExists` (ONE place
+  // owns UID-filename → `exo__Asset_uid` scan → label-form linkpath → in-batch
+  // `pendingUids`), and `create-batch` inherits the refusal because it runs
+  // every item through this function — so a batch item naming an identity
+  // created by ANOTHER item of the same batch stays legal, in either direction:
+  // `create-batch` builds `pendingUids` from the WHOLE batch before the planning
+  // loop starts, so membership does not depend on item order. (⛔ #4446's comment
+  // above says "an EARLIER item" for the class half; measured here, that
+  // ordering is not a guarantee the code makes or needs — #4438's own axis K11
+  // already pins the later-item direction. Left unchanged there: it is a comment
+  // outside this ticket, with no behavioural consequence.)
+  //
+  // ⚠ The condition is a TRUTHINESS check, so `--created-by ""` — an explicit but
+  // empty flag — is treated like no flag at all and falls through to the default
+  // below. No dangling reference can result (the empty string is never written),
+  // and axis C11 pins that deliberately rather than leaving it to be rediscovered.
+  const explicitCreatedBy = options.createdBy;
+  if (!options.skipWikilinkValidation && explicitCreatedBy) {
+    if (!(await wikilinkValidator.targetExists(explicitCreatedBy))) {
+      throw new CreatedByRefNotFoundError(explicitCreatedBy, vaultPath);
+    }
+  }
 
   // Effort status default (issue #3849): a status-bearing class
   // (ems__Effort or a subclass, detected by walking exo__Class_superClass
@@ -883,12 +1045,15 @@ export function createCommand(): Command {
     .option("--body <text>", "Markdown body content (use '-' to read from stdin)")
     .option("--body-file <path>", "Read body content from file")
     .option("--dry-run", "Preview frontmatter without writing file")
-    .option("--created-by <uuid>", "Creator UUID (defaults to ExoAssistant)")
+    .option("--created-by <uuid>", "Creator UUID (defaults to ExoAssistant; an explicitly passed uid must exist in the vault — issue #4448)")
     .option("--status <name>", "ems__Effort_status for status-bearing classes (default: Backlog; e.g. Draft, Doing, Done). Errors for non-status-bearing classes.")
     .option("--no-status", "For a status-bearing class, do NOT inject the default ems__Effort_status — create a status-less prototype/template (issue #3928). No-op for a non-status-bearing class. Mutually exclusive with --status / --property ems__Effort_status.")
     .option("--yes", "Accepted for symmetry with the apply subcommands (create is non-interactive; no-op)")
     .option("--timezone <tz>", "Timezone for timestamps (defaults to Asia/Almaty)")
-    .option("--skip-wikilink-validation", "Skip wikilink existence validation")
+    .option(
+      "--skip-wikilink-validation",
+      "Skip wikilink existence validation — for --property VALUES, for the --class reference written as exo__Instance_class (issue #4438) and for an explicit --created-by written as exo__Asset_createdBy (issue #4448)",
+    )
     .option(
       "--validate",
       "Run SHACL-lite conformance validation on the new asset BEFORE writing it; a non-conformant asset is refused and no file is created (same shapes as `validate schema --shapes-mode`). Opt-in: omit the flag and create behaves exactly as before.",
@@ -902,6 +1067,14 @@ export function createCommand(): Command {
       "With --use-cache: fold the created asset into an existing persistent cache in this process, so the next --use-cache process is a plain hit. Refused without --use-cache",
     )
     .action(async (options: CreateCommandOptions) => {
+      // ⛔ FIRST statement, and the paired half of dropping process.exit(0) at the
+      // end of the success path (#4444) — see the comment at that removal. Without
+      // the guard, the exit-less path lets an asynchronous EPIPE from a reader that
+      // left early become an uncaught exception (rc=1 + a Node stack trace);
+      // measured on `get-body` in #4447 and on `set-body` in #4443.
+      // ⛤ Deliberately ABOVE the --write-through refusal below: that branch writes
+      // to stderr and then exits too, so it is the same write-then-exit shape.
+      guardStdioAgainstClosedReader();
       // #4264 — refused before anything is read or written: without
       // --use-cache there is no cache to write through to.
       if (options.writeThrough && !options.useCache) {
@@ -922,10 +1095,8 @@ export function createCommand(): Command {
         // The decision half of create — every guard, every resolution and the
         // co-location that yield the config — is `planCreate`: the SAME
         // function `create-batch` runs for each of its items.
-        const { config, label: trimmedLabel } = await planCreate(
-          options,
-          new CreateContext(vaultPath),
-        );
+        const ctx = new CreateContext(vaultPath);
+        const { config, label: trimmedLabel } = await planCreate(options, ctx);
 
         // The write half: build, optionally validate, then preview or write.
         const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
@@ -933,25 +1104,20 @@ export function createCommand(): Command {
 
         // #4264 — one CacheManager for the whole invocation when --use-cache:
         // `--validate` loads through it (so the loaded state stays in memory)
-        // and the write-through after the write reuses that state. Without
-        // the flag no CacheManager exists — no cache read, no cache write.
-        // Lazily imported INSIDE the flag branch (same pattern as `--validate`
-        // below): the cache module pulls the serialization + inference graph,
-        // and the default `create` path must neither pay that load nor widen
-        // its module graph. Constructed only when something will use it —
-        // the --validate load or the --write-through — so a bare
-        // `create --use-cache` (delta-only default, decision ae0b4fce) neither
-        // loads the module nor holds an instance. A constructed-but-unused
-        // CacheManager reads and writes nothing, so this guard is not
-        // observable under jest (the suites import the module themselves);
-        // it is kept for the module graph, not locked by an axis.
+        // and the write-through after the write reuses that state.
+        //
+        // ⛤ #4291 — that instance now comes from the CreateContext, which has
+        // already used it to narrow the TBox scan and the single-key lookups.
+        // The flag still decides whether a cache is LOADED / WRITTEN THROUGH
+        // for `--validate`; it no longer decides whether the module is loaded,
+        // because the default path reads the cache too.
         const useCache = options.useCache ?? false;
         let cacheManager: CacheManager | undefined;
         if (useCache && (options.validate || options.writeThrough)) {
-          const { CacheManager: CacheManagerCtor } = await import(
-            "../cache/CacheManager.js"
-          );
-          cacheManager = new CacheManagerCtor(vaultPath);
+          // #4291 — the instance `planCreate` already used, NOT a second one:
+          // a fresh manager would re-read the whole cache file to answer the
+          // same question (req cb707868 axis A8 pins one read per invocation).
+          cacheManager = await ctx.cacheManager();
         }
         const cacheLog = (line: string): void => {
           process.stderr.write(`${line}\n`);
@@ -1051,7 +1217,25 @@ export function createCommand(): Command {
         const output = { uuid, path, label: trimmedLabel };
         process.stdout.write(JSON.stringify(output) + "\n");
 
-        process.exit(0);
+        // ⛔ NO process.exit(0) here — the process must end naturally so stderr
+        // DRAINS. The `--dry-run` preview is `built.content`, i.e. the WHOLE asset
+        // the real write would produce, so with `--body-file` it is unbounded; and
+        // `process.exit` does not wait for an asynchronous write, while stderr is
+        // asynchronous whenever it is a pipe. Measured on the built bundle with a
+        // 549 528-byte `--body-file`: to a FILE 605 895 bytes arrived, through a
+        // PIPE only 65 536 (8/8 runs, merged tree with the exit re-added), tail
+        // marker absent — ≈89 % silently lost. #4444 measured the two property verbs
+        // and named this one by code identity; this is its own measurement.
+        // ⛔ The byte count is not a property of the command — the same pattern cut
+        // at 73 728 on the pre-#4444 bundle. Stable is the MECHANISM: the write stops
+        // at whatever the pipe buffer accepted before the exit landed. (An earlier
+        // revision of this comment said 65 658, a third value for one figure;
+        // corrected after review.)
+        //
+        // Nothing here holds the event loop open: the writes are synchronous, and
+        // the optional `--write-through` cache fold is awaited above and is
+        // best-effort by construction. Measured per path in
+        // dryrun-4444-pipe.harness.ts.
       } catch (error) {
         ErrorHandler.handle(error as Error);
       }

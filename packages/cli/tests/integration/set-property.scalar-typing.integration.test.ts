@@ -36,6 +36,8 @@ const { setPropertyCommand } = await import("../../src/commands/set-property.js"
 const { createCommand } = await import("../../src/commands/create.js");
 
 const DIR = "assetspaces/kitelev/exoas-my/episodes";
+/** Where the class definition lives — deliberately NOT `DIR`, see beforeEach. */
+const TBOX_DIR = "assetspaces/kitelev/exoas-public/life";
 const ANCHOR_UID = "e1e1e1e1-0000-4000-8000-000000000001";
 const EPISODE_UID = "e2e2e2e2-0000-4000-8000-000000000002";
 const CLASS_UID = "e3e3e3e3-0000-4000-8000-000000000003";
@@ -95,6 +97,18 @@ describe("ems__Bug 34b0a52c: set-property decides scalar quoting per property", 
     fs.writeFileSync(
       path.join(dir, `${ANCHOR_UID}.md`),
       md({ exo__Asset_uid: ANCHOR_UID, exo__Asset_label: "life__Episodes" }),
+    );
+    // The class the parity axis creates an asset with. Since issue #4438
+    // `create` refuses a `--class` uid with no file in the vault, so the class
+    // has to exist for the create side of the comparison to run at all. It is
+    // written into its OWN TBox folder, not `DIR`: the parity axis identifies
+    // the created asset by "the file in DIR that is neither the anchor nor the
+    // episode", and a class definition sitting there would be mistaken for it.
+    const tboxDir = path.join(vault, TBOX_DIR);
+    fs.mkdirSync(tboxDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(tboxDir, `${CLASS_UID}.md`),
+      md({ exo__Asset_uid: CLASS_UID, exo__Asset_label: "life__Episode" }),
     );
     fs.writeFileSync(
       path.join(dir, `${EPISODE_UID}.md`),

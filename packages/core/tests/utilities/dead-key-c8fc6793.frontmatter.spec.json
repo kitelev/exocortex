@@ -14,9 +14,9 @@
   "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/utilities/FrontmatterService.normalizeIRI.test.ts tests/utilities/FrontmatterService.test.ts tests/utilities/FrontmatterService.applyPatch.test.ts tests/unit/domain/rdf/Namespace.test.ts 2>&1 ; cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/dead-key-c8fc6793.integration.test.ts tests/integration/set-property.integration.test.ts tests/integration/remove-property.integration.test.ts 2>&1",
   "mutants": {
     "MD1_canonical_inverse_fallback_removed": {
-      "_note": "The whole point of the ticket: without the shared inverse an out-of-map namespace falls through as a raw IRI and becomes the physical write key. Type-preserving — the function still returns `string` on every path. ⚠ RE-MEASURED after ticket 6572f3f3 removed the hot-path table, NOT carried over: with the map gone every input reaches the canonical inverse, so MD1 now also reddens DK2 and DK16 — the two axes this spec used to call in-map PAIRED CONTROLS, green under every mutant — plus F1 and H5 in the applyPatch suite. Old list (11 axes) → new list (15).",
-      "from": "    return iriToObsidianName(property) ?? property;",
-      "to": "    return property;",
+      "_note": "The whole point of the ticket: without the shared inverse an out-of-map namespace falls through as a raw IRI and becomes the physical write key. Type-preserving — the function still returns `string` on every path. ⚠ RE-MEASURED after ticket 6572f3f3 removed the hot-path table, NOT carried over: with the map gone every input reaches the canonical inverse, so MD1 now also reddens DK2 and DK16 — the two axes this spec used to call in-map PAIRED CONTROLS, green under every mutant — plus F1 and H5 in the applyPatch suite. Old list (11 axes) → new list (15). ⛤ RE-ANCHORED for #4403: normalizeIRI now calls Namespace.fromTermIRI directly (no iriToObsidianName), so the mutant removes the TERM branch instead of the delegated call; measured: the same 15 axes redden.",
+      "from": "    return term ? `${term.namespace.prefix}__${term.localName}` : property;",
+      "to": "    return term && property.length < 0 ? `${term.namespace.prefix}__${term.localName}` : property;",
       "expect": [
         "DK1",
         "DK2",

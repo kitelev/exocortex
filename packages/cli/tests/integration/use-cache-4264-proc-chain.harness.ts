@@ -19,6 +19,26 @@
  * the tree is measured, not a stale bundle. Prints `✅ P<n>` / `❌ P<n>` per
  * axis and `PASS=<n> FAIL=<n>`; exit 1 on any failure.
  *
+ * Flag parsing, the rebuild, the existence check and the refusal to measure a
+ * bundle older than what it was built from all live in the shared guard module
+ * (issue #4464, widened to this file by #4466). Before that this harness parsed
+ * `--dist` / `--no-build` itself and, under `--no-build`, checked existence but
+ * NOT staleness, so a bundle older than the tree it was pointed at was measured
+ * in silence (harness-invocation-surface §A8).
+ *
+ * ⛔ #4466 states this file had "not even the `fs.existsSync(dist)` check" —
+ * measured against the tree, that is wrong: the check was there (`⛔ BROKEN: no
+ * CLI bundle at …`, rc 2). Only the staleness half was missing, exactly as in
+ * the four siblings before #4464. Likewise the cleanup: it already ran from a
+ * hand-written `try/finally`, so nothing leaked on a throw — what moves into
+ * `runAxes` is the guarantee's OWNERSHIP, not the guarantee.
+ *
+ * ⚠ One consequence of routing through the shared module: a build failure or an
+ * absent bundle now exits 1 with `❌ BUILD — …` where this file used to exit 2
+ * with `⛔ BROKEN: …`. Its two mutant specs key on `❌ (P\d+) ` and on rc
+ * changing relative to the control, so both are unaffected (the full matrix was
+ * measured identical before and after).
+ *
  * Axes:
  *   P1 `index` on the fixture succeeds and persists an inferred layer
  *   P2 process 1 `apply create-task-instance --use-cache`: load = hit, write-
@@ -56,17 +76,12 @@ import {
   STATUS_DOING,
   TASK_CLASS,
 } from "./fixtures/use-cache-4264-vault.js";
+import { prepareBundleOrExit, runAxes } from "./helpers/pipe-harness-guards.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const cliRoot = path.resolve(here, "..", "..");
-const repoRoot = path.resolve(cliRoot, "..", "..");
 
-let dist = path.join(cliRoot, "dist", "index.js");
-let build = true;
-for (let i = 2; i < process.argv.length; i++) {
-  if (process.argv[i] === "--dist") dist = path.resolve(process.argv[++i]);
-  else if (process.argv[i] === "--no-build") build = false;
-}
+const dist = prepareBundleOrExit(process.argv.slice(2), cliRoot);
 
 let pass = 0;
 let fail = 0;
@@ -105,21 +120,6 @@ const refused = (p: Proc): boolean => /Precondition not satisfied/.test(p.stderr
 const cacheOf = (root: string): { metadata: { inferenceEnabled: boolean; inferredCount: number } } =>
   JSON.parse(fs.readFileSync(path.join(root, REL.cache), "utf-8"));
 
-if (build) {
-  const b = spawnSync("npm", ["run", "build", "-w", "@kitelev/exocortex-cli"], {
-    cwd: repoRoot,
-    encoding: "utf-8",
-    timeout: 300_000,
-  });
-  if (b.status !== 0) {
-    console.log(`⛔ BROKEN: dist build failed (rc ${b.status})\n${b.stderr.slice(-2000)}`);
-    process.exit(2);
-  }
-}
-if (!fs.existsSync(dist)) {
-  console.log(`⛔ BROKEN: no CLI bundle at ${dist}`);
-  process.exit(2);
-}
 console.log(`dist: ${dist}`);
 
 const cached = buildVault();
@@ -140,7 +140,7 @@ const chainArgs = (vault: string, extra: string[]): string[] => [
   ...extra,
 ];
 
-try {
+const axes = async (): Promise<void> => {
   // P1 — index (the bot's own warm-up), inferred layer persisted
   const idx = cli(["index", "--vault", cached, "--force"]);
   check("P1", idx.status === 0 && cacheOf(cached).metadata.inferenceEnabled && cacheOf(cached).metadata.inferredCount > 0,
@@ -218,10 +218,10 @@ try {
   check("P10", x.status === 2 && xLines.length === 1 && /--write-through requires --use-cache/.test(xLines[0]) && x.stdout === "" &&
     fs.readFileSync(path.join(cached, created2), "utf-8") === fileBefore,
     `rc=${x.status} stderr=${JSON.stringify(xLines)} stdout empty=${x.stdout === ""} file untouched=${fs.readFileSync(path.join(cached, created2), "utf-8") === fileBefore}`);
-} finally {
-  fs.rmSync(cached, { recursive: true, force: true });
-  fs.rmSync(plain, { recursive: true, force: true });
-}
+};
 
-console.log(`PASS=${pass} FAIL=${fail}`);
-process.exit(fail > 0 ? 1 : 0);
+void (async (): Promise<void> => {
+  await runAxes([cached, plain], axes);
+  console.log(`PASS=${pass} FAIL=${fail}`);
+  process.exitCode = fail > 0 ? 1 : 0;
+})();

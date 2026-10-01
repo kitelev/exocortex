@@ -37,7 +37,6 @@ vacuous-length	packages/obsidian-plugin/tests/unit/ProfileApplyManager.applyProg
 vacuous-length	packages/obsidian-plugin/tests/unit/ProfileApplyManager.restAtomicity.test.ts	2
 vacuous-length	packages/obsidian-plugin/tests/unit/presentation/fileexplorer/FileExplorerIconPatch.test.ts	1
 non-canon-service-dir	packages/core/tests/services/ArchiveAssetService.test.ts	1
-non-canon-service-dir	packages/core/tests/services/ClassHierarchy.test.ts	1
 non-canon-service-dir	packages/core/tests/services/ClassHierarchyResolver.test.ts	1
 non-canon-service-dir	packages/core/tests/services/CommandExecutionFlow.test.ts	1
 non-canon-service-dir	packages/core/tests/services/FixMissingLabelService.test.ts	1

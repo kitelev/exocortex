@@ -1,0 +1,15 @@
+# ⛔ Test fixtures are INPUTS, not source: their exact bytes ARE what the test
+# measures. A formatter rewriting them silently changes the measurement, and the
+# test stays green while no longer testing what it claims.
+#
+# Measured 2026-09-28 (PR #4439): `prettier --write` stripped the U+00A0 from
+# `issue-2997/bad-files/13-nbsp-comment-frontmatter.md` (887 → 885 bytes),
+# turning a deliberately-unparseable frontmatter block into a valid comment-only
+# one. The suite then reported 10 skipped files instead of 11 — i.e. the fixture
+# for the exact defect the PR exists to catch had been repaired by the commit
+# hook. `lint-staged` runs `prettier --write --ignore-unknown` over every staged
+# `*.md`, so this fires on the way IN, before jest ever sees the file.
+#
+# The CI `format:check` script only covers `*.{ts,tsx}`, so nothing else in the
+# pipeline wants these files formatted.
+**/tests/fixtures/

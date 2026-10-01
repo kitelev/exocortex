@@ -1,0 +1,19 @@
+{
+  "_doc": "Revert-verify for req f6690c74, axis K6: the DEFAULT set-label (composite 3dfa3379, req f7790000) keeps replacing the aliases mirror on the same real data. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout (with submodules initialised).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/exoas-exocmd/exocmd/3dfa3379-5cee-4717-97fe-e0885fec0549.md",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/apply-set-label-keep-alias.integration.test.ts 2>&1",
+  "red_re": "› (K\\d+\\w*) ",
+  "mutants": {
+    "M4_default_set_label_stops_clearing": {
+      "from": "  - \"[[7f33c6c7-5082-4a40-bf8d-d1ec0fc37f1d]]\"\n",
+      "to": "",
+      "expect": ["K6"]
+    }
+  }
+}

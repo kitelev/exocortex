@@ -5,6 +5,7 @@ import { FrontmatterService } from "@kitelev/exocortex-core";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { WikilinkValidator } from "../services/WikilinkValidator.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
+import { guardStdioAgainstClosedReader } from "../utils/stdioClosedReader.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import {
   DEFAULT_TIMEZONE,
@@ -114,6 +115,13 @@ export function setBodyCommand(): Command {
       "Skip wikilink existence validation for the new body",
     )
     .action(async (pathArg: string, options: SetBodyOptions) => {
+      // ⛔ FIRST statement of the action, and load-bearing for the fix below: once
+      // the success path stops calling process.exit(0), the process lives long
+      // enough for a reader that left early (`--dry-run | less`, quit with `q`) to
+      // deliver EPIPE as an unhandled 'error' event — an uncaught exception, rc=1.
+      // Measured: origin/main rc=0 5/5, the exit-less fix WITHOUT this guard rc=1
+      // 5/5, on the same `| head -c 200` invocation.
+      guardStdioAgainstClosedReader();
       try {
         const vaultPath = resolve(options.vault);
         if (!existsSync(vaultPath)) {
@@ -162,15 +170,22 @@ export function setBodyCommand(): Command {
 
         // The frontmatter block MUST exist (guaranteed by the uid check above).
         const fm = new FrontmatterService();
-        const parsed = fm.parse(original);
-        if (!parsed.exists) {
+        const leading = FrontmatterService.leadingBlock(original);
+        if (!leading) {
           throw new Error(
             `No frontmatter block found in ${vaultRelative}; set-body preserves the frontmatter and only rewrites the body.`,
           );
         }
-        // Reconstruct the exact original frontmatter block (byte-identical to
-        // FRONTMATTER_REGEX's match: `---\n<yaml>\n---`).
-        const frontmatterBlock = `---\n${parsed.content}\n---`;
+        // The block's ACTUAL bytes, not a reconstruction (#4469). This used to
+        // read `` `---\n${parse(original).content}\n---` `` with the comment
+        // "byte-identical to FRONTMATTER_REGEX's match" — true only while
+        // `FrontmatterService` refused anything but LF fences and no BOM. #4469
+        // widened `parse()` onto the shared predicate, which turned that
+        // reconstruction from dead-but-harmless into live corruption: measured
+        // on a lone-CR asset it emitted `---\n…\rkeep__me…\n---` (one file, two
+        // line-ending styles inside one block) and on a 2-BOM asset it dropped
+        // the mark entirely.
+        const { text: frontmatterBlock, eol } = leading;
 
         // Resolve the new body. `\n` escapes are expanded ONLY for the inline
         // `--body "a\nb"` form, which is what issue #2288 asked for: a single shell
@@ -208,13 +223,25 @@ export function setBodyCommand(): Command {
         // new body (ensure a trailing newline for a non-empty body). Then, if
         // anything changed, bump exo__Asset_updatedAt — updateProperty re-matches ONLY the frontmatter
         // block, leaving the just-written body intact.
+        // ⛔ The trailing terminator is the FILE's, not a bare `\n` (#4469). On a
+        // CRLF or lone-CR asset the hardcoded LF was the single foreign line
+        // ending in the whole file — a mixed-EOL file introduced by the very
+        // write that preserves the block's own endings everywhere else.
+        // Measured on the dist before this line changed: CRLF file → crlf=5,
+        // lf=1 (tail `---\r\nnew body\n`); lone-CR → cr=5, lf=1.
+        // A body that ALREADY ends in a terminator of any of the three forms is
+        // left alone rather than given a second one; for an LF file both
+        // branches are byte-identical to the previous behaviour.
         const bodyPart =
           newBody.length > 0
-            ? newBody.endsWith("\n")
+            ? /(?:\r\n|\r|\n)$/.test(newBody)
               ? newBody
-              : `${newBody}\n`
+              : `${newBody}${eol}`
             : "";
-        const rebuilt = `${frontmatterBlock}\n${bodyPart}`;
+        // The separator between the block and the body is the FILE's own line
+        // ending (#4469) — a bare `\n` here is what put a lone LF straight after
+        // a CRLF closing fence.
+        const rebuilt = `${frontmatterBlock}${eol}${bodyPart}`;
 
         // A no-op (the rebuilt content is byte-identical to the file — same body
         // INCLUDING the trailing newline set-body itself writes) is NOT a
@@ -263,7 +290,37 @@ export function setBodyCommand(): Command {
         };
         process.stdout.write(JSON.stringify(output) + "\n");
 
-        process.exit(0);
+        // ⛔ NO process.exit(0) here — the process must end naturally so stderr
+        // DRAINS. `process.exit` does not wait for an asynchronous write to
+        // flush, and stderr is asynchronous whenever it is a PIPE — which is how
+        // a preview is read in practice (`set-body … --dry-run | less`, or any
+        // capture by a wrapper/agent). Measured on the built bundle with a
+        // 300 KiB body (issue #4436):
+        //     stderr → FILE   605 709 bytes arrived
+        //     stderr → PIPE    65 536 bytes  (89.2 % silently lost, tail gone)
+        // `--dry-run` exists to be READ BEFORE APPLYING, so a truncated preview
+        // is a decision surface that lies: the operator sees a document ending
+        // where the buffer ended and concludes the body is shorter than it is
+        // (dry-run-preview-not-real-output). The stdout echo is ~120 bytes of
+        // JSON and can never truncate, which is why this stayed invisible — the
+        // obvious channel is safe and the truncating one is the diagnostic one.
+        // Nothing here holds the event loop open (the file I/O is synchronous
+        // and the wikilink validation has already been awaited), so falling off
+        // the end of the action is both sufficient and correct. Same fix as
+        // get-body in #4434.
+        // ⛔ The exit code stays 0 ONLY because the action installs
+        // guardStdioAgainstClosedReader() first. Without the exit, a reader that
+        // left early delivers EPIPE as an unhandled 'error' event — rc=1 plus a
+        // stack trace. Measured on the same `| head -c 200` invocation:
+        // origin/main rc=0 5/5, this fix WITHOUT the guard rc=1 5/5, with it
+        // rc=0. Locked by axis S7; round-1 review found this by running it, and
+        // an earlier draft of this comment claimed "the exit code stays 0"
+        // unconditionally, which was false for exactly that input.
+        // Locked by the real-pipe axis in set-body-4436-pipe.harness.ts — the
+        // jest axes CANNOT see this: they mock process.stderr.write and
+        // process.exit, so no pipe and no flush is ever exercised
+        // (integration-test-revert-verify §A66 — the axes judge an intermediate
+        // record, the product is the DELIVERED preview).
       } catch (error) {
         ErrorHandler.handle(error as Error);
       }
