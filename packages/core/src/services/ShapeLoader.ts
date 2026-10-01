@@ -91,16 +91,37 @@ export class ShapeLoader {
        * text — and therefore which shapes it registers — is unchanged.
        */
       readFile?: (filePath: string, encoding: "utf-8") => Promise<string>;
+      /**
+       * #4291 — resolves a READ filter over the tree this scan walks:
+       * `shouldRead(absolutePath)` false ⇒ the file is skipped WITHOUT being
+       * read. `undefined` (the default, and what an unresolvable / stale
+       * source returns) ⇒ every file is read, i.e. verbatim today's walk.
+       *
+       * The tree is still walked and still walked in the same order: only the
+       * READ is skipped, so which files the scan sees, in which sequence, and
+       * how it parses them are unchanged. That is the whole contract — a
+       * filter may only ever skip a file that contributes nothing here, and
+       * the caller owns that proof (the CLI derives it from the persistent
+       * cache's per-file triples, `CacheManager.tboxScanPaths`).
+       *
+       * Async because the filter is IO-backed: awaited ONCE per load, before
+       * the walk, never per file.
+       */
+      scanFilter?: () => Promise<
+        ((absolutePath: string) => boolean) | undefined
+      >;
     },
   ): Promise<ShapeRegistry> {
     const { readdir, readFile } = await import("fs/promises");
     const path = await import("path");
     const registry = new ShapeRegistry();
     const scan: FsScan = { classEdges: [], candidates: [], uidToLabel: new Map() };
+    const shouldRead = io?.scanFilter ? await io.scanFilter() : undefined;
     await ShapeLoader.scanDir(vaultPath, scan, {
       readdir,
       readFile: io?.readFile ?? readFile,
       path,
+      shouldRead,
     });
     const propertyClassKeys = ShapeLoader.propertyClassKeysFromEdges(scan.classEdges);
     for (const candidate of scan.candidates) {
@@ -572,6 +593,7 @@ export class ShapeLoader {
       ) => Promise<import("fs").Dirent[]>;
       readFile: (p: string, enc: "utf-8") => Promise<string>;
       path: typeof import("path");
+      shouldRead?: (absolutePath: string) => boolean;
     },
   ): Promise<void> {
     let entries: import("fs").Dirent[];
@@ -590,6 +612,13 @@ export class ShapeLoader {
       if (entry.isDirectory()) {
         await ShapeLoader.scanDir(full, scan, io);
       } else if (entry.isFile() && entry.name.endsWith(".md")) {
+        // #4291 — a filtered-out file is skipped BEFORE the read; the walk
+        // order above is untouched, so the candidate sequence (and therefore
+        // which of two defs sharing a propertyIRI registers last) is the same
+        // as an unfiltered scan's.
+        if (io.shouldRead && !io.shouldRead(full)) {
+          continue;
+        }
         // Fail-soft: one malformed asset should not abort the scan.
         try {
           await ShapeLoader.collectFile(full, scan, io.readFile, io.path);

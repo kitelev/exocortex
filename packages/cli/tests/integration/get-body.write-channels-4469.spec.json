@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutant for the READER half of the caller class in issue #4469 / req 2d072437-c19d-49a4-ae89-f20b6185571f. `get-body` found the end of the frontmatter block by the LENGTH of a hand-rebuilt `---\\n<body>\\n---`; that length equals the real one only for an LF file with no BOM, so widening `parse()` turned a fail-loud refusal (rc=1 on main 17.7.14) into a silent print of the file's own closing fence as body. MG1 restores exactly that arithmetic. Expectation written BEFORE the run.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› (CH\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/get-body.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/get-body.write-channels-4469.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "MG1_slice_by_the_reconstructed_length": {
+      "from": "        const afterBlock = original.slice(leading.end);",
+      "to": "        const afterBlock = original.slice(\n          `---\\n${parsed.content}\\n---`.length,\n        );",
+      "expect": ["CH61", "CH62"],
+      "_note": "The pre-#4469 arithmetic. ⛔ CH60 (lone-CR) does NOT redden here, and the first edition of this spec expected it to — the expectation was derived from the mutant's THEME rather than from the arithmetic (integration-test-revert-verify §A44). Measured on the actual fixture: a lone-CR block's reconstruction is 44 chars and its real end is 44, because `\\r` and `\\n` are ONE character each — the length-slice lands correctly. Only CRLF (45 vs 47) and a BOM run shift it. What broke lone-CR before the fix was the SEPARATOR strip, which is MG2's business and which CH60 does redden. CH63 (pure LF, and a file ending at the closing fence) stays green for the same arithmetic reason, which is exactly why the defect stayed invisible until the predicate was widened."
+    },
+    "MG2_separator_strip_back_to_lf_only": {
+      "from": "        const body = afterBlock.replace(/^[^\\S\\r\\n]*(?:\\r\\n|\\r|\\n)/, \"\");",
+      "to": "        const body = afterBlock.replace(/^\\r?\\n/, \"\");",
+      "expect": ["CH60"],
+      "_note": "The block end is then correct but the ONE separator after the closing fence is only stripped for LF/CRLF, so a lone-CR file keeps a leading `\\r` on its body. CH61/CH62 stay green (their separators are CRLF and LF) — the two halves of 'where does the body begin' are separate guarantees."
+    }
+  }
+}

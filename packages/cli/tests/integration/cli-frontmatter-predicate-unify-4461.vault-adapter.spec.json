@@ -1,0 +1,32 @@
+{
+  "_doc": "WIRING mutant for #4461: `FileSystemVaultAdapter` must ask CORE for the block predicate. The equivalence proof of the migration is req c05a3565's 17 axes B1-B17 staying green UNCHANGED; this mutant proves they are not green by accident — cut the site off from core and they redden. ⛤ The PREDICATE's own strength (fences / BOM / anchor) is proven separately: for the plugin surface by plugin-frontmatter-crlf-bom-4453.core.spec.json (#4458, untouched), for THIS surface by cli-frontmatter-predicate-unify-4461.core.spec.json, which is where the old in-class mutants M1/M2/M4/M6 of issue-4441-crlf-bom.adapter.spec.json migrated when their anchors moved to core (integration-test-revert-verify §A117 — a guard's mutant travels with the guard, it is not deleted).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/adapters/FileSystemVaultAdapter.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/issue-4441-crlf-bom-frontmatter.integration.test.ts --verbose 2>&1",
+  "red_re": "› (?:@req:[0-9a-f-]+ )?(B\\d+)[: ]",
+  "mutants": {
+    "W_vault_adapter_keeps_its_own_lf_only_regex": {
+      "from": "  private extractFrontmatter(content: string): IFrontmatter | null {\n    const block = matchFrontmatterBlock(content);\n",
+      "to": "  private extractFrontmatter(content: string): IFrontmatter | null {\n    const m = /^---\\n([\\s\\S]*?)\\n---/.exec(content);\n    const block = m ? { body: m[1], blockStart: 0, blockEnd: m[0].length } : null;\n",
+      "expect": [
+        "B1",
+        "B2",
+        "B9",
+        "B10",
+        "B11",
+        "B13",
+        "B14",
+        "B17"
+      ],
+      "_note": "#4461 WIRING: the READ path stops asking core and asks its own pre-#4441 LF-only regex again — the exact shape this migration removed. Type-preserving (same object shape), so a BROKEN verdict cannot be confused with redness (§A36/§A97).\n⛤ B3/B4/B5 were in the FIRST prediction and did NOT redden — recorded, not smoothed (integration-test-revert-verify §A44). The prediction was the union of the old in-class M1+M2 expectations, i.e. derived from the mutant's THEME («both tolerances gone»); what actually executes is narrower. B3/B4/B5 assert that a MALFORMED CRLF/BOM asset is NAMED IN THE SKIP LIST, and that verdict comes from the DIAGNOSTIC path (`getFrontmatterParseFailure`), which this mutant leaves on core. So the file still gets named; only its triples vanish. That asymmetry is exactly what M3 of `issue-4441-crlf-bom.adapter.spec.json` owns (it reddens B3/B4/B5/B9 by giving the diagnostic path its OWN regex), and the two mutants together cover both halves of req c05a3565's «read and diagnostic agree by construction» clause — neither alone does.\n⛤ B6/B8/B15/B16 assert the ABSENCE of a side effect and are legitimately green in both directions (§ось на ОТСУТСТВИЕ побочного эффекта); B7/B12 do not reach the widened shapes."
+    }
+  }
+}

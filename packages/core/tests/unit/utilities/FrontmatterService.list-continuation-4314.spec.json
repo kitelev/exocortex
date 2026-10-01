@@ -17,92 +17,61 @@
       "_note": "The pre-#4314 behaviour for a CONTINUATION line: a block-scalar body / nested-map sub-key falls through to flushArray(), so the array ends there and every item after it is lost from the read — and both primitives then write the truncated list back. Comment shapes are NOT here: their carve-out sits in its own branch above (M5/M9).",
       "from": "      if (openItems !== null && /^[ \\t]/.test(line)) {",
       "to": "      if (openItems !== null && /^ZZ_NEVER/.test(line)) {",
-      "expect": [
-        "P1",
-        "P2",
-        "P5",
-        "W1",
-        "W2"
-      ]
+      "expect": ["P1", "P2", "P5", "W1", "W2"]
     },
     "M2_blank_line_ends_the_array": {
       "_note": "Blanks are no longer held back, so a blank line INSIDE a block-scalar body ends the array — the write side (findPropertyLineSpan) absorbs exactly such a blank, so this is the half that would put the two out of step again.",
-      "from": "          pendingBlanks.push(line);",
-      "to": "          flushArray();",
-      "expect": [
-        "P2"
-      ]
+      "from": "        if (openItems !== null) {\n          pendingBlanks.push(line);",
+      "to": "        if (openItems !== null) {\n          flushArray();",
+      "expect": ["P2"]
     },
     "M3_two_space_items_only": {
       "_note": "Item regex back to two-space-only: a column-0 list reads as an empty array again, and property_append then writes its single new item above the orphaned originals.",
       "from": "  private static readonly ARRAY_ITEM_LINE = /^ {0,2}- (.*)$/;",
       "to": "  private static readonly ARRAY_ITEM_LINE = /^ {2}- (.*)$/;",
-      "expect": [
-        "P3",
-        "W3"
-      ]
+      "expect": ["P3", "W3"]
     },
     "M4_flow_sequence_read_as_scalar": {
       "_note": "Flow-style arrays fall through to the scalar branch (pre-#4314): property_append nests the whole flow text inside one item and property_replace refuses the property as 'not a list'.",
       "from": "        value.startsWith(\"[\") &&",
       "to": "        value.startsWith(\"ZZ_NEVER\") &&",
-      "expect": [
-        "P4",
-        "W4",
-        "W5"
-      ]
+      "expect": ["P4", "W4", "W5"]
     },
     "M5_comment_absorbed_into_the_item": {
       "_note": "Without the carve-out an interleaved `#` comment is treated as a value line: BETWEEN items it is absorbed into the item above (corrupting that item's value, which breaks the Set-based dedup and writes a duplicate alias) and BEFORE the first item it ends the array, so the property reads as empty and the rewrite erases every alias.",
       "from": "        /^[ \\t]+#/.test(line)\n      ) {",
       "to": "        /^ZZ_NEVER/.test(line)\n      ) {",
-      "expect": [
-        "P6",
-        "P9",
-        "W6",
-        "W8"
-      ]
+      "expect": ["P6", "P9", "W6", "W8"]
     },
     "M6_span_does_not_own_column0_items": {
       "_note": "The paired WRITE-side half: the key's span stops at its own line, so the rewritten list is spliced above the original column-0 items and they are left dangling — js-yaml then refuses the whole document. Reddens the disk axis only; the read axis (P3) is unaffected, which is exactly why the read fix alone would have been a half-fix.",
       "from": "      if (/^[ \\t]/.test(line) || /^-(?: |$)/.test(line)) {",
       "to": "      if (/^[ \\t]/.test(line)) {",
-      "expect": [
-        "W3"
-      ]
+      "expect": ["W3"]
     },
     "M7_malformed_flow_accepted": {
       "_note": "The splitter's fail-safe: an unterminated quote would yield invented items instead of leaving the value as the opaque scalar it was before #4314.",
       "from": "    if (quote !== null || depth !== 0) return null;",
       "to": "    if (quote !== null || depth !== 0) return items;",
-      "expect": [
-        "P8"
-      ]
+      "expect": ["P8"]
     },
     "M8_closing_before_opening_accepted": {
       "_note": "The depth<0 guard is NOT redundant with the final depth check: `]] [[` closes before it opens and ends at depth 0, so only this guard rejects it.",
       "from": "        if (depth < 0) return null;",
       "to": "        if (depth < -99) return null;",
-      "expect": [
-        "P8"
-      ]
+      "expect": ["P8"]
     },
     "M9_comment_before_first_item_still_terminates": {
       "_note": "The carve-out narrowed back to a NON-EMPTY array (`openItems`), i.e. what my first cut of this fix did: a comment BETWEEN items is handled, one BEFORE the first item still ends the array. That is the shape all 33 live carriers have, and a corpus-wide old-vs-new diff of parseObject over 53 591 assets is what caught it — the between-items fixture alone could not.",
       "from": "        currentArray !== null &&\n        !inBlockScalarBody &&",
       "to": "        openItems !== null &&\n        !inBlockScalarBody &&",
-      "expect": [
-        "P9",
-        "W8"
-      ]
+      "expect": ["P9", "W8"]
     },
     "M10_unquoted_wikilink_split_as_flow": {
       "_note": "The regression this PR introduced and then closed (review of #4381): without the `[[` exclusion an unquoted `exo__Instance_class: [[ems__Task]]` satisfies the bracket test, splits to the item `[ems__Task]` — one bracket pair short — and the rewrite puts that on disk, where it is unrecoverable and a second cycle is a stable fixed point. Reddens the round-trip axis only; the quoted flow axes stay green because `[\"...\"]` does not start with `[[`.",
       "from": "        !value.startsWith(\"[[\")",
       "to": "        !value.startsWith(\"ZZ_NEVER\")",
-      "expect": [
-        "P10"
-      ]
+      "expect": ["P10"]
     }
   }
 }

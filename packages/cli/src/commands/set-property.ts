@@ -10,6 +10,7 @@ import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { WikilinkValidator } from "../services/WikilinkValidator.js";
 import { PropertyNameValidator } from "../services/PropertyNameValidator.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
+import { guardStdioAgainstClosedReader } from "../utils/stdioClosedReader.js";
 import {
   VaultNotFoundError,
   InvalidArgumentsError,
@@ -267,6 +268,14 @@ export function setPropertyCommand(): Command {
       "Accepted for symmetry with the apply/create subcommands (set-property is non-interactive; no-op)",
     )
     .action(async (pathArg: string, options: SetPropertyOptions) => {
+      // ⛔ FIRST statement, and the paired half of dropping process.exit(0) at the
+      // end of the success path (#4444). The exit was also what terminated the
+      // process BEFORE the OS delivered the asynchronous EPIPE that a reader
+      // closing its end mid-write causes; without both halves the truncation fix
+      // trades one regression for another — measured on `get-body` (#4447) and on
+      // `set-body` (#4443, round-1 review) as rc=1 plus a Node stack trace on the
+      // very `--dry-run | less` invocation the fix exists for.
+      guardStdioAgainstClosedReader();
       try {
         const vaultPath = resolve(options.vault);
         if (!existsSync(vaultPath)) {
@@ -480,7 +489,33 @@ export function setPropertyCommand(): Command {
         };
         process.stdout.write(JSON.stringify(output) + "\n");
 
-        process.exit(0);
+        // ⛔ NO process.exit(0) here — the process must end naturally so stderr
+        // DRAINS. `process.exit` does not wait for an asynchronous write to flush,
+        // and stderr is asynchronous whenever it is a PIPE, which is exactly how a
+        // `--dry-run` preview is read (`| less`, `| head`, captured by a wrapper).
+        // The preview is UNBOUNDED — it is the whole rebuilt document — so it is
+        // cut at the pipe buffer, and the tail never arrives. Measured on the built
+        // bundle with a 605 686-byte asset: to a FILE 605 729 bytes arrived, through
+        // a PIPE only 65 536 (8/8 runs, merged tree with the exit re-added) — the
+        // fixture's tail marker absent, ≈89 % lost.
+        // ⛔ The BYTE COUNT is not a property of this command: the same source cut at
+        // 73 728 on the pre-#4444 bundle. What is stable is the MECHANISM — the write
+        // stops at whatever the pipe buffer accepted before the exit landed — so cite
+        // the mechanism, not the number. (An earlier revision of this comment claimed
+        // 65 714 / 89.2 %, a figure the #4444 PR itself had already retracted as a
+        // shell artefact; corrected after review.)
+        // `--dry-run` exists to be READ BEFORE
+        // APPLYING, so a truncated preview is a decision surface that lies: the
+        // operator sees a document ending at the buffer and concludes the asset is
+        // shorter than it is (dry-run-preview-not-real-output).
+        //
+        // Nothing here holds the event loop open — the only I/O is synchronous
+        // (readFileSync / writeFileSync) — so falling off the end of the action is
+        // both sufficient and correct, and the exit code stays 0. Measured per
+        // path in dryrun-4444-pipe.harness.ts, which also locks that the exit is
+        // gone (jest CANNOT see this: its axes mock process.stderr.write and
+        // process.exit, so no pipe and no flush is ever exercised —
+        // integration-test-revert-verify §A66).
       } catch (error) {
         ErrorHandler.handle(error as Error);
       }

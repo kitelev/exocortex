@@ -414,7 +414,15 @@ describe("Asset Creation Flow (Integration)", () => {
       { className: "ems__Area", expectedFolder: "areas" },
       { className: "ems__Meeting", expectedFolder: "meetings" },
       { className: "exo__Event", expectedFolder: "events" },
-      { className: "ims__Concept", expectedFolder: "concepts" },
+      // #4365 — was `expectedFolder: "concepts"`. That pinned a DEAD mapping:
+      // `ims__` is the retired namespace, the live class is
+      // `concept__Concept`, and 0 assets carry the old type across all three
+      // canonical vaults. The key is gone from the map, so the retired name
+      // now falls to the generic default like any other unrecognised class.
+      // ⛤ It is NOT renamed to `concept__Concept: "concepts"`: concepts live
+      // in three different assetspaces, so a literal folder here would
+      // reintroduce #4357.
+      { className: "ims__Concept", expectedFolder: "assets" },
       { className: "custom__Unknown", expectedFolder: "assets" },
     ];
 

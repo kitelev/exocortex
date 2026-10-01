@@ -299,6 +299,39 @@ export const STALE_TMP_MAX_AGE_MS = 10 * 60 * 1000;
 const TBOX_FORM = new RegExp(`^${PREFIX_PATTERN_SOURCE}__\\S+$`);
 
 const ASSET_LABEL_IRI_SUFFIX = "#Asset_label";
+/**
+ * #4291 — a cache-derived, vault-complete index for the single-key frontmatter
+ * lookups `create` makes. `unknownPaths` names the entries the cache holds no
+ * triples for: it cannot say what THEY carry, so a consumer must keep them as
+ * candidates rather than treat the index as the whole vault.
+ */
+export interface AssetLookupIndex {
+  byUid: ReadonlyMap<string, string[]>;
+  byLabel: ReadonlyMap<string, string[]>;
+  unknownPaths: string[];
+}
+
+const ASSET_UID_IRI_SUFFIX = "#Asset_uid";
+
+/**
+ * #4291 — `<prefix>__` and NOTHING about the tail: deliberately WIDER than
+ * {@link TBOX_FORM}, which requires `\S+` and therefore rejects a label with a
+ * space after the separator.
+ *
+ * ⛔ Reusing `TBOX_FORM` here was a real divergence, not a style point (review
+ * of PR #4476): `PropertyNameValidator.KEY_SHAPE` is `^(<prefix>)__.+$`, so a
+ * def labelled `ems__Foo Bar` IS a known property name to the full scan — and
+ * a domainless, rangeless def is a case that validator documents as normal, so
+ * no other clause here would admit it. Under the strict form it dropped out of
+ * the narrowed scan silently, and `create --property "ems__Foo Bar"=x` changed
+ * its verdict depending on whether the cache happened to be valid.
+ *
+ * The rule for this predicate is one-directional: it must be at least as
+ * permissive as EVERY consumer of the scan it filters. Over-admitting costs
+ * one file read; under-admitting changes what `create` accepts.
+ */
+const TBOX_LABEL_PREFIX = new RegExp(`^${PREFIX_PATTERN_SOURCE}__`);
+const RDFS_LABEL_IRI_SUFFIX = "rdf-schema#label";
 const ASSET_ALIASES_IRI_SUFFIX = "#Asset_aliases";
 const ASSET_PROTOTYPE_IRI_SUFFIX = "#Asset_prototype";
 const INSTANCE_CLASS_IRI_SUFFIX = "#Instance_class";
@@ -376,6 +409,9 @@ export class CacheManager {
    * this process.
    */
   private loaded: CacheData | null = null;
+
+  /** #4291 — memoised {@link verifiedSnapshot}; both consumers share one read. */
+  private verifiedSnapshotLoad?: Promise<CacheData | null>;
   /**
    * #4264 — stat stamp of the cache FILE that `loaded` was read from (or
    * written as). `refreshAfterWrite` compares it with the file's current stamp
@@ -410,6 +446,149 @@ export class CacheManager {
   async isCacheValid(): Promise<boolean> {
     const diff = await this.computeManifestDiff();
     return diff !== null && isEmptyDiff(diff);
+  }
+
+  /**
+   * #4291 — the persisted cache, but ONLY when a fresh manifest walk says it
+   * still describes this vault file for file; `null` otherwise.
+   *
+   * Memoised per instance because BOTH #4291 consumers need it and the read
+   * is not cheap: `triples.json` is 95.8 MB on the measured vault (134 ms to
+   * read, 395 ms to parse) and the manifest walk stats 17 136 files. Resolving
+   * it twice cost more than the corpus pass this ticket removes.
+   *
+   * ⛔ Deliberately NOT `loadOrBuild()`: that MATERIALISES all 300 748 triples
+   * (1 028 ms) and, on a miss, BUILDS the cache by parsing the corpus — which
+   * would make the cold path slower than the walk it replaces. The AC asks for
+   * cache-opportunistic, and this is what that means mechanically.
+   */
+  private verifiedSnapshot(): Promise<CacheData | null> {
+    this.verifiedSnapshotLoad ??= (async () => {
+      const diff = await this.computeManifestDiff();
+      if (diff === null || !isEmptyDiff(diff)) {
+        // Absent / corrupt / legacy cache, an unwalkable vault, or a vault
+        // that moved on since the cache was written: the per-file claims can
+        // no longer be trusted, so say so rather than narrow on stale data.
+        return null;
+      }
+      // `computeManifestDiff` returns non-null only after `readCacheData`
+      // succeeded, which is what populates `loaded`.
+      return this.loaded ?? null;
+    })();
+    return this.verifiedSnapshotLoad;
+  }
+
+  /**
+   * #4291 — the vault-relative paths a TBox scan still has to READ, or `null`
+   * when the cache cannot answer and the caller must walk the whole corpus
+   * exactly as before.
+   *
+   * `create`'s two vault-walking collaborators — `ShapeLoader.loadFromVaultFS`
+   * and `PropertyNameValidator.collect()` — harvest TBox facts only: property
+   * definitions, class-defs and symbolic labels. They find them by reading
+   * EVERY file (17 136 on the measured vault, 2 469 ms — ~80 % of one
+   * `create`). The cache already knows, per file, whether it carries any of
+   * those facts, so it can name the ~8 % that do and let the walk skip the
+   * rest WITHOUT reading them.
+   *
+   * ⛔ This is a READ filter, not a source of facts: the scans still parse the
+   * frontmatter themselves, in the same walk order, with the same parser. A
+   * file the filter admits is processed byte-identically to today; a file it
+   * rejects provably contributes nothing (see {@link entryFeedsTboxScan}).
+   * That is why the ranges / conflict diagnostics / registered shapes cannot
+   * shift — the alternative (deriving them FROM the graph) does shift them,
+   * measured: `loadFromRDFGraph` keeps an unresolvable bare-UID range as a
+   * file IRI where the FS loader drops it.
+   *
+   * ⛔ Cache-opportunistic by construction: a stale, legacy or absent cache
+   * yields `null` — never a rebuild. Building one here would make the cold
+   * path SLOWER than the walk it replaces (`loadOrBuild` parses the corpus).
+   */
+  async tboxScanPaths(): Promise<Set<string> | null> {
+    const data = await this.verifiedSnapshot();
+    if (!data) {
+      return null;
+    }
+    const paths = new Set<string>();
+    for (const entry of data.files) {
+      if (entryFeedsTboxScan(entry)) {
+        paths.add(entry.path);
+      }
+    }
+    return paths;
+  }
+
+  /**
+   * #4291 — `exo__Asset_uid` / `exo__Asset_label` → the vault-relative paths carrying it, plus the
+   * entries the cache holds NO triples for and therefore cannot speak about.
+   * `null` when the cache cannot answer at all (absent / legacy / stale).
+   *
+   * Why it exists: the two lookups `create` makes by a SINGLE frontmatter key
+   * — the `exo__Asset_isDefinedBy` anchor (`findFileByUID`) and the default
+   * effort status (`EffortStatusResolver.resolveStatusUid`, by
+   * `exo__Asset_label`) — are both `findFilesByMetadata`, i.e. READ the
+   * frontmatter of every markdown file in the vault. On the measured vault
+   * that is 17 136 reads, twice, to find two files whose paths the cache
+   * already knows.
+   *
+   * ⛔ `unknownPaths` is the honest half and must not be dropped: a file the
+   * converter committed nothing for still HAS a uid on disk, and the cache did
+   * not record it. A caller may only use this index by keeping those paths as
+   * candidates — never by assuming the index is the whole vault.
+   */
+  async assetLookupIndex(): Promise<AssetLookupIndex | null> {
+    const data = await this.verifiedSnapshot();
+    if (!data) {
+      return null;
+    }
+    const byUid = new Map<string, string[]>();
+    const byLabel = new Map<string, string[]>();
+    const unknownPaths: string[] = [];
+    const add = (
+      into: Map<string, string[]>,
+      value: string,
+      relPath: string,
+    ): void => {
+      const paths = into.get(value);
+      if (paths) {
+        if (!paths.includes(relPath)) paths.push(relPath);
+      } else {
+        into.set(value, [relPath]);
+      }
+    };
+    for (const entry of data.files) {
+      if (entry.triples.length === 0) {
+        unknownPaths.push(entry.path);
+        continue;
+      }
+      const ownSubject = vaultPathToIRI(entry.path);
+      for (const t of entry.triples) {
+        if (
+          t.subject.type !== "IRI" ||
+          t.subject.value !== ownSubject ||
+          t.predicate.type !== "IRI" ||
+          t.object.type !== "Literal"
+        ) {
+          continue;
+        }
+        const predicate = t.predicate.value;
+        if (predicate.endsWith(ASSET_UID_IRI_SUFFIX)) {
+          add(byUid, t.object.value, entry.path);
+        } else if (
+          // ⛔ `rdfs:label` and NOT only `exo:Asset_label`: the converter emits
+          // a TBox-form label as a SYMBOLIC IRI under the exo predicate (the
+          // measured majority — 17 132 of 17 136 files here), so an
+          // exo-only index would be blind to exactly the assets a label lookup
+          // is usually after (`ems__EffortStatusBacklog`). The RDFS twin is a
+          // Literal for all of them, and carries the label verbatim.
+          predicate.endsWith(RDFS_LABEL_IRI_SUFFIX) ||
+          predicate.endsWith(ASSET_LABEL_IRI_SUFFIX)
+        ) {
+          add(byLabel, t.object.value, entry.path);
+        }
+      }
+    }
+    return { byUid, byLabel, unknownPaths };
   }
 
   /**
@@ -624,6 +803,27 @@ export class CacheManager {
    */
   private async readCacheData(): Promise<CacheData | null> {
     try {
+      // #4291 — a SECOND consumer on this instance must not re-parse the file.
+      // `create` now asks the cache three things per invocation (the TBox scan
+      // filter, the single-key lookup index and, under `--use-cache`, the
+      // triples); `triples.json` is 95.8 MB on the measured vault — 134 ms to
+      // read, 395 ms to parse — so each extra parse cost more than the corpus
+      // pass this removes.
+      //
+      // ⛔ Not an unconditional memo: `loadedIsCurrent()` re-stats the file and
+      // only answers true while the on-disk stamp still matches the one taken
+      // WITH this parse. A cache another process replaced since is re-read,
+      // which is exactly the guarantee `refreshAfterWrite` depends on.
+      //
+      // ⚠ This WIDENS an existing, accepted trade rather than introducing one:
+      // `refreshAfterWrite` has used `loadedIsCurrent() ? this.loaded : …`
+      // since #4264, so the coarse mtime+size staleness signal was already
+      // trusted there. What changes is the population — every reader in one
+      // invocation, not only the writer that opted in. Named here so it is a
+      // conscious widening (review of PR #4476, LOW).
+      if (this.loaded && (await this.loadedIsCurrent())) {
+        return this.loaded;
+      }
       if (!(await fs.pathExists(this.cachePath))) {
         return null;
       }
@@ -1473,6 +1673,82 @@ function entryHasTBoxLabel(entry: CacheFileEntry): boolean {
       if (t.object.type === "Literal" && TBOX_FORM.test(t.object.value)) {
         return true;
       }
+    }
+  }
+  return false;
+}
+
+/**
+ * #4291 — predicates whose PRESENCE on a file makes it a possible contributor
+ * to a TBox scan. Matched on the IRI suffix, so an ad-hoc namespace counts too.
+ *
+ * Just the class-hierarchy edge, and BOTH forms of it: a class-def reaches
+ * `ShapeLoader.propertyClassKeysFromEdges` / `PropertyNameValidator
+ * .buildPropertyMetaclassClosure` only through this edge, and a class may be
+ * labelled humanly (`concept__Definition (DEPRECATED)` — a space, so not TBox
+ * form), in which case nothing else admits it.
+ *
+ * ⛤ `exo__Property_domain` and friends are deliberately NOT here, and that was
+ * MEASURED rather than reasoned: a file can only become a shape candidate if
+ * its property label resolves, and that label comes from `exo__Asset_label` or
+ * — for the label-less defs of issue #3099 — from the basename, which the
+ * converter synthesises INTO `exo__Asset_label`. Either way `entryHasTBoxLabel`
+ * is already true. An earlier revision listed the domain predicates too; the
+ * mutant driver showed no input on which removing them changed the admitted
+ * set, so they were slack that no axis could ever pin.
+ */
+const TBOX_SCAN_PREDICATE_SUFFIXES = ["#Class_superClass", "#subClassOf"];
+
+/**
+ * #4291 — can this file contribute ANYTHING to a TBox scan
+ * (`ShapeLoader.loadFromVaultFS` / `PropertyNameValidator.collect()`)?
+ *
+ * Deliberately WIDER than either scan needs: a false positive costs one file
+ * read, a false negative would silently change what `create` validates. Kept:
+ *
+ * - **no triples at all** — the converter committed nothing for it (skipped by
+ *   an invariant, frontmatter-less, excluded). The cache records the outcome,
+ *   not the frontmatter, so it cannot say what such a file declares ⇒ read it.
+ *   ⛤ This is also what makes the "≥1 triple ⇒ the whole frontmatter was
+ *   converted" reading safe: conversion is per-file all-or-nothing (two-phase
+ *   commit, #2997), so a file with triples has no *silently dropped* key.
+ * - **a TBox-form own label** — `PropertyNameValidator` harvests the property
+ *   NAME from it, `ShapeLoader` its `uid → symbolic label` entry. Read off the
+ *   entry's own label triple, NOT off the persisted `tboxLabel` flag: that flag
+ *   exists for entries the converter committed nothing for, and those are
+ *   already admitted by the clause above — so consulting it here changed the
+ *   admitted set on no input (a dead condition, not a defensive one; the mutant
+ *   driver showed it could not be made to red).
+ * - **a TBox predicate** — see {@link TBOX_SCAN_PREDICATE_SUFFIXES}.
+ *
+ * ⛤ A class-def is admitted by its `exo__Class_superClass` edge, NOT by a
+ * separate "is it typed exo__Class" clause. An earlier revision had one; the
+ * mutant driver showed it could not change the admitted set on any input —
+ * a class-def only reaches the two scans THROUGH that edge (both build the
+ * property-metaclass closure from edges), so an edgeless class-def contributes
+ * nothing to either. Keeping an unpinnable branch would have been the more
+ * expensive half of the trade.
+ */
+function entryFeedsTboxScan(entry: CacheFileEntry): boolean {
+  if (entry.triples.length === 0) {
+    return true;
+  }
+  const ownSubject = vaultPathToIRI(entry.path);
+  for (const t of entry.triples) {
+    if (t.predicate.type !== "IRI") {
+      continue;
+    }
+    const predicate = t.predicate.value;
+    if (TBOX_SCAN_PREDICATE_SUFFIXES.some((s) => predicate.endsWith(s))) {
+      return true;
+    }
+    if (
+      t.subject.type === "IRI" &&
+      t.subject.value === ownSubject &&
+      predicate.endsWith(ASSET_LABEL_IRI_SUFFIX) &&
+      (t.object.type === "IRI" || TBOX_LABEL_PREFIX.test(t.object.value))
+    ) {
+      return true;
     }
   }
   return false;

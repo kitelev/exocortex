@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify WIRING mutant for req 1dfbd427 (#4453): the shared core predicate must be what this site actually asks. A spec on the core helper alone would stay green if a site kept its own regex — that is the defect (a shared helper nothing calls), not a hypothesis.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/adapters/ObsidianVaultAdapter.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/adapters/plugin-frontmatter-crlf-bom-4453.test.ts --verbose 2>&1",
+  "red_re": "● .*› ([CPX]\\d+) ",
+  "mutants": {
+    "W1_read_site_keeps_its_own_lf_only_regex": {
+      "from": "    const yamlContent = frontmatterBlockBody(content);\n",
+      "to": "    const yamlContent = /^---\\n([\\s\\S]*?)\\n---/.exec(content)?.[1] ?? null;\n",
+      "expect": ["P1", "X1"],
+      "_note": "The pre-#4453 read path of this adapter. P2 stays green (its control asserts silence, which an LF-only predicate also produces) — that asymmetry is what makes P2 a control rather than a duplicate of P1. ⛤ X2 was in the first expectation and did NOT redden — read rather than relaxed: this adapter has TWO call sites of the shared predicate (READ in extractFrontmatter, DIAGNOSTIC in getFrontmatterParseFailure), and X2 is pinned by the DIAGNOSTIC one, which this mutant does not touch. The prediction had been derived from the mutant's THEME ('this adapter stops being tolerant') rather than from which site each axis actually goes through (integration-test-revert-verify §A44). The fix was to add the missing mutant W2 — not to drop X2 from the expectation, which would have left the diagnostic site's wiring covered by nothing."
+    },
+    "W2_diagnostic_site_keeps_its_own_lf_only_regex": {
+      "from": "    const body = frontmatterBlockBody(content);\n",
+      "to": "    const body = /^---\\n([\\s\\S]*?)\\n---/.exec(content)?.[1] ?? null;\n",
+      "expect": ["X2"],
+      "_note": "The OTHER call site in the same class — the skip-list diagnostic of req fe50da38. Reverting it alone leaves a malformed CRLF-fenced asset unnamed (it becomes 'no block at all', so the loader reports an invariant violation instead of an unparseable-frontmatter skip): the exact silent-drop class #4439/#4440 closed, re-entering through the encoding door. Narrow by construction — X2 is the only axis that reaches the diagnostic path with a CRLF fence, which is why W1 could not cover it."
+    }
+  }
+}

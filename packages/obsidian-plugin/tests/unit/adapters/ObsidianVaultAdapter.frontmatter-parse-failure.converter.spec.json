@@ -1,0 +1,47 @@
+{
+  "_doc": "Revert-verify mutants for req fe50da38-4798-46e6-bb0a-b4b88596c340 (issue #4440), NoteToRDFConverter half — the WIRING and the cost guarantee. Same harness and axis names as the adapter spec; separate file because mutant-driver takes ONE subject. Expectations written BEFORE the run.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/NoteToRDFConverter.ts",
+  "harness": "cd \"$(dirname {subject})/../../../obsidian-plugin\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/adapters/ObsidianVaultAdapter.frontmatter-parse-failure.test.ts --verbose 2>&1",
+  "red_re": "● .*› ([AB]\\d+) ",
+  "mutants": {
+    "C1_probe_result_not_awaited": {
+      "from": "          const parseFailure = await this.vault.getFrontmatterParseFailure?.(\n            file,\n          );\n",
+      "to": "          const parseFailure = (this.vault.getFrontmatterParseFailure?.(\n            file,\n          ) ?? null) as { reason: string } | null;\n",
+      "expect": ["B1", "B2", "B7"],
+      "_note": "Drops the `await` while keeping the declared type, so the defect is behavioural, not a compile error: a PROMISE is truthy, so every frontmatter-less plain note is reported as skipped with `reason: undefined`. B2 reddens on the false positive, B1 on the lost diagnosis. This is why the port was WIDENED rather than kept sync-only — the await is load-bearing, and now something proves it. ⛤ B7 also reddens, and the reason is read rather than smoothed over: an un-awaited probe is truthy for EVERY frontmatter-less file, so the plain note is `continue`d and never reaches convertNote at all — B7's per-file list loses it. Same class as C2's correction (integration-test-revert-verify §A44): the prediction came from the mutant's theme, not from which axes execute after it lands."
+    },
+    "C2_loop_back_to_the_cache_only_reader": {
+      "from": "        const frontmatter = this.vault.getFrontmatterWithFallback\n          ? await this.vault.getFrontmatterWithFallback(file)\n          : this.vault.getFrontmatter(file);\n",
+      "to": "        const frontmatter = this.vault.getFrontmatter(file);\n",
+      "expect": ["B4", "B5", "B6"],
+      "_note": "The pre-#4440 resolution tier. On a cold metadataCache EVERY file then looks frontmatter-less, so (B4) the diagnostic probe is asked about well-formed assets too — one extra full disk read per file on the plugin's cold eager walk — and (B5) the valid asset reaches convertNoteFromFrontmatter with null and contributes ZERO triples. ⛤ The first expectation named B3 instead of B5 and was WRONG about its own premise, not about the mutant: B3 runs on a WARM cache, where the cache-only reader returns the same frontmatter, so B3 is insensitive to the resolution tier BY CONSTRUCTION (integration-test-revert-verify §A44 — the prediction was derived from the mutant's THEME rather than from which axes actually execute after it lands). The fix was to add the missing COLD-cache axis (B5), not to relax the expectation: without it a revert of this one line would silently produce an empty store during every cold start, which is worse than the defect #4440 closes. B1/B2 stay green — the malformed file is still probed and still reported, the plain note still is not. ⛤ SECOND correction, same class: B6 also reddens, and the reason is read rather than smoothed over — this mutant REPLACES the `getFrontmatterWithFallback` call, so the resolution B6 counts never happens at all (observed list empty). That makes C2 a superset of C4 on B6, which is why C4 exists separately: it is the ONLY mutant that isolates the reuse from the resolution tier."
+    },
+    "C3_probe_never_wired_into_the_walk": {
+      "from": "          const parseFailure = await this.vault.getFrontmatterParseFailure?.(\n            file,\n          );\n",
+      "to": "          const parseFailure = null as { reason: string } | null;\n",
+      "expect": ["B1", "B4"],
+      "_note": "The WIRING axis (feature-sdd Step 4 §the added CALL SITE): the adapter capability is fully implemented and simply never asked. Without this mutant an adapter-only axis set would have shipped a capability that nothing calls — 100% green, zero effect. B4 reddens because the probe is never called at all; B1 because nothing is reported."
+    },
+    "C4_resolve_again_instead_of_reusing": {
+      "from": "        const candidate = await this.convertNote(file, frontmatter);\n",
+      "to": "        const candidate = await this.convertNote(file);\n",
+      "expect": ["B6"],
+      "_note": "The cost half on its own: without the already-resolved frontmatter `convertNote` re-resolves what the loop has already resolved, so a cold walk pays two resolutions (and two disk reads) per file. BEHAVIOURALLY equivalent — which is exactly why it needs its own axis: no correctness axis can see it, and without B6 this argument could be dropped under a fully green suite. Narrow by construction: B6 is the only axis that counts resolutions. ⛤ The call site stays `convertNote` rather than `convertNoteFromFrontmatter` because two already-merged requirements measure re-parsing by spying on `convertNote` (reqs 42812747, cb707868); moving the walk off that seam left 7 of their axes counting zero while the loader worked — caught by the full CLI suite, not by spec-anchor-sweep (a jest spy is not a mutant anchor)."
+    },
+    "C5_walk_bypasses_the_convertNote_seam": {
+      "from": "        const candidate = await this.convertNote(file, frontmatter);\n",
+      "to": "        const candidate = await this.convertNoteFromFrontmatter(\n          file,\n          frontmatter,\n        );\n",
+      "expect": ["B7"],
+      "_note": "The draft this change was ACTUALLY shipped as first, and the reason B7 exists: behaviourally identical (same frontmatter, same triples, plugin+core suite fully green), and it silently blinded 7 axes of two OTHER merged requirements that count re-parsed files by spying on `convertNote` (42812747, cb707868). Narrow by construction — B7 is the only axis that pins the seam. ⛔ Not a hypothetical: it was caught by running the full CLI suite, which spec-anchor-sweep cannot substitute for (a jest spy is not a mutant anchor)."
+    }
+  }
+}

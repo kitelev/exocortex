@@ -144,7 +144,6 @@ describe("ServiceRegistryPopulator", () => {
       "fixMissingLabel",
       "renameToUid",
       "repairFolder",
-      "createNarrowerConcept",
       "createSubclass",
     ];
     for (const id of vaultDependentIds) {
@@ -599,7 +598,6 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
       "fixMissingLabel",
       "renameToUid",
       "repairFolder",
-      "createNarrowerConcept",
       "createSubclass",
     ];
     for (const id of vaultDependentIds) {
@@ -800,55 +798,24 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
     });
   });
 
-  describe("createNarrowerConcept", () => {
-    it("should create child concept with concept__Concept_genus pointing to parent", async () => {
-      const service = registry.get("createNarrowerConcept")!;
-      await service.execute("test-uid-123", { label: "Child Concept" });
-
-      // The child lands in the PARENT's folder (`folder/`, per the fixture at the top of this
-      // file), not in a hardcoded top-level `concepts/` — the latter is outside every assetspace
-      // and ExoSync never carried it (issue #4357). This expectation asserted the defect.
-      expect(deps.vaultAdapter!.create).toHaveBeenCalledWith(
-        "folder/Child Concept.md",
-        expect.stringContaining("concept__Concept_genus: \"[[test-uid-123]]\""),
-      );
-    });
-
-    it("should accept optional definition and aliases", async () => {
-      const service = registry.get("createNarrowerConcept")!;
-      await service.execute("test-uid-123", {
-        label: "Child",
-        definition: "A narrower concept",
-        aliases: ["alt-label"],
-      });
-
-      const createCall = (deps.vaultAdapter!.create as jest.Mock).mock.calls[0];
-      const content = createCall[1] as string;
-      expect(content).toContain("concept__Concept_definition: A narrower concept");
-      expect(content).toContain("alt-label");
-    });
-
-    it("should open the created concept in a new tab leaf", async () => {
-      const service = registry.get("createNarrowerConcept")!;
-      await service.execute("test-uid-123", { label: "Visible Concept" });
-
-      expect(deps.app.workspace.getLeaf).toHaveBeenCalledWith("tab");
-      expect(deps.vaultAdapter!.toTFile).toHaveBeenCalled();
-      const leafMock = (deps.app.workspace.getLeaf as jest.Mock).mock.results[0].value;
-      expect(leafMock.openFile).toHaveBeenCalled();
-      expect(deps.app.workspace.setActiveLeaf).toHaveBeenCalledWith(
-        leafMock,
-        { focus: true },
-      );
-    });
-
-    it("should throw when label is missing", async () => {
-      const service = registry.get("createNarrowerConcept")!;
-      await expect(service.execute("test-uid-123", {})).rejects.toThrow(
-        "createNarrowerConcept requires userInput.label",
-      );
-    });
-  });
+  // `createNarrowerConcept` suite removed (#4358) together with the service it
+  // drove. The command now runs on the homoiconic `create_instance` grounding
+  // `85c40d1e`, and each guarantee this suite held moved to a data-guard axis in
+  // `packages/core/tests/integration/dynamic-commands/concept-creation-homoiconic-4358.test.ts`:
+  //   genus under the canonical key   -> H6 (PropertyDefault asserted by property UID)
+  //   child lands in parent's folder  -> H4 (`targetFolder`) + H5 (`inheritanceRule`)
+  //   definition under canonical key  -> H7 (`inputSchema` key)
+  //   label is mandatory              -> H9 (`inputSchema.required`)
+  // Opening the new file in a tab is no longer this command's own behaviour: every
+  // `create_instance` returns `openPath` (GroundingExecutor.executeCreateInstance),
+  // which CommandExecutionFlow hands to `IFileOpener` -> `ObsidianFileOpener.open`
+  // (`getLeaf("tab")` + `openFile` + `setActiveLeaf({focus:true})`) — byte-for-byte
+  // what the deleted wrapper did, now shared and covered by that opener's own tests.
+  // The `aliases` parameter is NOT carried over: it was unreachable through the
+  // declared surface. The superseded grounding `e6500fe3` listed only
+  // `label` + `definition` in its `inputSchema`, and the modal is built from that
+  // schema alone (ObsidianCommandPromptAdapter -> DynamicFormModal), so no UI could
+  // ever supply it.
 
   describe("createSubclass", () => {
     it("should create a UID-named child class with exo__Class_superClass pointing to parent", async () => {

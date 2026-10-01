@@ -41,9 +41,10 @@ import * as yaml from "js-yaml";
  * if it were a file count and named only the between-items shape, which hid that
  * the BEFORE-first-item branch is the one every live carrier exercises.
  *
- * ⛔ A top-level `key: |` block scalar (106 carrier files) is deliberately NOT
- * changed here — it is a SCALAR, not in #4314, and flipping what its readers see
- * is a separate unit of work (issue #4379). P7 locks that it still reads as `"|-"`.
+ * ⛔ A top-level `key: |` block scalar (106 carrier keys in 103 files) was deliberately NOT
+ * changed here — it is a SCALAR, not in #4314. Issue #4379 then made it read as
+ * its RAW text (header + body); P7 locks that reading, and the axes that drive
+ * its consumers live in `FrontmatterService.block-scalar-4379.test.ts`.
  *
  * ⛔ Shapes where the read and `findPropertyLineSpan` still disagree (a nested
  * block scalar inside a map item, a `| # note` header, a column-0 comment, a bare
@@ -222,12 +223,14 @@ describe("FrontmatterService.parseObject — list continuation (issue #4314)", (
     expect(plain?.aliases).toEqual(['"One"', '"Two"']);
     expect(plain?.exo__Asset_archived).toBe("true");
 
-    // A top-level block scalar is a SCALAR and still reads as its indicator
-    // (issue #4379 — out of scope here, on purpose).
+    // A top-level block scalar is a SCALAR: read as its RAW text, header and
+    // body together (issue #4379 — before it, the bare indicator `|-`).
     const blockScalar = fm.parseObject(
       `---\nconcept__Concept_definition: |-\n  first line\n  second line\nexo__Asset_label: "L"\n---\nBody`,
     );
-    expect(blockScalar?.concept__Concept_definition).toBe("|-");
+    expect(blockScalar?.concept__Concept_definition).toBe(
+      "|-\n  first line\n  second line",
+    );
     expect(blockScalar?.exo__Asset_label).toBe('"L"');
 
     // A nested map under a bare key is NOT invented as a list item.

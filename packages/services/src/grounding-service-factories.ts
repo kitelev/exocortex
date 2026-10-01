@@ -3,6 +3,7 @@ import {
   DateFormatter,
   iriToVaultPath,
   FrontmatterService,
+  matchFrontmatterBlock,
 } from "@kitelev/exocortex-core";
 import type {
   ClassRefResolver,
@@ -676,6 +677,20 @@ export function createDuplicateAssetService(
 }
 
 /**
+ * A YAML block body's own line boundary — ANY of the three forms the shared
+ * predicate accepts at a fence (`\r\n`, a bare `\r`, a bare `\n`).
+ *
+ * ⛔ Its predecessor was a literal `"\n"` (#4473). On a CRLF block that left
+ * every untouched line's `\r` glued to its text while a REWRITTEN line was
+ * emitted without one, so the join produced a bare LF immediately after any
+ * touched key — a mixed-terminator block from a single `duplicateAsset`. On a
+ * lone-CR block (unreachable before this conversion, HOT after it) splitting on
+ * `"\n"` finds no boundary at all: the whole body is one "line", its first key
+ * matches, and the rewrite would collapse EVERY key into a single line.
+ */
+const FRONTMATTER_BODY_LINE = /\r\n|\r|\n/;
+
+/**
  * Replace top-level scalar values in a markdown file's leading YAML
  * frontmatter block. Preserves the document byte-for-byte except for the
  * specific keys whose values are rewritten; if a key exists, its line is
@@ -688,42 +703,86 @@ export function createDuplicateAssetService(
  * documents without a leading frontmatter block (caller's responsibility
  * to ensure the input has one).
  *
+ * ⛔ WITHDRAWN (#4473): the block was recognised by a LOCAL
+ * `/^---\r?\n([\s\S]*?)\r?\n---/` and rebuilt by hand
+ * (`` `---${eol}${body}${eol}---` ``). Two consequences, the second one latent
+ * until the first was fixed:
+ *   1. a lone-CR-fenced or BOM-prefixed source threw "no YAML frontmatter
+ *      block" — fail-closed, so never corruption, but `duplicateAsset` was
+ *      simply unavailable for that asset;
+ *   2. the hand-rebuild re-emitted BOTH fences with ONE chosen EOL and dropped
+ *      a leading BOM, i.e. the same hand-reconstruction class #4469 removed
+ *      from `set-body`.
+ * The predicate is now the shared one and the block's own bytes are SPLICED
+ * AROUND rather than rebuilt: `matchFrontmatterBlock` exports `blockStart` /
+ * `blockEnd` for exactly this, and `FrontmatterService.leadingBlock` answers
+ * what the file's EOL is (the opening fence's — req
+ * `2d072437-c19d-49a4-ae89-f20b6185571f` decision 2).
+ *
+ * ⛤ BOM policy here is BYTE-PRESERVING — a RUN of leading U+FEFF is carried
+ * into the duplicate verbatim, NOT collapsed to one. This is a DELIBERATE
+ * divergence from `FrontmatterService.spliceBlock` / `replaceFrontmatter`
+ * (which normalise a run to exactly one): those EDIT the user's file in place,
+ * where one canonical answer is what keeps two channels agreeing, whereas this
+ * function's contract is to produce a COPY that "preserves the document
+ * byte-for-byte except for the specific keys" — normalising the mark would be a
+ * second, unrequested edit to a duplicate. The bytes before the body are taken
+ * from `content` itself, so whatever run the source carries survives.
+ *
+ * ⛤ The fail-closed throw is UNCHANGED and now means strictly less: a source
+ * with no block in ANY of the three encodings. Widening the predicate narrows
+ * the refusal, it does not weaken it.
+ *
  * @internal — exported for unit testing only.
  */
 export function rewriteFrontmatterScalars(
   content: string,
   replacements: Record<string, string>,
 ): string {
-  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!fmMatch) {
+  // One predicate, two accessors: the block's offsets + body come from
+  // `matchFrontmatterBlock`, the file's EOL from `FrontmatterService`. Both
+  // resolve the SAME block (the service delegates to the same helper), so a
+  // single guard covers both.
+  const block = matchFrontmatterBlock(content);
+  const leading = FrontmatterService.leadingBlock(content);
+  if (!block || !leading) {
     throw new Error(
       "duplicateAsset: source file has no YAML frontmatter block",
     );
   }
 
-  const frontmatterBody = fmMatch[1];
+  const eol = leading.eol;
   const remaining = new Map(Object.entries(replacements));
 
-  const rewrittenLines = frontmatterBody.split("\n").map((line) => {
-    // Top-level key: optional indent then `key:` then anything after.
-    // Skip indented lines (list items, nested mappings) by matching only
-    // at column 0.
-    const keyMatch = line.match(/^([A-Za-z_][A-Za-z0-9_]*):/);
-    if (!keyMatch) return line;
-    const key = keyMatch[1];
-    const newValue = remaining.get(key);
-    if (newValue === undefined) return line;
-    remaining.delete(key);
-    return `${key}: ${newValue}`;
-  });
+  const rewrittenLines = block.body
+    .split(FRONTMATTER_BODY_LINE)
+    .map((line) => {
+      // Top-level key: optional indent then `key:` then anything after.
+      // Skip indented lines (list items, nested mappings) by matching only
+      // at column 0.
+      const keyMatch = line.match(/^([A-Za-z_][A-Za-z0-9_]*):/);
+      if (!keyMatch) return line;
+      const key = keyMatch[1];
+      const newValue = remaining.get(key);
+      if (newValue === undefined) return line;
+      remaining.delete(key);
+      return `${key}: ${newValue}`;
+    });
 
   // Append keys that were not present in the source frontmatter.
   for (const [key, value] of remaining) {
     rewrittenLines.push(`${key}: ${value}`);
   }
 
-  const rewrittenBody = rewrittenLines.join("\n");
-  const eol = fmMatch[0].includes("\r\n") ? "\r\n" : "\n";
-  const head = `---${eol}${rewrittenBody}${eol}---`;
-  return head + content.slice(fmMatch[0].length);
+  // Splice the new body between the block's OWN bytes: everything up to the
+  // body (a BOM run, the opening fence and its terminator) and everything from
+  // the body's end (the closing terminator, the closing fence, the document)
+  // come from `content` untouched.
+  const bodyStart = block.blockStart + 3 + eol.length;
+  const bodyEnd = bodyStart + block.body.length;
+  return (
+    content.slice(0, bodyStart) +
+    rewrittenLines.join(eol) +
+    content.slice(bodyEnd)
+  );
 }

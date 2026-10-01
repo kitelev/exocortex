@@ -6,6 +6,7 @@ import {
   FileNotFoundError,
   FileAlreadyExistsError,
   parseYamlFrontmatterTolerant,
+  frontmatterBlockBody,
 } from "@kitelev/exocortex-core";
 
 export class NodeFsAdapter implements IFileSystemAdapter {
@@ -287,17 +288,31 @@ export class NodeFsAdapter implements IFileSystemAdapter {
   // protected (not private) so CachingNodeFsAdapter's content-caching path
   // parses frontmatter through the SAME implementation — two parse paths
   // selected by a constructor flag must never drift (audit #3384 H4 family).
+  //
+  // ⛤ The block predicate is core's `frontmatterBlockBody` (#4460). Until
+  // then this method carried the pre-#4441 LF-only literal, which no longer
+  // agreed with the LOADER: `FileSystemVaultAdapter` became `\r?\n`+BOM
+  // tolerant in #4450, so a CRLF- or BOM-fenced asset DID become an index
+  // candidate and was then silently dropped here, because
+  // `TripleStoreIndexedFsAdapter.findFilesByMetadata` confirms every candidate
+  // through `getFileMetadata` → this parse → `{}` → `matchesQuery` false.
+  // ⛔ The user-visible consequence was `apply`'s create-instance resolvers
+  // (class-label→uid, isDefinedBy→folder, targetRef, templateRef) not finding
+  // such an asset while `exocortex-cli query` found it fine — same vault, same
+  // asset, two answers decided by which read path asked.
+  //
+  // ⛔ The RETURN CONTRACT is unchanged and is NOT the vault adapters': a
+  // missing block yields `{}` here, not `null`.
   protected extractFrontmatter(content: string): Record<string, any> {
-    const frontmatterRegex = /^---\n([\s\S]*?)\n---/;
-    const match = content.match(frontmatterRegex);
+    const body = frontmatterBlockBody(content);
 
-    if (!match) {
+    if (body === null) {
       return {};
     }
 
     // #3800: tolerant parse — a duplicated mapping key would otherwise throw
     // and collapse the asset to `{}` (0 triples → invisible & unrepairable).
-    return parseYamlFrontmatterTolerant(match[1]) ?? {};
+    return parseYamlFrontmatterTolerant(body) ?? {};
   }
 
   // protected (not private): TripleStoreIndexedFsAdapter verifies every index

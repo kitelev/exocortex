@@ -1,0 +1,23 @@
+{
+  "_doc": "Revert-verify mutant for the IN-JEST half of issue #4444: after dropping `process.exit(0)` from `create`'s success path, every success axis asserts `expectNaturalExit` (exit was never called) instead of `toContain(0)` / `toEqual([0])` / `toBe(0)`. That predicate is what keeps the fix from being silently reverted by a future edit — restoring the exit reddens the axes below. ⚤ The DELIVERED-bytes half cannot live here (jest mocks process.stderr.write and process.exit, so no pipe and no flush is exercised — integration-test-revert-verify §A66); it lives in dryrun-4444.create.spec.json. Same shape as set-body-4436.guard.spec.json, which locked the equivalent predicate for `set-body` in #4443. Expectation written BEFORE the run. Axis keys come from THIS suite because its test names carry machine-readable ids and it drives `create` on five of them; the create-specific suites use prose names (integration-test-revert-verify §A47). ⚤ It also drives `apply` and `resolve-buttons`, whose success paths never called process.exit — they already assert `toBeNull()` and are untouched by this mutant, which is a second, free control that the mutant is scoped to `create`.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?)[: ]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/create.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/use-cache-apply-write-through-4264.integration.test.ts 2>&1",
+  "mutants": {
+    "M1_process_exit_restored": {
+      "from": "        process.stdout.write(JSON.stringify(output) + \"\\n\");\n",
+      "to": "        process.stdout.write(JSON.stringify(output) + \"\\n\");\n        process.exit(0);\n",
+      "expect": ["A1", "A2", "A8", "A9", "A10c"],
+      "_note": "Restores process.exit(0) at the end of the success path. Every migrated success axis asserts that NO exit was recorded, so all of them redden at once — which is the point: the predicate is a ratchet against the exit coming back, not a per-scenario check."
+    }
+  }
+}

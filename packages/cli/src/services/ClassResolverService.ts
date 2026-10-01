@@ -16,6 +16,36 @@ export class ClassNotFoundError extends Error {
 }
 
 /**
+ * Error thrown when `--class` resolved to a UID that has NO file in the vault —
+ * the UID-form sibling of {@link ClassNotFoundError} (ticket a3f3939c, issue
+ * #4438).
+ *
+ * A short name that does not exist is caught by the index lookup and raises
+ * {@link ClassNotFoundError}. A full UUID used to be passed through unchecked,
+ * so a partially-remembered UID (`fe1a4590-0000-0000-0000-000000000000` — the
+ * first 8 characters recalled, the tail invented) produced an asset whose
+ * `exo__Instance_class` pointed at nothing: queries by class never found it,
+ * the UI showed it broken, and SHACL-lite did not report it either.
+ *
+ * The message names the unresolved UID and the command that finds the real one,
+ * because the caller typically HAS the right first 8 characters.
+ */
+export class ClassRefNotFoundError extends Error {
+  constructor(classUid: string, classArg: string, vaultPath: string) {
+    const prefix = classUid.slice(0, 8);
+    const asTyped = classArg === classUid ? "" : ` (--class ${classArg})`;
+    super(
+      `Class [[${classUid}]] not found in vault${asTyped} — ` +
+        `exo__Instance_class would be a dangling reference.\n` +
+        `A class UID is 36 characters; a partially-remembered one lands here.\n` +
+        `Find the real UID:  find '${vaultPath}' -name '${prefix}*.md'\n` +
+        `Or pass --skip-wikilink-validation to create the reference anyway.`,
+    );
+    this.name = "ClassRefNotFoundError";
+  }
+}
+
+/**
  * Resolves class short names (e.g. "ztlk__PermanentNote") to their actual UUIDs
  * by scanning vault files for class definitions.
  *

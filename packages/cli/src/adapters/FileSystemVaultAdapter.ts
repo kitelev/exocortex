@@ -8,6 +8,8 @@ import {
   IFrontmatter,
   FrontmatterService,
   parseYamlFrontmatterTolerant,
+  matchFrontmatterBlock,
+  leadingBomLength,
 } from "@kitelev/exocortex-core";
 import { rewriteInboundWikilinks } from "../utils/wikilinkRewriter.js";
 
@@ -113,6 +115,107 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
   }
 
   /**
+   * The ONE cause of a null `getFrontmatter` that is a defect: a frontmatter
+   * block that is PRESENT and does NOT parse. Contract + why the three outcomes
+   * are kept apart: `IVaultFrontmatterManager.getFrontmatterParseFailure`.
+   *
+   * ⛔ The predicate STARTED OUT identical to `updateFrontmatter`'s below and is NOT
+   * any more — the earlier wording of this line ("the SAME one … already uses") was
+   * made false by the review fix for comment-only bodies, and is withdrawn here rather
+   * than left to rot. Both still agree that a block must be present and that an EMPTY
+   * one (`---\n\n---`) is a legitimate "no keys yet"; they now differ on a body of
+   * ONLY YAML comments, and that difference is DELIBERATE because the two paths answer
+   * different questions:
+   *
+   *   - READ (here): "is there a failure to report?" → No. A comment-only block carries
+   *     no keys, exactly like an empty one; reporting it would be noise.
+   *   - WRITE (`updateFrontmatter`): "may I re-serialise this block?" → No. Patching
+   *     rewrites the whole block through js-yaml, which would DESTROY the comment, so
+   *     refusing is the correct answer even though there are no keys to lose.
+   *
+   * ⇒ Do not "unify" them without deciding that question first: making the write path
+   * silent here would silently delete a user's comment on the next patch.
+   *
+   * The message comes from js-yaml itself rather than being authored here, so
+   * it cannot drift from what actually rejected the file.
+   *
+   * ⛔ COST, stated honestly because an earlier draft of this comment got it
+   * wrong: the caller asks whenever `getFrontmatter` returned null, and that is
+   * true for EVERY ordinary note with no block at all — not only for the rare
+   * malformed one. So this performs a second full read + regex pass over those
+   * files on every vault walk.
+   *
+   * ⛤ MEASURED, not guessed (2026-09-28, the three canonical vaults): files
+   * with no block at all number **17 of 54 314** `.md`, so on this corpus the
+   * extra read is negligible. The cost scales with that count, which is
+   * vault-dependent — a vault of ordinary notes would pay more. What is NOT
+   * conditional is the withdrawal of the old claim: "runs only for a file that
+   * already failed" was false, and a comment that misstates its own mechanism
+   * is the defect whatever the number turns out to be.
+   */
+  getFrontmatterParseFailure(file: IFile): { reason: string } | null {
+    let content: string;
+    try {
+      // Read-then-catch, no exists/stat probe first (`js/file-system-race`).
+      content = fs.readFileSync(this.resolvePath(file.path), "utf-8");
+    } catch {
+      // Unreadable or gone — that is not a PARSE failure, and claiming one
+      // would put a wrong reason in front of the user.
+      return null;
+    }
+    // ⛤ The SAME normalized matcher the read path used (BOM skipped, `\r?\n`
+    //    fences) — by construction, not by a parallel regex that could drift.
+    const blockBody =
+      matchFrontmatterBlock(content)?.body;
+    if (blockBody === undefined) return null;
+    // ⛤ A body with NO CONTENT LINE — only blanks and `#` comments — means what
+    //    the blessed empty block `---\n\n---` means: "no keys yet". js-yaml
+    //    throws `expected a document, but the input is empty` on it (measured,
+    //    not assumed), so without this it would land in the catch below and be
+    //    reported — noise on a legitimate authoring shape (review of PR #4439).
+    // ⛔ Judged on the INPUT, not on the parser's wording: matching that message
+    //    would pin the diagnostic to a dependency's prose, the same mistake the
+    //    axis avoids by asserting `(line:column)` instead of the message text.
+    // ⛔ ASCII-ONLY, и это НЕ педантизм. `String.prototype.trim()` снимает целый класс
+    //    юникодных пробелов (NBSP U+00A0, EN/EM SPACE, IDEOGRAPHIC SPACE, BOM), а js-yaml
+    //    разделителем перед `#` считает ТОЛЬКО ASCII space/tab. Предикат на `.trim()`
+    //    молчал бы о теле `<NBSP># c`, которое парсер грузит РЕАЛЬНЫМ скаляром `" # c"`
+    //    (а с BOM — бросает ДРУГУЮ ошибку) — то есть ровно тот тихий дроп, ради
+    //    устранения которого этот метод и заведён. Измерено на js-yaml 5.3.0, который
+    //    резолвит `packages/cli` (⛔ не корневой 4.3.1 — verify-before-assert §A18).
+    //    ⛤ Хвостовой `\r` допускается, и с req `c05a3565` (#4441) это стало
+    //    несущим: прежняя редакция этой строки объясняла допуск тем, что «чисто-CRLF
+    //    файл отсекается раньше — его блочный предикат не видит вовсе».
+    //    ⛔ Обоснование СНЯТО — матчер теперь CRLF-толерантен, поэтому сюда доходит
+    //    и блок, у которого в CRLF и фенсы, и тело. Допуск от этого не меняется
+    //    (голая `\r`-строка — та же пустая строка, а не контент), но держится он
+    //    уже на семантике `\r`, а не на недостижимости входа.
+    const NO_CONTENT_LINE = /^[ \t]*(#.*)?\r?$/;
+    const hasContentLine = blockBody
+      .split("\n")
+      .some((line) => !NO_CONTENT_LINE.test(line));
+    if (!hasContentLine) return null;
+    if (this.extractFrontmatter(content) !== null) return null;
+    try {
+      yaml.load(blockBody, { schema: yaml.YAML11_SCHEMA });
+      // ⛔ No nullish guard here on purpose: a body of the literal `null` DOES
+      //    load to null and is NOT a usable mapping — silencing it would hide a
+      //    real malformed asset. The empty-document case is already handled
+      //    above, by the input, before we ever parse.
+      // Parsed into SOMETHING that is not a usable frontmatter mapping: a bare
+      // scalar, a sequence, or a mapping whose keys are not strings (`: : :`
+      // loads as `{null: …}`) — the last is what `parseYamlFrontmatterTolerant`
+      // rejects, so name the requirement, not just the shape.
+      return { reason: "frontmatter is not a mapping with string keys" };
+    } catch (error) {
+      return {
+        reason:
+          error instanceof Error ? error.message.split("\n")[0] : String(error),
+      };
+    }
+  }
+
+  /**
    * PATCH the file's frontmatter block with the keys `updater` returns,
    * through the core carrier of the key dialect `FrontmatterService.applyPatch`
    * (req `2a020489`) — in parity with the plugin's `ObsidianVaultAdapter`:
@@ -141,10 +244,11 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     // An EMPTY block (`---\n\n---`) parses to nothing and is a legitimate
     // "no keys yet"; only a block with a non-blank body that still yields no
     // mapping is unreadable.
-    const blockBody = FileSystemVaultAdapter.FRONTMATTER_BLOCK.exec(content)?.[1];
+    const blockBody =
+      matchFrontmatterBlock(content)?.body;
     if (parsed === null && blockBody !== undefined && blockBody.trim() !== "") {
       throw new Error(
-        `updateFrontmatter: frontmatter of ${file.path} is not parseable — refusing to patch (would drop keys)`,
+        `updateFrontmatter: frontmatter of ${file.path} is not parseable — refusing to patch (re-serialising would overwrite the unreadable block)`,
       );
     }
     const target: IFrontmatter = parsed ?? {};
@@ -408,19 +512,38 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     };
   }
 
-  /** A leading `---` block; group 1 = its YAML body. Shared by the three block readers/writers below. */
-  private static readonly FRONTMATTER_BLOCK = /^---\n([\s\S]*?)\n---/;
+  /**
+   * ⛤ The block predicate lives in core — `matchFrontmatterBlock`
+   * (`packages/core/src/utilities/frontmatterBlock.ts`, req `1dfbd427`, #4453).
+   *
+   * Until #4461 this class carried its own copy: same shape, same tolerance
+   * (`\r?\n` on both fences, one leading U+FEFF skipped for MATCHING only,
+   * original-string offsets so a write splices around the BOM instead of
+   * eating it). Two copies that agree are a latent drift, not a resolved one —
+   * the plugin's three copies agreed too, right up until two of them did not
+   * (#4453), and this class's own read/diagnostic pair had already drifted once
+   * on a nearby predicate (#4439 review). ⛔ So the cure is structural: NO site
+   * here may ask "is a block present?" for itself.
+   *
+   * The read path ({@link extractFrontmatter}), the diagnostic path
+   * ({@link getFrontmatterParseFailure}) and the write path
+   * ({@link replaceFrontmatter}) all go through that one import. The core
+   * helper returns `blockStart`/`blockEnd` into the ORIGINAL string precisely
+   * so the write path can keep splicing by index (its docstring says so) — the
+   * migration changed no behaviour, which is what req `c05a3565`'s 17 axes
+   * B1-B17 assert, unchanged.
+   */
 
   private extractFrontmatter(content: string): IFrontmatter | null {
-    const match = content.match(FileSystemVaultAdapter.FRONTMATTER_BLOCK);
+    const block = matchFrontmatterBlock(content);
 
-    if (!match) {
+    if (!block) {
       return null;
     }
 
     // #3800: tolerant parse — a duplicated mapping key would otherwise throw
     // and collapse the asset to `null` (0 triples → invisible & unrepairable).
-    return parseYamlFrontmatterTolerant(match[1]) as IFrontmatter | null;
+    return parseYamlFrontmatterTolerant(block.body) as IFrontmatter | null;
   }
 
   /**
@@ -440,9 +563,16 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
    *   timestamp (`2026-05-17T19:40:11`) parses to a Date and is re-emitted in
    *   its `.000Z` form, an empty value becomes `null`, a quoted plain word
    *   loses its quotes. The text path touches one line and leaves the rest.
-   * - the new block is spliced in with a FUNCTION replacer: a string replacer
-   *   would re-interpret `$&` / `$1` / `` $` `` / `$'` / `$$` inside any dumped
-   *   value as a replacement pattern (class #3748 / #3795).
+   * - the new block is spliced in BY INDEX. The previous form was
+   *   `content.replace(re, () => block)` — a FUNCTION replacer, because a string
+   *   one would re-interpret `$&` / `$1` / `` $` `` / `$'` / `$$` inside any
+   *   dumped value as a replacement pattern (class #3748 / #3795).
+   *   Index-splicing keeps that immunity (nothing is interpreted at all) and
+   *   additionally carries a leading BOM across untouched: the byte lives
+   *   BEFORE `blockStart`, so it is simply not part of what gets replaced
+   *   (req `c05a3565`, #4441). On a file with NO block the new one is inserted
+   *   AFTER the BOM for the same reason — prepending it would leave the byte
+   *   stranded in the middle of the file.
    */
   private replaceFrontmatter(
     content: string,
@@ -455,14 +585,37 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     });
     const block = `---\n${frontmatterYaml.trim()}\n---`;
 
-    const frontmatterRegex = FileSystemVaultAdapter.FRONTMATTER_BLOCK;
-    const match = content.match(frontmatterRegex);
+    const existing = matchFrontmatterBlock(content);
 
-    if (match) {
-      return content.replace(frontmatterRegex, () => block);
-    } else {
-      return `${block}\n${content}`;
+    if (existing) {
+      // ⛤ EXACTLY ONE U+FEFF is written back, whatever N was on disk (req
+      // `74419202`, #4452, decision 2). `N>1` is corruption, not an authoring
+      // style — no consumer produces it — so carrying the run across would
+      // reproduce it on every save. This is the ONE normalisation this write
+      // path performs, and it is a deliberate ASYMMETRY against line endings,
+      // which it normalises NEVER (decision 1): a lone-CR file keeps its own
+      // style, the block is simply replaced whole, exactly as for LF/CRLF.
+      // ⛤ Keyed on `blockStart` — core's report of the run's length — rather
+      // than on a fresh probe of `content`, so "the write path honours the
+      // offsets the predicate returned" stays the load-bearing property (it is
+      // what mutant M4_write_path_drops_the_bom falsifies). `N === 1` and
+      // `N === 0` are byte-identical to the pre-#4452 behaviour.
+      const leadingBom = existing.blockStart > 0 ? "\uFEFF" : "";
+      return leadingBom + block + content.slice(existing.blockEnd);
     }
+    // ⛔ NOT a second block predicate — that one is core's, imported above.
+    // This is only "where does the content proper begin", needed because there
+    // is no block to splice around: a new block goes AFTER a leading BOM so the
+    // byte stays first. ⛤ The arithmetic is core's too now — `leadingBomLength`
+    // is exported for exactly this call site (req `74419202`; #4461 sanctioned
+    // either exporting it or keeping a local copy, and the local copy was the
+    // drift the shared helper exists to end). It counts the whole RUN, so a
+    // doubled BOM on a block-less file no longer leaves its second byte
+    // stranded in the middle of the file.
+    const bomRun = leadingBomLength(content);
+    return (
+      (bomRun > 0 ? "\uFEFF" : "") + `${block}\n` + content.slice(bomRun)
+    );
   }
 
   /**

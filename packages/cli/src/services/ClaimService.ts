@@ -1,7 +1,10 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { parseYamlFrontmatterTolerant } from "@kitelev/exocortex-core";
+import {
+  matchFrontmatterBlock,
+  parseYamlFrontmatterTolerant,
+} from "@kitelev/exocortex-core";
 import {
   atomicUpdateFrontmatter,
   AtomicUpdateOptions,
@@ -77,17 +80,24 @@ export function releaseClaimLock(): void {
   }
 }
 
-const FRONTMATTER_RE = /^---\s*\r?\n([\s\S]*?)\r?\n---/;
-
+/**
+ * ⛤ The block is recognised by core's SHARED `matchFrontmatterBlock` (#4469).
+ * This used to be a local `/^---\s*\r?\n…/`, i.e. LF/CRLF-only and defeated by
+ * a leading BOM — while the WRITE half (`atomicUpdateFrontmatter`, imported
+ * above) now accepts those shapes. A pre-check blind to inputs the write
+ * accepts is not a pre-check: on a lone-CR / BOM task file this returned `null`,
+ * so the "already claimed by someone else" branch below was UNREACHABLE no
+ * matter what `aiTask__Task_claimedBy` actually held.
+ */
 function readFrontmatter(filePath: string): Record<string, unknown> | null {
   const content = fs.readFileSync(filePath, "utf8");
-  const match = content.match(FRONTMATTER_RE);
-  if (!match) return null;
+  const block = matchFrontmatterBlock(content);
+  if (!block) return null;
   // Tolerant parse (#3901 / #3800): a duplicated YAML key resolves last-wins
   // instead of throwing — the bare `yaml.load` here had NO try/catch, so a
   // dup-key claim file would CRASH claimTask; tolerant returns the mapping
   // (or null on genuine malformed). Non-dup input is byte-identical.
-  const parsed = parseYamlFrontmatterTolerant(match[1], filePath);
+  const parsed = parseYamlFrontmatterTolerant(block.body, filePath);
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     return null;
   }

@@ -10,11 +10,24 @@ import { parseYamlFrontmatterTolerant } from "../../../../core/src/utilities/par
 const mockGlob = jest.fn();
 
 // Mock modules before importing NodeFsAdapter
+// #4461: the block predicate now lives in core and the SUT imports it from the
+// barrel, so this explicit-export mock must provide it. Imported from SOURCE,
+// like `parseYamlFrontmatterTolerant` above/below: a stub would answer "no
+// block" and the mock would stop mirroring production (test-fixture-realism).
+import {
+  matchFrontmatterBlock,
+  frontmatterBlockBody,
+  leadingBomLength,
+} from "../../../../core/src/utilities/frontmatterBlock.js";
+
 jest.unstable_mockModule("glob", () => ({
   glob: mockGlob,
 }));
 
 jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
+  matchFrontmatterBlock,
+  frontmatterBlockBody,
+  leadingBomLength,
   FileNotFoundError: class FileNotFoundError extends Error {
     constructor(msg: string) {
       super(`File not found: ${msg}`);

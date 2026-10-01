@@ -1,0 +1,27 @@
+{
+  "_doc": "WIRING mutant for the second ratchet site. Its docstring used to CLAIM `Mirrors NodeFsAdapter frontmatter regex` while both kept their own copy — declaration-and-executable-carrier; after #4461 the sentence is true by derivation.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/services/wikilinkExtraction.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/cli-frontmatter-predicate-unify-4461.integration.test.ts --verbose 2>&1",
+  "red_re": "› ([CDE]\\d+[a-z]?) ",
+  "mutants": {
+    "W_body_split_keeps_its_own_lf_only_regex": {
+      "from": "  const block = matchFrontmatterBlock(content);\n  return block ? content.slice(block.blockEnd) : content;\n",
+      "to": "  const match = content.match(/^---\\n[\\s\\S]*?\\n---/);\n  return match ? content.slice(match[0].length) : content;\n",
+      "expect": [
+        "E1",
+        "E1b",
+        "E3"
+      ],
+      "_note": "Ratchet site. Pre-fix, on a CRLF-fenced or BOM-led file the match failed and the WHOLE content came back as body, so every FRONTMATTER wikilink was ALSO emitted as a body link by `audit ontology-imports` — the same double-count #4441 fixed inside NoteToRDFConverter for the BOM case. ⛤ E1b additionally pins the OFFSET: `blockEnd` is into the ORIGINAL string, where a `match[0].length` on a BOM-stripped copy would be off by one. ⛤ E3 (the ratchet) reddens under this mutant AND under every other WIRING mutant of this work item, and that was NOT in the first prediction — it was derived from the mutant's THEME rather than from which axes EXECUTE after it lands (integration-test-revert-verify §A44). The reason is structural and is good news: each WIRING mutant re-introduces the literal `/^---\\n` into `packages/cli/src`, which is exactly the form E3 asserts is extinct. So E3 is a live ratchet with a demonstrated flip, not a pin — it would be satisfiable by a broken grep otherwise, and its own canary only proves the predicate, not that anything can trip it."
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "_doc": "Revert-verify for #4405 on the property-editor side: what the editor writes must read back as what the user typed. Axes A1 (14 grammar shapes) / A2 (plain text stays bare) / A3 (non-strings) / A4 (list items) / A5 (a cleared field still writes nothing) / A6 (an already-quoted value is not quoted twice) in packages/obsidian-plugin/tests/unit/property-editor/formatPropertyValue.yaml-roundtrip.test.ts. Measured 2026-09-26: control 19/19 green, and each mutant below reddens exactly its own axis. ⛤ A2, A3 and A6 carry NO mutant of their own, deliberately: they are the controls that stop a 'quote everything' implementation from passing the grammar axes, and A6's mechanism (the complete-double-quoted passthrough of #3750 MEDIUM-2) lives in core's serializeYamlScalar, not in this subject — a mutant for it belongs to that file's own matrix.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/domain/property-editor/formatPropertyValue.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/property-editor/formatPropertyValue.yaml-roundtrip.test.ts 2>&1",
+  "red_re": "› .*?\\b(A\\d+\\w*)\\b",
+  "mutants": {
+    "M1_scalar_written_raw": {
+      "_note": "Возврат к до-фиксной форме: строка уходит в `updateProperty` как `String(value)`. Краснеют все 14 форм A1 — они свёрнуты в один ключ, потому что имя оси у `it.each` общее; зелёными остаются A2/A3, и это ровно контроль на невакуумность (мутант «квотировать всё» уронил бы и их).",
+      "from": "  return serializeYamlScalar(value);\n",
+      "to": "  return String(value);\n",
+      "expect": ["A1"]
+    },
+    "M3_empty_string_goes_through_the_serialiser": {
+      "_note": "Снимает единственное намеренное расхождение с сериализатором: очищенное поле начинает писаться как `\"\"`. Краснеет РОВНО A5 — остальные оси подают непустые значения и этой ветки не проходят. Ось нужна потому, что без неё ветка не заперта ничем: `formatPropertyValue` вернулся бы к `\"\\\"\\\"\"` при зелёном наборе.",
+      "from": "  if (value === \"\") {\n    return \"\";\n  }\n",
+      "to": "",
+      "expect": ["A5"]
+    },
+    "M2_list_items_written_raw": {
+      "_note": "Элементы блочной последовательности перестают сериализоваться. Краснеет РОВНО A4: неквотированный `- PR #42 merged` теряет хвост так же, как значение отображения, но остальные оси работают со скаляром и этого не видят.",
+      "from": "    return `\\n${value.map((v) => `  - ${serializeYamlScalar(v)}`).join(\"\\n\")}`;\n",
+      "to": "    return `\\n${value.map((v) => `  - ${v}`).join(\"\\n\")}`;\n",
+      "expect": ["A4"]
+    }
+  }
+}

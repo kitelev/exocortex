@@ -81,7 +81,6 @@ npx @kitelev/exocortex-cli find --class ems__Task --vault ~/vault
 | Option             | Default | Description                                                                                   |
 | ------------------ | ------- | --------------------------------------------------------------------------------------------- |
 | `--vault <path>`   | cwd     | Path to Obsidian vault                                                                        |
-| `--also <path>`    | —       | Additional vault to include (repeatable)                                                      |
 | `--sparql <query>` | —       | SPARQL SELECT query (must bind `?path`)                                                       |
 | `--class <value>`  | —       | Filter by class label via the vault's `find__Alias` asset labelled `class` (e.g. `ems__Task`) |
 
@@ -203,7 +202,6 @@ npx @kitelev/exocortex-cli query "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 10" -
 | Option                  | Default | Description                                                                                  |
 | ----------------------- | ------- | -------------------------------------------------------------------------------------------- |
 | `--vault <path>`        | cwd     | Path to Obsidian vault                                                                       |
-| `--also <path>`         | —       | Additional vault to include in the query (repeatable)                                        |
 | `--format <type>`       | `table` | Output format: `table`, `json`, `csv`, `ntriples`                                            |
 | `--output <type>`       | `text`  | Response format: `text` or `json` (for MCP tools)                                            |
 | `--timeout <duration>`  | `30s`   | Query timeout (e.g. `30s`, `5000ms`); env fallback `EXOCORTEX_SPARQL_TIMEOUT`                |
@@ -220,6 +218,8 @@ npx @kitelev/exocortex-cli query "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 10" -
 
 **Built-in templates:** `tasks-by-date`, `tasks-by-status`, `projects-active`, `concepts-by-domain`, `sleep-analysis`.
 
+**One vault per call.** The query store is built from the AssetSpaces mounted in `--vault` only (a vault is an environment; its profile decides what is mounted). The former `--also <path>` flag was removed in #3646. To query data your working vault does not mount — for example a cold archive AssetSpace — point `--vault` at a vault whose profile mounts it; no separate flag is needed.
+
 **Examples:**
 
 ```bash
@@ -232,9 +232,9 @@ npx @kitelev/exocortex-cli query \
      ?task exo:Asset_label ?label .
    }" --vault ~/vault
 
-# Cross-vault query (repeatable --also)
-npx @kitelev/exocortex-cli query "SELECT ?s WHERE { ?s ?p ?o }" \
-  --vault ~/vault --also ~/vault-archive
+# Query an AssetSpace your working vault does not mount (e.g. a cold archive):
+# run against a vault where it IS mounted — there is no extra-vault flag
+npx @kitelev/exocortex-cli query "SELECT ?s WHERE { ?s ?p ?o }" --vault ~/vault-with-archive
 
 # Template with parameters
 npx @kitelev/exocortex-cli query --template tasks-by-date --param date=2026-01-15 --vault ~/vault
@@ -272,15 +272,14 @@ npx @kitelev/exocortex-cli index --vault ~/vault --stats
 
 **Options:**
 
-| Option            | Default | Description                                                    |
-| ----------------- | ------- | -------------------------------------------------------------- |
-| `--vault <path>`  | cwd     | Path to Obsidian vault                                         |
-| `--also <path>`   | —       | Additional vault to include in the combined index (repeatable) |
-| `--output <type>` | `text`  | Response format: `text` or `json`                              |
-| `--stats`         | off     | Show cache statistics after building                           |
-| `--force`         | off     | Force rebuild even if the cache is valid                       |
-| `--strict`        | off     | Fail on the first invalid IRI instead of skipping              |
-| `--no-inference`  | —       | Disable RDFS `subClassOf` inference materialization            |
+| Option            | Default | Description                                         |
+| ----------------- | ------- | --------------------------------------------------- |
+| `--vault <path>`  | cwd     | Path to Obsidian vault                              |
+| `--output <type>` | `text`  | Response format: `text` or `json`                   |
+| `--stats`         | off     | Show cache statistics after building                |
+| `--force`         | off     | Force rebuild even if the cache is valid            |
+| `--strict`        | off     | Fail on the first invalid IRI instead of skipping   |
+| `--no-inference`  | —       | Disable RDFS `subClassOf` inference materialization |
 
 ### validate
 
@@ -294,16 +293,15 @@ npx @kitelev/exocortex-cli validate <schema|vault> [options]
 
 Check frontmatter properties against the ontology (schema linting), or run SHACL-lite shapes validation with `--shapes-mode`. Exits `1` if violations are found.
 
-| Option            | Default | Description                                                                            |
-| ----------------- | ------- | -------------------------------------------------------------------------------------- |
-| `--vault <path>`  | cwd     | Path to Obsidian vault                                                                 |
-| `--also <path>`   | —       | Additional vault merged into the validation graph (repeatable; disables `--use-cache`) |
-| `--output <type>` | `text`  | Response format: `text` or `json`                                                      |
-| `--staged`        | off     | Only validate git-staged `.md` files (for pre-commit hooks)                            |
-| `--use-cache`     | off     | Use the persistent triple cache (ignored when `--also` is set)                         |
-| `--shapes-mode`   | off     | Run SHACL-lite shapes validation instead of schema linting                             |
-| `--format <type>` | `text`  | Shapes-mode output format: `text`, `json`, `earl`                                      |
-| `--class <iri>`   | —       | Only validate assets whose `exo__Instance_class` matches this IRI/slug                 |
+| Option            | Default | Description                                                            |
+| ----------------- | ------- | ---------------------------------------------------------------------- |
+| `--vault <path>`  | cwd     | Path to Obsidian vault                                                 |
+| `--output <type>` | `text`  | Response format: `text` or `json`                                      |
+| `--staged`        | off     | Only validate git-staged `.md` files (for pre-commit hooks)            |
+| `--use-cache`     | off     | Use the persistent triple cache                                        |
+| `--shapes-mode`   | off     | Run SHACL-lite shapes validation instead of schema linting             |
+| `--format <type>` | `text`  | Shapes-mode output format: `text`, `json`, `earl`                      |
+| `--class <iri>`   | —       | Only validate assets whose `exo__Instance_class` matches this IRI/slug |
 
 ```bash
 # Strict SHACL-lite validation of the whole vault
@@ -352,7 +350,7 @@ npx @kitelev/exocortex-cli create --class ztlk__PermanentNote --label "My Note" 
 | `--body <text>`              | —             | Markdown body content (use `-` to read from stdin)                                                                                            |
 | `--body-file <path>`         | —             | Read body content from a file                                                                                                                 |
 | `--dry-run`                  | off           | Preview the exact file content (stderr) without writing                                                                                       |
-| `--created-by <uuid>`        | —             | Creator UUID                                                                                                                                  |
+| `--created-by <uuid>`        | —             | Creator UUID; refused when it has no file in the vault (#4448)                                                                                |
 | `--timezone <tz>`            | `Asia/Almaty` | Timezone for timestamps                                                                                                                       |
 | `--skip-wikilink-validation` | off           | Skip wikilink existence validation                                                                                                            |
 | `--validate`                 | off           | SHACL-lite conformance gate BEFORE writing (refuses a non-conformant asset)                                                                   |
@@ -426,7 +424,7 @@ generate-items | npx @kitelev/exocortex-cli create-batch - --vault ~/vault --dry
 | `<file>`                     | **required**  | The JSON file, or `-` for stdin (read to the end, no time limit; a terminal is refused) |
 | `--vault <path>`             | cwd           | Path to Obsidian vault                                                                  |
 | `--dry-run`                  | off           | Plan and validate every item, preview each one's exact bytes (stderr), write nothing    |
-| `--created-by <uuid>`        | —             | Creator for items that set no `createdBy`                                               |
+| `--created-by <uuid>`        | —             | Creator for items that set no `createdBy`; must exist (#4448)                           |
 | `--timezone <tz>`            | `Asia/Almaty` | Timezone for timestamps                                                                 |
 | `--skip-wikilink-validation` | off           | Skip wikilink existence validation                                                      |
 | `--yes`                      | —             | Accepted for symmetry (no-op)                                                           |

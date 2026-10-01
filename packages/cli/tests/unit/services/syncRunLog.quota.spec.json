@@ -1,0 +1,20 @@
+{
+  "_doc": "Revert-verify for req e5e45283-cf8c-45f5-8ad7-5cd08ab5442a — the journal writer. Axis B6 in packages/cli/tests/unit/commands/exosync-quota-floor.test.ts. Own spec because the driver applies mutants to the spec's single `subject`, and this one lives in the CLI service rather than in a command. Found by code review of PR #4419 (MEDIUM): without mkdir the fail-open catch swallows ENOENT and the line is lost silently in a vault the CLI made itself.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/services/syncRunLog.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-quota-floor.test.ts 2>&1",
+  "red_re": "› .*?\\b(B\\d+)\\b",
+  "mutants": {
+    "M1_no_mkdir": {
+      "_note": "Каталог не создаётся — в vault без `.obsidian/plugins/exocortex/` запись отвечает ENOENT, и fail-open теряет строку молча. Краснеет РОВНО B6: остальные оси используют фикстуру, где каталог уже есть (именно поэтому дефект и был невидим до ревью).",
+      "from": "    await mkdir(path.dirname(logPath), { recursive: true });\n",
+      "to": "",
+      "expect": ["B6"]
+    }
+  }
+}

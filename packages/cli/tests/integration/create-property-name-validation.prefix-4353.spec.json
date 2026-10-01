@@ -1,0 +1,20 @@
+{
+  "_doc": "Revert-verify for the last live narrow-grammar copy of #4353: `PropertyNameValidator.KEY_SHAPE`. The shape decides whether a `--property` key is CHECKED at all — a key that does not match is skipped — so a shape narrower than the emitter's grammar is a fail-open hole, not a cosmetic mismatch. Axes E1 (hyphenated key of a known property passes) / E2 (hyphenated key of an UNKNOWN property is now rejected — the load-bearing one) / E3 (a Capitalised prefix is skipped, the deliberate loosening) live in packages/cli/tests/integration/create-property-name-validation.integration.test.ts alongside the 11 pre-existing axes of req 430e84f1, which act as the control for unchanged behaviour. Measured 2026-09-26: control 14/14 green. ⛤ Behaviour delta measured on all three live vaults BEFORE the change (766/506/470 property assets): exactly ONE key starts being validated (`my-tbox__Norm_recordedIn`, itself a declared property, so it passes) and ZERO stop — which is why this needed no founder call despite the issue flagging it as a behaviour change. ⛤ ONE mutant, deliberately: the change is a single expression, and M1 already reddens BOTH directions of it. A second mutant that widens the shape would redden only a prose-named pre-existing axis, which this spec's red_re cannot report — a mutant whose verdict the driver cannot show is not a measurement.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/services/PropertyNameValidator.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../..\" && CI=true NODE_OPTIONS='--max-old-space-size=4096 --experimental-vm-modules' node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config packages/cli/jest.config.js packages/cli/tests/integration/create-property-name-validation.integration.test.ts 2>&1",
+  "red_re": "› .*?\\b(E\\d+\\w*)\\b",
+  "mutants": {
+    "M1_narrow_shape_restored": {
+      "_note": "Возврат к локальной узкой форме. Краснеют ДВЕ оси, и они разнонаправленны — в этом и смысл пары: E2 (дефисный неизвестный ключ снова ПРОПУСКАЕТСЯ, то есть возвращается fail-open дыра) и E3 (ключ с заглавной первой буквой снова ПРОВЕРЯЕТСЯ и отвергается). E1 остаётся зелёной: под узкой формой дефисный ключ известного свойства тоже проходит — просто по другой причине (его не проверяли), и одна эта ось дефект не различает.",
+      "from": "  private static readonly KEY_SHAPE = new RegExp(\n    `^(${PREFIX_PATTERN_SOURCE})__.+$`,\n  );\n",
+      "to": "  private static readonly KEY_SHAPE = /^([A-Za-z][A-Za-z0-9]*)__.+$/;\n",
+      "expect": ["E2", "E3"]
+    }
+  }
+}

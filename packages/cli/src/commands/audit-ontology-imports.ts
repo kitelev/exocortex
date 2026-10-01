@@ -282,8 +282,8 @@ interface OntologyMeta extends OntologyRef {
  * RFC df39007b §Решение Шаг 1 — ontology-imports invariant audit.
  *
  * Builds the asset→ontology map via `exo__Asset_isDefinedBy` (same
- * {@link findReferencedFile} resolver as `audit co-location` / `apply
- * repair-folder`), extracts every wikilink (frontmatter + body, fenced code
+ * {@link findReferencedFile} resolver as `audit co-location`; NOT the core
+ * `FolderRepairService` path `apply repair-folder` takes), extracts every wikilink (frontmatter + body, fenced code
  * blocks excluded per R10, templates excluded per R6), resolves targets
  * UID-first with an ambiguous-basename counter (R5), and classifies each
  * occurrence against the declared `exo__Ontology_imports` transitive closure

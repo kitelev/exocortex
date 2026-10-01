@@ -105,6 +105,44 @@ describe("Issue #3943: `cli set-body` overwrites the markdown body of an existin
     fs.rmSync(vault, { recursive: true, force: true });
   });
 
+  /**
+   * SUCCESS is "process.exit was never called" — not "called with 0".
+   *
+   * The command must fall off the end of its action so the process ends naturally
+   * and stderr DRAINS: `process.exit` does not wait for an asynchronous write, and
+   * stderr is asynchronous whenever it is a pipe — which is how a `--dry-run`
+   * preview is read in practice. Measured on the built bundle with a 300 KiB body
+   * (issue #4436): to a file 605 709 bytes arrived, through a pipe only 65 536
+   * (89.2 % lost, tail gone). So this predicate is the in-jest half of the
+   * truncation guard — restoring `process.exit(0)` reddens every success axis. The
+   * delivered-bytes half needs a real process and lives in
+   * set-body-4436-pipe.harness.ts (§A66: these axes see the intermediate record,
+   * the harness sees the effect). Same shape as get-body's, fixed in #4434.
+   */
+  function expectNaturalExit(codes: number[]): void {
+    expect(codes).toEqual([]);
+  }
+
+  /**
+   * REFUSAL requires an actual non-zero code — ⛔ not `not.toContain(0)`, which is
+   * also satisfied by "exit was never called" and would therefore pass on a command
+   * that silently did nothing (§A38 — a negated predicate is satisfied by many
+   * outcomes).
+   *
+   * ⛤ Honest scope, corrected in round-1 review: this is PROPHYLACTIC, not a fix
+   * for a predicate that is vacuous today. Refusals still route through
+   * ErrorHandler.handle(), which calls process.exit with a non-zero code
+   * (ErrorHandler.ts:110,141,167) — untouched here — so `codes` is never [] on
+   * these paths right now and the old form would still detect the refusal. What
+   * changed is that the weaker form now has a reachable way to pass wrongly: the
+   * success path returns [], so any future edit that let a refusal fall through
+   * to it would go unnoticed.
+   */
+  function expectRefused(codes: number[]): void {
+    expect(codes.length).toBeGreaterThan(0);
+    expect(codes.some((c) => c !== 0)).toBe(true);
+  }
+
   /** Run the real set-body command; returns exit codes + on-disk content. */
   async function runSetBody(
     relPath: string,
@@ -126,8 +164,7 @@ describe("Issue #3943: `cli set-body` overwrites the markdown body of an existin
 
     const out = await runSetBody(taskPath, ["--body-file", bodyFile]);
 
-    expect(out.exit).toContain(0);
-    expect(out.exit).not.toContain(1);
+    expectNaturalExit(out.exit);
     // New body present, old body gone.
     expect(out.content).toContain("BRAND NEW BODY");
     expect(out.content).toContain("second line");
@@ -147,8 +184,7 @@ describe("Issue #3943: `cli set-body` overwrites the markdown body of an existin
       `See [[${TARGET_UID}]] for context.`,
     ]);
 
-    expect(out.exit).toContain(0);
-    expect(out.exit).not.toContain(1);
+    expectNaturalExit(out.exit);
     expect(out.content).toContain(`[[${TARGET_UID}]]`);
     expect(out.content).not.toContain("OLD BODY LINE 1");
   });
@@ -160,7 +196,7 @@ describe("Issue #3943: `cli set-body` overwrites the markdown body of an existin
     ]);
 
     // Handled via ErrorHandler → non-zero exit; the file must be untouched.
-    expect(out.exit).not.toContain(0);
+    expectRefused(out.exit);
     expect(out.content).toBe(originalContent);
     expect(out.content).toContain("OLD BODY LINE 1");
     expect(out.content).not.toContain(NONEXISTENT_UID);
@@ -176,7 +212,7 @@ describe("Issue #3943: `cli set-body` overwrites the markdown body of an existin
       "should not be written",
     ]);
 
-    expect(out.exit).not.toContain(0);
+    expectRefused(out.exit);
     // File byte-unchanged; the refused body never landed.
     expect(out.content).toBe(before);
     expect(out.content).not.toContain("should not be written");
@@ -195,7 +231,7 @@ describe("Issue #3943: `cli set-body` overwrites the markdown body of an existin
     fs.writeFileSync(bodyFile, body, "utf-8");
 
     const out = await runSetBody(taskPath, ["--body-file", bodyFile]);
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
 
     const echo = JSON.parse(
       stdoutChunks.join("").trim().split("\n").filter(Boolean).pop() as string,
@@ -220,7 +256,7 @@ describe("Issue #3943: `cli set-body` overwrites the markdown body of an existin
 
     const out = await runSetBody(taskPath, ["--body-file", bodyFile]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     const body = out.content.split("---")[2];
     // The two backslash sequences survive verbatim...
     expect(body).toContain("C:\\new");
@@ -236,7 +272,7 @@ describe("Issue #3943: `cli set-body` overwrites the markdown body of an existin
   it("still expands backslash-n for the INLINE --body form (issue #2288) @req:664123d3-5b91-4793-8085-485d48471546", async () => {
     const out = await runSetBody(taskPath, ["--body", "Line1\\nLine2"]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     const body = out.content.split("---")[2];
     expect(body.trim().split("\n")).toHaveLength(2);
     expect(body).not.toContain("Line1\\nLine2");
@@ -249,7 +285,7 @@ describe("Issue #3943: `cli set-body` overwrites the markdown body of an existin
       "--dry-run",
     ]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     // The file on disk is unchanged (dry-run wrote nothing).
     expect(out.content).toBe(originalContent);
     expect(out.content).toContain("OLD BODY LINE 1");

@@ -1,0 +1,35 @@
+{
+  "_doc": "Revert-verify mutants for the EPIPE guard added in #4436 (round-1 review). These axes judge the guard's BRANCHES in-process; the delivered effect — a real child, a real pipe, a reader that leaves — is axis S7 in set-body-4436.pipe.spec.json. Both are needed and neither subsumes the other: the harness cannot reach the rethrow branch (set-body has no reachable non-EPIPE stdio error), and these cannot prove the process survives. ⛔ Like its siblings this spec runs LOCALLY and under the mutant driver, NOT in CI (verify-harness-runner's DIRS covers ~/dotfiles only, and the CLI jest job runs the tests but no mutants). Expectations written BEFORE the run.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?(E\\d+[a-z]?)[: ]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/utils/stdioClosedReader.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/utils/stdioClosedReader.test.ts 2>&1",
+  "mutants": {
+    "G1_condition_inverted": {
+      "from": "      if (error.code !== \"EPIPE\") throw error;\n",
+      "to": "      if (error.code === \"EPIPE\") throw error;\n",
+      "expect": ["E1", "E2", "E3"],
+      "_note": "Swaps which errors survive: EPIPE would be rethrown (the crash the guard exists to prevent) and a genuine stdio failure would be swallowed. Reddens both swallow axes and the rethrow axis; E4 (listener count) stays green, which is what shows E4 measures installation and not behaviour."
+    },
+    "G2_idempotence_flag_removed": {
+      "from": "  if (stdioGuarded) return;\n",
+      "to": "",
+      "expect": ["E4"],
+      "_note": "Every call would add another listener. Only E4 reddens — the behaviour axes pass with N listeners just as with one, which is exactly why the accumulation would go unnoticed until MaxListenersExceeded in a long-lived process or a jest worker running many suites."
+    },
+    "G3_swallow_everything": {
+      "from": "      if (error.code !== \"EPIPE\") throw error;\n",
+      "to": "      return;\n",
+      "expect": ["E3"],
+      "_note": "The over-broad form: silence EVERY stdio error, not just the closed reader. E1/E2 stay green (EPIPE is still swallowed) and only E3 reddens — the axis that keeps the guard narrow. Without E3 this mutant would be invisible, and a real stdio failure would disappear."
+    }
+  }
+}

@@ -9,7 +9,7 @@ import {
   type GenericAssetCreationConfig,
 } from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
-import { PlanningFsAdapter } from "../adapters/PlanningFsAdapter.js";
+import type { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
@@ -346,7 +346,12 @@ function parseItems(
  */
 async function checkCallerUids(
   items: BatchItem[],
-  fsAdapter: PlanningFsAdapter,
+  // #4291 — the ADAPTER interface, not the memoising subclass: this uses only
+  // `getMarkdownFiles` / `getFileMetadata`, and the caller now hands it the
+  // context's adapter (which is the memoising one, and carries the cache-backed
+  // lookup index). The narrower type never enforced the memoisation it was
+  // documenting; the expectation stays stated above instead.
+  fsAdapter: NodeFsAdapter,
 ): Promise<ItemFailure[]> {
   const failures: ItemFailure[] = [];
   const seen = new Map<string, number>();
@@ -539,7 +544,7 @@ export function createBatchCommand(): Command {
     )
     .option(
       "--created-by <uuid>",
-      "Creator UUID for items that set no createdBy (defaults to ExoAssistant, as in create)",
+      "Creator UUID for items that set no createdBy (defaults to ExoAssistant, as in create); an explicitly passed uid must exist in the vault or be created by an item of this batch (issue #4448)",
     )
     .option(
       "--timezone <tz>",
@@ -547,7 +552,7 @@ export function createBatchCommand(): Command {
     )
     .option(
       "--skip-wikilink-validation",
-      "Skip wikilink existence validation (as in create)",
+      "Skip wikilink existence validation, for --property VALUES, for each item's class reference and for an explicit createdBy (as in create)",
     )
     .option(
       "--yes",
@@ -604,12 +609,13 @@ export function createBatchCommand(): Command {
         const pendingUids = new Set(
           items.flatMap((item) => (item.uid ? [item.uid] : [])),
         );
-        const fsAdapter = new PlanningFsAdapter(vaultPath);
-        const ctx = new CreateContext(vaultPath, {
-          fsAdapter,
-          warn,
-          pendingUids,
-        });
+        // #4291 — the context owns the cache, so the adapter it is given must
+        // be built from the SAME one: an adapter without the lookup index
+        // would pay the cache read (the TBox filter uses it) and still scan
+        // the corpus for every uid / label lookup, i.e. strictly worse than
+        // before. The context is constructed first for exactly that reason.
+        const ctx = new CreateContext(vaultPath, { warn, pendingUids });
+        const fsAdapter = ctx.fsAdapter;
 
         failures.push(...(await checkCallerUids(items, fsAdapter)));
         const pendingIndex = new Map(
