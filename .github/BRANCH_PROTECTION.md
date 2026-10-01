@@ -1,113 +1,127 @@
-# Branch Protection Setup Guide
+# Branch Protection on `main`
 
-This guide explains how to configure GitHub branch protection rules to prevent direct pushes to `main` and ensure all changes go through Pull Requests with required CI checks.
+How `main` is protected, how to read its current state, and how to change it.
+
+> **The authority is the live GitHub API, not this page.** Nothing here transcribes the
+> required-check set, and nothing here applies a protection payload — see
+> [Why there is no setup script](#why-there-is-no-setup-script) for the measurement that
+> retired the one we used to ship.
 
 ## Why Branch Protection?
 
-In multi-instance AI development environment:
+In a multi-instance AI development environment:
 
-- **Prevents race conditions**: Only one PR can merge at a time
-- **Ensures quality**: All CI checks must pass before merge
-- **Eliminates version conflicts**: Automatic versioning happens sequentially
-- **Linear history**: Rebase-only merges keep git history clean
-- **Safe rollback**: Every change is a PR that can be reverted
+- **Prevents race conditions**: only one PR merges at a time
+- **Ensures quality**: the required CI checks must pass before merge
+- **Eliminates version conflicts**: automatic versioning happens sequentially
+- **Linear-ish history**: squash merges keep `main` readable
+- **Safe rollback**: every change is a PR that can be reverted
 
-## Required Status Checks
+## Required status checks
 
-Before any PR can be merged to `main`, these checks MUST pass:
+⛔ **The list is not repeated here.** Its names and count change whenever CI jobs are
+added, renamed or retired, so any copy in a document is a snapshot that rots silently.
 
-1. **build-and-test** - Type check, lint, build, unit tests, BDD coverage
-2. **e2e-tests** - End-to-end tests in Docker environment
+- Human-readable snapshot (single source inside the repo):
+  [`docs/reference/ci/required-checks.md`](../docs/reference/ci/required-checks.md)
+- Live authority — run this:
 
-## Setup Methods
+  ```bash
+  gh api repos/kitelev/exocortex/branches/main/protection/required_status_checks \
+    --jq '.contexts | sort | .[]'
+  ```
 
-### Method 1: Automated Script (Recommended)
+  Needs admin. Without admin, the same set is readable from the branch object:
 
-Run the provided script to configure branch protection via GitHub API:
+  ```bash
+  gh api repos/kitelev/exocortex/branches/main --jq '.protection.required_status_checks.contexts'
+  ```
 
-```bash
-# Navigate to project root
-cd ~/Developer/exocortex-development/exocortex
+If the snapshot page and the API disagree, **the API wins** — fix the page.
 
-# Run setup script
-.github/scripts/setup-branch-protection.sh
-```
-
-**Prerequisites:**
-
-- GitHub CLI installed (`brew install gh`)
-- Authenticated with GitHub (`gh auth login`)
-- Admin access to repository
-
-**What the script does:**
-
-- ✅ Requires PR before merging to main
-- ✅ Requires `build-and-test` and `e2e-tests` to pass
-- ✅ Requires branches to be up to date before merging
-- ✅ Requires linear history (rebase-only merges)
-- ✅ Enforces rules for administrators (no bypass)
-- ✅ Dismisses stale PR approvals on new commits
-- ✅ Blocks direct pushes to main
-
-**Repository merge settings (configured separately):**
-
-- ✅ Rebase merge enabled
-- ❌ Squash merge disabled
-- ❌ Merge commits disabled
-
-### Method 2: Manual Configuration via GitHub UI
-
-If you prefer manual setup:
-
-1. Go to **Repository Settings**
-
-   ```
-   https://github.com/kitelev/exocortex/settings
-   ```
-
-2. Navigate to **Branches** in left sidebar
-
-3. Click **Add branch protection rule**
-
-4. Configure:
-   - **Branch name pattern**: `main`
-
-   - **☑ Require a pull request before merging**
-     - **☑ Dismiss stale pull request approvals when new commits are pushed**
-     - **Required number of approvals**: `0` (for AI agents)
-
-   - **☑ Require status checks to pass before merging**
-     - **☑ Require branches to be up to date before merging**
-     - **Status checks that are required**:
-       - Search and add: `build-and-test`
-       - Search and add: `e2e-tests`
-
-   - **☑ Do not allow bypassing the above settings**
-     - Ensures even admins follow the rules
-
-5. Click **Create** or **Save changes**
-
-## Verification
-
-After setup, verify branch protection is active:
+## Reading the current protection
 
 ```bash
-# Check protection status via CLI
-gh api /repos/kitelev/exocortex/branches/main/protection
+# Everything (admin):
+gh api repos/kitelev/exocortex/branches/main/protection
 
-# Or visit web UI
+# Or in the web UI:
 open https://github.com/kitelev/exocortex/settings/branches
 ```
 
-You should see:
+## Changing the protection
 
-- **Branch protection rule** badge next to `main` branch
-- **Required status checks**: build-and-test, e2e-tests
-- **Require pull request** enabled
+There are exactly two supported paths, and both exist on purpose — see
+[Why there is no setup script](#why-there-is-no-setup-script) for what was removed and why.
 
-## Testing Branch Protection
+### Path 1 — the GitHub UI (default)
 
-Try to push directly to main:
+Use the **GitHub UI**: _Settings → Branches → `main` → Edit_.
+
+1. Go to <https://github.com/kitelev/exocortex/settings/branches>
+2. Edit the rule whose branch-name pattern is `main`
+3. For the required-check list, add/remove individual checks — the search box offers the
+   check-run names CI actually produced recently, so you never type a name no workflow emits
+4. Save
+
+### Path 2 — one sub-resource at a time, read-modify-write (API, needs admin)
+
+⛔ **Never `PUT /repos/{owner}/{repo}/branches/main/protection`.** That endpoint is a **full
+replace**: every field you omit is reset and every field you spell out overwrites whatever is
+live. A payload assembled by hand therefore rewrites the parts of the policy you were not
+thinking about — which is exactly what happened here (see below).
+
+✅ `PATCH` the single sub-resource you mean, and build its body **from the live value**. Adding
+one required check, end to end:
+
+```bash
+NEW_CHECK='my-new-job'          # a name CI actually reports
+
+# 1. read the live sub-resource (do not type its contents from memory)
+gh api repos/kitelev/exocortex/branches/main/protection/required_status_checks > /tmp/rsc.json
+
+# 2. derive the new body from it — nothing is authored except the one name being added
+jq --arg n "$NEW_CHECK" '{strict: .strict, contexts: (.contexts + [$n] | unique)}' \
+  /tmp/rsc.json > /tmp/rsc-patch.json
+
+# 3. apply ONLY that sub-resource (the policy fields are untouched by construction)
+gh api --method PATCH \
+  repos/kitelev/exocortex/branches/main/protection/required_status_checks \
+  --input /tmp/rsc-patch.json
+
+# 4. read the effect back — never trust the exit code alone
+gh api repos/kitelev/exocortex/branches/main/protection/required_status_checks \
+  --jq '.contexts | sort | .[]'
+```
+
+Removing a check is the same with `(.contexts - [$n])` in step 2. For the policy fields
+(`enforce_admins`, linear history, PR reviews) prefer Path 1: they have their own
+sub-resources, but they are changed about once a year and the UI shows you the current value
+next to the switch.
+
+### Why there is no setup script
+
+This page used to say "run `.github/scripts/setup-branch-protection.sh`". That script was
+removed in #4494, measured against the live protection on 2026-10-02:
+
+| field                             | what the script sent              | what was live                                                                                                                                                 |
+| --------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `required_status_checks.contexts` | `["build-and-test", "e2e-tests"]` | 14 real contexts — **neither** of those two among them (`build-and-test` is emitted by no workflow; `e2e-tests` exists only as a **non-required** aggregator) |
+| `enforce_admins`                  | `true`                            | `false`                                                                                                                                                       |
+| `required_linear_history`         | `true`                            | `false`                                                                                                                                                       |
+| `required_pull_request_reviews`   | an object                         | absent                                                                                                                                                        |
+
+Because `PUT` replaces the whole object, running it by these instructions would have swapped
+the 14 live contexts for two names nothing ever reports — i.e. it would have removed the
+protection as a mechanism while exiting `0` and printing "✅ configured successfully". The
+script never failed; only the protection did, and that is not logged anywhere.
+
+Re-pointing the script at the live set was rejected as a fix: a setter that derives _every_
+field from the live state is an identity operation (it writes back exactly what it read), and
+any field it keeps authoring re-opens the same hole. See the PR for #4494 for the full
+reasoning.
+
+## Verifying protection works
 
 ```bash
 git checkout main
@@ -116,122 +130,78 @@ git commit -am "test: direct push"
 git push origin main
 ```
 
-**Expected result:**
+Expected:
 
 ```
 remote: error: GH006: Protected branch update failed
-To github.com:kitelev/exocortex.git
  ! [remote rejected] main -> main (protected branch hook declined)
-error: failed to push some refs
 ```
 
-✅ **This is correct!** Branch protection is working.
+✅ That rejection **is** the protection working.
 
-## AI Agent Workflow After Branch Protection
-
-With branch protection enabled, AI agents MUST use this workflow:
+## AI agent workflow
 
 ```bash
-# 1. Create feature branch in separate worktree
-git worktree add ../worktrees/exocortex-claude1-feat-feature-name -b feature/description
+# 1. Feature branch in its own worktree
+git worktree add ../worktrees/exocortex-claude1-feat-my-feature -b feature/my-feature
+cd ../worktrees/exocortex-claude1-feat-my-feature
 
-# 2. Make changes
-cd ../worktrees/exocortex-claude1-feat-feature-name
-# ... code changes ...
+# 2. Change code, 3. test locally
+npm run test:all
 
-# 3. Test locally
-npm test:all
-
-# 4. Commit (NO version bump needed!)
+# 4. Commit (no version bump — that is automated)
 git commit -am "feat: description"
 
-# 5. Push and create PR
-git push origin feature/description
+# 5. Push and open the PR
+git push origin feature/my-feature
 gh pr create --title "feat: description" --body "Details..."
 
-# 6. Wait for CI checks (REQUIRED!)
-gh pr checks --watch
+# 6. Wait for CI, then read the per-check verdict (not the rollup)
+gh pr view <N> --json state,mergeStateStatus,headRefOid
+gh api "repos/kitelev/exocortex/commits/<head-sha>/check-runs?per_page=100" \
+  --jq '.check_runs[] | "\(.conclusion)\t\(.name)"' | sort
 
-# 7. If all GREEN ✅ - auto-merge (rebase only - linear history)
-gh pr merge --auto --rebase
-
-# 8. Version bump happens automatically via pr-auto-version.yml
-
-# 9. Release created automatically via auto-release.yml
+# 7. All required checks green → merge (squash; rebase is not allowed here)
+gh pr merge <N> --squash --delete-branch
 ```
 
-## What Happens on PR Merge?
+## What happens on PR merge?
 
-1. **PR merged** to main
-2. **pr-auto-version.yml** workflow triggered:
-   - Detects change type (feat/fix/BREAKING)
-   - Bumps version in package.json
-   - Syncs manifest.json
-   - Updates CHANGELOG.md
-   - Commits changes to main
-3. **auto-release.yml** workflow triggered:
-   - Builds plugin
-   - Creates GitHub release
-   - Uploads artifacts
+1. **PR merged** into `main`
+2. **`.github/workflows/auto-release.yml`** runs and does the whole release in one job:
+   - gates on the **required-check set** read from the API at run time
+     (`.github/scripts/release-required-gate.mjs`, #4488)
+   - picks the bump type from the merged commits (`BREAKING CHANGE` / `feat:` / else patch)
+   - writes the new version into `package.json` + `manifest.json`, updates `CHANGELOG.md`
+   - builds the plugin, creates the tag and GitHub release, publishes the CLI to npm
+
+There is no separate versioning workflow — `pr-auto-version.yml` has not existed since the
+CI rewrite (Path 2 D0 cutover, 2026-04-22).
 
 ## Troubleshooting
 
-### PR merge button is disabled
+### Merge button is disabled
 
-**Cause**: Required checks not passing or not completed
+A required check has not passed (or never reported). Read the per-check verdict with the
+`check-runs` command in step 6 above; a required context with **no run at all** blocks the
+merge just as a failing one does.
 
-**Solution**:
+### A status check never appears
 
-```bash
-# Check which checks are failing
-gh pr checks
+1. Verify the job name in `.github/workflows/ci.yml` matches the required context exactly —
+   matrix jobs register as `job (value)`, e.g. `e2e-shard (3)`
+2. Check the run actually started: <https://github.com/kitelev/exocortex/actions>
+3. Ensure the workflow triggers on `pull_request`
 
-# View detailed status
-gh pr view --json statusCheckRollup
-```
+### Emergency bypass
 
-Fix the failing tests and push:
-
-```bash
-# Fix the code
-git commit --amend
-git push --force-with-lease origin feature-branch
-
-# Wait for checks again
-gh pr checks --watch
-```
-
-### Status check not appearing
-
-**Cause**: Check name mismatch or workflow not running
-
-**Solution**:
-
-1. Verify workflow file names match required checks
-2. Check workflow ran: `https://github.com/kitelev/exocortex/actions`
-3. Ensure workflow triggers on `pull_request` events
-
-### Want to bypass for emergency
-
-**NOT RECOMMENDED** but if absolutely necessary:
-
-1. Temporarily disable branch protection
-2. Push urgent fix
-3. Re-enable branch protection IMMEDIATELY
-4. Create follow-up PR to test the fix properly
-
-Better approach: Fix in feature branch, use `gh pr merge --admin` if you have override permissions.
-
-## Maintenance
-
-Branch protection rules are persistent. No maintenance needed unless:
-
-- Adding new required checks (update via script or UI)
-- Changing CI workflow job names (update required checks)
-- Removing deprecated checks
+**Not recommended.** Prefer fixing forward in a feature branch. If a maintainer truly must
+override, use `gh pr merge --admin` on the PR rather than disabling the rule — a disabled
+rule has to be re-created by hand, and that is how a protection ends up configured from
+memory instead of from its live state.
 
 ## References
 
-- [GitHub Branch Protection Docs](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
-- [GitHub CLI Manual](https://cli.github.com/manual/)
-- [Status Checks API](https://docs.github.com/en/rest/checks)
+- [`docs/reference/ci/required-checks.md`](../docs/reference/ci/required-checks.md) — required-check snapshot + the command that prints the live set
+- [GitHub branch-protection docs](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
+- [Branch-protection REST API](https://docs.github.com/en/rest/branches/branch-protection)
