@@ -1,0 +1,68 @@
+{
+  "_doc": "Revert-verify for the Dependabot-alert ratchet (task 689a7dc5): a NEW vulnerable package name anywhere in the lock graph must go RED, a baselined one must stay silent, and every 'I could not judge' path must be rc=2 rather than green. Axes R1-R9 live in dependabot-alert-baseline.test.ts; the subject is the ratchet script itself, driven as a process against a throw-away git tree and a local advisory stub (npm_config_registry). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout. Recorded runs: see the PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/scripts/check-dependabot-alert-baseline.mjs",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/..\" && CI=true node ./node_modules/jest/bin/jest.js --config packages/obsidian-plugin/jest.config.js packages/obsidian-plugin/tests/unit/build/dependabot-alert-baseline.test.ts --coverageThreshold='{}' 2>&1",
+  "red_re": "› (R\\d+\\w*) ",
+  "mutants": {
+    "M1_baseline_ignored": {
+      "_why": "The mutant the task asked for: make the ratchet behave as if the baseline were always empty. Then a known, deliberately grandfathered advisory reads as a NEW regression on every run — the gate cries wolf, gets ignored, and dies the way the codegraph SessionStart hint died. R2 and R8 are the axes that assert a baselined name stays silent AND the run is green.",
+      "from": "  baseline = JSON.parse(readFileSync(BASELINE, \"utf8\"));",
+      "to": "  baseline = [];",
+      "expect": ["R2", "R3", "R4", "R8"],
+      "_note": "R3 and R4 were NOT predicted and are recorded rather than silently added (integration-test-revert-verify A44: the prediction came from the mutant's THEME, not from which axes still execute after it). The mutation replaces the whole baseline-read statement, so it is WIDER than 'ignore the baseline': (a) stale is computed from baseline, and an always-empty baseline makes the stale branch unreachable - R3 asserts that branch; (b) the readFileSync call is the only thing that can throw, so the catch returning rc=2 on an unreadable baseline becomes dead - R4 asserts that. Both rednesses are the same defect the mutant models (a ratchet that stops consulting its baseline), observed on two more axes."
+    },
+    "M2_stale_entry_not_reported": {
+      "_why": "Fail-loud in the OTHER direction. A baselined key that stopped being reported must be pruned; left in place the baseline stops describing the lock graph and becomes a standing licence to ignore that name forever (aggregate-hides-dead-stream §A2 — composition is the verdict, not the count).",
+      "from": "const stale = baseline.filter((k) => !found.has(k)).sort();",
+      "to": "const stale = [];",
+      "expect": ["R3"]
+    },
+    "M3_unreadable_baseline_reads_green": {
+      "_why": "'I could not judge' must never be green. With no readable baseline there is nothing to ratchet against, and returning 0 would make the gate pass on every run in which it was broken — the canonical self-satisfying metric (§A7: a verdict built on an empty measurement).",
+      "from": "  die(2, [\n    `⛔ check-dependabot-alert-baseline: baseline unreadable (${String(err.message ?? err).slice(0, 120)}).`,",
+      "to": "  die(0, [\n    `⛔ check-dependabot-alert-baseline: baseline unreadable (${String(err.message ?? err).slice(0, 120)}).`,",
+      "expect": ["R4"]
+    },
+    "M4_zero_lockfiles_reads_green": {
+      "_why": "Zero lockfiles means the sweep judged NOTHING, which is indistinguishable from 'nothing is vulnerable' unless it is reported as its own outcome. This is the canary on the size of the input (self-satisfying-metric-weak-verifier §A9: print what was scanned next to what was found).",
+      "from": "if (locks.length === 0) {\n  die(2, [",
+      "to": "if (locks.length === 0) {\n  die(0, [",
+      "expect": ["R5"]
+    },
+    "M5_transient_endpoint_reads_green": {
+      "_why": "A partial sweep cannot be green: a new vulnerable name could be hiding in the lockfile whose audit failed. Note the asymmetry the ratchet keeps deliberately — rc=2 does NOT fail the CI job (that would cost releases on a flaky endpoint, #4489), but it must not be rc=0 either, or the job reports a judgement it never made.",
+      "from": "if (failures.some((f) => f.includes(\"TRANSIENT\"))) {\n  die(2, [",
+      "to": "if (failures.some((f) => f.includes(\"TRANSIENT\"))) {\n  die(0, [",
+      "expect": ["R10"],
+      "_note": "First run reddened NOTHING against the predicted R6, and the honest diagnosis was neither 'vacuous axis' nor 'defensive guard' but integration-test-revert-verify A130: no axis supplied an input on which this guard fires. R6 kills EVERY lockfile's request, so the script exits earlier at the parsed===0 branch; the partial-sweep guard is reachable only when one lockfile is audited and another is not. R10 builds exactly that (the stub answers the first request and destroys the second)."
+    },
+    "M6_sweep_root_lock_only": {
+      "_why": "THE defect this ratchet exists against. Six of the nine alerts sat in packages/core/package-lock.json — a second lockfile nothing installs from, invisible to every gate keyed on the install path. A sweep that only looks at the root lock reproduces exactly that blindness while staying green.",
+      "from": "  return out.split(\"\\0\").filter((p) => p.endsWith(\"package-lock.json\")).sort();",
+      "to": "  return out.split(\"\\0\").filter((p) => p === \"package-lock.json\").sort();",
+      "expect": ["R7", "R10"],
+      "_note": "R10 was not predicted and is recorded rather than silently added (A44). It is the same blindness seen on a second axis: R10 needs TWO lockfiles (one audited, one whose request is killed) to reach the partial-sweep guard, and a root-only sweep leaves exactly one lockfile, so no request fails, nothing is INCOMPLETE and the axis cannot see its own condition. Narrowing the sweep does not just hide findings - it makes the partial-sweep guard unreachable too."
+    },
+    "M7_scope_line_dropped": {
+      "_why": "The limitation has to live where the verdict is READ. Nobody opens the source of a job that passed, so a bare ✅ would be taken as 'no open Dependabot alerts' — which this ratchet cannot establish (it reads npm's database, not the alert list). Dropping the line is silent and leaves the verdict claiming more than it measures (decision-surface-must-derive-from-mechanism).",
+      "from": "  \"   ⚠ scope: this is `npm audit` over the repo's lockfiles — NOT the Dependabot alert\\n\" +",
+      "to": "  \"   (scope note omitted)\\n\" +",
+      "expect": ["R8"]
+    },
+    "M8_update_prints_count_only": {
+      "_why": "`--update` is the disarm path, so it must NAME what it grandfathers. A bare count makes 'one advisory I am deliberately deferring' and 'two, one of which is somebody else's break I never looked at' produce identical output — and the JSON diff of bare strings does not distinguish them either. Same shape as check-spec-anchors.mjs's own --update guard.",
+      "from": "  for (const k of added)\n    console.log(`   + GRANDFATHERED (justify this in the PR): ${k} — ${found.get(k)}`);",
+      "to": "  if (added.length) console.log(`   + ${added.length} added`);",
+      "expect": ["R9"]
+    }
+  }
+}
