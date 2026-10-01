@@ -727,7 +727,18 @@ const FRONTMATTER_BODY_LINE = /\r\n|\r|\n/;
  * function's contract is to produce a COPY that "preserves the document
  * byte-for-byte except for the specific keys" — normalising the mark would be a
  * second, unrequested edit to a duplicate. The bytes before the body are taken
- * from `content` itself, so whatever run the source carries survives.
+ * from `content` itself, so the run the source carries survives THIS CALL.
+ *
+ * ⛔ …and only this call: the guarantee is POINT-IN-TIME, not a property of the
+ * duplicate's lifetime. What ends it is the NEXT IN-PLACE PROPERTY WRITE — every
+ * `property_set` goes through `FrontmatterService.updateProperty` →
+ * `spliceBlock`, and the CLI adapter path through
+ * `FileSystemVaultAdapter.replaceFrontmatter`; both write back EXACTLY ONE
+ * U+FEFF whatever N was there. Measured (#4483 AC1, `duplicateAsset` service +
+ * `updateProperty`, both real): run 3 → 3 after the duplicate → **1** after a
+ * single property write. So the paragraph above must not be read as "a
+ * duplicate keeps its run": it keeps it until something edits it, and the
+ * collapse lives in the RECONSTRUCTION those writers do, not here.
  *
  * ⛤ The fail-closed throw is UNCHANGED and now means strictly less: a source
  * with no block in ANY of the three encodings. Widening the predicate narrows
@@ -745,13 +756,34 @@ export function rewriteFrontmatterScalars(
   // single guard covers both.
   const block = matchFrontmatterBlock(content);
   const leading = FrontmatterService.leadingBlock(content);
-  if (!block || !leading) {
+  if (!block) {
     throw new Error(
       "duplicateAsset: source file has no YAML frontmatter block",
     );
   }
 
-  const eol = leading.eol;
+  // ⛔ The guard is `!block` ALONE, and `leading` is asserted rather than
+  // re-checked, BECAUSE both resolve through the same helper: `leadingBlock`
+  // opens with `const block = matchFrontmatterBlock(content); if (!block) return
+  // null;` — so `leading` is null IF AND ONLY IF `block` is. The `|| !leading`
+  // disjunct this guard used to carry could therefore never fire; measured
+  // (#4483 AC5) by a mutant that restores it and reds NOTHING — that null result
+  // IS the evidence, not a coverage gap, because no input distinguishes the two
+  // forms (`integration-test-revert-verify` §A35).
+  // ⛔ Do NOT re-add it as "missing protection": the form would read as two
+  // independent checks where there is one predicate. If the biconditional ever
+  // stops holding, fix it in `leadingBlock` (one owner for those bytes, #4469) —
+  // a second guard here would hide the disagreement instead of surfacing it.
+  // ⛤ The assertion is STRUCTURALLY FORCED by the single guard, not a shortcut:
+  // `block` and `leading` are two independently-typed nullables, and TypeScript
+  // narrows only the one the guard tests — so `!block` alone leaves `leading`
+  // nullable. The alternatives are worse: a `?? <eol>` fallback would be an
+  // unreachable branch that silently picks the WRONG line ending if the
+  // biconditional ever broke, and a second `if (!leading) throw` is the very
+  // form AC3 removes. Asserting keeps the failure LOUD (a TypeError naming this
+  // line) in a state the mechanism makes unreachable.
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- see above: null iff `block` is, and `block` is already guarded
+  const eol = leading!.eol;
   const remaining = new Map(Object.entries(replacements));
 
   const rewrittenLines = block.body
