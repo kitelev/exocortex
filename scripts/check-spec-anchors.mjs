@@ -67,7 +67,7 @@
 
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const BASELINE = join(ROOT, "scripts", "spec-anchors.baseline.json");
@@ -174,11 +174,42 @@ for (const abs of specs) {
     });
     continue;
   }
+  /**
+   * ⛔ `JSON.parse` succeeding does not make the result an object: the literal `null`
+   * parses fine and then `spec.subject` throws an uncaught TypeError, which aborts the
+   * sweep mid-corpus — every spec after it goes unreported, and the stack trace does not
+   * even name the offending file. Fail as a FINDING, keyed and named, and keep sweeping.
+   * (Review r1 LOW, reproduced: `echo null > x.spec.json`.)
+   */
+  if (spec === null || typeof spec !== "object" || Array.isArray(spec)) {
+    findings.push({
+      key: `${specRel} :: <spec>`,
+      why: `not a JSON object: ${Array.isArray(spec) ? "array" : String(spec)}`,
+    });
+    continue;
+  }
   parsed += 1;
   const subject = String(spec.subject ?? "");
   let rel = null;
   if (subject.includes(PLACEHOLDER)) rel = subject.split(PLACEHOLDER)[1];
   else if (subject.startsWith(ROOT + "/")) rel = subject.slice(ROOT.length + 1);
+  /**
+   * ⛔ A prefix match is not containment. `<PLACEHOLDER>/../../tmp/x` starts with the
+   * placeholder and still walks out of the repo, so the resolved path is read and judged
+   * as a legitimate subject — making this file's own header claim ("a subject that
+   * neither starts with the placeholder nor lies under the repo root is invisible")
+   * FALSE for exactly the shape that looks resolvable. Normalise and verify, so the
+   * invariant is a property of the mechanism rather than of the comment
+   * (decision-surface-must-derive-from-mechanism). Review r1 MEDIUM, reproduced in both
+   * the placeholder and the ROOT-literal form.
+   */
+  if (rel !== null && !resolve(ROOT, rel).startsWith(ROOT + "/")) {
+    findings.push({
+      key: `${specRel} :: <subject>`,
+      why: `escapes the repo: ${rel.slice(0, 80)}`,
+    });
+    continue;
+  }
   if (rel === null) {
     // Not a missing file — a subject no tool can resolve, on ANY machine. The spec is
     // invisible forever while the driver still reports a verdict about it.
@@ -267,11 +298,37 @@ if (unjudged.length > 0) {
 
 /* ── Ratchet against the baseline of dead-anchor keys. ───────────────────────────── */
 const deadKeys = findings.map((f) => f.key).sort();
+const whyByKey = new Map(findings.map((f) => [f.key, f.why]));
 if (UPDATE) {
+  /**
+   * ⛔ `--update` is the disarm path, so it must NAME what it grandfathers. Printing only
+   * a count makes "one key I am deliberately deferring" and "two keys, one of which is
+   * somebody else's break I never looked at" produce identical output, and the JSON diff
+   * — bare strings with no reason field — does not distinguish them either. The delta is
+   * printed per key so the PR's own CI log carries it even if the diff is skimmed.
+   * (Review r1 MEDIUM; the opposite direction was already guarded — a baselined key that
+   * comes back to life fails loud.)
+   */
+  let previous = [];
+  try {
+    const raw = JSON.parse(readFileSync(BASELINE, "utf8"));
+    if (Array.isArray(raw)) previous = raw;
+  } catch {
+    previous = [];
+  }
+  const prevSet = new Set(previous);
+  const added = deadKeys.filter((k) => !prevSet.has(k));
+  const dropped = previous.filter((k) => !deadKeys.includes(k)).sort();
   writeFileSync(BASELINE, JSON.stringify(deadKeys, null, 2) + "\n");
   console.log(
-    `✅ baseline rewritten: ${deadKeys.length} key(s) → ${relative(ROOT, BASELINE)}`,
+    `✅ baseline rewritten: ${deadKeys.length} key(s) → ${relative(ROOT, BASELINE)} ` +
+      `(+${added.length} grandfathered, -${dropped.length} pruned)`,
   );
+  for (const k of added)
+    console.log(
+      `   + GRANDFATHERED (justify this in the PR): ${k} — ${whyByKey.get(k)}`,
+    );
+  for (const k of dropped) console.log(`   - pruned (no longer dead): ${k}`);
   process.exit(0);
 }
 
@@ -288,7 +345,6 @@ try {
 }
 
 const baseSet = new Set(baseline);
-const whyByKey = new Map(findings.map((f) => [f.key, f.why]));
 const regressions = deadKeys.filter((k) => !baseSet.has(k));
 const repaired = baseline.filter((k) => !whyByKey.has(k)).sort();
 
