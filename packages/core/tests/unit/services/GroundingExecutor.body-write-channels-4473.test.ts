@@ -231,8 +231,9 @@ describe("GroundingExecutor — body write channels reach the shared predicate (
 
       // And no line INSIDE the block lost its `\r` either: every LF in the
       // frontmatter half is preceded by a CR.
-      const block = matchFrontmatterBlock(written)!;
-      const head = written.slice(0, block.blockEnd);
+      const block = matchFrontmatterBlock(written);
+      expect(block).not.toBeNull();
+      const head = written.slice(0, block?.blockEnd);
       expect(head.match(/(?<!\r)\n/g)).toBeNull();
     });
 
@@ -321,6 +322,14 @@ describe("GroundingExecutor — body write channels reach the shared predicate (
         ["BOM+LF", "\n", "\uFEFF"],
       ] as const) {
         const written = await runBodyTemplate(asset(eol, bom, `rt-${name}`));
+        // ⛔ The round trip ALONE is vacuous for the identity-loss defect: when
+        // `replaceBody` returns the body verbatim the intermediate file has no
+        // frontmatter, `extractBody` then returns that whole file, and the trip
+        // closes — green on a corrupted asset. Measured: mutant M1 reddened A1
+        // and A2 and left this axis green until this line was added. So the
+        // trip is asserted to happen on an ASSET.
+        expect(writtenFrontmatter(written)).not.toBeNull();
+        expect(writtenFrontmatter(written)).toContain(`exo__Asset_uid: rt-${name}`);
         const { createdBody } = await runCloneTargetBody(written);
         expect(createdBody).toBe(NEW_BODY);
       }
