@@ -28,8 +28,8 @@
     "M4_tbox_guard_removed": {
       "from": "const TBOX_FORM = new RegExp(`^${PREFIX_PATTERN_SOURCE}__\\\\S+$`);",
       "to": "const TBOX_FORM = new RegExp(`^$`);",
-      "expect": ["A11", "A12"],
-      "_note": "⛤ Anchor repaired 2026-09-29 (#4291): it still quoted the inline literal this constant carried before #4350 moved it onto the shared `PREFIX_PATTERN_SOURCE`, so the mutation had been landing 0 times — dead on `origin/main`, not broken by #4291."
+      "expect": ["A11", "A12", "A16"],
+      "_note": "⛤ Anchor repaired 2026-09-29 (#4291): it still quoted the inline literal this constant carried before #4350 moved it onto the shared `PREFIX_PATTERN_SOURCE`, so the mutation had been landing 0 times — dead on `origin/main`, not broken by #4291. ⛤ A16 added to `expect` 2026-10-01 (#4475) only after READING why it reds, not to make the run agree (integration-test-revert-verify §A44): the repair restored the anchor but nobody ran the driver, so `expect` was still the set measured before #4350. A16's premise is that the alias `ems__Sprint` IS TBox-form, and this guard is the predicate that decides that — with `TBOX_FORM` gutted the alias is no longer recognised, the alias-added trigger never fires, and `:965 expect(added.mode).toBe(\"rebuild\")` receives `\"delta\"` (measured on a mutated copy, 2026-10-01). So A16 is a DEPENDENCY of this guard, not an unrelated axis. ⚠ The anchor is kept on the FORM of the declaration (`new RegExp(\\`^${PREFIX_PATTERN_SOURCE}__…\\`)`) rather than on the prefix grammar itself: that grammar is shared with core and has already been rewritten once (#4350), whereas this line is this file's own and changes only when the guard itself is redesigned (§A69)."
     },
     "M5_inferred_layer_dropped_on_delta": {
       "from": "    if (cached.metadata.inferenceEnabled) {\n      const nextByPath",
