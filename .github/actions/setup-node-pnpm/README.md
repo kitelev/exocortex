@@ -8,7 +8,7 @@ Shared setup for every Node-based job in `ci.yml`. Centralises repeated boilerpl
 
 | Input             | Default   | Description                                                                                                                                                                                                                                   |
 | ----------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `node-version`    | `"22"`    | Node.js major version to install via `actions/setup-node@v4`.                                                                                                                                                                                 |
+| `node-version`    | `"22"`    | Node.js major version to install via `actions/setup-node@v7`.                                                                                                                                                                                 |
 | `run-build`       | `"false"` | When `"true"`, runs `npm run build` after dependency install. Required for `build`, `test-component`, `performance-tests`.                                                                                                                    |
 | `cache-key-extra` | `""`      | Suffix appended to the `node_modules` cache key. Use this to segregate caches produced inside different container images (e.g. `playwright-jammy`) so the restore step never unpacks native modules compiled against a different glibc / ABI. |
 
@@ -20,8 +20,8 @@ Local composite actions (referenced via `uses: ./.github/actions/<name>`) requir
 
 ## Steps performed
 
-1. `actions/setup-node@v4` with `cache: "npm"` (primes `~/.npm` download cache).
-2. `actions/cache@v4` over the root `node_modules` and every workspace's `node_modules`, keyed on `package-lock.json` hash + OS + Node version + optional discriminator.
+1. `actions/setup-node@v7` with `cache: "npm"` (primes `~/.npm` download cache).
+2. `actions/cache@v6` over the root `node_modules` and every workspace's `node_modules`, keyed on `package-lock.json` hash + OS + Node version + optional discriminator.
 3. Conditional `npm ci --prefer-offline --no-audit --no-fund` on cache miss.
 4. On cache hit: a sanity check that verifies `node_modules/.package-lock.json` exists, falling back to `npm ci` if the restored tree looks corrupted.
 5. Conditional `npm run build` when `run-build: "true"`.

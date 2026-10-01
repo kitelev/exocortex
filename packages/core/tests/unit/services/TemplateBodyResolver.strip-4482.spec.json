@@ -1,0 +1,54 @@
+{
+  "_doc": "Revert-verify mutants for #4482 — `stripTemplateFrontmatter` converted onto the shared `matchFrontmatterBlock`. Run from the repo root after replacing the path placeholders: python3 -I ~/.claude/bin/mutant-driver.py <this file>. Axis names are T<N>, matching the FIRST token of each test title, so they cannot collide with the A<N>/B<N> halves of the sibling conversions (#4473).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/TemplateBodyResolver.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../..\" && node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/services/TemplateBodyResolver.test.ts --verbose 2>&1",
+  "red_re": "›\\s+(T\\d+[a-z]?)\\s",
+  "_note_control_axes": "T9 and T10 carry no mutant of their own BY DESIGN — their product is that this conversion did NOT widen recognition. T9 pins the canonical over-widening shape `---\\r\\n---\\r\\n<body>` (two stacked rules sharing ONE physical CRLF, the shape that produced the HIGH in PR #4468): the old local regex and `matchFrontmatterBlock` BOTH return null there, so the content is verbatim before and after, and T9's silence under every mutant IS that parity proof (integration-test-revert-verify §A118). T10 pins the documented no-block behaviours. T7/T8 ARE the LF/CRLF byte-parity controls required by AC3 and they stay green under M1 — narrowing the predicate back to `^---\\r?\\n` cannot touch the LF or CRLF path, which is exactly why the defect survived five conversions with a green suite.",
+  "mutants": {
+    "M1_restores_the_local_narrow_predicate": {
+      "from": "  const block = matchFrontmatterBlock(content);",
+      "to": "  const block = /^---\\r?\\n/.test(content)\n    ? matchFrontmatterBlock(content)\n    : null;",
+      "expect": ["T1", "T2", "T3", "T4", "T5", "T6", "T11", "T12"],
+      "_note": "Type-preserving reproduction of the pre-#4482 reach. The old `/^---\\r?\\n[\\s\\S]*?\\r?\\n---\\r?\\n?/` recognised neither a lone-CR fence (`\\r?\\n` is indivisible, so it needs at least one `\\n`) nor a BOM-prefixed one (`^---` cannot reach past `U+FEFF`) nor an empty block whose separators are bare CRs — on all of those the match was null and the content came back VERBATIM, frontmatter included. T7/T8/T9/T10 stay green: the LF and CRLF paths are byte-identical under this mutant, which is the measured reason the defect was invisible. ⛤ T12 added to `expect` AFTER reading WHY it reddens, not silently (the driver refuses a silent top-up, §A44): T12 pins BOTH mixed-EOL directions, and the SECOND one (opening fence terminated by a bare CR, `---\\rkey: x\\n---\\n## Plan`) fails the reintroduced `^---\\r?\\n` test, so the narrow predicate returns it VERBATIM. The FIRST direction (opening LF, closing bare CR) passes that test and is stripped correctly even under this mutant — which is precisely why a mixed-EOL file needed its own axis rather than riding on M1."
+    },
+    "M2_drops_the_separating_terminator": {
+      "from": "  return separator ? afterBlock.slice(separator[0].length) : afterBlock;",
+      "to": "  return afterBlock;",
+      "expect": ["T1", "T3", "T4", "T5", "T6", "T7", "T8", "T12"],
+      "_note": "The block is recognised but its trailing terminator is kept, so every body opens with a blank line — the half of the contract the old `\\r?\\n?` tail carried. T2 stays green by construction (nothing follows the block, so there is no terminator to consume), and so do T9/T10 (no block at all) and T11 (the BOM goes with the block either way). ⛤ T12 added to `expect` AFTER reading WHY it reddens, not silently (the driver refuses a silent top-up, §A44): T12 pins BOTH mixed-EOL directions, and both directions leave their own separator (a bare CR / an LF) at the head of the body."
+    },
+    "M3_narrows_the_separating_terminator_to_LF": {
+      "from": "const SEPARATING_TERMINATOR = /^(?:\\r\\n|\\n|\\r)/;",
+      "to": "const SEPARATING_TERMINATOR = /^\\n/;",
+      "expect": ["T1", "T5", "T6", "T8", "T12"],
+      "_note": "Isolates the THREE-form tail from the three-form fence recognition: the block is found on every encoding, but only an LF separator is consumed, so a CRLF body keeps its `\\r\\n` (T8) and a lone-CR body keeps its `\\r` (T1/T5/T6). T3/T4 stay green — their fences and separator are LF, only the BOM differs — which is what makes this mutant distinguishable from M1 rather than a duplicate of it. ⛤ T12 added to `expect` AFTER reading WHY it reddens, not silently (the driver refuses a silent top-up, §A44): T12 pins BOTH mixed-EOL directions, and the first direction's separator after the closing fence is a bare CR, which an LF-only terminator cannot consume. The second direction's separator IS an LF, so it alone would have stayed green — the axis reddens on its first expectation."
+    },
+    "M4_reorders_separating_terminator_cr_before_crlf": {
+      "from": "const SEPARATING_TERMINATOR = /^(?:\\r\\n|\\n|\\r)/;",
+      "to": "const SEPARATING_TERMINATOR = /^(?:\\r|\\r\\n|\\n)/;",
+      "expect": ["T8"],
+      "_note": "Alternation order of the SEPARATING_TERMINATOR, which the sibling predicate's docblock explicitly measured as NOT load-bearing for `matchFrontmatterBlock` itself — here it IS: trying a bare `\\r` first consumes only the CR of a CRLF separator and leaves the LF at the head of the body, so T8 reddens while the lone-CR axes (T1/T5/T6) and the mixed-EOL axis (T12) stay green, since a bare CR is all they have to give. Supplied and verified by the reviewer of PR #4490; the `expect` here is MY pre-run prediction, re-measured on my tree (the reviewer's file carried `[T1,T5,T6,T8]`, which the run does not support)."
+    },
+    "M5_separating_terminator_drops_the_bare_cr_branch": {
+      "from": "const SEPARATING_TERMINATOR = /^(?:\\r\\n|\\n|\\r)/;",
+      "to": "const SEPARATING_TERMINATOR = /^(?:\\r\\n|\\n)/;",
+      "expect": ["T1", "T5", "T6", "T12"],
+      "_note": "Drops the bare-CR branch entirely — the narrowest way to ask 'is the three-form tail load-bearing?'. Every axis whose separator is a lone CR reddens (T1/T5/T6 and the mixed-EOL T12), CRLF and LF stay green. Supplied by the reviewer of PR #4490 with a placeholder `expect` (`GUESS`); the names here are measured."
+    },
+    "M6_separator_taken_from_the_OPENING_fence_style": {
+      "from": "  const separator = SEPARATING_TERMINATOR.exec(afterBlock);",
+      "to": "  const separator = new RegExp(\n    \"^\" +\n      (/^---(\\r\\n|\\r|\\n)/.exec(content.slice(block.blockStart))?.[1] ?? \"\\n\"),\n  ).exec(afterBlock);",
+      "expect": ["T12"],
+      "_note": "⛤ MINE, added for the review's MEDIUM and verified by running it: the separator is taken from the OPENING fence's style instead of being read from the file — i.e. exactly the 'simplify for symmetry' change the docblock argues against. It reddens ONLY T12: on a file whose fences agree (every other axis) the two answers coincide, so this is the single-concern mutant that pins the independence of the two fences. Without T12 nothing in the repo would have gone red here."
+    }
+  }
+}
