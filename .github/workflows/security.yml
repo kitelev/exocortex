@@ -144,3 +144,37 @@ jobs:
           name: weekly-security-report
           path: security-summary.md
           retention-days: 90
+
+  # ⛔ TEMPORARY PROBE (#4488) — remove before opening the PR. Measures whether the
+  # job-scoped GITHUB_TOKEN can read branch protection, which decides whether the
+  # release gate can DERIVE the required-check list instead of hardcoding it.
+  probe-protection-token:
+    name: PROBE required_status_checks via GITHUB_TOKEN
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: GET branches/main/protection/required_status_checks
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          for p in \
+            "branches/main/protection/required_status_checks" \
+            "branches/main/protection" \
+            "branches/main" \
+            "rulesets"
+          do
+            CODE=$(curl -sS -o /tmp/body.json -w '%{http_code}' \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${{ github.repository }}/$p")
+            echo "=== $p -> HTTP $CODE"
+            head -c 600 /tmp/body.json; echo
+          done
+          echo "=== token scopes advertised by the API:"
+          curl -sS -D /tmp/h -o /dev/null \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}"
+          grep -i '^x-oauth-scopes\|^x-accepted-oauth-scopes' /tmp/h || echo "(none advertised)"
