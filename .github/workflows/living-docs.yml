@@ -60,7 +60,7 @@ jobs:
       # GITHUB_TOKEN is available. Public submodules fetch fine; a private one
       # would fail here (fail-closed), which is the entire privacy guarantee.
       - name: Checkout (public submodules only — no PAT)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
 
