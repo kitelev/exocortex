@@ -216,7 +216,6 @@ describe("branch protection is derived, not authored (#4494)", () => {
 
   it("B8 input canary — the scan actually read the files it judges", () => {
     expect(files.length).toBeGreaterThan(10);
-    const rels = new Set(files.map((f) => f.rel));
     for (const expected of [
       ".github/BRANCH_PROTECTION.md",
       ".github/GITHUB_SETTINGS.md",
@@ -224,7 +223,15 @@ describe("branch protection is derived, not authored (#4494)", () => {
       ".github/scripts/release-required-gate.mjs",
       "docs/reference/ci/required-checks.md",
     ]) {
-      expect(rels.has(expected)).toBe(true);
+      const f = files.find((x) => x.rel === expected);
+      // Presence alone is NOT an input: a 0-byte carrier is visited and then judged
+      // vacuously by every content predicate above (measured — FLIP-5 in the PR body),
+      // so the canary asserts the bytes too.
+      expect({
+        rel: expected,
+        scanned: f !== undefined,
+        hasBody: (f?.text ?? "").length > 200,
+      }).toEqual({ rel: expected, scanned: true, hasBody: true });
     }
     // at least one workflow and one script, or B6 would be vacuous
     expect(
