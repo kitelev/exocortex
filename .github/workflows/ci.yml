@@ -16,6 +16,19 @@ on:
   # some later, unrelated push happens to fire CI. On a PR branch the recovery
   # levers are `update-branch` / close+reopen; on `main` there was NO lever at
   # all. This gives one: `gh workflow run ci.yml --ref main`.
+  #
+  # ⛔ SECOND mechanism of the same "stranded unreleased" outcome, and it needs no missing
+  # event (Issue #4488): the run IS created and every required check IS green, yet a job
+  # OUTSIDE the required set drags `workflow_run.conclusion` to `cancelled`/`failure`, so the
+  # release is skipped. MEASURED on merge `fb832b34` (#4188, 2026-10-01): 14/14 required
+  # success, the `e2e-tests` aggregator cancelled at 155 s against its then 2-minute budget,
+  # run `cancelled`, `Auto Release` `skipped`, v17.7.25 never cut. This one is QUIETER than
+  # #3925: there a run is absent, here everything is green and nothing is published.
+  # Addressed in `auto-release.yml` (the gate now reads the required SET, not the run verdict)
+  # plus its `audit` job, which turns such a skip into a RED run; the aggregator's budget was
+  # also re-derived from measurement — see its `timeout-minutes` comment below. A THIRD
+  # mechanism of the same outcome lived in the same window (#4489: a red non-required
+  # `npm-audit-exocortex`), which is why the detector keys on the outcome, not the mechanism.
   workflow_dispatch:
 
 permissions:
@@ -1397,11 +1410,33 @@ jobs:
           fi
           echo "✅ P99 PLUGIN_WAIT_MS gate passed: ${P99}ms ≤ 15000ms"
 
-  # Merge E2E test reports from all shards
-  # Named "e2e-tests" to satisfy branch protection rule
+  # Merge E2E test reports from all shards.
+  #
+  # ⛔ The name is historical, NOT a protection requirement. MEASURED 2026-10-01 against
+  # `GET /branches/main` → `.protection.required_status_checks.contexts`: the 14 required
+  # contexts are typecheck, test-coverage, archgate, test-component, e2e-shard (1..6), lint,
+  # detect-changes, parity-gate, requirements-trace — `e2e-tests` is NOT among them. The former
+  # comment here ("Named to satisfy branch protection rule") asserted the opposite and is why
+  # this job's effect on RELEASES went unexplained for so long: it gates nothing at merge, and
+  # used to gate everything at release (#4488).
   e2e-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    # ⛤ MEASURED, not rounded (#4488). Over the 40 most recent push runs on main
+    # (2026-09-27 … 2026-10-01, listing read with `Cache-Control: no-cache` — see the stale-window
+    # note in the header): 39 successes, min 12 s, median 18 s, p90 23 s, MAX 57 s.
+    #
+    # ⛔ The budget is taken from MAX(success) = 57 s, never from p90: the one non-success in that
+    # window — `fb832b34`, cancelled at 155 s on the step "Download all test artifacts" — is the
+    # very outcome the budget exists to survive, and its duration is TRUNCATED by the old 2-minute
+    # limit, so the true requirement there is > 155 s and unknown. A ×2-3 margin on MAX(success)
+    # (114-171 s) would therefore not even cover the case already observed.
+    #
+    # ⇒ ×5 on MAX(success) = 285 s, rounded up to the whole minute: 5 min = 5.3 × MAX(success) and
+    # 1.9 × the known lower bound of the cancelled case. The tail is heavy and not bounded by
+    # observation — the work is downloading six shards' videos/screenshots/traces, whose volume
+    # grows with retries. Cost of the larger budget: a genuinely hung aggregator is detected in 5
+    # min instead of 2; since this job is NOT required (see above), that delays no merge.
+    timeout-minutes: 5
     needs: [e2e-shard, detect-changes]
     if: always()
     env:

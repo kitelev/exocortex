@@ -7,15 +7,75 @@ on:
       - completed
     branches:
       - main
+  # Recovery lever for a release that did not happen (#4488). Until this existed the ONLY way
+  # to reach this workflow was a `workflow_run` completion, so a main commit whose release was
+  # skipped had to wait for an unrelated later push. ⛔ Guarded to `main` in the `gate` job: a
+  # dispatch resolves this file AND `actions/checkout` from the chosen ref, so an unguarded
+  # dispatch from a branch would cut a release out of that branch.
+  workflow_dispatch:
 
 permissions:
   contents: write
   id-token: write # npm provenance (OIDC) — publishConfig.provenance в packages/cli/package.json
 
 jobs:
-  auto-release:
+  # ⛔ Why a separate gate job exists at all (#4488). `auto-release` used to be gated on
+  # `github.event.workflow_run.conclusion == 'success'` — the verdict of the WHOLE CI run. A job
+  # outside branch protection's required set (a timed-out aggregator, a flaky non-required check)
+  # drags that verdict to `cancelled`/`failure`, and the release is then silently not cut while
+  # every required check is green. MEASURED on merge `fb832b34` (#4188): 14/14 required green,
+  # `e2e-tests` cancelled at 155 s against a 2-minute budget, run `cancelled`, this workflow
+  # `skipped`, v17.7.25 never published.
+  #
+  # A job-level `if:` cannot call an API, so the predicate moves into a job whose output the
+  # release job gates on. The required-context LIST is derived at run time from
+  # `GET /repos/{o}/{r}/branches/main` — never written down here; see the script's header for the
+  # measurement of which endpoints a job-scoped GITHUB_TOKEN can actually read.
+  gate:
+    name: gate (required-set, not the run verdict)
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    timeout-minutes: 5
+    # ⛔ A dispatch resolves this workflow from the ref it was fired on, so without this guard a
+    # branch dispatch would tag and publish that branch's HEAD.
+    if: ${{ github.event_name != 'workflow_dispatch' || github.ref_name == 'main' }}
+    permissions:
+      contents: read # GET /branches/main (the required-set source)
+      checks: read # GET /commits/{sha}/check-runs
+    outputs:
+      release: ${{ steps.gate.outputs.release }}
+      judged: ${{ steps.gate.outputs.judged }}
+      reason: ${{ steps.gate.outputs.reason }}
+      required_n: ${{ steps.gate.outputs.required_n }}
+      green_n: ${{ steps.gate.outputs.green_n }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Decide from the required-check set
+        id: gate
+        # ⛔ `continue-on-error` is NOT the discarded "continue-on-error on the aggregator"
+        # option of #4488 — that one would have hidden a real signal. Here exit 2 means "the
+        # required set could not be read, the printed verdict is the FALLBACK", and the signal
+        # is not discarded: it travels as `judged=false` into the `audit` job, which names it.
+        # Without this, a transient 403 would fail the job, `needs.gate.outputs` would be empty,
+        # and the release would stop for a reason nobody reports.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion || 'manual-dispatch' }}
+        run: node .github/scripts/release-required-gate.mjs
+
+  auto-release:
+    needs: gate
+    runs-on: ubuntu-latest
+    if: ${{ needs.gate.outputs.release == 'true' }}
+    outputs:
+      # Consumed by `audit`: a green job that published nothing is LEGITIMATE for exactly these
+      # two reasons, and the detector must tell them apart from a silent miss.
+      has_commits: ${{ steps.commits.outputs.has_commits }}
+      tag_exists: ${{ steps.check_tag.outputs.tag_exists }}
+      version: ${{ steps.new_version.outputs.version }}
 
     steps:
       - name: Checkout
@@ -342,3 +402,40 @@ jobs:
           echo "📦 Tag: v${{ steps.new_version.outputs.version }}"
           echo "📝 Changelog generated from commits"
           echo "📤 CLI published to npm as @kitelev/exocortex-cli@${{ steps.new_version.outputs.version }}"
+
+  # ⛔ The SECOND acceptance item of #4488, and the one independent of which fix was chosen:
+  # "`Auto Release` with a `skipped` verdict at a green required set must not pass unnoticed."
+  # `skipped` is not `failure`, so it appears in no sweep of red runs — the defect's character
+  # is that nothing is red anywhere. This job turns that silence into a RED run.
+  #
+  # ⛤ It is not made redundant by the gate above. Two mechanisms of this same observable were
+  # found in ONE window (this one, and a red non-required `npm-audit-exocortex`, #4489); the
+  # third will arrive the same way. So the detector keys on the OUTCOME — "required green, yet
+  # nothing published" — not on the mechanism.
+  #
+  # ⚠ Residual, named rather than hidden: this job is reachable only through the same
+  # `workflow_run` trigger as the release itself (self-satisfying-metric-weak-verifier §A32 — an
+  # observer inside the contour goes down with it). The case "the CI run was never created at
+  # all" (#3925) stays outside it; the external watcher `~/.claude/bin/wait-release.sh` covers
+  # that half.
+  audit:
+    name: audit (silent skip at green-required must go RED)
+    needs: [gate, auto-release]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Classify the outcome
+        env:
+          GATE_JUDGED: ${{ needs.gate.outputs.judged }}
+          GATE_RELEASE: ${{ needs.gate.outputs.release }}
+          GATE_REASON: ${{ needs.gate.outputs.reason }}
+          AR_RESULT: ${{ needs.auto-release.result }}
+          AR_HAS_COMMITS: ${{ needs.auto-release.outputs.has_commits }}
+          AR_TAG_EXISTS: ${{ needs.auto-release.outputs.tag_exists }}
+        run: node .github/scripts/release-required-gate.mjs --audit
