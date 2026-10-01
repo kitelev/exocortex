@@ -18,19 +18,37 @@
       "from": "  const block = matchFrontmatterBlock(content);",
       "to": "  const block = /^---\\r?\\n/.test(content)\n    ? matchFrontmatterBlock(content)\n    : null;",
       "expect": ["P1", "P2", "P3"],
-      "_note": "The pre-#4482 reach. P1/P2 show the template's own frontmatter leaking into the inserted body; P3 shows the editor path additionally RESOLVING a `$token` inside that leaked frontmatter line. P4 stays green — the LF and CRLF paths were never affected, which is why two plugin actions shipped this defect under a green suite."
+      "_note": "The pre-#4482 reach. P1/P2 show the template's own frontmatter leaking into the inserted body; P3 shows the editor path additionally RESOLVING a `$token` inside that leaked frontmatter line. P4 stays green — the LF and CRLF paths were never affected, which is why two plugin actions shipped this defect under a green suite. P5 stays GREEN under this mutant — its opening fence is LF-terminated, so the reintroduced `^---\\r?\\n` test passes and the block is still found; the mixed-EOL defect this axis guards is the SEPARATOR one, pinned by M6."
     },
     "M2_drops_the_separating_terminator": {
       "from": "  return separator ? afterBlock.slice(separator[0].length) : afterBlock;",
       "to": "  return afterBlock;",
-      "expect": ["P1", "P2", "P3", "P4"],
-      "_note": "Every inserted body would open with a blank line — the plugin surface is where a user SEES that immediately, so all four axes carry it."
+      "expect": ["P1", "P2", "P3", "P4", "P5"],
+      "_note": "Every inserted body would open with a blank line — the plugin surface is where a user SEES that immediately, so all four axes carry it. P5 reddens too: its body keeps the bare CR that followed the closing fence."
     },
     "M3_narrows_the_separating_terminator_to_LF": {
       "from": "const SEPARATING_TERMINATOR = /^(?:\\r\\n|\\n|\\r)/;",
       "to": "const SEPARATING_TERMINATOR = /^\\n/;",
-      "expect": ["P1", "P3", "P4"],
-      "_note": "Only an LF separator is consumed: the lone-CR axes (P1/P3) and the CRLF half of the control (P4) keep a leading terminator, while P2 — LF fences behind a BOM — stays green, which distinguishes this mutant from M1."
+      "expect": ["P1", "P3", "P4", "P5"],
+      "_note": "Only an LF separator is consumed: the lone-CR axes (P1/P3) and the CRLF half of the control (P4) keep a leading terminator, while P2 — LF fences behind a BOM — stays green, which distinguishes this mutant from M1. P5 reddens: its separator is a bare CR, which an LF-only terminator cannot consume."
+    },
+    "M4_reorders_separating_terminator_cr_before_crlf": {
+      "from": "const SEPARATING_TERMINATOR = /^(?:\\r\\n|\\n|\\r)/;",
+      "to": "const SEPARATING_TERMINATOR = /^(?:\\r|\\r\\n|\\n)/;",
+      "expect": ["P4"],
+      "_note": "Plugin twin of the core M4 — only the CRLF half of the control (P4) can see a CR-first alternation; the lone-CR axes have nothing but a bare CR to give."
+    },
+    "M5_separating_terminator_drops_the_bare_cr_branch": {
+      "from": "const SEPARATING_TERMINATOR = /^(?:\\r\\n|\\n|\\r)/;",
+      "to": "const SEPARATING_TERMINATOR = /^(?:\\r\\n|\\n)/;",
+      "expect": ["P1", "P3", "P5"],
+      "_note": "Plugin twin of the core M5 — the lone-CR axes (P1/P3) and the mixed-EOL axis (P5) redden, P2 (LF fences behind a BOM) and the LF half of P4 stay green."
+    },
+    "M6_separator_taken_from_the_OPENING_fence_style": {
+      "from": "  const separator = SEPARATING_TERMINATOR.exec(afterBlock);",
+      "to": "  const separator = new RegExp(\n    \"^\" +\n      (/^---(\\r\\n|\\r|\\n)/.exec(content.slice(block.blockStart))?.[1] ?? \"\\n\"),\n  ).exec(afterBlock);",
+      "expect": ["P5"],
+      "_note": "Plugin twin of the core M6 ('simplify for symmetry'): reddens ONLY P5, which is why that axis had to exist on this surface too."
     }
   }
 }

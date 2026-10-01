@@ -233,6 +233,27 @@ describe("stripTemplateFrontmatter — shared predicate conversion (#4482)", () 
     expect(stripTemplateFrontmatter("\uFEFF## Body")).toBe("\uFEFF## Body");
   });
 
+  it("T12 strips a block whose two fences use DIFFERENT line endings (mixed-EOL)", () => {
+    // Review of PR #4490 (MEDIUM): every other axis here, and the 18-shape
+    // matrix behind them, uses the SAME terminator on both fences — so nothing
+    // pinned the independence of the two. It is load-bearing twice over:
+    // `CLOSING_FENCE` is searched in the remainder without reference to the
+    // opening terminator, and the separating terminator is read from the file
+    // rather than taken from the opening fence. "Simplifying for symmetry" —
+    // requiring the closing fence to match the opening style — silently
+    // restores the very defect this PR fixes, and before T12 no axis would
+    // have gone red (mutant M6 is exactly that simplification).
+    // Measured on origin/main: the old local regex returns these VERBATIM
+    // (bytes 2d2d2d 0a … 0d 2d2d2d 0d …), i.e. the #4482 leak.
+    expect(
+      stripTemplateFrontmatter("---\nexo__Asset_uid: x\r---\r## Plan"),
+    ).toBe("## Plan");
+    // …and the other direction, which costs nothing to pin:
+    expect(
+      stripTemplateFrontmatter("---\rexo__Asset_uid: x\n---\n## Plan"),
+    ).toBe("## Plan");
+  });
+
   it("T11 the template file's BOM is never re-emitted into the stripped body", () => {
     // The BOM is a property of the TEMPLATE file, not of the body that gets
     // placed into a DIFFERENT note, so it goes with the block it precedes — for

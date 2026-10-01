@@ -195,6 +195,17 @@ describe("extractTemplateBody — shared predicate conversion, plugin surface (#
     expect(inserted).not.toContain("exo__Asset_label");
   });
 
+  it("P5 strips a mixed-EOL fenced template on the plugin surface too", () => {
+    // Core axis T12's plugin twin (review of PR #4490, MEDIUM). Both plugin
+    // entries reach the same core function, so the independence of the two
+    // fences has to be pinned on this surface as well — otherwise a
+    // "symmetry" simplification would leak the template's frontmatter into an
+    // inserted note with every plugin axis still green.
+    const content = "---\nexo__Asset_uid: x\r---\r## Plan";
+    expect(extractTemplateBody(content)).toBe("## Plan");
+    expect(extractTemplateBody(content)).not.toContain("exo__Asset_uid");
+  });
+
   it("P4 LF/CRLF control — the plugin surface is byte-identical to origin/main", () => {
     expect(
       extractTemplateBody(`---\nexo__Asset_label: T\n---\n## Plan\n- step`),
