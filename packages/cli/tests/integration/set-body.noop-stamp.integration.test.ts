@@ -138,8 +138,22 @@ describe("Ticket 6ffac10e: `cli set-body` with a byte-identical body is a no-op"
     };
   }
 
+  /**
+   * SUCCESS is "process.exit was never called" — not "called with 0". set-body must
+   * fall off the end of its action so the process ends naturally and stderr DRAINS:
+   * `process.exit` does not wait for an asynchronous write, and stderr is
+   * asynchronous whenever it is a pipe — which is how a `--dry-run` preview is read
+   * in practice. Measured on the built bundle with a 300 KiB body (issue #4436): to
+   * a file 605 709 bytes arrived, through a pipe only 65 536. Restoring
+   * `process.exit(0)` reddens every success axis here; the delivered-bytes half
+   * lives in set-body-4436-pipe.harness.ts (§A66).
+   */
+  function expectNaturalExit(codes: number[]): void {
+    expect(codes).toEqual([]);
+  }
+
   function expectStampedA(first: RunResult, body: string): void {
-    expect(first.exit).toContain(0);
+    expectNaturalExit(first.exit);
     expect(first.content).toContain(`exo__Asset_updatedAt: ${STAMP_A}`);
     expect(first.content.endsWith(`---\n${body}`)).toBe(true);
     expect(first.echo.changed).toBe(true);
@@ -147,8 +161,7 @@ describe("Ticket 6ffac10e: `cli set-body` with a byte-identical body is a no-op"
   }
 
   function expectNoop(first: RunResult, second: RunResult, bodyBytes: number): void {
-    expect(second.exit).toContain(0);
-    expect(second.exit).not.toContain(1);
+    expectNaturalExit(second.exit);
     expect(second.bytes.equals(first.bytes)).toBe(true);
     expect(second.content).toContain(`exo__Asset_updatedAt: ${STAMP_A}`);
     expect(second.content).not.toContain(STAMP_B);
@@ -189,7 +202,7 @@ describe("Ticket 6ffac10e: `cli set-body` with a byte-identical body is a no-op"
     fs.utimesSync(taskAbs(), OLD_MTIME, OLD_MTIME);
     const changedBody = "NEW BODY\n\n- second line\n- third line\n";
     const second = await runWithBody(changedBody, CLOCK_B);
-    expect(second.exit).toContain(0);
+    expectNaturalExit(second.exit);
     expect(second.content.endsWith(`---\n${changedBody}`)).toBe(true);
     expect(second.content).toContain(`exo__Asset_updatedAt: ${STAMP_B}`);
     expect(second.content).not.toContain(STAMP_A);
@@ -205,7 +218,7 @@ describe("Ticket 6ffac10e: `cli set-body` with a byte-identical body is a no-op"
 
     fs.utimesSync(taskAbs(), OLD_MTIME, OLD_MTIME);
     const second = await runWithBody(NEW_BODY, CLOCK_B, ["--dry-run"]);
-    expect(second.exit).toContain(0);
+    expectNaturalExit(second.exit);
     expect(second.bytes.equals(first.bytes)).toBe(true);
     expect(second.mtimeMs).toBe(OLD_MTIME.getTime());
     expect(second.stderr).toContain("--- DRY RUN PREVIEW ---");

@@ -117,6 +117,53 @@ describe(`guard message is DERIVED from the routing table (bug 8f35fec0)`, () =>
   });
 
   /**
+   * #4326 — the `exo__Instance_class` route named ONLY the replacing Convert
+   * pair, so an author who needed to DUAL-TYPE an asset (add
+   * `exo__Deprecated{Asset,Class,Property}` beside the existing class) read the
+   * refusal as "no sanctioned path exists" and went around the product with a raw
+   * Edit-append. The additive path had existed for a month
+   * (`append-instance-class`, grounding `ac0cf4ce`, `property_append`); it was
+   * minted AFTER the 2026-08-19 registry sweep that built this table.
+   *
+   * ⛔ The sibling axes above cannot catch this class. They lock the sentence
+   * AGAINST the array (parity) and the array against PHANTOM names — both stay
+   * green when a real command is simply ABSENT from the array: the sentence and
+   * the array collapse together, consistently, around the missing path.
+   */
+  const RECLASS_ROUTE = "exo__Instance_class";
+
+  it("A1 the reclass route offers an ADDITIVE path, not only replacing ones @req:3800d995-2bae-401f-a23a-dac914505e9d", () => {
+    const route = GUARDED_ROUTES[RECLASS_ROUTE];
+    expect(route.commands).toContain("append-instance-class");
+  });
+
+  it("A2 the rendered reclass refusal NAMES the additive command @req:3800d995-2bae-401f-a23a-dac914505e9d", () => {
+    expect(GUARDED_PROPERTIES[RECLASS_ROUTE]).toContain(
+      "append-instance-class",
+    );
+  });
+
+  /**
+   * Naming the command is not yet a path: `append-instance-class` REQUIRES
+   * `--input '{"class": …}'` and fails without it, while its Convert siblings on
+   * the same route take no payload — so the shared `argSuffix` field cannot carry
+   * it and the note must.
+   */
+  it("A3 the reclass note states the --input payload the additive command needs @req:3800d995-2bae-401f-a23a-dac914505e9d", () => {
+    const note = GUARDED_ROUTES[RECLASS_ROUTE].note ?? "";
+    expect(note).toContain("--input");
+    expect(note).toContain('"class"');
+  });
+
+  /** Control: the additive path was ADDED beside the replacing ones, not swapped in. */
+  it("A4 the reclass route still offers the replacing Convert pair @req:3800d995-2bae-401f-a23a-dac914505e9d", () => {
+    const route = GUARDED_ROUTES[RECLASS_ROUTE];
+    expect(route.commands).toEqual(
+      expect.arrayContaining(["convert-to-task", "convert-to-project"]),
+    );
+  });
+
+  /**
    * The guard sentence is ALSO the input of the exit-code classifier, which picks
    * the process exit code by SUBSTRING. A word chosen for readability silently
    * re-routes the code a scripted consumer branches on.

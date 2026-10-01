@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutant for req 9de09856 — the DELIVERED-BYTES half. Separate spec because the axis needs a REAL process with a REAL pipe on the BUILT bundle, which jest cannot provide (its axes mock process.stdout.write and process.exit). ⛔ This spec and its harness run LOCALLY and under the mutant driver, NOT in CI: the CLI jest job does not build dist, and the harness is not named `*-verify.{sh,py}` so verify-harness-runner does not sweep it either (harness-invocation-surface §A19 — naming that inapplicability out loud rather than leaving it to be read as an oversight). Same shape as use-cache-4264.proc-chain.spec.json, which states the same constraint. Expectation written BEFORE the run, and the RED state was OBSERVED on the pre-fix bundle: P1 delivered 65 536 of 549 528 bytes (88.1 % lost), P3 --json unparseable, P4 the round trip WROTE the truncated body (changed:true, bodyBytes 65 539). The harness rebuilds by default so a mutated copy of the tree is measured, not a stale bundle. ⛤ P6 added in #4447: #4434 shipped only the FIRST half of this fix (dropping process.exit(0)) and never the second (the EPIPE guard), so the shipped verb exited 1 with a Node stack trace whenever the reader left early — RED observed 5/5 on the pre-fix bundle, with `set-body` (guard shipped in #4443) returning 0 on the identical invocation as the canary.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "❌ (P\\d+)",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/get-body.ts",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && npx tsx packages/cli/tests/integration/get-body-9de09856-pipe.harness.ts 2>&1",
+  "mutants": {
+    "M1_process_exit_after_write": {
+      "from": "          process.stdout.write(body);\n        }\n",
+      "to": "          process.stdout.write(body);\n        }\n        process.exit(0);\n",
+      "expect": ["P1", "P3", "P4"],
+      "_note": "Restores the pre-fix pattern: process.exit(0) right after writing. It does not wait for an asynchronous write to drain, and stdout IS asynchronous when it is a pipe — so the body is cut at the 64 KiB buffer. P2 (file redirect) and P5 (small body) stay GREEN, and that pair is what proves the axis measures PIPE HANDLING rather than 'reading the body at all': a mutant that broke reading would redden all five. ⛤ P6 also stays GREEN under this mutant, and that is load-bearing rather than a gap: the exit terminates the process BEFORE the asynchronous EPIPE arrives, which is exactly why the crash only became reachable once the exit was dropped. The two halves are therefore locked by two DIFFERENT axes — P1/P3/P4 by M1, P6 by M2 — and neither substitutes for the other."
+    },
+    "M2_stdio_epipe_guard_removed": {
+      "from": "      guardStdioAgainstClosedReader();\n",
+      "to": "",
+      "expect": ["P6"],
+      "_note": "Removes the EPIPE guard that the exit-less success path requires (#4447). process.exit(0) used to terminate the process BEFORE the OS delivered the asynchronous EPIPE a closed reader causes; without the exit AND without this guard, that EPIPE is an unhandled 'error' event — an uncaught exception, rc=1 plus a Node stack trace — on the very channel this command documents (`get-body <p> | head -c 200`, `| less` quit with `q`). Measured on the built bundle with a 549 528-byte body: reader-to-EOF rc=0 (549 528 B delivered); reader leaving after 200 B without the guard rc=1 + \"Error: write EPIPE\" 5/5; the already-guarded sibling `set-body --dry-run` on the same invocation rc=0 3/3 (canary — the probe is sound, the guard is the differentiator). Only P6 reddens: P1-P5 read their streams to EOF, so they cannot model a reader that leaves. Same shape as M3_stdio_epipe_guard_removed in set-body-4436.pipe.spec.json, which locked the sibling fix in #4443."
+    }
+  }
+}

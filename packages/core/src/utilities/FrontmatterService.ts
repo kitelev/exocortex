@@ -8,11 +8,25 @@
  * @since 1.0.0
  */
 
-import { loadDefaultSpec, orderProperties } from "../services/OrderSpecResolver";
-import { serializeYamlScalar, STRING_SCALAR_PROPERTIES } from "./yamlScalar";
-import { canonicalYamlKey, LEGACY_YAML_KEYS } from "../services/NoteToRDFConverter";
+import {
+  loadDefaultSpec,
+  orderProperties,
+} from "../services/OrderSpecResolver";
+import {
+  serializeYamlScalar,
+  STRING_SCALAR_PROPERTIES,
+  YAML_BLOCK_SCALAR_HEADER,
+} from "./yamlScalar";
+import {
+  canonicalYamlKey,
+  LEGACY_YAML_KEYS,
+} from "../services/NoteToRDFConverter";
 import type { IFrontmatter } from "../interfaces/IVaultAdapter";
-import { iriToObsidianName } from "./iriToObsidianName";
+import { Namespace } from "../domain/models/rdf/Namespace";
+import {
+  matchFrontmatterBlock,
+  type FrontmatterBlockMatch,
+} from "./frontmatterBlock";
 
 /**
  * Result of frontmatter parsing operation
@@ -55,13 +69,19 @@ export interface FrontmatterParseResult {
  */
 export class FrontmatterService {
   /**
-   * Regex pattern for matching YAML frontmatter blocks.
-   * Matches: ---\n[content]\n---
-   */
-  private static readonly FRONTMATTER_REGEX = /^---\n([\s\S]*?)\n---/;
-
-  /**
    * Parse frontmatter from markdown content.
+   *
+   * ⛤ The block is recognised by `matchFrontmatterBlock` — core's ONE predicate
+   * (req `1dfbd427`, widened to lone-CR fences and a RUN of leading BOMs by req
+   * `74419202` / #4452). Until #4469 this class carried its own
+   * `FRONTMATTER_REGEX = /^---\n([\s\S]*?)\n---/`, which was LF-only AND
+   * defeated by any leading BOM, so `set-property` — and every `apply <cmd>`
+   * that writes a property, since they all reach {@link updateProperty} —
+   * decided "no block here" on a perfectly valid CRLF / lone-CR / BOM asset and
+   * PREPENDED a second block, leaving the original as body text. That is the
+   * silent data loss #4441/#4452 closed for the adapter path; the commands never
+   * reached it, because on the CLI `IVaultAdapter.replaceFrontmatter` has no
+   * production call site at all (#4469, measured on the published v17.7.13).
    *
    * @param content - Full markdown file content
    * @returns Parse result with existence flag and content
@@ -74,9 +94,9 @@ export class FrontmatterService {
    * ```
    */
   parse(content: string): FrontmatterParseResult {
-    const match = content.match(FrontmatterService.FRONTMATTER_REGEX);
+    const block = matchFrontmatterBlock(content);
 
-    if (!match) {
+    if (!block) {
       return {
         exists: false,
         content: "",
@@ -86,9 +106,149 @@ export class FrontmatterService {
 
     return {
       exists: true,
-      content: match[1],
+      content: block.body,
       originalContent: content,
     };
+  }
+
+  /**
+   * Split a frontmatter BODY into its lines and the line terminator that
+   * follows each one, so a rewrite can put back the EXACT bytes it did not
+   * touch.
+   *
+   * ⛤ WHY NOT `split("\n")` (what this class did until #4469): the body is now
+   * returned VERBATIM by `matchFrontmatterBlock`, so on a CRLF asset every line
+   * would keep a trailing `\r`, and on a lone-CR asset the whole block would be
+   * ONE "line" — the property span search would then miss, and the rewrite would
+   * re-join with LF, silently converting the file's line endings. `updateProperty`
+   * is the TEXT path (it edits one line and leaves the rest byte-identical, unlike
+   * `replaceFrontmatter`, which re-dumps the block through js-yaml); converting
+   * every other line's ending would break exactly that property.
+   *
+   * `eols[i]` is the terminator that FOLLOWS `lines[i]`; the last entry is `""`
+   * because the final line's terminator belongs to the closing fence, not to the
+   * body.
+   */
+  private static splitBodyLines(body: string): {
+    lines: string[];
+    eols: string[];
+  } {
+    const lines: string[] = [];
+    const eols: string[] = [];
+    const separator = /\r\n|\r|\n/g;
+    let cursor = 0;
+    let match: RegExpExecArray | null;
+    while ((match = separator.exec(body)) !== null) {
+      lines.push(body.slice(cursor, match.index));
+      eols.push(match[0]);
+      cursor = match.index + match[0].length;
+    }
+    lines.push(body.slice(cursor));
+    eols.push("");
+    return { lines, eols };
+  }
+
+  /**
+   * Re-join lines with their own terminators.
+   *
+   * ⛤ The LAST line's terminator is dropped unconditionally: by construction the
+   * final body line is terminated by the CLOSING FENCE's own line ending, which
+   * lives outside the body. Enforcing it here rather than at every splice site
+   * is what keeps "delete the last key" from leaving a blank line before the
+   * fence (the pre-#4469 `lines.join("\n")` had the same property for free).
+   */
+  private static joinBodyLines(
+    lines: readonly string[],
+    eols: readonly string[],
+  ): string {
+    return lines
+      .map((line, i) =>
+        i === lines.length - 1 ? line : line + (eols[i] ?? ""),
+      )
+      .join("");
+  }
+
+  /**
+   * The line terminator the block's OPENING fence uses — the file's own EOL
+   * style, and therefore the one a NEWLY INSERTED property line gets.
+   *
+   * ⛤ Decided here rather than "always LF" (req `2cbfd4dd`, #4469): a file whose
+   * fences are CRLF must not gain a lone-LF line in the middle of its
+   * frontmatter — a mixed block is a second state model, and the next writer
+   * would have to guess which one is canonical.
+   */
+  private static blockEol(
+    content: string,
+    block: FrontmatterBlockMatch,
+  ): string {
+    const fenceEnd = block.blockStart + 3;
+    return content.startsWith("\r\n", fenceEnd)
+      ? "\r\n"
+      : content.slice(fenceEnd, fenceEnd + 1);
+  }
+
+  /**
+   * The leading frontmatter block EXACTLY as it stands on disk — both fences,
+   * the body verbatim, a leading BOM run collapsed to one — together with the
+   * file's own line ending.
+   *
+   * ⛤ Exists because a caller that REPLACES THE BODY BELOW the block
+   * (`set-body`) must put the block back byte-for-byte, and the obvious way to
+   * do that — `` `---\n${parse(content).content}\n---` `` — silently rewrites
+   * both fences as LF and drops the BOM. That hand-reconstruction is what
+   * `set-body` did until #4469; it was harmless only because `parse()` used to
+   * refuse a CRLF / lone-CR / BOM file outright, so widening the predicate made
+   * the latent bug HOT. A shared accessor is the fix for the class: the block's
+   * bytes have exactly ONE owner.
+   *
+   * @returns the block and its EOL, or `null` when the content opens with none
+   */
+  static leadingBlock(
+    content: string,
+  ): {
+    readonly text: string;
+    readonly eol: string;
+    readonly end: number;
+  } | null {
+    const block = matchFrontmatterBlock(content);
+    if (!block) return null;
+    const bom = block.blockStart > 0 ? "\uFEFF" : "";
+    return {
+      text: bom + content.slice(block.blockStart, block.blockEnd),
+      eol: FrontmatterService.blockEol(content, block),
+      // ⛔ The offset in the ORIGINAL string, NOT `text.length`: the two differ
+      // by exactly the BOM bytes this accessor normalises away. A READER that
+      // slices by a RECONSTRUCTION's length prints part of the closing fence as
+      // body — measured on `get-body` before #4469: a CRLF asset printed
+      // `"--\r\nTHE REAL BODY"` (two dashes of the fence leaked), a 3-BOM asset
+      // printed the whole fence.
+      end: block.blockEnd,
+    };
+  }
+
+  /**
+   * Put `newBody` back between the block's own fences, keeping every byte the
+   * edit did not touch: the fences' line endings, the body's untouched lines,
+   * and the whole of the file after the block (including its bare CRs).
+   *
+   * ⛔ BOM policy (#4469, in step with `FileSystemVaultAdapter.replaceFrontmatter`
+   * on the adapter path): a RUN of leading U+FEFF collapses to EXACTLY ONE on
+   * write. `matchFrontmatterBlock` skips the run for MATCHING only and reports
+   * its full length as `blockStart`, leaving the decision to each write path —
+   * this is that decision, and it is deliberately the same one the adapter takes,
+   * because a user whose file went through both channels must not see two
+   * different answers.
+   */
+  private static spliceBlock(
+    content: string,
+    block: FrontmatterBlockMatch,
+    newBody: string,
+  ): string {
+    const openEol = FrontmatterService.blockEol(content, block);
+    const bodyEnd = block.blockStart + 3 + openEol.length + block.body.length;
+    const closeEol = content.slice(bodyEnd, block.blockEnd - 3);
+    const bom = block.blockStart > 0 ? "\uFEFF" : "";
+    return `${bom}---${openEol}${newBody}${closeEol}---${content.slice(block.blockEnd)}`;
   }
 
   /**
@@ -104,8 +264,7 @@ export class FrontmatterService {
    * line — `#` included, because inside a block scalar `#` is literal text — is
    * its BODY, not a comment and not a new node.
    */
-  private static readonly BLOCK_SCALAR_HEADER =
-    /^[|>](?:[1-9][-+]?|[-+][1-9]?)?$/;
+  private static readonly BLOCK_SCALAR_HEADER = YAML_BLOCK_SCALAR_HEADER;
 
   /**
    * Split the BODY of a flow-style YAML sequence (`a, "b, c"`) into its items,
@@ -190,6 +349,11 @@ export class FrontmatterService {
    * comment lines — 30 before the first item, 46 between items) and 2 carry a
    * nested map, i.e. the loss was live, not hypothetical.
    *
+   * ⛔ A top-level block scalar (`key: |-` + indented body) is read as its RAW
+   * text, header and body together (issue #4379 — 106 live carrier keys in
+   * 103 files, 84 of them `exocmd__Precondition_sparqlAsk`); decode it with
+   * `decodeYamlQuotedScalar` / `decodeYamlBlockScalar` where the VALUE is needed.
+   *
    * NOTE: still deliberately minimal — a nested map or a block-scalar body is
    * carried as opaque text, not structured; quoted-key edge cases are not
    * covered. This stays a lightweight line parser rather than pulling a full
@@ -200,7 +364,11 @@ export class FrontmatterService {
     if (!parsed.exists) return null;
 
     const result: Record<string, string | string[]> = {};
-    const lines = parsed.content.split(/\r?\n/);
+    // ⛤ A lone `\r` is a line ending too (#4469): `parse` now returns the body
+    // of a lone-CR block verbatim, and `/\r?\n/` would hand the whole block to
+    // the loop as ONE line — every key read as absent while the block is plainly
+    // there.
+    const lines = parsed.content.split(/\r\n|\r|\n/);
     let currentKey: string | null = null;
     let currentArray: string[] | null = null;
     // Blank lines held back: a blank line belongs to the current item only when
@@ -208,6 +376,9 @@ export class FrontmatterService {
     // `findPropertyLineSpan`, which decides the same ownership on WRITE — the
     // two halves of this service disagreeing is what #4314 is about.
     let pendingBlanks: string[] = [];
+    // The top-level key whose value is a block-scalar header (`key: |-`) and
+    // whose indented body is still being read (issue #4379).
+    let scalarBodyKey: string | null = null;
 
     const flushArray = (): void => {
       if (currentKey !== null && currentArray !== null) {
@@ -219,6 +390,32 @@ export class FrontmatterService {
     };
 
     for (const line of lines) {
+      // Issue #4379 — the BODY of a top-level block scalar. Checked FIRST: a
+      // body line is literal text even when it looks like a list item
+      // (`  - …`) or a comment (`  # …`) — both shapes are live (a concept
+      // definition written as dashed lines, a validator rule's code comment).
+      // Ownership mirrors `findPropertyLineSpan`: every indented line, and a
+      // blank line only when an indented line follows it. One difference: a
+      // TRAILING whitespace-only line is owned by the write span but not read
+      // here — `updateProperty` drops it, the YAML value is the same.
+      if (scalarBodyKey !== null) {
+        if (line.trim() === "") {
+          pendingBlanks.push(line);
+          continue;
+        }
+        if (/^[ \t]/.test(line)) {
+          result[scalarBodyKey] = [
+            result[scalarBodyKey] as string,
+            ...pendingBlanks,
+            line,
+          ].join("\n");
+          pendingBlanks = [];
+          continue;
+        }
+        scalarBodyKey = null;
+        pendingBlanks = [];
+      }
+
       const arrayItem = FrontmatterService.ARRAY_ITEM_LINE.exec(line);
       if (arrayItem) {
         if (currentKey !== null && currentArray !== null) {
@@ -280,6 +477,18 @@ export class FrontmatterService {
       if (value === "") {
         currentKey = key;
         currentArray = [];
+        continue;
+      }
+
+      // A block-scalar header: the value is the RAW text — header plus the
+      // indented body read above (`|-\n  first\n  second`). Raw, not decoded,
+      // for the same reason as list items: writers put back what they read.
+      // Before issue #4379 the value was the bare header and the body was
+      // skipped, so every reader saw `|-` and `property_append` wrote a list
+      // whose first item had lost its text.
+      if (FrontmatterService.BLOCK_SCALAR_HEADER.test(value)) {
+        result[key] = value;
+        scalarBodyKey = key;
         continue;
       }
 
@@ -364,40 +573,65 @@ export class FrontmatterService {
     if (typeof value === "string") {
       value = FrontmatterService.normalizeIRIValue(value);
     }
-    const parsed = this.parse(content);
+    const block = matchFrontmatterBlock(content);
     const serialized = this.serializeValue(property, value);
 
     // No frontmatter exists - create new block
-    if (!parsed.exists) {
+    if (!block) {
       return `---\n${serialized}\n---\n${content}`;
     }
 
-    // Frontmatter exists - update or add property
-    let updatedFrontmatter = parsed.content;
-
-    // Property already exists - replace the WHOLE value, including every
-    // continuation line it owns (list items AND block-scalar bodies).
-    const lines = updatedFrontmatter.split("\n");
+    // Frontmatter exists - update or add property. Lines carry their OWN
+    // terminators (#4469), so every line this call does not rewrite goes back
+    // byte-for-byte, CRLF and lone-CR included.
+    const { lines, eols } = FrontmatterService.splitBodyLines(block.body);
+    const eol = FrontmatterService.blockEol(content, block);
     const span = FrontmatterService.findPropertyLineSpan(lines, property);
+    const serializedLines = serialized.split("\n");
     if (span) {
       // Splice on LINES rather than String.replace: a `$`-pattern in the value
       // (`$&`, `$1`-`$9`, `` $` ``, `$'`, `$$`) is inserted verbatim, so it is
       // not re-interpreted as a replacement pattern (#3748 family / #3795 H1).
-      lines.splice(span.start, span.end - span.start, ...serialized.split("\n"));
-      updatedFrontmatter = lines.join("\n");
+      //
+      // The REPLACED span's last terminator is reused for the new value's last
+      // line, so the separator before the next key (or the closing fence, when
+      // the span ends the body) survives untouched.
+      const tailEol = eols[span.end - 1];
+      lines.splice(span.start, span.end - span.start, ...serializedLines);
+      eols.splice(
+        span.start,
+        span.end - span.start,
+        ...serializedLines.map((_, i) =>
+          i === serializedLines.length - 1 ? tailEol : eol,
+        ),
+      );
+    } else if (lines.length === 1 && lines[0] === "") {
+      // Empty frontmatter (`---\n---`) — the new property IS the whole body, so
+      // no separator is introduced (the pre-#4469 `separator === ""` branch).
+      lines.splice(0, 1, ...serializedLines);
+      eols.splice(
+        0,
+        1,
+        ...serializedLines.map((_, i) =>
+          i === serializedLines.length - 1 ? "" : eol,
+        ),
+      );
     } else {
-      // Property doesn't exist - append to frontmatter
-      // Add newline separator only if frontmatter is not empty
-      const separator = updatedFrontmatter.length > 0 ? "\n" : "";
-      updatedFrontmatter += `${separator}${serialized}`;
+      // Property doesn't exist - append to frontmatter, terminating the line
+      // that used to be last with the block's own EOL.
+      eols[eols.length - 1] = eol;
+      lines.push(...serializedLines);
+      eols.push(
+        ...serializedLines.map((_, i) =>
+          i === serializedLines.length - 1 ? "" : eol,
+        ),
+      );
     }
 
-    // Replace frontmatter block in original content. Function-replacer so a
-    // `$`-bearing value spliced into `updatedFrontmatter` is not re-interpreted
-    // as a String.replace pattern (#3748 family / #3795 review H1).
-    const replaced = content.replace(
-      FrontmatterService.FRONTMATTER_REGEX,
-      () => `---\n${updatedFrontmatter}\n---`,
+    const replaced = FrontmatterService.spliceBlock(
+      content,
+      block,
+      FrontmatterService.joinBodyLines(lines, eols),
     );
     // req 960d7a3f (Scenario C): a write to the canonical key also clears its
     // LEGACY physical key(s) (`exo__Asset_archived` ← bare `archived`), so one
@@ -416,13 +650,41 @@ export class FrontmatterService {
       // (a key on the FIRST line is replaced by a blank line). A migrated
       // legacy key must not leave that blank line behind, so remember whether
       // the legacy key led the block and strip the blank line it becomes.
-      const ledTheBlock = new RegExp("^---\\r?\\n" + legacy + ":").test(result);
+      //
+      // ⛤ Decided on the PARSED block's first line rather than by an
+      // `^---\r?\n<key>:` regex over the whole file (#4469): that regex is
+      // defeated by a leading BOM (the `^` anchor) and blind to a lone-CR fence,
+      // i.e. it answered "no" on exactly the files this work item is about.
+      const before = matchFrontmatterBlock(result);
+      const ledTheBlock =
+        before !== null &&
+        FrontmatterService.splitBodyLines(before.body).lines[0].startsWith(
+          `${legacy}:`,
+        );
       result = this.removePhysicalKey(result, legacy);
       if (ledTheBlock) {
-        result = result.replace(/^---(\r?\n)\1/, "---$1");
+        result = this.dropLeadingBlankLine(result);
       }
     }
     return result;
+  }
+
+  /**
+   * Drop a leading BLANK line from the frontmatter body — the residue
+   * {@link removePhysicalKey} leaves when the removed key led the block.
+   */
+  private dropLeadingBlankLine(content: string): string {
+    const block = matchFrontmatterBlock(content);
+    if (!block) return content;
+    const { lines, eols } = FrontmatterService.splitBodyLines(block.body);
+    if (lines.length < 2 || lines[0] !== "") return content;
+    lines.shift();
+    eols.shift();
+    return FrontmatterService.spliceBlock(
+      content,
+      block,
+      FrontmatterService.joinBodyLines(lines, eols),
+    );
   }
 
   /**
@@ -477,9 +739,9 @@ export class FrontmatterService {
    * that was just written.
    */
   private removePhysicalKey(content: string, property: string): string {
-    const parsed = this.parse(content);
+    const block = matchFrontmatterBlock(content);
 
-    if (!parsed.exists) {
+    if (!block) {
       return content;
     }
 
@@ -502,7 +764,7 @@ export class FrontmatterService {
     // pass while the loop found nothing, leaving the file rewritten unchanged and
     // the command still reporting `removed: true`. One source of truth for "where
     // does this key live" removes that class by construction.
-    const lines = parsed.content.split("\n");
+    const { lines, eols } = FrontmatterService.splitBodyLines(block.body);
     if (FrontmatterService.findPropertyLineSpan(lines, property) === null) {
       return content; // absent → byte-identical passthrough, no frontmatter rebuild
     }
@@ -510,19 +772,21 @@ export class FrontmatterService {
       const span = FrontmatterService.findPropertyLineSpan(lines, property);
       if (!span) break;
       if (span.start === 0) {
+        // The blank line that replaces a LEADING key inherits the terminator of
+        // the span it replaces, so the block keeps its own line endings.
+        const tailEol = eols[span.end - 1];
         lines.splice(0, span.end, "");
+        eols.splice(0, span.end, tailEol);
       } else {
         lines.splice(span.start, span.end - span.start);
+        eols.splice(span.start, span.end - span.start);
       }
     }
-    const updatedFrontmatter = lines.join("\n");
 
-    // Replace frontmatter block in original content. Function-replacer so a
-    // surviving `$`-bearing value in `updatedFrontmatter` is not re-interpreted
-    // as a String.replace pattern (#3748 family / #3795 review H1).
-    return content.replace(
-      FrontmatterService.FRONTMATTER_REGEX,
-      () => `---\n${updatedFrontmatter}\n---`,
+    return FrontmatterService.spliceBlock(
+      content,
+      block,
+      FrontmatterService.joinBodyLines(lines, eols),
     );
   }
 
@@ -563,7 +827,7 @@ export class FrontmatterService {
    * which is why the two failure modes below were silent (`changed: true`, no
    * error) rather than loud. Ticket `c8fc6793`.
    *
-   * ONE source of truth: `iriToObsidianName` → `Namespace.fromTermIRI`, the
+   * ONE source of truth: `Namespace.fromTermIRI`, the
    * shared inverse of the forward emission path (`Namespace.fromPropertyKey` /
    * `Namespace.term`). It resolves EVERY registered W3C vocabulary and EVERY
    * ad-hoc `https://exocortex.my/ontology/<prefix>#` namespace.
@@ -589,16 +853,20 @@ export class FrontmatterService {
    * `38e3f174`.
    */
   static normalizeIRI(property: string): string {
-    // ⛔ LOAD-BEARING, not a micro-optimisation. Besides "no hash ⇒ not a term
-    // IRI", this early return is the only thing keeping `iriToObsidianName`'s
-    // SECOND shape (vault URL → basename) out of the write-key path:
-    // `obsidian://vault/a/b.md` would otherwise become the key `b`. That shape
-    // is consumed by {@link normalizeIRIValue} with its own anchored regex, so
-    // this function must leave it alone. Measured on `origin/main` 0857307b:
-    // deleting this line reddened NOTHING across 132 tests in 4 suites — the
-    // property was true but unlocked; req `38e3f174` Scenario H is its spec.
+    // "No hash ⇒ not a term IRI" — the cheap exit for the common case.
     if (property.lastIndexOf("#") < 0) return property;
-    return iriToObsidianName(property) ?? property;
+    // ⛔ TERM IRIs ONLY (issue #4403). This used to call `iriToObsidianName`,
+    // whose SECOND shape (vault file URL → basename) is an UNANCHORED
+    // `/\/([^/]+)\.md$/`: past the hash check above, any value holding a `#`
+    // and ending in `/<name>.md` — `PR #42 merged, handoff /tmp/notes.md` —
+    // was rewritten to the wikilink `[[<name>]]` on every write (4 live
+    // `sess__LifecycleEvent_detail` values). The vault-URL shape is not this
+    // function's to convert: {@link normalizeIRIValue} handles
+    // `obsidian://vault/<folder>/…/<name>.md` itself, with an anchored regex
+    // (a file at the vault ROOT is not matched — as before), before calling here,
+    // and a KEY of that shape must stay untouched (req `38e3f174` Scenario H).
+    const term = Namespace.fromTermIRI(property);
+    return term ? `${term.namespace.prefix}__${term.localName}` : property;
   }
 
   /**

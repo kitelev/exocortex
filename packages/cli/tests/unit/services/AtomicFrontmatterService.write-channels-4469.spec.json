@@ -1,0 +1,35 @@
+{
+  "_doc": "Revert-verify mutants for issue #4469 / req 2d072437-c19d-49a4-ae89-f20b6185571f — AtomicFrontmatterService, the `claim`/`spawn` write channel. MA1 restores the local LF/CRLF-only regex this service carried until #4469 and therefore reddens BOTH the widenings (lone-CR, BOM) and the two DELIBERATE narrowings (a trailing-whitespace opening fence is no longer a block; blank lines after the closing fence survive) — that a single mutant covers all four is the point: they are one change of predicate, not four. MA2 and MA3 split the two properties that are NOT the predicate (the BOM survives as exactly one byte; only ONE line ending is consumed after the closing fence). Expectations written BEFORE the run.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› (CH\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/services/AtomicFrontmatterService.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/services/AtomicFrontmatterService.write-channels-4469.test.ts --verbose 2>&1",
+  "mutants": {
+    "MA1_back_to_the_local_lf_crlf_regex": {
+      "from": "  const block = matchFrontmatterBlock(content);\n  if (!block) return null;\n  const fm = block.body;\n  const body = content.slice(block.blockEnd).replace(BODY_LEAD, \"\");\n  const bom = block.blockStart > 0 ? \"\\uFEFF\" : \"\";",
+      "to": "  const legacy = /^---\\s*\\r?\\n([\\s\\S]*?)\\r?\\n---\\s*(?:\\r?\\n([\\s\\S]*))?$/.exec(\n    content,\n  );\n  if (!legacy) return null;\n  const fm = legacy[1];\n  const body = legacy[2] ?? \"\";\n  const bom = \"\";",
+      "expect": ["CH20", "CH21", "CH22", "CH24", "CH25"],
+      "_note": "The predicate this service carried until #4469. CH22 (the verify handshake) is listed because it REDDENS, not because its statement is about the predicate: it drives the same lone-CR fixture, so the predicate decides whether its call reaches the verify step at all. Measured, then written down — the first edition of this spec omitted it and the driver refused the run (integration-test-revert-verify \u00a7A44: an expectation derived from the mutant's THEME rather than from which axes execute). CH23 (LF/CRLF control) and CH26 (no fence) stay green, which is what makes the mutant pointed rather than broad."
+    },
+    "MA2_bom_dropped_on_write": {
+      "from": "  const bom = block.blockStart > 0 ? \"\\uFEFF\" : \"\";",
+      "to": "  const bom = \"\";",
+      "expect": ["CH21"],
+      "_note": "The channel would still RECOGNISE a BOM-prefixed asset and then silently re-encode it without the mark. Only the BOM axis reddens — recognition and preservation are two guarantees."
+    },
+    "MA3_body_lead_swallows_every_blank_line": {
+      "from": "const BODY_LEAD = /^[^\\S\\r\\n]*(?:\\r\\n|\\r|\\n)/;",
+      "to": "const BODY_LEAD = /^\\s*/;",
+      "expect": ["CH25"],
+      "_note": "Restores the greedy `---\\s*` behaviour of the old regex, which ate every blank line between the closing fence and the first body text. Nothing else moves."
+    }
+  }
+}

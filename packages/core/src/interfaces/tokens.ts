@@ -28,7 +28,6 @@ export const DI_TOKENS = {
 
   // Creation services
   ClassCreationService: Symbol.for("ClassCreationService"),
-  ConceptCreationService: Symbol.for("ConceptCreationService"),
   GenericAssetCreationService: Symbol.for("GenericAssetCreationService"),
 
   // Status services

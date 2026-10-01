@@ -40,6 +40,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { parseFrontmatterAsReader } from "@kitelev/exocortex-test-utils";
+import { expectNaturalExit, expectRefused } from "./helpers/exit-assertions.js";
 
 const { setPropertyCommand } = await import(
   "../../src/commands/set-property.js"
@@ -172,7 +173,7 @@ describe(`req 501cdf2c: \`set-property\` refuses an EMPTY value (junk \`prop: ""
     ]);
 
     // Non-zero exit (fail-loud), never a silent success.
-    expect(out.exit).not.toContain(0);
+    expectRefused(out.exit);
     expect(out.exit.some((c) => c !== 0)).toBe(true);
 
     // The refusal must NAME the dedicated clearing command (req Gherkin).
@@ -196,7 +197,7 @@ describe(`req 501cdf2c: \`set-property\` refuses an EMPTY value (junk \`prop: ""
       '{"property":"youtube__Video_channel","value":""}',
     ]);
 
-    expect(out.exit).not.toContain(0);
+    expectRefused(out.exit);
     expect(out.exit.some((c) => c !== 0)).toBe(true);
 
     const message = `${out.stdout}\n${out.stderr}\n${out.errorLog}`;
@@ -216,7 +217,7 @@ describe(`req 501cdf2c: \`set-property\` refuses an EMPTY value (junk \`prop: ""
       '{"property":"concept__Movie_watched","value":false}',
     ]);
 
-    expect(boolOut.exit).toContain(0);
+    expectNaturalExit(boolOut.exit);
     // Boolean serialises bare (YAML-native), NOT quoted.
     expect(boolOut.content).toContain("concept__Movie_watched: false");
     expect(boolOut.content).not.toContain('concept__Movie_watched: "false"');
@@ -226,7 +227,7 @@ describe(`req 501cdf2c: \`set-property\` refuses an EMPTY value (junk \`prop: ""
       '{"property":"concept__Movie_rating","value":0}',
     ]);
 
-    expect(numOut.exit).toContain(0);
+    expectNaturalExit(numOut.exit);
     expect(numOut.content).toContain("concept__Movie_rating: 0");
     expect(numOut.content).not.toContain('concept__Movie_rating: "0"');
   });
@@ -251,8 +252,7 @@ describe(`req 501cdf2c: \`set-property\` refuses an EMPTY value (junk \`prop: ""
       " ",
     ]);
 
-    expect(out.exit).toContain(0);
-    expect(out.exit).not.toContain(1);
+    expectNaturalExit(out.exit);
 
     // Round-trips through the real YAML reader with the space intact.
     const fm = parseFrontmatter(out.content);
@@ -271,7 +271,7 @@ describe(`req 501cdf2c: \`set-property\` refuses an EMPTY value (junk \`prop: ""
       " · ",
     ]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     const fm = parseFrontmatter(out.content);
     expect(fm.exo__PrintedLiteral_literal).toBe(" · ");
   });
@@ -289,7 +289,7 @@ describe(`req 501cdf2c: \`set-property\` refuses an EMPTY value (junk \`prop: ""
   it(`a GUARDED property with an empty value keeps the dedicated-command refusal ${REQ}`, async () => {
     const out = await run(["--property", "ems__Effort_status", "--value", ""]);
 
-    expect(out.exit).not.toContain(0);
+    expectRefused(out.exit);
 
     const message = `${out.stdout}\n${out.stderr}\n${out.errorLog}`;
     // Routed by the NAME guard (dedicated command), NOT by the empty-value guard.

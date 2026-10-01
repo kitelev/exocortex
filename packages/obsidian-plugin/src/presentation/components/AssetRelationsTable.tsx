@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useLayoutEffect, useCallback, useEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { setIcon } from "obsidian";
+import { Namespace } from "@kitelev/exocortex-core/domain/models/rdf";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -8,7 +9,9 @@ export function humanizePropertyName(raw: string): string {
   if (!raw) return raw;
   if (UUID_REGEX.test(raw)) return raw;
   if (!raw.includes("__")) return raw;
-  const withoutPrefix = raw.replace(/^[a-z]+__/, "");
+  // Any prefix the SHARED grammar accepts (`aiKnow__`, `tbank-nessy__`,
+  // `exo003__`), not only `[a-z]+` (#4393).
+  const withoutPrefix = Namespace.fromPropertyKey(raw)?.localName ?? raw;
   const spaced = withoutPrefix.replace(/_/g, " ");
   return spaced.replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -63,7 +66,7 @@ export function humanizePropertyValue(
     }
     // Plain string: only de-jargon IRI-prefixed values (`ems__Project`);
     // leave free text (which may legitimately contain "__") untouched.
-    if (/^[a-z]+__/.test(trimmed)) {
+    if (Namespace.fromPropertyKey(trimmed) !== null) {
       return humanizePropertyName(trimmed);
     }
     return trimmed;

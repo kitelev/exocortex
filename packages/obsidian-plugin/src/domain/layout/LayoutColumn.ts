@@ -1,3 +1,5 @@
+import { Namespace } from "@kitelev/exocortex-core/domain/models/rdf";
+
 /**
  * Column renderer type for layout columns.
  * Determines how the column value is displayed in the UI.
@@ -201,8 +203,10 @@ export function getDefaultColumnHeader(property: string): string {
   const match = property.match(/\[\[([^\]]+)\]\]/);
   const propertyName = match ? match[1] : property;
 
-  // Remove prefix (exo__, ems__, etc.)
-  const withoutPrefix = propertyName.replace(/^[a-z]+__/, "");
+  // Remove the namespace prefix — any prefix the SHARED grammar accepts
+  // (`aiKnow__`, `tbank-nessy__`, `exo003__`), not only `[a-z]+` (#4393).
+  const withoutPrefix =
+    Namespace.fromPropertyKey(propertyName)?.localName ?? propertyName;
 
   // Split on underscore (e.g., "Asset_label" -> ["Asset", "label"])
   const parts = withoutPrefix.split("_");

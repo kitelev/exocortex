@@ -267,7 +267,7 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create, write-through o
     expect(vaultConversionSpy).toHaveBeenCalledTimes(2);
 
     const c = await runCreate(root, ["--class", TASK_CLASS, "--label", "A1 task", "--validate", "--dry-run"]);
-    expect(c.exitCode).toBe(0);
+    expect(c.exitCode).toBeNull();
     expect(vaultConversionSpy).toHaveBeenCalledTimes(3);
 
     expect(loadSpy).not.toHaveBeenCalled();
@@ -284,7 +284,7 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create, write-through o
     expect(w.exitCode).toBeNull();
     expect(fs.readFileSync(path.join(root, REL.draftTask), "utf-8")).toContain(`[[${STATUS_DOING}]]`);
     const cw = await runCreate(root, ["--class", TASK_CLASS, "--label", "A1 written", "--validate"]);
-    expect(cw.exitCode).toBe(0);
+    expect(cw.exitCode).toBeNull();
     expect(fs.existsSync(path.join(root, (JSON.parse(cw.stdout) as { path: string }).path))).toBe(true);
     expect(loadSpy).not.toHaveBeenCalled();
     expect(refreshSpy).not.toHaveBeenCalled();
@@ -347,8 +347,8 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create, write-through o
         .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?/g, "<ts>");
     const v1 = await runCreate(plain, ["--class", TASK_CLASS, "--label", "A2 task", "--validate", "--dry-run"]);
     const v2 = await runCreate(cached, ["--class", TASK_CLASS, "--label", "A2 task", "--validate", "--dry-run", "--use-cache"]);
-    expect(v1.exitCode).toBe(0);
-    expect(v2.exitCode).toBe(0);
+    expect(v1.exitCode).toBeNull();
+    expect(v2.exitCode).toBeNull();
     expect(mask(v2.stdout)).toBe(mask(v1.stdout));
     expect(cacheNotices(v2)).toHaveLength(1);
     expect(mask(v2.stderr.split("\n").filter((l) => !/triple cache/.test(l)).join("\n"))).toBe(
@@ -647,7 +647,7 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create, write-through o
     const loadSpy = jest.spyOn(CacheManager.prototype, "loadOrBuild");
     const vaultConversionSpy = jest.spyOn(NoteToRDFConverter.prototype, "convertVaultWithValidation");
     const c0 = await runCreate(root, ["--class", TASK_CLASS, "--label", "A8 first", "--use-cache", "--write-through"]);
-    expect(c0.exitCode).toBe(0);
+    expect(c0.exitCode).toBeNull();
     const first = JSON.parse(c0.stdout) as { path: string };
     expect(fs.existsSync(path.join(root, first.path))).toBe(true);
     expect(fs.existsSync(path.join(root, ".exocortex"))).toBe(false);
@@ -662,7 +662,7 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create, write-through o
     loadSpy.mockClear();
     const convertNoteSpy = jest.spyOn(NoteToRDFConverter.prototype, "convertNote");
     const c1 = await runCreate(root, ["--class", TASK_CLASS, "--label", "A8 second", "--use-cache", "--write-through"]);
-    expect(c1.exitCode).toBe(0);
+    expect(c1.exitCode).toBeNull();
     const second = JSON.parse(c1.stdout) as { path: string };
     expect(loadSpy).not.toHaveBeenCalled(); // no --validate → no triple-store load
     expect(convertNoteSpy).toHaveBeenCalledTimes(1);
@@ -706,7 +706,7 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create, write-through o
     convertNoteSpy.mockClear();
     const readJson = jest.spyOn(fsExtra, "readJson");
     const c2 = await runCreate(root, ["--class", TASK_CLASS, "--label", "A8 third", "--validate", "--use-cache", "--write-through"]);
-    expect(c2.exitCode).toBe(0);
+    expect(c2.exitCode).toBeNull();
     const third = JSON.parse(c2.stdout) as { path: string };
     expect(cacheNotices(c2)).toEqual(["⚡ triple cache: hit"]);
     expect(writeThroughNotices(c2)).toEqual([
@@ -759,18 +759,18 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create, write-through o
     expectLines(c, 1, 0);
     expect(() => JSON.parse(c.stdout)).not.toThrow();
     const cv = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 validated", "--validate", "--use-cache", "--write-through"]);
-    expect(cv.exitCode).toBe(0);
+    expect(cv.exitCode).toBeNull();
     expectLines(cv, 1, 1);
     // …and the same real --validate create WITHOUT --write-through: the load
     // line only (delta-only default — the write-through phase does not exist).
     const cv0 = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 validated delta-only", "--validate", "--use-cache"]);
-    expect(cv0.exitCode).toBe(0);
+    expect(cv0.exitCode).toBeNull();
     expectLines(cv0, 1, 0);
     const cb = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 bare", "--use-cache", "--write-through"]);
-    expect(cb.exitCode).toBe(0);
+    expect(cb.exitCode).toBeNull();
     expectLines(cb, 0, 1);
     const cd = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 bare dry", "--dry-run", "--use-cache", "--write-through"]);
-    expect(cd.exitCode).toBe(0);
+    expect(cd.exitCode).toBeNull();
     expectLines(cd, 0, 0);
 
     // without the flag: nothing, on any of the three
@@ -778,7 +778,16 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create, write-through o
     const r0 = await runResolve(root, [REL.otherTask, "--json"]);
     const c0 = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 plain", "--validate", "--dry-run"]);
     expect(allNotices(a0).concat(allNotices(r0), allNotices(c0))).toEqual([]);
-    expect(a0.stderr).toBe("");
+    // req b6eef8ef (#4274): the full-parse path now names the files the loader
+    // skipped (this fixture's TBox stubs carry no exo__Instance_class). That
+    // block is the ONLY stderr allowed without the flag — cb707868 AC1 pins
+    // stdout / exit code / written files, and the cache lines are allNotices
+    // above; anything else on stderr still fails here.
+    const residue = a0.stderr.replace(
+      /^⚠️ {2}\d+ file\(s\) skipped by the vault loader[^\n]*\n(?: {3}- [^\n]*\n {5}[^\n]*\n)*(?: {3}… and \d+ more[^\n]*\n)?/u,
+      "",
+    );
+    expect(residue).toBe("");
   });
 
   // -------------------------------------------------------------------------
@@ -815,7 +824,7 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create, write-through o
     const refreshSpy = jest.spyOn(CacheManager.prototype, "refreshAfterWrite");
 
     const c = await runCreate(root, ["--class", TASK_CLASS, "--label", "A10c created", "--use-cache"]);
-    expect(c.exitCode).toBe(0);
+    expect(c.exitCode).toBeNull();
     const created = (JSON.parse(c.stdout) as { path: string }).path;
     expect(fs.existsSync(path.join(root, created))).toBe(true);
     expect(writeThroughNotices(c)).toEqual([]);

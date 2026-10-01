@@ -586,9 +586,9 @@ subdirectories. Main clusters:
 | Cluster                            | Representative modules                                                                                                                                              |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Vault-driven command machinery** | `CommandResolver`, `PreconditionEvaluator`, `GroundingExecutor`, `CommandExecutionFlow`, `WorkflowEngine`/`WorkflowResolver`                                        |
-| **Asset creation**                 | `GenericAssetCreationService`, `AreaCreationService`, `ClassCreationService`, `ConceptCreationService`, `SupervisionCreationService`, `DynamicFrontmatterGenerator` |
+| **Asset creation**                 | `GenericAssetCreationService`, `AreaCreationService`, `ClassCreationService`, `SupervisionCreationService`, `DynamicFrontmatterGenerator` |
 | **Status & effort lifecycle**      | `EffortStatusWorkflow`, `TaskStatusService`, `StatusTimestampService`, `EffortVotingService`, `PlanningService`, `SessionEventService`                              |
-| **RDF & schema resolution**        | `NoteToRDFConverter`, `PrototypeChainMaterializer`, `PropertySchemaResolver`, `InstantiationRuleResolver`, `IRICanonicalizer`, `SourceAnnotator`, `ClassHierarchy`  |
+| **RDF & schema resolution**        | `NoteToRDFConverter`, `PrototypeChainMaterializer`, `PropertySchemaResolver`, `InstantiationRuleResolver`, `IRICanonicalizer`, `SourceAnnotator`                    |
 | **Validation (SHACL-lite)**        | `ShaclLiteValidator`, `ShapeLoader`, `ShapeRegistry`, `ValidatorDaemon`                                                                                             |
 | **Maintenance & repair**           | `FolderRepairService`, `PropertyCleanupService`, `RenameToUidService`, `FixMissingLabelService`, `ArchiveAssetService`                                              |
 | **Profiles & AssetSpaces**         | `services/profile/`, `services/assetspace/` (see [Profiles & AssetSpace Mounting](#profiles--assetspace-mounting))                                                  |
@@ -1512,9 +1512,10 @@ throw new Error("Invalid transition");
 **Current state**:
 
 - The **plugin** operates on a single Obsidian vault (Obsidian's model).
-- The **CLI** supports multi-vault _reads_: `query` accepts a repeatable
-  `--also <path>` option that adds extra vault paths to the query store
-  (`packages/cli/src/commands/sparql-query.ts`).
+- The **CLI** is single-vault too: a vault is an environment, and its profile decides which
+  AssetSpaces are mounted and therefore queryable. The former repeatable `--also <path>` flag
+  (extra vaults merged into the query store) was removed in #3646 (RFC eacf04c0 v2, POST-3).
+  To reach data a vault does not mount, run the command against a vault that mounts it.
 
 **Remaining gap**: no cross-vault write operations or unified multi-vault index; future enhancement.
 

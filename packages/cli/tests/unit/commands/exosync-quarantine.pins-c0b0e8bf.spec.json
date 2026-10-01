@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify for req c0b0e8bf, subject = `exosync quarantine list`. Axes X1-X3 in exosync-quarantine.test.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
+  "_doc": "Revert-verify for req c0b0e8bf, subject = `exosync quarantine list`. Axes X1-X4 in exosync-quarantine.test.ts (X4's engine side has its own spec, exosync-quarantine.push-clears-c0b0e8bf). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-quarantine.ts",
   "symlink_node_modules": [
@@ -13,7 +13,8 @@
     "M6_no_pin_section_when_there_are_no_conflicts": {
       "from": "    out(\"No open conflicts — nothing to resolve. ✅\");\n    printPinnedNotConflicting(pinned, vaultPath, out);\n",
       "to": "    out(\"No open conflicts — nothing to resolve. ✅\");\n",
-      "expect": ["X1", "X2"]
+      "_note": "X4 is red too, legitimately: it reads the pin section BEFORE the push to prove its own predicate discriminates, and this mutant removes that section.",
+      "expect": ["X1", "X2", "X4"]
     },
     "M7_withheld_paths_not_named": {
       "from": "  for (const p of pinned.filter((x) => x.kind === \"local-withheld\")) {\n",

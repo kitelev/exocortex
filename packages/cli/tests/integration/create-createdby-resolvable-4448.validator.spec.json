@@ -1,0 +1,32 @@
+{
+  "_doc": "Revert-verify mutants for issue #4448 / ticket 36bd4ee0 on the RESOLUTION the gate reuses (WikilinkValidator.targetExists) and on its MESSAGE (CreatedByRefNotFoundError, which lives in the same file as the probe it reports for). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). M3 replaces the delegation to `validateWikilink` with the hand-rolled `<uid>.md` existence check the gate must NOT be — the second existence check that would drift from the one every other reference goes through — and it reds exactly the two axes that live off the delegated rules: C7 (an identity whose UID exists only in frontmatter, the `exo__Asset_uid` scan fallback) and C8 (a create-batch item naming a creator created by an earlier item of the SAME batch, via pendingUids). M4 drops the `find` hint, pinning the diagnostic as its own deliverable (C2). M6 rewords `not found`, which is what `ErrorHandler.classifyMessage` keys FILE_NOT_FOUND on — the refusal silently becomes GENERAL_ERROR (1) and only C10 notices, because every other axis asserts a non-zero code and a negation is satisfied by every non-zero code. The gate call site is pinned in create-createdby-resolvable-4448.create.spec.json. Recorded runs: see PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/services/WikilinkValidator.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --verbose tests/integration/create-createdby-resolvable-4448.integration.test.ts 2>&1",
+  "mutants": {
+    "M3_the_probe_stops_delegating_and_checks_the_uid_filename_only": {
+      "from": "      await this.validateWikilink(target);",
+      "to": "      if (!(await this.fsAdapter.findFileByUidFilename(target))) throw new WikilinkNotFoundError(target);",
+      "expect": ["C7", "C8"]
+    },
+    "M4_the_find_hint_is_dropped_from_the_creator_refusal": {
+      "from": "        `Find the real UID:  find '${vaultPath}' -name '${prefix}*.md'\\n` +",
+      "to": "        `Real UID prefix: ${prefix}\\n` +",
+      "expect": ["C2"]
+    },
+    "M6_not_found_is_reworded_so_the_refusal_loses_its_FILE_NOT_FOUND_classification": {
+      "from": "      `Creator [[${createdByUid}]] not found in vault (--created-by ${createdByUid}) — ` +",
+      "to": "      `Creator [[${createdByUid}]] is absent from the vault (--created-by ${createdByUid}) — ` +",
+      "expect": ["C10"]
+    }
+  }
+}

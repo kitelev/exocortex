@@ -29,6 +29,9 @@ import {
   FileWatermarkStore,
   ParityValidator,
   SpaceSpecAccumulator,
+  SyncPhaseTimer,
+  formatQuota,
+  CONDITIONAL_STORE_FILENAME,
   WATERMARK_STORE_FILENAME,
   checkParkedStaleness,
   classifySpaceDeclaration,
@@ -44,6 +47,16 @@ import {
 } from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { RestPushService } from "../services/RestPushService.js";
+import {
+  appendSyncRunLog,
+  runLogEntry,
+  runLogPathFor,
+} from "../services/syncRunLog.js";
+import {
+  nodeConditionalStoreIO,
+  wireConditionalRequests,
+} from "../services/conditionalRequestTransport.js";
+import { wireObjectCache } from "../services/objectCacheTransport.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 
 export interface ExosyncParityOptions {
@@ -54,6 +67,10 @@ export interface ExosyncParityOptions {
   token?: string;
   tokenFromGh?: boolean;
   apiBase?: string;
+  /** `false` from `--no-conditional-requests` (req af002ec4). Default on. */
+  conditionalRequests?: boolean;
+  /** `false` from `--no-object-cache` (req 086df113). Default on. */
+  objectCache?: boolean;
 }
 
 /** Injectable dependencies (tests). */
@@ -293,7 +310,7 @@ export async function runExosyncParity(
     token,
     ...(opts.apiBase !== undefined ? { apiBase: opts.apiBase } : {}),
   });
-  const transport =
+  const rawTransport =
     deps.transportFactory?.(token, opts.apiBase) ?? pushService.transport();
 
   const { specs, parked, warnings } = collectVaultSpecs(vaultPath);
@@ -307,6 +324,77 @@ export async function runExosyncParity(
     "exocortex",
     WATERMARK_STORE_FILENAME,
   );
+  // req af002ec4 — conditional Git Data reads. Every request an idle parity
+  // makes (refs + commits + trees) is 304-able, and a 304 costs no primary
+  // quota. Store is device-local, next to the watermark.
+  const etagPath = path.join(
+    vaultPath,
+    configDir,
+    "plugins",
+    "exocortex",
+    CONDITIONAL_STORE_FILENAME,
+  );
+  // req af002ec4 × req 086df113 — ORDER MATTERS and the two do not overlap.
+  // The SHA cache sits OUTSIDE: an immutable object it already holds costs no
+  // request at all, so it must answer before a conditional request is even
+  // built. Conditional reads sit INSIDE, for what the cache cannot serve —
+  // mutable `git/refs`, and a SHA it has not seen.
+  const { transport: conditionalTransport, cache: conditionalCache } =
+    wireConditionalRequests(rawTransport, {
+      ...(opts.conditionalRequests !== undefined
+        ? { enabled: opts.conditionalRequests }
+        : {}),
+      io: nodeConditionalStoreIO(etagPath),
+    });
+  const { transport, cache: objectCache } = wireObjectCache(
+    conditionalTransport,
+    {
+      ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),
+      sha1: nodeSha1,
+    },
+  );
+
+  // req e5e45283 — parity is the most expensive ExoSync operation (83 requests
+  // for 21 mounts, ≈210 for 37) and until now it printed NO numbers at all,
+  // while `exosync sync` printed both. One counting decorator over the fully
+  // assembled chain covers every consumer below (parked staleness AND the
+  // validator), and reads the quota GitHub reports on each successful response.
+  //
+  // ⛔ It wraps the chain from OUTSIDE on purpose: `restCalls` then counts
+  // LOGICAL reads (a cache hit or a 304 counts too), which is the honest
+  // measure of what the run asked for. The quota number next to it is what the
+  // wire actually reported, so the two together show cost AND budget.
+  const runTimer = new SyncPhaseTimer(() => Date.now());
+  const countedTransport: RestCommitTransport = async (req) => {
+    runTimer.bumpRest();
+    const res = await transport(req);
+    runTimer.observeQuota(res.headers);
+    return res;
+  };
+
+  // req e5e45283 — durable record of what this run spent. Written on EVERY
+  // exit path, including the early "nothing to check" one: a run that made
+  // requests and then bailed still spent budget, and a journal that silently
+  // skips those understates the day's spending.
+  const reportQuota = (): void => {
+    const t = runTimer.snapshot();
+    out(`[ExoSync quota] ${t.counts.restCalls} REST | ${formatQuota(t.quota)}`);
+  };
+
+  const journalRun = async (exitCode: number): Promise<void> => {
+    const t = runTimer.snapshot();
+    await appendSyncRunLog(
+      runLogPathFor(vaultPath, configDir),
+      runLogEntry({
+        command: "parity",
+        vault: vaultPath,
+        restCalls: t.counts.restCalls,
+        quota: t.quota,
+        exitCode,
+      }),
+    );
+  };
+
   // READ-ONLY watermark IO: the live plugin's write chain serialises
   // in-process only — a concurrent CLI write could lose its update.
   const watermarks = new FileWatermarkStore({
@@ -329,7 +417,7 @@ export async function runExosyncParity(
   for (const spec of parked) {
     parkedVerdicts.push(
       await checkParkedStaleness(spec, {
-        transport,
+        transport: countedTransport,
         watermarks: { get: (repoKey) => watermarks.get(repoKey) },
         redact: (m) => pushService.redact(m),
         ...(opts.apiBase !== undefined ? { baseURL: opts.apiBase } : {}),
@@ -345,11 +433,15 @@ export async function runExosyncParity(
     out(
       "Nothing to check — no materialized AssetSpaces with a GitHub source found in this vault.",
     );
+    // Parked-staleness above may already have spent requests — report and
+    // journal them. An early exit is still a run that touched the budget.
+    reportQuota();
+    await journalRun(2);
     return 2;
   }
 
   const validator = new ParityValidator({
-    transport,
+    transport: countedTransport,
     sha1: nodeSha1,
     localFilesFor: (spec) =>
       nodeLocalFilesPort(path.join(vaultPath, spec.localPath)),
@@ -362,6 +454,24 @@ export async function runExosyncParity(
   });
 
   out(`ExoSync parity check: ${specs.length} repo(s), vault ${vaultPath}`);
+  const reportObjectCache = (): void => {
+    const stats = objectCache?.stats();
+    if (stats === undefined || stats.hits + stats.stores === 0) return;
+    out(
+      `[ExoSync objects] ${stats.hits} served from cache, ${stats.misses} fetched, ${stats.stores} stored${stats.evictions > 0 ? `, ${stats.evictions} evicted` : ""}`,
+    );
+  };
+  // req af002ec4 — сделать экономию НАБЛЮДАЕМОЙ, тем же доводом, что у кэша
+  // объектов строкой выше: SyncPhaseTimer считает ЛОГИЧЕСКИЕ вызовы
+  // транспорта (304 инкрементит так же, как 200), поэтому ЕДИНСТВЕННАЯ
+  // величина, отвечающая «помогло ли», — счётчик самого механизма.
+  const reportConditional = (): void => {
+    const stats = conditionalCache?.stats();
+    if (stats === undefined || stats.conditional + stats.stored === 0) return;
+    out(
+      `[ExoSync conditional] ${stats.notModified} not modified (304 — primary quota not spent) of ${stats.conditional} validated, ${stats.stored} validator(s) stored`,
+    );
+  };
   const record = await validator.runRound(specs, { trigger: "standalone" });
 
   if (opts.json === true) {
@@ -372,8 +482,13 @@ export async function runExosyncParity(
     printHumanReport(record, out);
   }
 
-  if (record.vacuous) return 2;
-  return record.ok ? 0 : 1;
+  reportObjectCache();
+  reportConditional();
+  reportQuota();
+
+  const exitCode = record.vacuous ? 2 : record.ok ? 0 : 1;
+  await journalRun(exitCode);
+  return exitCode;
 }
 
 export function exosyncParityCommand(): Command {
@@ -394,6 +509,14 @@ export function exosyncParityCommand(): Command {
     )
     .option("--token-from-gh", "Resolve the PAT via `gh auth token`")
     .option("--api-base <url>", "GitHub API base (testing)")
+    .option(
+      "--no-conditional-requests",
+      "Do not send If-None-Match on Git Data reads (a 304 costs no primary quota)",
+    )
+    .option(
+      "--no-object-cache",
+      "Do not serve immutable git objects (commits/trees/blobs) from the local cache",
+    )
     .action(async (options: ExosyncParityOptions) => {
       try {
         process.exitCode = await runExosyncParity(options);

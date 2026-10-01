@@ -34,6 +34,7 @@ import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { expectNaturalExit, expectRefused } from "./helpers/exit-assertions.js";
 
 const { removePropertyCommand } = await import(
   "../../src/commands/remove-property.js"
@@ -189,7 +190,7 @@ describe("req 59220c17: remove-property accepts an undeclared property (set-prop
     const r = await runRemove("--property", UNDECLARED_PRESENT);
 
     expect(r.errorLog).not.toContain("Unknown property");
-    expect(r.exit).toEqual([0]);
+    expectNaturalExit(r.exit);
     expect(r.content).not.toContain(`${UNDECLARED_PRESENT}:`);
     expect(r.content).toContain(`exo__Asset_updatedAt: ${EXPECTED_UPDATED_AT}`);
     expect(r.stdout).toContain('"removed":true');
@@ -205,7 +206,7 @@ describe("req 59220c17: remove-property accepts an undeclared property (set-prop
 
     const r = await runSet("--property", UNDECLARED_PRESENT, "--value", "x");
 
-    expect(r.exit).not.toContain(0);
+    expectRefused(r.exit);
     expect(r.errorLog).toContain("Unknown property");
     expect(r.errorLog).toContain(UNDECLARED_PRESENT);
     expect(r.content).toBe(before);
@@ -218,7 +219,7 @@ describe("req 59220c17: remove-property accepts an undeclared property (set-prop
 
     const r = await runRemove("--property", UNDECLARED_ABSENT);
 
-    expect(r.exit).toEqual([0]);
+    expectNaturalExit(r.exit);
     expect(r.stdout).toContain('"removed":false');
     expect(r.content).toBe(before); // idempotent no-op, no updatedAt bump
     expect(r.stderr).toContain("Nothing was removed");
@@ -233,7 +234,7 @@ describe("req 59220c17: remove-property accepts an undeclared property (set-prop
 
     const r = await runRemove("--property", DECLARED_ABSENT);
 
-    expect(r.exit).toEqual([0]);
+    expectNaturalExit(r.exit);
     expect(r.stdout).toContain('"removed":false');
     expect(r.content).toBe(before);
     expect(r.stderr).not.toContain("Nothing was removed");
@@ -246,7 +247,7 @@ describe("req 59220c17: remove-property accepts an undeclared property (set-prop
 
     const r = await runRemove("--property", "ems__Effort_status");
 
-    expect(r.exit).not.toContain(0);
+    expectRefused(r.exit);
     // ⛤ req 148ce5a4 changed WHAT the refusal can offer, not WHETHER it refuses:
     // `ems__Effort_status` has no clearing command, so the sentence says so
     // instead of naming setters. The contrast this axis draws — undeclared is

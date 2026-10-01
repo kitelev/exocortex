@@ -6,6 +6,9 @@ import {
   restCreateCommit,
   enrichRateLimitError,
   caseInsensitiveHeaderGetter,
+  promiseWithDeadline,
+  type RestCommitRequest,
+  type RestCommitResponse,
   type RestCommitTransport,
 } from "@kitelev/exocortex-core";
 
@@ -286,7 +289,7 @@ export class GitHubRestClient {
     // transport contract) and returns a RequestUrlResponse that satisfies that
     // shape. Caller-owned Authorization header + HTTP-error-body redaction stay
     // inside `request()`; the core's own structural errors get `this.redact`.
-    const transport: RestCommitTransport = (req) => this.request(req);
+    const transport: RestCommitTransport = (req) => this.restRequest(req);
     return restCreateCommit(transport, {
       owner,
       repo,
@@ -314,7 +317,30 @@ export class GitHubRestClient {
    * general-purpose authenticated HTTP client.
    */
   public restTransport(): RestCommitTransport {
-    return (req) => this.request(req);
+    return (req) => this.restRequest(req);
+  }
+
+  /**
+   * `request()` adapted to the core {@link RestCommitResponse} shape.
+   *
+   * Two things the raw `RequestUrlResponse` cannot satisfy: its `headers` is a
+   * plain Record with platform-varying casing (the core contract wants a
+   * case-insensitive getter — iOS parity), and a caller that opted into
+   * conditional reads needs HTTP 304 as a SUCCESS rather than a throw
+   * (req af002ec4, #3975).
+   */
+  private async restRequest(
+    req: RestCommitRequest,
+  ): Promise<RestCommitResponse> {
+    const resp = await this.request(req, req.acceptNotModified === true);
+    const headers = caseInsensitiveHeaderGetter(resp.headers);
+    if (resp.status === 304) return { status: 304, headers };
+    return {
+      status: resp.status,
+      json: resp.json,
+      text: resp.text,
+      headers,
+    };
   }
 
   /**
@@ -435,7 +461,10 @@ export class GitHubRestClient {
 
   // ───────────────────────────── internals ─────────────────────────────
 
-  private async request(param: RequestUrlParam): Promise<RequestUrlResponse> {
+  private async request(
+    param: RequestUrlParam,
+    acceptNotModified = false,
+  ): Promise<RequestUrlResponse> {
     // Caller-provided headers spread FIRST so the client always owns the
     // Authorization header — prevents a callsite from accidentally (or
     // maliciously) overriding the PAT via headers passed in `param`.
@@ -467,6 +496,9 @@ export class GitHubRestClient {
     } catch (err) {
       throw new Error(this.redact(`GitHub request failed: ${errMsg(err)}`));
     }
+    // req af002ec4 — 304 answers a conditional read and does NOT spend the
+    // primary rate limit; only a caller that sent `If-None-Match` opts in.
+    if (resp.status === 304 && acceptNotModified) return resp;
     if (resp.status < 200 || resp.status >= 300) {
       const body = typeof resp.text === "string" ? resp.text : "";
       // Redact BEFORE truncating so a PAT near the 256-char boundary cannot
@@ -508,28 +540,21 @@ export class GitHubRestClient {
     method: string,
     url: string,
   ): Promise<RequestUrlResponse> {
-    if (this.#requestTimeoutMs <= 0) return p;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const deadline = new Promise<RequestUrlResponse>((_resolve, reject) => {
-      timer = setTimeout(() => {
-        reject(
-          new Error(
-            this.redact(
-              `GitHub request ${method} ${url} timed out after ` +
-                `${this.#requestTimeoutMs}ms (no response — stalled connection?)`,
-            ),
+    // The deadline itself lives in core — see `promiseWithDeadline`'s header
+    // for why it cannot live in this package (the plugin lint rule rewrites
+    // `setTimeout` to `window.setTimeout`, and this client also runs where
+    // there is no window).
+    return promiseWithDeadline(
+      p,
+      this.#requestTimeoutMs,
+      () =>
+        new Error(
+          this.redact(
+            `GitHub request ${method} ${url} timed out after ` +
+              `${this.#requestTimeoutMs}ms (no response — stalled connection?)`,
           ),
-        );
-      }, this.#requestTimeoutMs);
-      // Unref so a pending timer never keeps a Node test process alive; guarded
-      // because Electron renderer / browser timers expose no `unref`.
-      (timer as unknown as { unref?: () => void }).unref?.();
-    });
-    // Promise.race forwards `p`'s own resolution/rejection verbatim (the request
-    // wins) or the deadline's Error (the stall loses) — no manual reject(e), so
-    // the original rejection reason is preserved. `.finally` clears the timer on
-    // every exit path so a pending timer never leaks.
-    return Promise.race([p, deadline]).finally(() => clearTimeout(timer));
+        ),
+    );
   }
 
   /**

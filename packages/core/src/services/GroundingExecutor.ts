@@ -23,7 +23,10 @@ import { IRI } from "../domain/models/rdf/IRI";
 import type { WorkflowDefinition } from "../domain/models/WorkflowDefinition";
 import { FrontmatterService } from "../utilities/FrontmatterService";
 import {
+  blockScalarAsSequenceItem,
+  decodeYamlBlockScalar,
   decodeYamlQuotedScalar,
+  decodeYamlSequenceItem,
   isCompleteDoubleQuotedScalar,
   quoteYamlString,
   scalarTypingForRange,
@@ -1939,41 +1942,97 @@ export class GroundingExecutor {
   }
 
   /**
-   * Replace a markdown file's body (everything after the leading frontmatter
-   * block) with `body`, preserving the frontmatter. When the file has no
-   * frontmatter, the whole content becomes `body`. `\r?\n` tolerates CRLF.
+   * The leading line ending a body read must swallow — CRLF, a bare `\r` and a
+   * bare `\n`, the SAME three forms `matchFrontmatterBlock` accepts at a fence.
    *
-   * NOTE: an EMPTY frontmatter (`---\n---`) has no line between the fences, so
-   * the regex treats it as "no frontmatter" and `body` replaces the whole file.
-   * This never triggers on the composite create_instance path (it always writes
-   * non-empty frontmatter: uid/label/instance_class/createdAt); it only affects
-   * a standalone body_template on an empty-FM file — an acceptable corner.
+   * ⛔ Its predecessor was `/^\r?\n/`, which CANNOT strip a lone `\r`: `\r?\n`
+   * is indivisible and needs at least one `\n`. On a lone-CR asset that left
+   * the separator glued to the extracted body.
+   */
+  private static readonly LEADING_EOL = /^(?:\r\n|\r|\n)/;
+
+  /**
+   * Replace a markdown file's body (everything after the leading frontmatter
+   * block) with `body`, keeping the block EXACTLY as it stands on disk: both
+   * fences' own line endings, the YAML verbatim, the BOM where the user put it.
+   * When the content opens with no frontmatter block the whole content becomes
+   * `body` — unchanged, the executor invents no block (req 454ccedf, axis B8).
+   *
+   * ⛔ WITHDRAWN (#4473): this used to carry its OWN
+   * `/^---\r?\n[\s\S]*?\r?\n---/` and, on no match, return `body` VERBATIM.
+   * `\r?\n` is indivisible so it needs at least one `\n`, and `^---` cannot
+   * reach past a `U+FEFF` byte — so on a lone-CR-fenced or a BOM-prefixed asset
+   * the match was `null` and THE WHOLE FILE became the templated body:
+   * `exo__Asset_uid`, `exo__Instance_class` and every other pre-existing
+   * property were discarded. Nothing downstream could flag it, because
+   * `stampUpdatedAt` returns early for exactly that shape (`if
+   * (!parse(updated).exists) return updated`), so the identity-less content
+   * reached disk without even an `updatedAt` stamp to show something changed.
+   * The block's bytes have ONE owner now — `FrontmatterService.leadingBlock`
+   * (#4469) — so this path cannot disagree with `set-body` or the adapter.
+   *
+   * ⛤ AND THE SEAM GETS THE FILE'S OWN EOL, never a bare LF. The old
+   * `` `${fmMatch[0]}\n${body}` `` spliced an LF into a CRLF block on every
+   * CRLF asset it DID match — one write, two line-ending styles in one file.
+   * The rule is req `2d072437-c19d-49a4-ae89-f20b6185571f` decision 2, stated
+   * there for the sibling `FrontmatterService.updateProperty` write path: a
+   * newly inserted line gets the FILE's own EOL, taken from the opening fence.
+   *
+   * ⛤ BOM policy: a RUN of leading U+FEFF collapses to EXACTLY ONE — the same
+   * decision `FrontmatterService.spliceBlock` and
+   * `FileSystemVaultAdapter.replaceFrontmatter` take, because a user whose file
+   * went through two channels must not get two different answers.
+   *
+   * NOTE: an EMPTY frontmatter (`---\n---`) has no separator to give between
+   * the fences, so it still reads as "no block" and `body` replaces the whole
+   * file — unchanged by this conversion (the shared predicate CONSUMES the
+   * opening terminator before searching for the closing fence, so one physical
+   * separator can never serve as both). This never triggers on the composite
+   * create_instance path (it always writes non-empty frontmatter:
+   * uid/label/instance_class/createdAt); it only affects a standalone
+   * body_template on an empty-FM file — an acceptable corner.
    */
   private static replaceBody(content: string, body: string): string {
-    const fmMatch = content.match(/^---\r?\n[\s\S]*?\r?\n---/);
-    if (!fmMatch) return body;
-    return `${fmMatch[0]}\n${body}`;
+    const leading = FrontmatterService.leadingBlock(content);
+    if (!leading) return body;
+    return `${leading.text}${leading.eol}${body}`;
   }
 
   /**
    * req 915b20b2 — extract a markdown file's BODY (everything after the leading
    * frontmatter block), the inverse of {@link replaceBody}. Strips the single
-   * newline that {@link replaceBody} inserts between the frontmatter fence and
-   * the body, so `extractBody(replaceBody(fm, body)) === body`. When the content
-   * has no leading frontmatter block, the whole content IS the body. Used by
-   * `create_instance` `cloneTargetBody` to carry the $target body forward.
+   * line ending {@link replaceBody} inserts between the closing fence and the
+   * body, so `extractBody(replaceBody(fm, body)) === body` in ALL THREE
+   * encodings. When the content opens with no frontmatter block, the whole
+   * content IS the body. Used by `create_instance` `cloneTargetBody` to carry
+   * the $target body forward.
+   *
+   * ⛔ WITHDRAWN (#4473): this used to carry the same local
+   * `/^---\r?\n[\s\S]*?\r?\n---/` as `replaceBody`, with the mirror-image
+   * consequence — on a lone-CR-fenced or BOM-prefixed $target the match was
+   * `null` and the WHOLE FILE came back as "the body", so `cloneTargetBody`
+   * copied the source asset's FRONTMATTER into the new asset's body (the one
+   * thing that path documents it never does).
+   *
+   * ⛔ The slice is by `leadingBlock().end` — the offset in the ORIGINAL string
+   * — NOT by the length of the returned `text`: the two differ by exactly the
+   * BOM bytes the accessor normalises away, and slicing by a reconstruction's
+   * length prints part of the closing fence as body (measured on `get-body`
+   * before #4469: a CRLF asset yielded `"--\r\nTHE REAL BODY"`).
    *
    * NOTE (symmetric to {@link replaceBody}): an EMPTY frontmatter (`---\n---`)
-   * has no line between the fences, so the regex treats it as "no frontmatter"
-   * and the whole content is returned as the body. This never affects the
-   * cloneTargetBody path in practice: a real $target always carries non-empty
-   * frontmatter (uid/label/instance_class), so its fence is matched and only the
-   * true body is extracted.
+   * has no separator between the fences, so it reads as "no block" and the whole
+   * content is returned as the body. This never affects the cloneTargetBody path
+   * in practice: a real $target always carries non-empty frontmatter
+   * (uid/label/instance_class), so its block is matched and only the true body
+   * is extracted.
    */
   private static extractBody(content: string): string {
-    const fmMatch = content.match(/^---\r?\n[\s\S]*?\r?\n---/);
-    if (!fmMatch) return content;
-    return content.slice(fmMatch[0].length).replace(/^\r?\n/, "");
+    const leading = FrontmatterService.leadingBlock(content);
+    if (!leading) return content;
+    return content
+      .slice(leading.end)
+      .replace(GroundingExecutor.LEADING_EOL, "");
   }
 
   private async executeCreateInstance(
@@ -3219,19 +3278,22 @@ export class GroundingExecutor {
     value: string | string[],
   ): string | string[] {
     if (Array.isArray(value)) {
-      return value.map((item) => this.formatInheritedScalar(String(item)));
+      return value.map((item) => this.formatInheritedScalar(String(item), true));
     }
-    return this.formatInheritedScalar(String(value));
+    return this.formatInheritedScalar(String(value), false);
   }
 
-  private formatInheritedScalar(value: string): string {
+  private formatInheritedScalar(value: string, asSequenceItem: boolean): string {
     if (/^"?\[\[.+\]\]"?$/.test(value)) {
       return this.reformatWikilink(value);
     }
     if (UUID_V4_RE.test(value)) {
       return `"[[${value}]]"`;
     }
-    return value;
+    // A block scalar arrives as RAW text (`|-\n  body`, issue #4379); the new
+    // asset's writer quotes whatever it is handed, so copy the VALUE — raw, the
+    // header and the indentation would become part of the inherited text.
+    return decodeYamlBlockScalar(value, asSequenceItem);
   }
 
   private reformatWikilink(value: string): string {
@@ -3596,10 +3658,14 @@ export class GroundingExecutor {
     );
 
     const existingRaw = targetFrontmatter[grounding.targetProperty];
+    // A scalar becomes the list's first item. A BLOCK scalar's body is
+    // re-indented for that position (issue #4379): verbatim, it would sit at
+    // the indentation of its own `- ` and the whole frontmatter would stop
+    // parsing.
     const existing: string[] = Array.isArray(existingRaw)
       ? existingRaw
       : existingRaw !== undefined
-        ? [String(existingRaw)]
+        ? [blockScalarAsSequenceItem(String(existingRaw))]
         : [];
 
     // The value to append is the string VALUE. `$target.<prop>` already
@@ -3616,7 +3682,7 @@ export class GroundingExecutor {
     const plain = isCompleteDoubleQuotedScalar(resolvedValue)
       ? decodeYamlQuotedScalar(resolvedValue)
       : resolvedValue;
-    const seen = new Set(existing.map(decodeYamlQuotedScalar));
+    const seen = new Set(existing.map(decodeYamlSequenceItem));
     let merged: string[];
     if (seen.has(plain)) {
       merged = existing;
@@ -3664,6 +3730,21 @@ export class GroundingExecutor {
    * - `from` is not among the current values. ⛔ This refusal is load-bearing:
    *   without it the type degenerates into `property_append` on every miss and
    *   silently produces the contradictory two-value state it exists to prevent.
+   * - `from` or `to` RESOLVES to an empty string (#4314). The three guards above
+   *   reject an ABSENT expression and say nothing about one that resolves to
+   *   nothing: an empty `from` matches any empty list element and would rewrite
+   *   an element the author never named, an empty `to` would write one.
+   *   ⚠ Known narrow cost: `$targetFolder` legitimately resolves to "" for an
+   *   asset at the vault root, so such a grounding is refused too. No authored
+   *   grounding uses that combination today, and `property_delete` covers
+   *   intentional removal, so refusing loudly is the safer trade.
+   * - `from` and `to` resolve to the SAME value (#4432). Such a request can only
+   *   be a no-op — the element is rewritten with itself — and a success would be
+   *   indistinguishable from a real replacement, because the CLI prints the
+   *   command's vault-authored `exocmd__Command_successMessage` on any
+   *   `success: true`. It is checked AFTER the `from`-not-present guard, so a
+   *   degenerate pair that is also absent still hears the more diagnostic
+   *   "is not a value of".
    *
    * Comparison is on DECODED forms (as in `executePropertyAppend`): `existing`
    * holds the raw on-disk items, so a stored `"Say \"hi\""` matches a plain
@@ -3724,8 +3805,23 @@ export class GroundingExecutor {
     const fromPlain = plainOf(grounding.replaceFromExpression);
     const toPlain = plainOf(grounding.replaceToExpression);
 
+    // #4314 secondary item — the three guards above reject an ABSENT expression
+    // but not one that RESOLVES to nothing. An empty `from` then matches any
+    // empty list element (`- ""`, or a bare `- ` whose capture trims to ""), so
+    // a substitution that silently produced nothing would rewrite an unrelated
+    // element; an empty `to` would write one. Refusing keeps this method's four
+    // guards consistent: it never guesses which element the author meant.
+    if (fromPlain === "" || toPlain === "") {
+      return {
+        success: false,
+        error:
+          `property_replace: ${fromPlain === "" ? "replaceFromExpression" : "replaceToExpression"} ` +
+          `resolved to an empty value — refusing rather than matching an empty list element`,
+      };
+    }
+
     const fromIndex = existing.findIndex(
-      (item) => decodeYamlQuotedScalar(item) === fromPlain,
+      (item) => decodeYamlSequenceItem(item) === fromPlain,
     );
     if (fromIndex === -1) {
       return {
@@ -3736,10 +3832,42 @@ export class GroundingExecutor {
       };
     }
 
+    // #4432 — `from === to` can only be a no-op: the map branch below rewrites
+    // the element with itself, `updateProperty` emits the same list, and the
+    // file comes back byte-identical (measured: same `shasum`, `updatedAt` not
+    // stamped). Reporting that as a replacement is a signature not derived from
+    // the mechanism — the command prints its vault-authored
+    // `exocmd__Command_successMessage` regardless of whether anything changed,
+    // so "done" and "not done" render identically.
+    //
+    // This is not hypothetical: removing ONE class from a multi-value
+    // `exo__Instance_class` is expressed as a replace onto a value already in
+    // the list (set semantics collapse it), so someone trying to drop the LAST
+    // remaining class naturally writes `from === to`, reads the green line and
+    // believes the class is gone (#4302).
+    //
+    // ⛤ Placed AFTER the absent-value guard on purpose (review of #4433): when
+    // `from === to` AND the value is not in the list at all, "is not a value of"
+    // is the more diagnostic of the two true statements — a template or composite
+    // whose two expressions collapsed onto the same WRONG value should hear that
+    // the value was never there, not merely that the request was degenerate.
+    //
+    // Refusing is safe here: a sweep of `~/.claude/bin`, `~/dotfiles/scripts`
+    // and this repo found no caller relying on an idempotent `from === to`.
+    if (fromPlain === toPlain) {
+      return {
+        success: false,
+        error:
+          `property_replace: replaceFromExpression and replaceToExpression both ` +
+          `resolved to "${fromPlain}" — this can only leave <${grounding.targetProperty}> ` +
+          `unchanged, and reporting a no-op as a replacement would hide that`,
+      };
+    }
+
     // Idempotence: when `to` is ALREADY present elsewhere in the list, drop the
     // `from` item instead of writing a duplicate.
     const toIndexElsewhere = existing.findIndex(
-      (item, i) => i !== fromIndex && decodeYamlQuotedScalar(item) === toPlain,
+      (item, i) => i !== fromIndex && decodeYamlSequenceItem(item) === toPlain,
     );
     const merged =
       toIndexElsewhere === -1

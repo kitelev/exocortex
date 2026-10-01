@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutants for req c05a3565-7b8d-42dc-bc9f-7e71d47d9364 (issue #4441), CLI-adapter half. Each mutant removes ONE of the things the fix introduced, and the expectation below was written BEFORE the run (sparql-iri-form-pre-verify §A18). ⛤ #4461 MOVED THE PREDICATE ITSELF INTO CORE, so the four mutants that anchored into the in-class copy (M1 fences / M2 BOM skip / M4 offsets / M6 start anchor) MIGRATED WITH THEIR GUARD to `cli-frontmatter-predicate-unify-4461.core.spec.json` — same harness, same B-axis expectations, new subject (integration-test-revert-verify §A117). They are NOT deleted, and this spec keeps the two mutants whose guards stayed in this class: M3 (the diagnostic path must not re-acquire its own predicate) and M7 (the no-block insert branch must not prepend before the BOM). The WIRING of this class onto core is `cli-frontmatter-predicate-unify-4461.vault-adapter.spec.json`. ⛔ The axis names are the machine key: red_re reads the name right after `›`, so every axis is named `B<n>` as its FIRST token (§A47/§A104). ⛤ The NoteToRDFConverter half cannot live here — mutant-driver takes ONE subject — it is issue-4441-crlf-bom.converter.spec.json.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/adapters/FileSystemVaultAdapter.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/issue-4441-crlf-bom-frontmatter.integration.test.ts 2>&1",
+  "red_re": "› (?:@req:[0-9a-f-]+ )?(B\\d+)[: ]",
+  "mutants": {
+    "M3_diagnostic_path_gets_its_own_regex": {
+      "from": "    const blockBody =\n      matchFrontmatterBlock(content)?.body;\n    if (blockBody === undefined) return null;\n",
+      "to": "    const blockBody = /^---\\n([\\s\\S]*?)\\n---/.exec(content)?.[1];\n    if (blockBody === undefined) return null;\n",
+      "expect": ["B3", "B4", "B5", "B9", "B18", "B23"],
+      "_note": "Simulates the failure mode the requirement exists to prevent: the READ path normalised, the DIAGNOSTIC path not. The read path still returns null for a malformed CRLF/BOM block, so the file is invisible AND unnamed — exactly the silent drop #4439 closed for its own trigger. The anchor includes the following `if` line because the same two-line assignment also appears in updateFrontmatter, and a mutation that lands twice is a defect in the mutant, not a verdict about the axis. ⛤ ANCHOR RE-POINTED by #4461: the call is no longer class-qualified — the predicate is core's `matchFrontmatterBlock`, imported at the top of the file. The guard and its expectation are unchanged; only the text of the call site moved (spec-anchor-sweep.py catches exactly this).\n⚤ EXPECTATION WIDENED by req 74419202 (#4452): giving the diagnostic path its own LF-only regex now also breaks it for the two encodings #4452 added — B18 (malformed lone-CR is NAMED) and B23 (read/diagnostic agreement on the new encodings) are those axes."
+    },
+    "M7_no_block_branch_prepends_before_the_bom": {
+      "from": "    const bomRun = leadingBomLength(content);\n    return (\n      (bomRun > 0 ? \"\\uFEFF\" : \"\") + `${block}\\n` + content.slice(bomRun)\n    );\n",
+      "to": "    return `${block}\\n${content}`;\n",
+      "expect": ["B17", "B25"],
+      "_note": "The pre-fix form of the OTHER branch of replaceFrontmatter — the one taken when there is no existing block. Prepending leaves the BOM stranded in the middle of the file, where it is not a byte-order mark but garbage in the body. Narrow by construction: B10/B11/B12 all have a block to replace, so B17 is the only axis that reaches this branch at all. Added after the orchestrator's review named it as the one uncovered branch of the diff. ⛤ ANCHOR RE-POINTED by #4461: the private static `bomLength` is gone with the rest of the in-class predicate; the insert branch keeps the offset as ONE inline expression (core's `bomLength` is module-private and `frontmatterBlock.ts` is out of that work item's scope). ⛔ An earlier draft of this sentence called this «the ONLY guard of the BOM in the no-block branch, since the migrated core M2 no longer reaches it» — WITHDRAWN, the run says otherwise: B17 also reads the file back, so core's M2 reddens it too. The two guards are complementary, not redundant — M7 owns «inserted AFTER the byte», core's M2 owns «still findable afterwards».\n⚤ ANCHOR MIGRATED by req 74419202 (#4452): the branch now calls core's exported `leadingBomLength` and normalises a RUN to one byte. Same guard, same subject — «the inserted block goes AFTER the byte» — so the expectation is unchanged.\n⚤ EXPECTATION WIDENED by req 74419202 (#4452): B25 is B17's N-BOM twin — same branch, same loss (the block prepended BEFORE the byte), one more encoding."
+    }
+  }
+}

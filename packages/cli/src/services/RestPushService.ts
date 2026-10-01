@@ -141,7 +141,11 @@ export class RestPushService {
     const fetchImpl = this.fetchImpl;
     const redact = (m: string): string => this.redact(m);
     return async (req): Promise<RestCommitResponse> => {
+      // Caller headers FIRST, the ones this transport owns after — a callsite
+      // must not be able to override `Authorization` through `req.headers`
+      // (plugin parity: `GitHubRestClient.request` spreads in the same order).
       const headers: Record<string, string> = {
+        ...(req.headers ?? {}),
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "exocortex-cli",
@@ -163,13 +167,21 @@ export class RestPushService {
       } catch (err) {
         throw new Error(redact(`GitHub request failed: ${errMsg(err)}`));
       }
+      const headerGetter: HeaderGetter = (name) =>
+        resp.headers?.get?.(name) ?? undefined;
+      // req af002ec4 — 304 is the POINT of a conditional read, not a failure:
+      // GitHub does not charge the primary rate limit for it. Only a caller
+      // that opted in (i.e. one that sent `If-None-Match`) sees it as success.
+      if (resp.status === 304 && req.acceptNotModified === true) {
+        return { status: 304, headers: headerGetter };
+      }
       const text = await resp.text().catch(() => "");
       if (resp.status < 200 || resp.status >= 300) {
         // RFC 6a1a6518 A: attach Retry-After / x-ratelimit-* (own-props,
         // .message preserved) so the backoff can honor the exact wait. `fetch`
         // `Headers.get()` is already case-insensitive; tolerate a headerless
         // response (some test fakes omit it).
-        const get: HeaderGetter = (name) => resp.headers?.get?.(name) ?? undefined;
+        const get: HeaderGetter = headerGetter;
         throw enrichRateLimitError(
           new Error(
             truncate(
@@ -188,7 +200,7 @@ export class RestPushService {
       } catch {
         json = undefined;
       }
-      return { status: resp.status, json, text };
+      return { status: resp.status, json, text, headers: headerGetter };
     };
   }
 }

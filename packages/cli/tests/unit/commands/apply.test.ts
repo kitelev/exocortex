@@ -86,4 +86,11 @@ describe("CLI v16 — apply command (RFC 8e83442b T1.2)", () => {
     expect(help).toContain(`set-blocker: --input '{"blocker":"<uid>"}'`);
     expect(help).toContain(`set-ontology: --input '{"ontology":"<uid>"}'`);
   });
+
+  it("K7 @req:f6690c74-ec13-4918-9f8f-6e59a2e0b5ac --help names set-label-keep-alias and its `label` key", () => {
+    const help = applyCommand().helpInformation().replace(/\s+/g, " ");
+    expect(help).toContain(
+      "(set-label-keep-alias, which also keeps the previous label as an alias, takes the same key)",
+    );
+  });
 });

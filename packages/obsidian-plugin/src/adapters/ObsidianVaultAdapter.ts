@@ -5,6 +5,7 @@ import {
   IFolder,
   IFrontmatter,
   FrontmatterService,
+  frontmatterBlockBody,
 } from "@kitelev/exocortex-core";
 
 /** A linkpath body that is exactly a uuid — the `uid-bare` wikilink form. */
@@ -126,21 +127,103 @@ export class ObsidianVaultAdapter implements IVaultAdapter {
   }
 
   /**
+   * ⛤ The block predicate now lives in ONE place for the whole repo —
+   * `frontmatterBlockBody` from `@kitelev/exocortex-core` (req `1dfbd427`,
+   * #4453). It was LF-only here, so a valid CRLF-fenced or BOM-led asset was
+   * invisible to the plugin while the CLI indexed it fine (#4441 / PR #4450) —
+   * the same file, different triples, decided by which surface read it.
+   *
+   * Two sites inside this class share it (read + diagnostic); the reason they
+   * must share ONE is that the CLI's read and diagnostic predicates were
+   * written in parallel and drifted (#4439 review). Now the sharing is
+   * repo-wide rather than class-wide, so the drift cannot re-enter through a
+   * fourth copy either.
+   */
+
+  /**
+   * A body line carrying NO KEYS — blank, or a YAML comment. ASCII-only, and
+   * that is not pedantry: `String.prototype.trim()` strips a whole class of
+   * unicode blanks (NBSP, EN/EM SPACE, IDEOGRAPHIC SPACE, BOM) that YAML does
+   * NOT accept as the separator before `#`, so a `.trim()`-based predicate
+   * would stay silent about a body like `<NBSP># c`, which really does parse
+   * into a scalar. Mirrors `FileSystemVaultAdapter`'s predicate verbatim.
+   */
+  private static readonly NO_CONTENT_LINE = /^[ \t]*(#.*)?\r?$/;
+
+  /**
+   * WHY {@link getFrontmatter} returned null — reported ONLY for the one cause
+   * that is a defect: a block that is PRESENT and does NOT parse. Contract and
+   * the reason the three outcomes are kept apart:
+   * `IVaultFrontmatterManager.getFrontmatterParseFailure`.
+   *
+   * ⛤ ASYNC, and that is forced by the platform rather than chosen: Obsidian's
+   * only read API (`vault.read`) is async on every platform, and Node `fs` is
+   * forbidden here by the Desktop↔Mobile parity invariant. The port's return
+   * type was widened for exactly this (req `fe50da38`, #4440).
+   *
+   * ⛔ NOT implementable through `metadataCache`: it reports frontmatter as
+   * absent IDENTICALLY for a plain note and for a note whose block does not
+   * parse — the very conflation this method exists to undo. So the answer comes
+   * from the raw bytes, through the same matcher the read path uses.
+   *
+   * COST, stated honestly: the caller asks only when the resolved frontmatter
+   * is null, which — since the loader resolves through the disk-fallback tier —
+   * means a genuinely frontmatter-less file, not merely a cache-cold one
+   * (17 of 54 314 `.md` on the three canonical vaults, measured 2026-09-28).
+   */
+  async getFrontmatterParseFailure(
+    file: IFile,
+  ): Promise<{ reason: string } | null> {
+    let content: string;
+    try {
+      content = await this.read(file);
+    } catch {
+      // Unreadable or gone — that is not a PARSE failure, and claiming one
+      // would put a wrong reason in front of the user.
+      return null;
+    }
+
+    const body = frontmatterBlockBody(content);
+    // Outcome 1 — no block at all: a plain note, legitimately not an asset.
+    if (body === null) return null;
+    // A body with no content line — only blanks and `#` comments — means what
+    // the blessed empty block `---\n\n---` means: "no keys yet". Reporting it
+    // would be noise on a legitimate authoring shape.
+    const hasContentLine = body
+      .split("\n")
+      .some((line) => !ObsidianVaultAdapter.NO_CONTENT_LINE.test(line));
+    if (!hasContentLine) return null;
+    // Outcome 2 — the block parses into something this adapter accepts.
+    if (this.extractFrontmatter(content) !== null) return null;
+
+    // Outcome 3 — present and unparseable. The reason comes from the parser
+    // itself rather than being authored here, so it cannot drift from what
+    // actually rejected the file.
+    try {
+      parseYaml(body);
+      // Parsed into SOMETHING that is not a usable frontmatter mapping: a bare
+      // scalar or `null`. Name the requirement, not just the shape.
+      return { reason: "frontmatter is not a mapping" };
+    } catch (error) {
+      return {
+        reason:
+          error instanceof Error ? error.message.split("\n")[0] : String(error),
+      };
+    }
+  }
+
+  /**
    * Extract frontmatter from raw file content using direct YAML parsing.
    *
    * @param content Raw file content
    * @returns Parsed frontmatter or null if not found or invalid
    */
   private extractFrontmatter(content: string): IFrontmatter | null {
-    // Match YAML frontmatter block: starts with ---, ends with ---
-    const frontmatterRegex = /^---\n([\s\S]*?)\n---/;
-    const match = content.match(frontmatterRegex);
+    const yamlContent = frontmatterBlockBody(content);
 
-    if (!match) {
+    if (yamlContent === null) {
       return null;
     }
-
-    const yamlContent = match[1];
 
     // Handle empty frontmatter
     if (!yamlContent || yamlContent.trim() === "") {

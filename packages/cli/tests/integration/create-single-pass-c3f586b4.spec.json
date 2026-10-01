@@ -13,10 +13,10 @@
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/create.ts",
   "mutants": {
     "M1_default_adapter_does_not_memoise": {
-      "from": "      this.options.fsAdapter ?? new PlanningFsAdapter(this.vaultPath);",
-      "to": "      this.options.fsAdapter ?? new NodeFsAdapter(this.vaultPath);",
+      "from": "      this.options.fsAdapter ??\n      new PlanningFsAdapter(this.vaultPath, {",
+      "to": "      this.options.fsAdapter ??\n      new NodeFsAdapter(this.vaultPath) ?? new PlanningFsAdapter(this.vaultPath, {",
       "expect": ["S1", "S3", "S4", "S6"],
-      "_note": "The pre-fix state verbatim. It reddens more than S1 because the shared reader is derived FROM the adapter: with a plain NodeFsAdapter there is nothing to share, so both collaborators fall back to their own walks."
+      "_note": "The pre-fix state verbatim. It reddens more than S1 because the shared reader is derived FROM the adapter: with a plain NodeFsAdapter there is nothing to share, so both collaborators fall back to their own walks. ⛤ Anchor repaired 2026-09-29 (#4291): the construction now takes an options object, so the one-line form it quoted no longer exists."
     },
     "M2_shared_reader_never_offered": {
       "from": "    const adapter = this.fsAdapter;",
@@ -25,11 +25,11 @@
       "_note": "Type-preserving: the getter's return type already admits undefined. S1/S2 stay green — the adapter is still the memoising one, only the collaborators stop sharing it."
     },
     "M3_shape_loader_reads_on_its_own": {
-      "from": "ShapeLoader.loadFromVaultFS(this.vaultPath, {\n      readFile: this.sharedReader,\n    })",
-      "to": "ShapeLoader.loadFromVaultFS(this.vaultPath, {\n      readFile: undefined,\n    })",
+      "from": "ShapeLoader.loadFromVaultFS(this.vaultPath, {\n      readFile: this.sharedReader,\n      scanFilter: () => this.tboxScanFilter(),\n    })",
+      "to": "ShapeLoader.loadFromVaultFS(this.vaultPath, {\n      readFile: undefined,\n      scanFilter: () => this.tboxScanFilter(),\n    })",
       "expect": ["S3"],
       "_note_anchor": "Multi-line on purpose: the one-line form `      readFile: this.sharedReader,` is a SUBSTRING of the validator's more-indented line, so a single-line anchor matches twice and the driver refuses it.",
-      "_note": "S6 stays green by construction, and that is the honest reading: a ShapeLoader reading through `fs/promises` bypasses the adapter entirely, so its reads never reach the spy S6 counts. S6 measures the shared path; S3 is what holds this collaborator on it."
+      "_note": "S6 stays green by construction, and that is the honest reading: a ShapeLoader reading through `fs/promises` bypasses the adapter entirely, so its reads never reach the spy S6 counts. S6 measures the shared path; S3 is what holds this collaborator on it. ⛤ Anchor repaired 2026-09-29 (#4291): the call gained a `scanFilter`. The mutation still removes ONLY the shared reader, so what it proves is unchanged."
     },
     "M4_property_validator_reads_on_its_own": {
       "from": "        readFile: this.sharedReader,",
@@ -38,11 +38,11 @@
       "_note": "Same asymmetry as M3 — S6 cannot see reads that leave the adapter."
     },
     "M7_injected_adapter_ignored": {
-      "from": "      this.options.fsAdapter ?? new PlanningFsAdapter(this.vaultPath);",
-      "to": "      new PlanningFsAdapter(this.vaultPath);",
+      "from": "      this.options.fsAdapter ??\n      new PlanningFsAdapter(this.vaultPath, {",
+      "to": "      new PlanningFsAdapter(this.vaultPath, {",
       "expect": ["S2", "S5"],
       "_note_expect": "MEASURED, not predicted: the first prediction was [S2], derived from the mutant's topic (integration-test-revert-verify §A44). S5 reddens too, and correctly — S5 injects a plain NodeFsAdapter, so ignoring the injection builds the memoising one there as well and the shared reader stops being undefined.",
-      "_note": "Added after the first driver run showed S2 reddening under NO mutant — an axis nothing can break is not an axis (integration-test-revert-verify §A8). `create-batch` depends on this branch: it passes its own PlanningFsAdapter carrying the batch's pending uids, and silently building a fresh one would drop them."
+      "_note": "Added after the first driver run showed S2 reddening under NO mutant — an axis nothing can break is not an axis (integration-test-revert-verify §A8). `create-batch` depends on this branch: it passes its own PlanningFsAdapter carrying the batch's pending uids, and silently building a fresh one would drop them. ⛤ Anchor repaired 2026-09-29 (#4291): same reason as M1. ⛔ CORRECTION 2026-09-29 (#4291): the sentence above about `create-batch` passing its own PlanningFsAdapter is NO LONGER TRUE — it now sources the adapter from `ctx.fsAdapter` so the batch inherits the cache-backed lookup index. The axis stands on its own (this suite injects a stub directly, and `CreateContextOptions.fsAdapter` is a DI contract regardless of who uses it); only the production-dependency claim is retired."
     },
     "M6_reader_offered_for_a_non_memoising_adapter": {
       "from": "      : undefined;",

@@ -26,6 +26,7 @@ import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { expectNaturalExit, expectRefused } from "./helpers/exit-assertions.js";
 
 const { createCommand } = await import("../../src/commands/create.js");
 const { PropertyNameValidator } = await import(
@@ -179,6 +180,12 @@ function buildFixtureVault(vault: string): void {
     `[[${TIMESTAMP_PROPERTY_UID}]]`,
     `[[${NONINHERITABLE_PROPERTY_UID}]]`,
   ]);
+
+  // ── #4353 hyphenated-prefix fixture ─────────────────────────────────────
+  // A property whose prefix the OLD `[A-Za-z][A-Za-z0-9]*` KEY_SHAPE could not
+  // match. Without it the E-axes below have no input: every hyphenated key
+  // would be "unknown prefix" for reasons unrelated to the shape.
+  writeProp(vault, "0000-prop-7", "tbank-nessy__Deal_stage", "[[exo__ObjectProperty]]");
 }
 
 describe("RFC 430e84f1: `cli create` validates property NAMES against the mounted TBox", () => {
@@ -254,10 +261,40 @@ describe("RFC 430e84f1: `cli create` validates property NAMES against the mounte
     return walk(vault);
   }
 
+  // ── #4353: the key SHAPE decides whether a key is checked at all ─────────
+  // A key that does not match is SKIPPED, so a shape narrower than the emitter's
+  // grammar is a fail-open hole rather than a cosmetic mismatch.
+
+  it(`E1 a hyphenated key of a KNOWN property passes @req:${REQ}`, async () => {
+    await runCreate(["--property", "tbank-nessy__Deal_stage=x"]);
+    expect(exitCodes).not.toContain(1);
+  });
+
+  it(`E2 a hyphenated key of an UNKNOWN property is now REJECTED — it used to be skipped @req:${REQ}`, async () => {
+    // The load-bearing axis of #4353. Before the fix the old `[A-Za-z]…` shape
+    // did not match a hyphen, the key was skipped, and this typo reached the
+    // vault unchallenged.
+    await runCreate(["--property", "tbank-nessy__Deal_stagge=x"]);
+    expectRefused(exitCodes);
+    expect(createdAssetCount()).toBe(0);
+  });
+
+  it(`E3 a Capitalised prefix is SKIPPED — the shared grammar emits lowercase only @req:${REQ}`, async () => {
+    // ⛤ This direction is a LOOSENING, and it is pinned deliberately rather
+    // than left implicit: the old local shape accepted `[A-Za-z]`, so
+    // `Foo__Bar` was validated (and rejected as an unknown prefix). The shared
+    // grammar starts at `[a-z]`, matching what every emitter in the system
+    // actually produces, so such a key is now bare-key-shaped and skipped.
+    // Measured across all three live vaults before the change: ZERO property
+    // names carry a capitalised prefix, so nothing in the field loses cover.
+    await runCreate(["--property", "Foo__Bar=x"]);
+    expect(exitCodes).not.toContain(1);
+  });
+
   it(`rejects an UNKNOWN-PREFIX property name — exit != 0, no asset created @req:${REQ}`, async () => {
     await runCreate(["--property", "nonExisting__Prop=x"]);
 
-    expect(exitCodes).not.toContain(0);
+    expectRefused(exitCodes);
     expect(exitCodes).toContain(2); // INVALID_ARGUMENTS
     const stderr = errorSpy.mock.calls.flat().join("\n");
     expect(stderr).toContain("Unknown property");
@@ -269,7 +306,7 @@ describe("RFC 430e84f1: `cli create` validates property NAMES against the mounte
   it(`rejects a KNOWN-PREFIX MISSPELLED name and fuzzy-suggests the closest @req:${REQ}`, async () => {
     await runCreate(["--property", `ems__Effort_parentEffort=[[${VALID_TARGET}]]`]);
 
-    expect(exitCodes).not.toContain(0);
+    expectRefused(exitCodes);
     const stderr = errorSpy.mock.calls.flat().join("\n");
     expect(stderr).toContain("ems__Effort_parent"); // the suggestion
     expect(createdAssetCount()).toBe(0);
@@ -283,7 +320,7 @@ describe("RFC 430e84f1: `cli create` validates property NAMES against the mounte
       "exo__Asset_isDefinedBy=[[!kitelev]]",
     ]);
 
-    expect(exitCodes).toContain(0);
+    expectNaturalExit(exitCodes);
     expect(exitCodes).not.toContain(2);
     const json = JSON.parse(stdoutChunks.join("").trim());
     expect(json.uuid).toBeTruthy();
@@ -296,7 +333,7 @@ describe("RFC 430e84f1: `cli create` validates property NAMES against the mounte
       `ems__Effort_startTimestamp=2026-07-27T10:00:00`,
     ]);
 
-    expect(exitCodes).toContain(0);
+    expectNaturalExit(exitCodes);
     expect(exitCodes).not.toContain(2);
   });
 
@@ -310,7 +347,7 @@ describe("RFC 430e84f1: `cli create` validates property NAMES against the mounte
       `ems__Effort_plannedStartTimestamp=2026-07-30T20:00:00`,
     ]);
 
-    expect(exitCodes).toContain(0);
+    expectNaturalExit(exitCodes);
     expect(exitCodes).not.toContain(2);
     expect(createdAssetCount()).toBe(1);
   });

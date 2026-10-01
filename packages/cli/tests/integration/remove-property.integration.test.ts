@@ -30,6 +30,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { parseFrontmatterAsReader } from "@kitelev/exocortex-test-utils";
+import { expectNaturalExit, expectRefused } from "./helpers/exit-assertions.js";
 
 const { removePropertyCommand } = await import(
   "../../src/commands/remove-property.js"
@@ -199,8 +200,7 @@ describe("Issue #3926: `cli remove-property` deletes a non-guarded frontmatter p
       "ems__EffortPrototype_startTime",
     ]);
 
-    expect(out.exit).toContain(0);
-    expect(out.exit).not.toContain(1);
+    expectNaturalExit(out.exit);
     // The key is gone; the sibling non-target property survives.
     expect(out.content).not.toContain("ems__EffortPrototype_startTime");
     expect(out.content).toContain("ems__EffortPrototype_endTime: 10:00");
@@ -216,7 +216,7 @@ describe("Issue #3926: `cli remove-property` deletes a non-guarded frontmatter p
       '{"property":"ems__EffortPrototype_endTime"}',
     ]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     expect(out.content).not.toContain("ems__EffortPrototype_endTime");
     expect(out.content).toContain("ems__EffortPrototype_startTime: 09:00");
   });
@@ -230,8 +230,7 @@ describe("Issue #3926: `cli remove-property` deletes a non-guarded frontmatter p
       "ems__EffortPrototype_recurrence",
     ]);
 
-    expect(out.exit).toContain(0);
-    expect(out.exit).not.toContain(1);
+    expectNaturalExit(out.exit);
     // No change → file byte-identical, stale updatedAt NOT bumped.
     expect(out.content).toBe(before);
     expect(out.content).toContain(`exo__Asset_updatedAt: ${STALE_UPDATED_AT}`);
@@ -246,7 +245,7 @@ describe("Issue #3926: `cli remove-property` deletes a non-guarded frontmatter p
       "exo__Asset_aliases",
     ]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     // The bare `aliases:` key AND its list items are gone.
     expect(out.content).not.toMatch(/^aliases:/m);
     expect(out.content).not.toContain("Модель Дрейфуса");
@@ -267,7 +266,7 @@ describe("Issue #3926: `cli remove-property` deletes a non-guarded frontmatter p
     ]);
 
     expect(out.exit).toContain(1);
-    expect(out.exit).not.toContain(0);
+    expectRefused(out.exit);
     expect(out.errorLog).toMatch(/Refusing to remove "ems__Effort_status"/);
     // ⛤ req 148ce5a4: the setters are no longer named. All five commands routed
     // for this property are TRANSITIONS — they assign a value, none removes the
@@ -345,7 +344,7 @@ describe("Issue #3926: `cli remove-property` deletes a non-guarded frontmatter p
       "--dry-run",
     ]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     // File on disk UNCHANGED; the preview went to stderr.
     expect(out.content).toBe(before);
     expect(out.stderr).toContain("DRY RUN PREVIEW");
@@ -383,7 +382,7 @@ describe("Issue #3926: `cli remove-property` deletes a non-guarded frontmatter p
       "concept__Concept_definition",
     ]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     // ⛤ Authoritative post-condition is the PARSE, not the `removed:true` echo —
     // the echo is exactly what lied in this bug.
     const parsed = parseFrontmatter(out.content);
@@ -426,7 +425,7 @@ describe("Issue #3926: `cli remove-property` deletes a non-guarded frontmatter p
 
     const out = await run(sepPath, ["--property", "concept__Concept_definition"]);
 
-    expect(out.exit).toContain(0);
+    expectNaturalExit(out.exit);
     const parsed = parseFrontmatter(out.content);
     expect(parsed.concept__Concept_definition).toBeUndefined();
     expect(out.content).not.toContain("Body line");
@@ -440,7 +439,7 @@ describe("Issue #3926: `cli remove-property` deletes a non-guarded frontmatter p
     fs.writeFileSync(path.join(vault, bareRel), "# just a note\n");
     const out = await run(bareRel, ["--property", "ems__Effort_votes"]);
     // ems__Effort_votes IS guarded, but the not-a-vault-asset check runs first.
-    expect(out.exit).not.toContain(0);
+    expectRefused(out.exit);
     expect(out.errorLog).toMatch(/Not a vault asset/);
   });
 
@@ -465,7 +464,7 @@ describe("Issue #3926: `cli remove-property` deletes a non-guarded frontmatter p
     const errorLog = errorSpy.mock.calls.flat().join("\n");
     // Non-zero exit + the FRIENDLY not-found message mapped from ENOENT — NOT a
     // raw `ENOENT: no such file or directory` leak.
-    expect(exitCodes).not.toContain(0);
+    expectRefused(exitCodes);
     expect(errorLog).toMatch(/Target file not found/);
     expect(errorLog).not.toMatch(/no such file or directory/i);
   });

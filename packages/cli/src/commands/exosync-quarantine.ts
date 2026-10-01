@@ -29,6 +29,7 @@ import { promises as fsp, existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import * as path from "node:path";
 import {
+  CONDITIONAL_STORE_FILENAME,
   CONFLICT_CACHE_STORE_FILENAME,
   FileWatermarkStore,
   LocalConflictCacheStore,
@@ -55,6 +56,11 @@ import {
   type ExosyncSyncOptions,
 } from "./exosync-sync.js";
 import { RestPushService } from "../services/RestPushService.js";
+import {
+  nodeConditionalStoreIO,
+  wireConditionalRequests,
+} from "../services/conditionalRequestTransport.js";
+import { wireObjectCache } from "../services/objectCacheTransport.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 
 export interface QuarantineCliOptions extends ExosyncSyncOptions {
@@ -79,11 +85,38 @@ function buildResolver(
     token,
     ...(opts.apiBase !== undefined ? { apiBase: opts.apiBase } : {}),
   });
-  const transport =
+  const rawTransport =
     deps.transportFactory?.(token, opts.apiBase) ?? pushService.transport();
 
   const { specs, warnings } = collectVaultSpecs(vaultPath);
   const configDir = opts.configDir ?? ".obsidian";
+  // req af002ec4 — same conditional reads as sync/parity; a resolve re-reads
+  // refs and trees the sync that created the conflict already validated.
+  const etagPath = path.join(
+    vaultPath,
+    configDir,
+    "plugins",
+    "exocortex",
+    CONDITIONAL_STORE_FILENAME,
+  );
+  // req af002ec4 × req 086df113 — ORDER MATTERS and the two do not overlap.
+  // The SHA cache sits OUTSIDE: an immutable object it already holds costs no
+  // request at all, so it must answer before a conditional request is even
+  // built. Conditional reads sit INSIDE, for what the cache cannot serve —
+  // mutable `git/refs`, and a SHA it has not seen.
+  const { transport: conditionalTransport } = wireConditionalRequests(
+    rawTransport,
+    {
+      ...(opts.conditionalRequests !== undefined
+        ? { enabled: opts.conditionalRequests }
+        : {}),
+      io: nodeConditionalStoreIO(etagPath),
+    },
+  );
+  const { transport } = wireObjectCache(conditionalTransport, {
+    ...(opts.objectCache !== undefined ? { enabled: opts.objectCache } : {}),
+    sha1: nodeSha1,
+  });
   const watermarkPath = path.join(
     vaultPath,
     configDir,
@@ -182,7 +215,7 @@ export async function runQuarantineList(
 
 const PINNED_KIND_TEXT: Record<PinnedPathKind, string> = {
   "remote-pending": "remote change not applied here yet — this copy is behind",
-  "local-withheld": "local change, delivered by the next full sync",
+  "local-withheld": "local change, not pushed yet — the next push or sync delivers it",
   converged: "converged, clears on the next sync",
   unclassified: "unclassified (remote tree unavailable, or a file-mode space)",
 };
@@ -192,9 +225,12 @@ const PINNED_KIND_TEXT: Record<PinnedPathKind, string> = {
  * conflicts ✅» over them, and a push-only device never runs the pull that
  * clears them. What a pin costs depends on its kind: a `remote-pending` pin is an
  * incoming change this copy has not applied (the vault reads stale data); a
- * `local-withheld` one is a local change the next full sync delivers. A pin does
- * NOT exclude a local change from push by itself — push re-reads the remote diff
- * for pinned paths (review of #4391, probed on the real engine).
+ * `local-withheld` one is a local change not pushed yet — the next push delivers
+ * it: a pin does NOT exclude a local change from push, push re-reads the remote
+ * diff for pinned paths (review of #4391, probed on the real engine; locked by
+ * axis X4), and the same push clears the pin once nothing is left to reconcile
+ * (also X4). A `remote-pending` pin is the kind only a pull/sync clears — which
+ * is why push-only vaults accumulate them.
  * The remedy for every kind is `exosync sync` (pull + push); a pull alone
  * applies incoming changes but ships nothing.
  */

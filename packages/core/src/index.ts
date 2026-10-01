@@ -192,7 +192,6 @@ export {
   type AssetRelation,
 } from "./services/AreaHierarchyBuilder";
 export { ClassCreationService } from "./services/ClassCreationService";
-export { ConceptCreationService } from "./services/ConceptCreationService";
 export { EffortStatusWorkflow } from "./services/EffortStatusWorkflow";
 export { WorkflowEngine } from "./services/WorkflowEngine";
 export type { WorkflowValidationResult } from "./services/WorkflowEngine";
@@ -291,6 +290,14 @@ export {
 // duplicated mapping key → the whole asset collapses to {} at every read
 // (invisible & unrepairable). Retries `{ json: true }` (last-wins) on throw.
 export { parseYamlFrontmatterTolerant } from "./utilities/parseYamlFrontmatter";
+// The ONE "is a frontmatter block present?" predicate (req `1dfbd427`, #4453) —
+// CRLF-tolerant fences + a single leading BOM skipped for matching.
+export {
+  matchFrontmatterBlock,
+  frontmatterBlockBody,
+  leadingBomLength,
+} from "./utilities/frontmatterBlock";
+export type { FrontmatterBlockMatch } from "./utilities/frontmatterBlock";
 export { DateFormatter } from "./utilities/DateFormatter";
 export { WikiLinkHelpers } from "./utilities/WikiLinkHelpers";
 // Class subsumption over frontmatter `exo__Class_superClass` edges (req
@@ -640,7 +647,6 @@ export type {
   IConfirmGate,
   ApplyPlan,
 } from "./services/profile";
-export { ClassHierarchy as TripleClassHierarchy } from "./services/ClassHierarchy";
 
 // USTAR-aware tarball parser (honours the ustar `prefix` field that nanotar
 // 0.3.0 drops — fixes private-repo AssetSpace pulls with full-SHA wrappers).
@@ -698,7 +704,35 @@ export {
   extractAssetUid,
   type DetectChangesParams,
 } from "./services/sync/ChangeDetector";
+export { promiseWithDeadline } from "./utilities/promiseWithDeadline";
 export { gitBlobSha } from "./services/sync/gitBlobSha";
+// Conditional GitHub reads (req af002ec4, #3975) — an unchanged resource
+// answers 304, and GitHub does not charge the primary rate limit for it.
+export {
+  CONDITIONAL_STORE_FILENAME,
+  ConditionalRequestCache,
+  conditionalCacheKey,
+  withConditionalRequests,
+  type ConditionalEntry,
+  type ConditionalRequestCacheOptions,
+  type ConditionalRequestStats,
+  type ConditionalStoreIO,
+} from "./services/sync/conditionalRequestCache";
+// Content-addressed cache for IMMUTABLE git objects (req 086df113, #4410) —
+// a `commits`/`trees`/`blobs` read by SHA can never change, so a hit costs no
+// network request at all. Mutable `git/refs` is deliberately NOT cached (that
+// class is served by conditional requests, #3975).
+export {
+  ImmutableObjectCache,
+  parseImmutableObjectUrl,
+  withImmutableObjectCache,
+  type ImmutableObjectCacheOptions,
+  type ImmutableObjectRef,
+  type ImmutableObjectType,
+  type ObjectCacheEntry,
+  type ObjectCacheIO,
+  type ObjectCacheStats,
+} from "./services/sync/immutableObjectCache";
 // dedup-uids (#3477) shared platform-free core (#3676) — report + fix semantics
 // composed by BOTH the CLI `runDedupUids` (Node enumeration) and the in-plugin
 // «Deduplicate uids» command (vault.adapter enumeration). Desktop↔Mobile parity.
@@ -757,9 +791,11 @@ export {
   fmtMs,
   formatTimingsLine,
   formatRepoTimings,
+  formatQuota,
   type SyncPhase,
   type SyncPhaseCounts,
   type SyncPhaseTimings,
+  type RateLimitSnapshot,
   type NowFn,
 } from "./services/sync/SyncPhaseTimer";
 // ExoSync quarantine resolver (finding a0a3d1d6) — the user-facing reconcile

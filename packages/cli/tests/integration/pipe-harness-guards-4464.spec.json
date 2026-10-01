@@ -1,0 +1,47 @@
+{
+  "_doc": "Revert-verify mutants for issue #4464 — the two driver-reliability guards the four out-of-jest `*-pipe.harness.ts` files now share (`helpers/pipe-harness-guards.ts`). Subject is the HELPER because that is where the guards live after the consolidation: a mutant anchored in one harness could only speak for that harness, whereas one anchored here speaks for all four at once (integration-test-revert-verify §A117 — the mutant travels with the guard to its new carrier). The WIRING half — that each harness actually goes through the helper — is a separate subject and lives in pipe-harness-guards-4464.wiring.spec.json. ⛤ Unlike the four sibling `*.pipe.spec.json` files this one is CI-gated: its axes are plain fs/argv logic, so they run in `test-coverage-cli` even though the harnesses they protect cannot (the CLI jest job does not build `dist`). Expectation written BEFORE the run. Both defects were OBSERVED on the real tree first: `touch packages/cli/src/index.ts` + `--no-build` measured the pre-touch bundle in silence before the fix and refuses with `dist older than src … predates …` after it.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?)[: ]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/tests/integration/helpers/pipe-harness-guards.ts",
+  "harness": "cd \"$(dirname {subject})/../../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/pipe-harness-guards-4464.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_staleness_refusal_dropped": {
+      "from": "    if (stale !== null) throw new PipeHarnessBundleError(stale);",
+      "to": "    if (stale !== null) void stale;",
+      "expect": ["G1"],
+      "_note": "Keeps the staleness COMPUTATION and drops only the refusal — the shape `--no-build` had before #4464, where the sole check was `fs.existsSync(DIST)`. G1 reddens because `prepareBundle` then returns the stale bundle instead of throwing. G2 stays GREEN (a bundle newer than its inputs was always allowed through, so a guard that never refuses cannot be told from a correct one there) and G2b stays GREEN (the missing-bundle refusal is a separate throw, which is what says the staleness check did not simply subsume it). That pair is the control: without it, one red axis could not distinguish `--no-build` being broken outright from the staleness half being gone."
+    },
+    "M2_cleanup_out_of_finally": {
+      "from": "  try {\n    return await body();\n  } finally {\n    for (const p of cleanupPaths) {\n      fs.rmSync(p, { recursive: true, force: true });\n    }\n  }",
+      "to": "  const result = await body();\n  for (const p of cleanupPaths) {\n    fs.rmSync(p, { recursive: true, force: true });\n  }\n  return result;",
+      "expect": ["G3"],
+      "_note": "Exactly the pre-#4464 shape: cleanup as the last statement of the happy path rather than a `finally`, so a throwing axis leaks its temp tree under os.tmpdir() (LOW from the #4462 review). Type-preserving — the function still returns `Promise<T>` — because a mutant that failed to compile would print `Tests: 0` and read as `the axis does not differentiate` instead of as a lost guard (integration-test-revert-verify §A36/§A97). G3 reddens on its `existsSync === false` half; its `rejects.toThrow` half stays satisfied, which is what says the mutant removed the CLEANUP rather than the error propagation."
+    },
+    "M3_symlinked_inputs_invisible": {
+      "from": "      let st: fs.Stats;\n      try {\n        st = fs.statSync(p);\n      } catch {\n        continue; // removed between readdir and stat, or a dangling symlink\n      }\n      if (st.isDirectory()) {\n        walk(p);\n        continue;\n      }\n      if (!st.isFile()) continue;",
+      "to": "      if (e.isDirectory()) {\n        walk(p);\n        continue;\n      }\n      if (!e.isFile()) continue;\n      const st = fs.statSync(p);",
+      "expect": ["G8"],
+      "_note": "Classifies each entry by its `Dirent` kind instead of by a following `statSync` — the obvious shape, and the one this module shipped with in its first round. A Dirent for a symlink answers false to BOTH isDirectory and isFile (measured), so the whole symlinked subtree is skipped and the staleness check hands back `null` however old the bundle is. Only G8 reddens: G9 and G10 stay GREEN because a dirent-kind walk also skips a dangling symlink and a loop symlink — which is exactly why those two axes cannot stand in for this one, and why the guard needed three axes rather than one."
+    },
+    "M4_stat_race_unguarded": {
+      "from": "      let st: fs.Stats;\n      try {\n        st = fs.statSync(p);\n      } catch {\n        continue; // removed between readdir and stat, or a dangling symlink\n      }",
+      "to": "      const st = fs.statSync(p);",
+      "expect": ["G9", "G10"],
+      "_note": "Follows symlinks but drops the guard around the follow. A dangling symlink then throws ENOENT out of the walk, past `distStalenessReason` and `prepareBundle`, and `prepareBundleOrExit` rethrows anything that is not a PipeHarnessBundleError — so the harness dies with a raw stack trace instead of its `❌ BUILD — …` line. The same guard covers the TOCTOU case a dangling link stands in for deterministically: a file listed by readdirSync and removed before its statSync by a concurrent build under `dist/`. ⛤ G10 reddens TOO, and that was NOT the prediction — it was written from the mutant's theme (`ENOENT`) rather than from which axes actually execute after it (integration-test-revert-verify §A44). Measured cause: inside a symlink loop it is `statSync` that raises ELOOP first, at the same depth `readdirSync` would, so this one guard absorbs BOTH the unresolvable entry and the loop. `expect` was widened only after reading why, not to make the run pass. G8 stays GREEN — a symlinked directory resolves."
+    },
+    "M5_readdir_guard_dropped": {
+      "from": "    let entries: fs.Dirent[];\n    try {\n      entries = fs.readdirSync(dir, { withFileTypes: true });\n    } catch {\n      return; // vanished mid-walk, not a directory, or a symlink loop (ELOOP)\n    }",
+      "to": "    const entries = fs.readdirSync(dir, { withFileTypes: true });",
+      "expect": ["G11"],
+      "_note": "The directory-level guard predates #4464. ⛔ Its first mutant run reddened NOTHING, and the honest reading was not 'defensive, drop it' but 'the axis set had no observer for it': the loop case (G10) never reaches readdirSync on a bad path, because the per-entry statSync raises ELOOP one step earlier and M4 already covers that. G11 was added for the guard's OTHER stated case — a root that is not a directory, where readdirSync raises ENOTDIR — and it is the one this mutant reddens. Written down rather than quietly deleted because the sequence (guard -> no red -> new axis -> red) is the evidence that the guard is live, and a reader who only sees the final green matrix cannot reconstruct it."
+    }
+  }
+}

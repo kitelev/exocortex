@@ -17,6 +17,43 @@ export default tseslint.config(
   ...obsidianPlugin.configs.recommended,
   prettierConfig,
   {
+    // #4417 — `obsidianmd/prefer-window-timers` is a WARNING, but `--fix`
+    // applies warnings too, and `lint-staged` runs `--fix` on every commit. So
+    // it silently rewrites `setTimeout` → `window.setTimeout` (and even a bare
+    // `globalThis` → `window`) in code that also runs where there is no window,
+    // and the commit comes back reverted with an unrelated test failure:
+    // "GitHub request failed: window is not defined". It cost five reverted
+    // commits before the cause was visible, because lint-staged restores the
+    // tree on failure — the rewritten file you would inspect is already gone.
+    //
+    // The scope below is DERIVED, not hand-picked: a package's own
+    // `jest.config.js` already declares whether its code runs in a renderer.
+    // `core`, `services` and `test-utils` all set `testEnvironment: 'node'`
+    // (measured 2026-09-26) — they have no window BY CONTRACT, so a rule that
+    // makes them reach for one is not merely useless there, it pushes a
+    // browser global into a storage-agnostic package. Only
+    // `obsidian-plugin` sets `jsdom`, and that is where the rule keeps its
+    // teeth. `cli` and `req-audit` are outside the lint-staged autofix glob
+    // already.
+    //
+    // The one exception inside the plugin is `infrastructure/adapters/**`: it
+    // is the CLI-parity / mobile-REST transport, and all TEN of the plugin
+    // suites that declare `@jest-environment node` exercise modules from that
+    // directory and nothing else (measured 2026-09-26). The axes in
+    // `tests/unit/lint-scope/timerRuleScope.test.ts` hold that statement true —
+    // a new headless suite reaching outside this directory reddens them rather
+    // than reintroducing the defect.
+    files: [
+      'packages/core/**',
+      'packages/services/**',
+      'packages/test-utils/**',
+      'packages/obsidian-plugin/src/infrastructure/adapters/**',
+    ],
+    rules: {
+      'obsidianmd/prefer-window-timers': 'off',
+    },
+  },
+  {
     languageOptions: {
       parser: tseslint.parser,
       parserOptions: {

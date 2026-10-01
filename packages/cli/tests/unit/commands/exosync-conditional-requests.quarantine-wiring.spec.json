@@ -1,0 +1,26 @@
+{
+  "_doc": "Revert-verify for req af002ec4 at the THIRD wiring site: `exosync quarantine`. Added 2026-09-26 after review: `exosync-quarantine.ts` builds its own transport chain, independent of parity and sync, so deleting the conditional wiring THERE would red nothing without this file — the exact hole found on PR #4414 for the object cache, repeated for ETags. Axes D9/D10 in exosync-conditional-requests.test.ts.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-quarantine.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-conditional-requests.test.ts 2>&1",
+  "red_re": "› (D\\d+\\w*) ",
+  "mutants": {
+    "M1_quarantine_wiring_removed": {
+      "_note": "`exosync quarantine` keeps a correct but UNCONDITIONAL transport. A resolve re-reads exactly the refs and trees the sync that created the conflict already validated, so this is the call site where the saving is largest per request. ⛤ Якорь — только строка деструктуризации, без аргумента: аргумент меняет следующий декоратор (см. _doc спек кэша объектов).",
+      "from": "  const { transport: conditionalTransport } = wireConditionalRequests(\n",
+      "to": "  const conditionalTransport = rawTransport;\n  void wireConditionalRequests(\n",
+      "expect": ["D9"]
+    },
+    "M2_quarantine_flag_ignored": {
+      "_note": "`--no-conditional-requests` перестаёт доезжать до quarantine-пути, то есть opt-out молча ничего не делает именно там, где заголовок выгоднее всего.",
+      "from": "      ...(opts.conditionalRequests !== undefined\n        ? { enabled: opts.conditionalRequests }\n        : {}),\n",
+      "to": "",
+      "expect": ["D10"]
+    }
+  }
+}

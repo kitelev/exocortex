@@ -1,0 +1,31 @@
+{
+  "_doc": "Mutants for #4358 on the SUPERSEDED service_call grounding. H8 is the control axis: the old grounding must be retired and point at its successor, otherwise two live groundings claim the same command and the 'replaced' claim is only prose.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› (H\\d+) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/exoas-exocmd/exocmd/e6500fe3-241a-4ba9-aaa0-1ab8a8e0b866.md",
+  "harness": "cd \"$(dirname {subject})/../../core\" && node ../../node_modules/jest/bin/jest.js tests/integration/dynamic-commands/concept-creation-homoiconic-4358.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_deprecation_lifted": {
+      "from": "\n  - \"[[8eb223b1-5a8d-4ae5-9746-d7f879b2b5a6]]\"\n",
+      "to": "\n",
+      "expect": [
+        "H8"
+      ]
+    },
+    "M2_deprecated_by_retargeted": {
+      "from": "\nexo__DeprecatedAsset_deprecatedBy: \"[[85c40d1e-02b7-43c6-832b-d0b481ed19fb]]\"\n",
+      "to": "\nexo__DeprecatedAsset_deprecatedBy: \"[[f13ed9d8-c344-427c-a83e-e46586e3912e]]\"\n",
+      "expect": [
+        "H8"
+      ]
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutants for the WIRING half of issue #4464: the guards in `helpers/pipe-harness-guards.ts` only protect a harness that actually routes through them. pipe-harness-guards-4464.spec.json locks the guards' BEHAVIOUR (subject = the helper); this spec locks that a driver cannot quietly stop using them (subject = one of the four drivers — a spec has exactly one subject, and the axes enumerate all four `*-pipe.harness.ts` files from disk, so mutating any single one is enough to prove the axis observes them). `create-batch-1848dff9-pipe.harness.ts` is the chosen subject because it is the newest of the four (#4462) and the one whose review surfaced both findings. Expectation written BEFORE the run.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?)[: ]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/tests/integration/create-batch-1848dff9-pipe.harness.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/pipe-harness-guards-4464.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_bundle_path_taken_directly": {
+      "from": "const DIST = prepareBundleOrExit(process.argv.slice(2), CLI_PKG);",
+      "to": "const DIST = path.join(CLI_PKG, \"dist/index.js\");",
+      "expect": ["G4"],
+      "_note": "The driver reaches for the bundle path itself instead of asking the guard for it — the pre-#4464 shape, minus even the existence check. Type-preserving (still a `string`). Only G4 reddens: G5 and G6 read different predicates in the same four files, and G1–G3 exercise the helper, which this mutant does not touch. That separation is what makes G4 a statement about THIS driver's wiring rather than about the helper being importable at all."
+    },
+    "M2_axes_not_wrapped": {
+      "from": "  await runAxes([scratch], axes);",
+      "to": "  await axes();",
+      "expect": ["G5"],
+      "_note": "The axis body runs, but outside the `finally`, so the scratch tree survives a throwing axis again. G6 deliberately stays GREEN — the driver does not grow its own `fs.rmSync` back, it simply stops cleaning up at all, and conflating those two would hide which of them regressed. G4 stays GREEN because the bundle is still obtained through the guard."
+    }
+  }
+}

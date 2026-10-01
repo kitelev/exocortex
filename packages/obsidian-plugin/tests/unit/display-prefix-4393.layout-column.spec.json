@@ -1,0 +1,23 @@
+{
+  "_doc": "Revert-verify mutants for issue #4393 — display sites put back on the narrow `/^[a-z]+__/`. Type-preserving: the shared-grammar call stays (import used), only its effect is narrowed. Subject: LayoutColumn.ts.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "harness": "cd \"$(dirname {subject})/../../..\" && node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/display-prefix-4393.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/domain/layout/LayoutColumn.ts",
+  "mutants": {
+    "M2_column_header_narrow": {
+      "_note": "The default Layout column header strips only `[a-z]+__`.",
+      "from": "Namespace.fromPropertyKey(propertyName)?.localName ?? propertyName;",
+      "to": "Namespace.fromPropertyKey(propertyName) ? propertyName.replace(/^[a-z]+__/, \"\") : propertyName;",
+      "expect": ["A2"]
+    }
+  }
+}

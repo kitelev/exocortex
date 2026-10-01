@@ -1,0 +1,19 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "red_re": "› (V\\d+\\w*) ",
+  "_doc": "Revert-verify for req b6eef8ef (#4274), subject packages/cli/src/commands/resolve-buttons.ts. Axes V1-V5 in packages/cli/tests/integration/skipped-files-apply-resolve-b6eef8ef.integration.test.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout (with submodules initialised).",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/resolve-buttons.ts",
+  "harness": "cd \"$(dirname {subject})/../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/skipped-files-apply-resolve-b6eef8ef.integration.test.ts -t 'V[0-9] ' 2>&1",
+  "mutants": {
+    "M3_resolve_target_line_never_logged": {
+      "from": "  if (targetNotice !== null) load.log?.(targetNotice);\n",
+      "to": "  if (targetNotice !== null && targetNotice === undefined) load.log?.(targetNotice);\n",
+      "expect": ["V3"]
+    }
+  }
+}

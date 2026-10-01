@@ -1,0 +1,31 @@
+{
+  "_doc": "Revert-verify for req f6690c74 (set-label-keep-alias). Subject = the REAL composite grounding 341f7314 in the exoas-exocmd submodule; axes S1-S3 (core shape test) and K1-K6 (cli apply over a vault copied from the submodules). M4 mutates the DEFAULT set-label composite to prove K6 guards it. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout (with submodules initialised).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/exoas-exocmd/exocmd/341f7314-cef3-461e-b8c8-4de7934b1aa8.md",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../core\" && node ../../node_modules/jest/bin/jest.js tests/integration/dynamic-commands/set-label-keep-alias-grounding-shape.test.ts 2>&1; cd ../cli && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/apply-set-label-keep-alias.integration.test.ts 2>&1",
+  "red_re": "› ([KS]\\d+\\w*) ",
+  "mutants": {
+    "M1_previous_label_not_appended": {
+      "from": "  - \"[[a85668fa-17b7-45d0-aa7f-935e2502dff0]]\"\n",
+      "to": "",
+      "expect": ["S2", "K3"],
+      "_note": "K1 stays green by construction: its fixture already mirrors the old label, so append-dedup yields the same [Old, New]. K3 (old label NOT yet mirrored) is the axis that discriminates step 1."
+    },
+    "M2_label_set_before_old_label_is_read": {
+      "from": "  - \"[[a85668fa-17b7-45d0-aa7f-935e2502dff0]]\"\n  - \"[[f79e2d7d-7edd-4e7d-bba1-c668d362efcf]]\"\n",
+      "to": "  - \"[[f79e2d7d-7edd-4e7d-bba1-c668d362efcf]]\"\n  - \"[[a85668fa-17b7-45d0-aa7f-935e2502dff0]]\"\n",
+      "expect": ["S2", "K3"],
+      "_note": "S3 stays green: it reads step a85668fa by UID (content), not its position; the ORDER is S2's job. K1 stays green for the same dedup reason as in M1."
+    },
+    "M3_aliases_cleared_after_the_old_label": {
+      "from": "  - \"[[a85668fa-17b7-45d0-aa7f-935e2502dff0]]\"\n",
+      "to": "  - \"[[a85668fa-17b7-45d0-aa7f-935e2502dff0]]\"\n  - \"[[7f33c6c7-5082-4a40-bf8d-d1ec0fc37f1d]]\"\n",
+      "expect": ["S2", "K1", "K2", "K3", "K5"]
+    }
+  }
+}

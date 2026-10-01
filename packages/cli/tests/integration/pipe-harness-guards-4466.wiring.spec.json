@@ -1,0 +1,35 @@
+{
+  "_doc": "Revert-verify mutants for the WIRING half of issue #4466 — the FIFTH out-of-jest driver, `use-cache-4264-proc-chain.harness.ts`, routed through `helpers/pipe-harness-guards.ts` and pulled into the G4/G5/G6 sweep (widened from `*-pipe.harness.ts` to `*.harness.ts`). A spec has exactly one subject and `pipe-harness-guards-4464.wiring.spec.json` already spends its on the create-batch driver, so proving the axes OBSERVE the new member needs this second spec: mutate this file, and the axes must redden. Without it the widened sweep would be true of the fifth driver only by inspection. Expectation written BEFORE the run. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/pipe-harness-guards-4466.wiring.spec.json after setting `tree` and `subject` (both absolute).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› (?:@req:[0-9a-f-]+ )?([A-Z]\\d+[a-z]?)[: ]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/tests/integration/use-cache-4264-proc-chain.harness.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/pipe-harness-guards-4464.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "W1_bundle_path_taken_directly": {
+      "from": "const dist = prepareBundleOrExit(process.argv.slice(2), cliRoot);",
+      "to": "const dist = path.join(cliRoot, \"dist\", \"index.js\");",
+      "expect": ["G4"],
+      "_note": "The pre-#4466 shape of THIS file, restored: it reaches for the bundle path itself instead of asking the guard for it — and, as it did before, without even an existence check. Type-preserving (still a `string`, `path` is already imported). Only G4 reddens: G5 reads a different predicate in the same files, G6 reads a third, and G1-G3/G7-G11 exercise the helper, which this mutant does not touch. That separation is what makes G4 a statement about THIS driver's wiring rather than about the widened glob matching anything at all."
+    },
+    "W2_axes_not_wrapped": {
+      "from": "  await runAxes([cached, plain], axes);",
+      "to": "  await axes();",
+      "expect": ["G5"],
+      "_note": "The axes still run, but outside the `finally`, so both temp vaults survive a throwing axis — the #4464 defect, back in the one file #4464 did not cover. G6 deliberately stays GREEN: the driver does not grow its own `fs.rmSync` back, it simply stops cleaning up, and conflating those two would hide which of them regressed. G4 stays GREEN because the bundle is still obtained through the guard."
+    },
+    "W3_cleanup_retyped_in_place": {
+      "from": "  await runAxes([cached, plain], axes);",
+      "to": "  try {\n    await axes();\n  } finally {\n    fs.rmSync(cached, { recursive: true, force: true });\n    fs.rmSync(plain, { recursive: true, force: true });\n  }",
+      "expect": ["G5", "G6"],
+      "_note": "The regression G6 exists for, and the one W2 cannot show: cleanup is CORRECT again (a real `finally`, temp trees removed) while the shared guarantee has been copied back into the driver rather than obtained from the helper. G5 reddens on the lost `runAxes` and G6 on the re-grown `fs.rmSync` — the pair is what distinguishes 'stopped cleaning up' from 'went back to its own copy', which is the drift #4464 consolidated away."
+    }
+  }
+}

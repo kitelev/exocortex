@@ -1,0 +1,24 @@
+{
+  "_doc": "Mutant for #4358 on the COMMAND asset — the single edge that decides whether a click reaches the homoiconic grounding or the superseded service_call one. Sibling specs cover the grounding itself and the superseded grounding.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› (H\\d+) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/exoas-exocmd/exocmd/f13ed9d8-c344-427c-a83e-e46586e3912e.md",
+  "harness": "cd \"$(dirname {subject})/../../core\" && node ../../node_modules/jest/bin/jest.js tests/integration/dynamic-commands/concept-creation-homoiconic-4358.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_command_back_to_service_grounding": {
+      "from": "\nexocmd__Command_grounding: \"[[85c40d1e-02b7-43c6-832b-d0b481ed19fb]]\"\n",
+      "to": "\nexocmd__Command_grounding: \"[[e6500fe3-241a-4ba9-aaa0-1ab8a8e0b866]]\"\n",
+      "expect": [
+        "H1"
+      ]
+    }
+  }
+}

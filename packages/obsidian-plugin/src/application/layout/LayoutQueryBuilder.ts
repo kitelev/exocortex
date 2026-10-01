@@ -21,9 +21,17 @@ import type {
   FilterOperator,
 } from "../../domain/layout";
 import { isTableLayout } from "../../domain/layout";
+import { Namespace } from "@kitelev/exocortex-core";
 
 /**
- * SPARQL prefixes used in generated queries
+ * SPARQL prefixes ALWAYS declared in generated queries.
+ *
+ * ⛔ Not the full set a query may use — see {@link LayoutQueryBuilder.buildPrefixes}.
+ * Until #4401 this table WAS the full set, so a filter on any other namespace
+ * emitted an undeclared prefix and matched nothing. The entries below stay, in
+ * this order, because they are the ones every query needs (or has always
+ * declared), and keeping them verbatim is what makes existing `exo`/`ems`
+ * queries byte-identical after the fix.
  */
 export const SPARQL_PREFIXES: Record<string, string> = {
   exo: "https://exocortex.my/ontology/exo#",
@@ -101,6 +109,17 @@ export interface QueryBuildOptions {
  */
 export class LayoutQueryBuilder {
   /**
+   * Prefixes this query reached for beyond {@link SPARQL_PREFIXES}, collected
+   * by {@link toPrefixedName} while the body is assembled and declared by
+   * {@link buildPrefixes} afterwards.
+   *
+   * ⛔ Reset at the top of every {@link build}: a builder instance is reusable,
+   * and without the reset a namespace from an earlier layout would be declared
+   * in a later query that never mentions it.
+   */
+  private usedPrefixes = new Set<string>();
+
+  /**
    * Build a SPARQL query from a Layout definition.
    *
    * @param layout - The Layout to build a query for
@@ -115,6 +134,10 @@ export class LayoutQueryBuilder {
       includePrefixes = true,
     } = options;
 
+    // #4401 — a reused builder must not inherit the previous layout's
+    // namespaces (see the field's own note).
+    this.usedPrefixes = new Set<string>();
+
     try {
       // Get columns from layout (table layouts have columns)
       const columns = this.getColumns(layout);
@@ -122,12 +145,16 @@ export class LayoutQueryBuilder {
       // Build variable list
       const variables = this.buildVariables(columns);
 
-      // Build query parts
-      const prefixes = includePrefixes ? this.buildPrefixes() : "";
+      // Build query parts. ⛔ Prefixes are built LAST even though they are
+      // emitted first: the set of namespaces a query needs is only known once
+      // its body has been assembled (#4401). Moving this line back above
+      // `buildWhere` reinstates the defect for every namespace outside
+      // `SPARQL_PREFIXES`.
       const select = this.buildSelect(variables);
       const where = this.buildWhere(layout, columns, useOptional);
       const orderBy = this.buildOrderBy(layout.defaultSort, variables);
       const modifiers = this.buildModifiers(limit, offset);
+      const prefixes = includePrefixes ? this.buildPrefixes() : "";
 
       // Combine into final query
       const query = [
@@ -201,9 +228,20 @@ export class LayoutQueryBuilder {
    * Build PREFIX declarations.
    */
   private buildPrefixes(): string {
-    return Object.entries(SPARQL_PREFIXES)
-      .map(([prefix, uri]) => `PREFIX ${prefix}: <${uri}>`)
-      .join("\n");
+    // The always-on table first, in its declared order — that is what keeps an
+    // `exo`/`ems`-only query byte-identical to what it was before #4401.
+    const declared = Object.entries(SPARQL_PREFIXES).map(
+      ([prefix, uri]) => `PREFIX ${prefix}: <${uri}>`,
+    );
+    // Then whatever the query actually reached for. Sorted, so the output is a
+    // function of the query and not of visiting order.
+    const extra = [...this.usedPrefixes]
+      .filter((p) => !(p in SPARQL_PREFIXES))
+      .sort()
+      .map((p) => Namespace.forPrefix(p))
+      .filter((ns): ns is Namespace => ns !== null)
+      .map((ns) => `PREFIX ${ns.prefix}: <${ns.iri.toString()}>`);
+    return [...declared, ...extra].join("\n");
   }
 
   /**
@@ -451,9 +489,18 @@ export class LayoutQueryBuilder {
    * "exo__Asset_label" -> "exo:Asset_label"
    */
   private toPrefixedName(name: string): string {
-    const match = name.match(/^([a-z]+)__(.+)$/);
-    if (match) {
-      return `${match[1]}:${match[2]}`;
+    // #4401 — the grammar is `Namespace`'s, not a local one. The old
+    // `/^([a-z]+)__/` could not see a capital, a hyphen or a digit, so
+    // `aiKnow__Memory`, `tbank-nessy__Deal` and `exo003__Thing` fell through
+    // and went into the query raw. Reading the shared parser also means this
+    // builder cannot drift from what the converter actually emitted.
+    const parsed = Namespace.fromPropertyKey(name);
+    if (parsed) {
+      // Remember it so `buildPrefixes` can declare it. Recognising the name
+      // without declaring the prefix is the SECOND half of #4401: the query
+      // then looks right and still matches nothing.
+      this.usedPrefixes.add(parsed.namespace.prefix);
+      return `${parsed.namespace.prefix}:${parsed.localName}`;
     }
     return name;
   }

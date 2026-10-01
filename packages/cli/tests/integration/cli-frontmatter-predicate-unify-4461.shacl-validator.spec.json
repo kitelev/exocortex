@@ -1,0 +1,27 @@
+{
+  "_doc": "WIRING mutant for #4459 — the dry-run SHACL gate must decide \"is a block present?\" through core's predicate, not its own. Direction matters: the defect was PERMISSIVE (a violating CRLF/BOM candidate passed), so nothing surfaced.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/services/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/services/CandidateShaclValidator.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/cli-frontmatter-predicate-unify-4461.integration.test.ts --verbose 2>&1",
+  "red_re": "› ([CDE]\\d+[a-z]?) ",
+  "mutants": {
+    "W_shacl_gate_keeps_its_own_lf_only_regex": {
+      "from": "  const body = frontmatterBlockBody(content);\n  if (body === null) return null;\n",
+      "to": "  const m = /^---\\n([\\s\\S]*?)\\n---/.exec(content);\n  const body = m ? m[1] : null;\n  if (body === null) return null;\n",
+      "expect": [
+        "C1",
+        "C2",
+        "E3"
+      ],
+      "_note": "#4459 WIRING: the pre-fix predicate back in place. C1 (CRLF) and C2 (BOM) redden — the gate returns `null` (\"nothing to validate\") and the violating candidate is waved through, the false negative the issue names. C3 (valid CRLF candidate) is an ABSENCE-of-violation axis and is legitimately green in both directions; C4 (no block at all) is unaffected by tolerance. ⛤ E3 (the ratchet) reddens under this mutant AND under every other WIRING mutant of this work item, and that was NOT in the first prediction — it was derived from the mutant's THEME rather than from which axes EXECUTE after it lands (integration-test-revert-verify §A44). The reason is structural and is good news: each WIRING mutant re-introduces the literal `/^---\\n` into `packages/cli/src`, which is exactly the form E3 asserts is extinct. So E3 is a live ratchet with a demonstrated flip, not a pin — it would be satisfiable by a broken grep otherwise, and its own canary only proves the predicate, not that anything can trip it."
+    }
+  }
+}
