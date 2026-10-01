@@ -319,6 +319,26 @@ jobs:
       - name: Guard mutant-driver spec anchors
         run: node scripts/check-spec-anchors.mjs
 
+      # Issue #4487 — a pin that NO bot can see. Dependabot's `github-actions`
+      # ecosystem scans `.github/workflows` only, so the two pins inside
+      # `.github/actions/setup-node-pnpm/action.yml` never received a bump PR:
+      # on 2026-10-01 #4190 moved `actions/setup-node` 4 → 7 across 8 workflow
+      # files and #4189 moved `actions/checkout` to v7 across 10, while that
+      # composite action sat on setup-node@v4 + cache@v4 — and it is `uses:`-d
+      # 13 times in this file, i.e. on the hot path of essentially every
+      # required check. Nothing signalled it: no job fails on a stale pin, and
+      # the bot that would have is structurally blind to the directory.
+      # Checking the INVARIANT here rather than widening dependabot.yml is
+      # deliberate — a config entry only extends a third-party tool's scanning
+      # surface, cannot be verified from this repo, and reads as coverage even
+      # when silently ignored. MEASURED at introduction (main@93752880): 17
+      # release units, 89 pins, 14 yaml files, and exactly 2 units drifting —
+      # both of them those pins. Zero grandfathered debt, so this is a hard
+      # invariant and NOT a ratchet over a baseline: there is no baseline file
+      # for a new drift to hide behind. Measured 0.07 s (5 runs, it reads 14 files).
+      - name: Guard GitHub Action pin drift
+        run: node scripts/check-action-pin-drift.mjs
+
   docs-link-check:
     runs-on: ubuntu-latest
     timeout-minutes: 3

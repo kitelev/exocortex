@@ -1,0 +1,59 @@
+{
+  "_doc": "Revert-verify for the action-pin-drift guard (issue #4487): one version per pinned GitHub Action across all of .github/, workflows AND nested composite actions — the surface Dependabot's github-actions ecosystem does not scan. Axes D1-D8 live in check-action-pin-drift.test.ts; the subject is the guard script itself. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout. Recorded runs: see the PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/scripts/check-action-pin-drift.mjs",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/..\" && node ./node_modules/jest/bin/jest.js --config packages/obsidian-plugin/jest.config.js packages/obsidian-plugin/tests/unit/build/check-action-pin-drift.test.ts --coverageThreshold='{}' 2>&1",
+  "red_re": "› (D\\d+\\w*) ",
+  "mutants": {
+    "M1_scan_workflows_only": {
+      "_why": "Models the Dependabot blind spot exactly: a guard that only looks at .github/workflows. This is the defect #4487 is about, so D1 (drift living in the composite action) MUST red here.",
+      "from": "const GITHUB_DIR = path.join(ROOT, \".github\");",
+      "to": "const GITHUB_DIR = path.join(ROOT, \".github\", \"workflows\");",
+      "expect": ["D1", "D2", "D5"]
+    },
+    "M2_group_by_full_path": {
+      "_why": "Groups by the full action path instead of the owner/repo release unit, so sibling sub-actions out of one repo (github/codeql-action/init vs /analyze) stop being compared.",
+      "from": "    const unit = parts.length >= 2 ? `${parts[0]}/${parts[1]}` : action;\n",
+      "to": "    const unit = action;\n",
+      "expect": ["D6"]
+    },
+    "M3_uses_matched_as_substring": {
+      "_why": "Strips the start-of-line anchor, turning the `uses:` key read into a substring match. This is the mechanism that actually carries comment immunity: unanchored, a commented-out step (`# - uses: actions/x@v4`) is read as a live pin, so the guard reds on a correct tree. ⛤ An earlier mutant here deleted a `line.trimStart().startsWith(\"#\")` filter instead and reddened NOTHING — no comment line can reach the regex while it is anchored, so that filter was dead and was removed from the guard.",
+      "from": "const USES = /^\\s*(?:-\\s+)?uses:\\s*[\"']?([^\\s\"'#]+)/;",
+      "to": "const USES = /(?:-\\s+)?uses:\\s*[\"']?([^\\s\"'#]+)/;",
+      "expect": ["D4"]
+    },
+    "M4_zero_pins_is_clean": {
+      "_why": "Removes the population floor: files scanned but zero pins matched would report a clean bill of health instead of BROKEN.",
+      "from": "if (pinCount === 0) {",
+      "to": "if (pinCount < 0) {",
+      "expect": ["D5"]
+    },
+    "M5_count_docker_digests": {
+      "_why": "Removes the container-image exclusion, so a digest-pinned docker:// ref is read as an Actions pin and two digests of one image red a correct tree.",
+      "from": "      ref.startsWith(\"docker://\")\n",
+      "to": "      ref.startsWith(\"docker://zzz-never-matches\")\n",
+      "expect": ["D7"]
+    },
+    "M6_drift_check_never_fires": {
+      "_why": "Makes the drift predicate unsatisfiable while leaving every count, message and exit path in place — the guard still prints its OK line. Every drift-detecting axis must red.",
+      "from": "  .filter(([, occ]) => new Set(occ.map((o) => o.version)).size > 1)\n",
+      "to": "  .filter(([, occ]) => new Set(occ.map((o) => o.version)).size > 99)\n",
+      "expect": ["D1", "D3", "D6"]
+    },
+    "M7_empty_tree_is_clean": {
+      "_why": "Removes the other BROKEN branch (no yaml found at all). It is a separate code path from M4's, so it needs its own mutant.",
+      "from": "if (files.length === 0) {",
+      "to": "if (files.length < 0) {",
+      "expect": ["D8"]
+    }
+  }
+}
