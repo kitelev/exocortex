@@ -1942,41 +1942,97 @@ export class GroundingExecutor {
   }
 
   /**
-   * Replace a markdown file's body (everything after the leading frontmatter
-   * block) with `body`, preserving the frontmatter. When the file has no
-   * frontmatter, the whole content becomes `body`. `\r?\n` tolerates CRLF.
+   * The leading line ending a body read must swallow — CRLF, a bare `\r` and a
+   * bare `\n`, the SAME three forms `matchFrontmatterBlock` accepts at a fence.
    *
-   * NOTE: an EMPTY frontmatter (`---\n---`) has no line between the fences, so
-   * the regex treats it as "no frontmatter" and `body` replaces the whole file.
-   * This never triggers on the composite create_instance path (it always writes
-   * non-empty frontmatter: uid/label/instance_class/createdAt); it only affects
-   * a standalone body_template on an empty-FM file — an acceptable corner.
+   * ⛔ Its predecessor was `/^\r?\n/`, which CANNOT strip a lone `\r`: `\r?\n`
+   * is indivisible and needs at least one `\n`. On a lone-CR asset that left
+   * the separator glued to the extracted body.
+   */
+  private static readonly LEADING_EOL = /^(?:\r\n|\r|\n)/;
+
+  /**
+   * Replace a markdown file's body (everything after the leading frontmatter
+   * block) with `body`, keeping the block EXACTLY as it stands on disk: both
+   * fences' own line endings, the YAML verbatim, the BOM where the user put it.
+   * When the content opens with no frontmatter block the whole content becomes
+   * `body` — unchanged, the executor invents no block (req 454ccedf, axis B8).
+   *
+   * ⛔ WITHDRAWN (#4473): this used to carry its OWN
+   * `/^---\r?\n[\s\S]*?\r?\n---/` and, on no match, return `body` VERBATIM.
+   * `\r?\n` is indivisible so it needs at least one `\n`, and `^---` cannot
+   * reach past a `U+FEFF` byte — so on a lone-CR-fenced or a BOM-prefixed asset
+   * the match was `null` and THE WHOLE FILE became the templated body:
+   * `exo__Asset_uid`, `exo__Instance_class` and every other pre-existing
+   * property were discarded. Nothing downstream could flag it, because
+   * `stampUpdatedAt` returns early for exactly that shape (`if
+   * (!parse(updated).exists) return updated`), so the identity-less content
+   * reached disk without even an `updatedAt` stamp to show something changed.
+   * The block's bytes have ONE owner now — `FrontmatterService.leadingBlock`
+   * (#4469) — so this path cannot disagree with `set-body` or the adapter.
+   *
+   * ⛤ AND THE SEAM GETS THE FILE'S OWN EOL, never a bare LF. The old
+   * `` `${fmMatch[0]}\n${body}` `` spliced an LF into a CRLF block on every
+   * CRLF asset it DID match — one write, two line-ending styles in one file.
+   * The rule is req `2d072437-c19d-49a4-ae89-f20b6185571f` decision 2, stated
+   * there for the sibling `FrontmatterService.updateProperty` write path: a
+   * newly inserted line gets the FILE's own EOL, taken from the opening fence.
+   *
+   * ⛤ BOM policy: a RUN of leading U+FEFF collapses to EXACTLY ONE — the same
+   * decision `FrontmatterService.spliceBlock` and
+   * `FileSystemVaultAdapter.replaceFrontmatter` take, because a user whose file
+   * went through two channels must not get two different answers.
+   *
+   * NOTE: an EMPTY frontmatter (`---\n---`) has no separator to give between
+   * the fences, so it still reads as "no block" and `body` replaces the whole
+   * file — unchanged by this conversion (the shared predicate CONSUMES the
+   * opening terminator before searching for the closing fence, so one physical
+   * separator can never serve as both). This never triggers on the composite
+   * create_instance path (it always writes non-empty frontmatter:
+   * uid/label/instance_class/createdAt); it only affects a standalone
+   * body_template on an empty-FM file — an acceptable corner.
    */
   private static replaceBody(content: string, body: string): string {
-    const fmMatch = content.match(/^---\r?\n[\s\S]*?\r?\n---/);
-    if (!fmMatch) return body;
-    return `${fmMatch[0]}\n${body}`;
+    const leading = FrontmatterService.leadingBlock(content);
+    if (!leading) return body;
+    return `${leading.text}${leading.eol}${body}`;
   }
 
   /**
    * req 915b20b2 — extract a markdown file's BODY (everything after the leading
    * frontmatter block), the inverse of {@link replaceBody}. Strips the single
-   * newline that {@link replaceBody} inserts between the frontmatter fence and
-   * the body, so `extractBody(replaceBody(fm, body)) === body`. When the content
-   * has no leading frontmatter block, the whole content IS the body. Used by
-   * `create_instance` `cloneTargetBody` to carry the $target body forward.
+   * line ending {@link replaceBody} inserts between the closing fence and the
+   * body, so `extractBody(replaceBody(fm, body)) === body` in ALL THREE
+   * encodings. When the content opens with no frontmatter block, the whole
+   * content IS the body. Used by `create_instance` `cloneTargetBody` to carry
+   * the $target body forward.
+   *
+   * ⛔ WITHDRAWN (#4473): this used to carry the same local
+   * `/^---\r?\n[\s\S]*?\r?\n---/` as `replaceBody`, with the mirror-image
+   * consequence — on a lone-CR-fenced or BOM-prefixed $target the match was
+   * `null` and the WHOLE FILE came back as "the body", so `cloneTargetBody`
+   * copied the source asset's FRONTMATTER into the new asset's body (the one
+   * thing that path documents it never does).
+   *
+   * ⛔ The slice is by `leadingBlock().end` — the offset in the ORIGINAL string
+   * — NOT by the length of the returned `text`: the two differ by exactly the
+   * BOM bytes the accessor normalises away, and slicing by a reconstruction's
+   * length prints part of the closing fence as body (measured on `get-body`
+   * before #4469: a CRLF asset yielded `"--\r\nTHE REAL BODY"`).
    *
    * NOTE (symmetric to {@link replaceBody}): an EMPTY frontmatter (`---\n---`)
-   * has no line between the fences, so the regex treats it as "no frontmatter"
-   * and the whole content is returned as the body. This never affects the
-   * cloneTargetBody path in practice: a real $target always carries non-empty
-   * frontmatter (uid/label/instance_class), so its fence is matched and only the
-   * true body is extracted.
+   * has no separator between the fences, so it reads as "no block" and the whole
+   * content is returned as the body. This never affects the cloneTargetBody path
+   * in practice: a real $target always carries non-empty frontmatter
+   * (uid/label/instance_class), so its block is matched and only the true body
+   * is extracted.
    */
   private static extractBody(content: string): string {
-    const fmMatch = content.match(/^---\r?\n[\s\S]*?\r?\n---/);
-    if (!fmMatch) return content;
-    return content.slice(fmMatch[0].length).replace(/^\r?\n/, "");
+    const leading = FrontmatterService.leadingBlock(content);
+    if (!leading) return content;
+    return content
+      .slice(leading.end)
+      .replace(GroundingExecutor.LEADING_EOL, "");
   }
 
   private async executeCreateInstance(
