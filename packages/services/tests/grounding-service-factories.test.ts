@@ -952,6 +952,151 @@ describe("@kitelev/exocortex-services — factory contract", () => {
     });
   });
 
+  /**
+   * `rewriteFrontmatterScalars` reaches the shared frontmatter predicate — #4473
+   * AC6/AC7 (in this PR by the orchestrator's scope call; the issue's Scope names
+   * it, the spawn prompt's §Предмет did not).
+   *
+   * Two defects, both PRE-EXISTING and the SECOND one latent until the first was
+   * fixed:
+   *   1. the local `/^---\r?\n([\s\S]*?)\r?\n---/` threw "no YAML frontmatter
+   *      block" on a lone-CR / BOM source — fail-closed, never corruption, but
+   *      `duplicateAsset` was simply unavailable for those assets;
+   *   2. `split("\n")` / `join("\n")` over the block body. On CRLF every
+   *      UNTOUCHED line keeps its trailing `\r` while a REWRITTEN or APPENDED
+   *      one is emitted without one, so the join puts a bare LF immediately
+   *      after any touched key. On a lone-CR body — unreachable before (1) was
+   *      fixed, HOT after — `split("\n")` finds no boundary at all: the whole
+   *      body is ONE "line", its first key matches, and every other key is
+   *      DISCARDED.
+   *
+   * ⛤ The pre-existing sibling axis "preserves CRLF line endings if source has
+   * them" is GREEN on the unfixed code because its block holds ONE line, so the
+   * join is never reached ([[integration-test-revert-verify]] §A129 — a
+   * collection fixture needs ≥2 distinguishable elements). Every axis below
+   * carries two or more frontmatter lines AND rewrites one while appending
+   * another.
+   *
+   * Revert-verify: mutant S1 (restore the local regex) → B2/B3 RED; mutant S2
+   * (restore split/join on "\n") → B1/B2 RED; B4 (the LF control) and B5 (the
+   * fail-closed throw) stay GREEN under both.
+   */
+  describe("rewriteFrontmatterScalars — shared predicate + EOL-faithful join (#4473)", () => {
+    /** Two keys to rewrite one of, one to keep verbatim, one to append. */
+    function source(eol: string, bom = ""): string {
+      return (
+        bom +
+        [
+          "---",
+          "exo__Asset_uid: old-uid",
+          "exo__Asset_label: Keep me verbatim",
+          'exo__Instance_class: "[[ems__Task]]"',
+          "---",
+          "BODY LINE ONE",
+          "BODY LINE TWO",
+        ].join(eol)
+      );
+    }
+
+    const REWRITE = {
+      exo__Asset_uid: "new-uid",
+      // Absent from the source → APPENDED, the other half of the EOL defect.
+      exo__Asset_createdAt: "2026-10-01T09:00:00",
+    };
+
+    /** The frontmatter half of the output, fences included. */
+    function headOf(out: string): string {
+      const end = out.indexOf("---", out.indexOf("---") + 3);
+      return out.slice(0, end + 3);
+    }
+
+    it("B1 a CRLF block stays CRLF THROUGHOUT after a rewrite AND an append — no bare LF anywhere in it", () => {
+      const out = rewriteFrontmatterScalars(source("\r\n"), REWRITE);
+
+      expect(out).toContain("exo__Asset_uid: new-uid");
+      expect(out).toContain("exo__Asset_createdAt: 2026-10-01T09:00:00");
+      expect(out).toContain("exo__Asset_label: Keep me verbatim");
+
+      // The defect: a bare LF immediately after the rewritten/appended key.
+      const head = headOf(out);
+      expect(head.match(/(?<!\r)\n/g)).toBeNull();
+      // And no DOUBLED CR either: splitting on a bare "\n" leaves each
+      // untouched line's own `\r` attached, so re-joining with the block's
+      // `\r\n` yields `\r\r\n` — a different corruption the bare-LF
+      // assertion above cannot see.
+      expect(head).not.toContain("\r\r");
+      // And the terminators around the touched keys are explicitly CRLF.
+      expect(out).toContain("exo__Asset_uid: new-uid\r\n");
+      expect(out).toContain("exo__Asset_createdAt: 2026-10-01T09:00:00\r\n---");
+    });
+
+    it("B2 a lone-CR-fenced source is DUPLICATED instead of refused, and keeps every key on its own CR-terminated line", () => {
+      const out = rewriteFrontmatterScalars(source("\r"), REWRITE);
+
+      expect(out).toContain("exo__Asset_uid: new-uid");
+      // The split-on-"\n" defect collapses the whole block into one line and
+      // DISCARDS these two.
+      expect(out).toContain("exo__Asset_label: Keep me verbatim");
+      expect(out).toContain('exo__Instance_class: "[[ems__Task]]"');
+      expect(out).toContain("exo__Asset_createdAt: 2026-10-01T09:00:00");
+      expect(out).not.toContain("old-uid");
+
+      // Still a lone-CR file: no LF was introduced anywhere.
+      expect(out).not.toContain("\n");
+      // Four frontmatter lines (3 kept/rewritten + 1 appended).
+      const head = headOf(out);
+      expect(head.split("\r").filter((l) => l.includes(": ")).length).toBe(4);
+      // The body survives untouched.
+      expect(out).toContain("BODY LINE ONE\rBODY LINE TWO");
+    });
+
+    it("B3 a BOM-run source is duplicated with the RUN carried over byte-for-byte", () => {
+      const out = rewriteFrontmatterScalars(source("\n", "\uFEFF\uFEFF"), REWRITE);
+
+      expect(out).toContain("exo__Asset_uid: new-uid");
+      expect(out).toContain("exo__Asset_label: Keep me verbatim");
+      expect(out).toContain("exo__Asset_createdAt: 2026-10-01T09:00:00");
+
+      // DELIBERATE divergence from spliceBlock/replaceFrontmatter (which
+      // normalise a run to one): this function produces a COPY whose contract
+      // is byte-preservation outside the rewritten keys, so the run survives.
+      expect(out.startsWith("\uFEFF\uFEFF---")).toBe(true);
+      expect(out.charCodeAt(2)).not.toBe(0xfeff);
+    });
+
+    it("B4 the LF path is byte-identical to the pre-#4473 behaviour (control)", () => {
+      const out = rewriteFrontmatterScalars(source("\n"), REWRITE);
+
+      expect(out).toBe(
+        [
+          "---",
+          "exo__Asset_uid: new-uid",
+          "exo__Asset_label: Keep me verbatim",
+          'exo__Instance_class: "[[ems__Task]]"',
+          "exo__Asset_createdAt: 2026-10-01T09:00:00",
+          "---",
+          "BODY LINE ONE",
+          "BODY LINE TWO",
+        ].join("\n"),
+      );
+    });
+
+    it("B5 a source with no block in ANY of the three encodings still fails loud (fail-closed, unchanged)", () => {
+      // Not a fence in any encoding — no leading `---` at all.
+      expect(() =>
+        rewriteFrontmatterScalars("# heading\rbody\rmore", REWRITE),
+      ).toThrow(/no YAML frontmatter block/);
+      // A BOM run followed by prose is still not a block.
+      expect(() =>
+        rewriteFrontmatterScalars("\uFEFF\uFEFF# heading\nbody", REWRITE),
+      ).toThrow(/no YAML frontmatter block/);
+      // An opening fence with NO closing one is not a block either.
+      expect(() =>
+        rewriteFrontmatterScalars("---\r\nexo__Asset_uid: u\r\nbody", REWRITE),
+      ).toThrow(/no YAML frontmatter block/);
+    });
+  });
+
   describe("createDuplicateAssetService (Issue #3292)", () => {
     interface DupeFile {
       path: string;
