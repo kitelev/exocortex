@@ -143,11 +143,21 @@ jobs:
       - name: Type check
         run: npm run check:types
 
-  # RFC 0a0791c1 Phase B.0 — supply-chain gate for `packages/core`
-  # direct dependencies (incl. nanotar@0.3.0 pinned-exact). Audit runs
-  # against the per-package lockfile so pre-existing root-tree vulns in
-  # dev tooling (babel, fast-uri) don't trigger noise. Fails the job if
-  # any direct dep introduces a high/critical advisory.
+  # RFC 0a0791c1 Phase B.0 — supply-chain gate for the monorepo's PRODUCTION
+  # dependency graph (incl. `packages/core`'s nanotar@0.3.0 pinned-exact).
+  # Fails the job if any production dep introduces a high/critical advisory.
+  #
+  # ⛔ The gate used to read `packages/core/package-lock.json` (a per-package
+  # lock) with the stated reason "so pre-existing root-tree vulns in dev
+  # tooling don't trigger noise". That reason was RETRACTED on 2026-10-02
+  # (task 689a7dc5): `--omit=dev` below already does the dev-noise scoping,
+  # and the member lock was NOT the install source — it CONTRADICTED the
+  # installed tree. MEASURED on `d1c775d4`: `npm ci` at the root resolves
+  # js-yaml@5.4.2 / browserslist@4.29.3 / brace-expansion@2.1.7 for
+  # `packages/core`, while the member lock pinned 4.3.1 / 4.28.2 / 2.1.4.
+  # So the gate was judging a PHANTOM tree, and 6 Dependabot alerts sat on a
+  # file nothing installs from. The member lock is deleted; the input is now
+  # the root lock, which IS what `npm ci` installs.
   npm-audit-exocortex:
     runs-on: ubuntu-latest
     # 4 audit attempts x 45 s back-off (see the retry loop below) no longer
@@ -163,7 +173,7 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: packages/core/package-lock.json
+          cache-dependency-path: package-lock.json
 
       # Gate on PRODUCTION dependencies only (--omit=dev). The shipped packages
       # (@kitelev/exocortex-core, -cli, -obsidian-plugin) never bundle the dev
@@ -196,7 +206,6 @@ jobs:
       # stays honest and fast. A maintenance window longer than the 4 x 45 s
       # budget still needs a manual `gh run rerun <run-id> --failed`.
       - name: npm audit (block high+ in production deps)
-        working-directory: packages/core
         shell: bash
         run: |
           # `shell: bash` runs with -e; the loop must read the audit rc itself.
@@ -224,6 +233,35 @@ jobs:
             echo "::error::npm audit failed (rc=$rc) for a non-transient reason (advisories at --audit-level=high?) — not retrying"
             exit "$rc"
           done
+
+      # The gate above answers "does a PRODUCTION dep carry a high advisory". That leaves a
+      # whole class unobserved, and it stayed unobserved for 25 days (task 689a7dc5): nine
+      # Dependabot alerts open, zero Dependabot PRs, every required check green. `--omit=dev`
+      # and `--audit-level=high` are DIFFERENT filters and they did not overlap — the first
+      # dropped js-yaml (the only high), the second dropped moment. Raising either is the wrong
+      # lever: the level would block releases on a known moderate, and dropping `--omit=dev`
+      # would gate on dev tooling we deliberately do not ship.
+      #
+      # So this is a RATCHET, not a second gate: a NEW vulnerable package name anywhere in the
+      # lock graph goes RED, a baselined one stays silent. Scope and blind spots are printed by
+      # the script on every run (it reads npm's database, NOT the Dependabot alert list).
+      - name: Dependabot-alert ratchet (NEW vulnerable name anywhere in the lock graph)
+        shell: bash
+        run: |
+          set +e
+          node scripts/check-dependabot-alert-baseline.mjs
+          rc=$?
+          set -e
+          # ⛔ rc=2 is "NOT JUDGED" (registry transient / nothing parsed) and must NOT fail the
+          # job: this workflow's conclusion gates Auto Release, so a flaky advisory endpoint
+          # would silently cost a release (#4489, the measured mechanism). A broken DATA SOURCE
+          # fails open and loud; only a real regression (rc=1) fails closed
+          # (self-satisfying-metric-weak-verifier §A22).
+          if [ "$rc" -eq 2 ]; then
+            echo "::warning::dependabot-alert ratchet NOT JUDGED (rc=2) — advisory endpoint or sweep failed. Re-run this job to judge it (gh run rerun <run-id> --failed)."
+            exit 0
+          fi
+          exit "$rc"
 
   lint:
     runs-on: ubuntu-latest
