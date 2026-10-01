@@ -1,0 +1,87 @@
+{
+  "_doc": "Revert-verify for the release gate (issue #4488): Auto Release must be gated on the REQUIRED-check SET read from the API at run time, not on the whole CI run's verdict — and a release skipped at a green required set must go RED (the issue's second acceptance item). Axes D1-D22 live in release-required-gate.test.ts; the subject is the gate script itself, driven as a process against a local stand-in API via GITHUB_API_URL. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout. Recorded runs: see the PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/.github/scripts/release-required-gate.mjs",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true node ./node_modules/jest/bin/jest.js --config packages/obsidian-plugin/jest.config.js packages/obsidian-plugin/tests/unit/build/release-required-gate.test.ts --coverageThreshold='{}' 2>&1",
+  "red_re": "› (D\\d+\\w*) ",
+  "mutants": {
+    "M1_vacuous_green_on_empty_required": {
+      "_why": "The shape `ci-watch.py` had to guard after a transient protection 403: with an empty required set, 'nothing failing and nothing missing' is VACUOUSLY true, so the gate would publish on every run. D6/D7/D8 are the fail-open floor — an unreadable set must fall back to the OLD predicate and say so, never read as green.",
+      "from": "  if (!Array.isArray(requiredContexts) || requiredContexts.length === 0)\n    return fallback();",
+      "to": "  if (!Array.isArray(requiredContexts) || requiredContexts.length === 0)\n    return {\n      release: true,\n      judged: true,\n      reason: \"vacuous\",\n      requiredN: 0,\n      greenN: 0,\n      missing: [],\n      failing: [],\n    };",
+      "expect": ["D6", "D7"],
+      "_note": "D8 was predicted from the THEME ('a vacuous green') and dropped out: it exercises the OTHER canary — required set NON-empty, check-run listing empty — which is a separate branch this mutation never reaches. D8 is locked by M1b instead (integration-test-revert-verify §A44: read why the axis did not execute, do not re-point the expectation)."
+    },
+    "M3_unknown_conclusion_as_pass": {
+      "_why": "A GATE has no later poll, so an unknown conclusion must block rather than be read as green (unlike a WATCHER, where 'keep waiting' is harmless). D10 feeds `stale`, a real check-run conclusion outside the PASS set.",
+      "from": "  return PASS_CONCLUSIONS.has(conclusion) ? \"pass\" : \"fail\";",
+      "to": "  return conclusion === null ? \"pending\" : \"pass\";",
+      "expect": ["D10", "D2"],
+      "_note": "D2 reddens too, and that is the mutation being WIDER than its theme rather than a defect: collapsing every completed conclusion to `pass` also makes a required `failure` satisfied, which is exactly what D2 asserts against. Recorded instead of silently widened."
+    },
+    "M4_first_not_latest_check_run": {
+      "_why": "A stale RED shadowing a re-run's GREEN would block releases silently — the same class of silence this gate exists to remove. D11 supplies one name twice with the failure first.",
+      "from": "    if (a > b) by.set(run.name, run);",
+      "to": "    if (false) by.set(run.name, run);",
+      "expect": ["D11"]
+    },
+    "M5_required_list_hardcoded": {
+      "_why": "The defect the DERIVATION exists against: a hardcoded context list passes every green/red axis forever and silently stops gating on any newly added required check. The list here is even CORRECT for today, so only D12 — which asserts the branch object was actually read — can see it.",
+      "from": "export async function fetchRequiredContexts(repo, branch, token) {\n  const res = await api(",
+      "to": "export async function fetchRequiredContexts(repo, branch, token) {\n  if (true)\n    return {\n      contexts: [\n        \"typecheck\",\n        \"test-coverage\",\n        \"archgate\",\n        \"test-component\",\n        \"e2e-shard (1)\",\n        \"lint\",\n        \"detect-changes\",\n        \"parity-gate\",\n        \"requirements-trace\",\n      ],\n      error: null,\n    };\n  const res = await api(",
+      "expect": ["D12", "D6", "D7"],
+      "_note": "D6/D7 redden because the hardcoded stub returns a context list UNCONDITIONALLY, so the scenarios that make the set empty/unreadable can no longer reach the gate — their inputs are swallowed upstream. That is the same class of blindness the mutant models (a list that stops tracking protection), observed on two more axes."
+    },
+    "M6_missing_context_counts_as_satisfied": {
+      "_why": "'The required check produced no run' is not 'the required check passed' — treating it so would release on a run where a required job never started. D3 removes one required context from the listing.",
+      "from": "    if (!run) {\n      missing.push(context);\n      continue;\n    }",
+      "to": "    if (!run) {\n      greenN += 1;\n      continue;\n    }",
+      "expect": ["D3"]
+    },
+    "M7_audit_swallows_the_silent_skip": {
+      "_why": "The issue's second acceptance item, inverted: with this mutation a release skipped at a green required set stays GREEN — exactly the silence (#4488 is `skipped`, not `failure`, so no sweep of red runs sees it) the detector exists to break.",
+      "_note": "⛔ The first version of this mutant changed only the verdict STRING to `SILENT-SKIP-IGNORED`, which still CONTAINS `SILENT-SKIP`; the axis asserts the substring and the rc, so nothing reddened and it read as 'the axis does not discriminate'. Anchored on the PAIR (message + decision) and mutating the DECISION (integration-test-revert-verify §A46).",
+      "from": "    return {\n      rc: 1,\n      verdict: \"SILENT-SKIP\",",
+      "to": "    return {\n      rc: 0,\n      verdict: \"SILENT-SKIP\",",
+      "expect": ["D16"]
+    },
+    "M8_check_runs_page_one_only": {
+      "_why": "A required context falling off page 1 reads as 'missing' and blocks the release quietly. D13 puts 140 filler runs ahead of the required ones so a non-paging gate judges none of them.",
+      "from": "    if (out.length >= total || batch.length === 0) break;",
+      "to": "    break;",
+      "expect": ["D13"]
+    },
+    "M9_audit_cries_wolf_on_transient": {
+      "_why": "A red run on every transient 403 would train the reader to ignore this job, which is how a detector dies. D20 asserts the unjudged outcome keeps its OWN name and stays green.",
+      "from": "  if (gateJudged !== true) {\n    return {\n      rc: 0,",
+      "to": "  if (gateJudged !== true) {\n    return {\n      rc: 1,",
+      "expect": ["D20"]
+    },
+    "M10_pending_as_pass": {
+      "_why": "Releasing while a required check is still running publishes an unvalidated main. D4 leaves one required check `in_progress` with conclusion null.",
+      "from": "  if (conclusion === null) return \"pending\";",
+      "to": "  if (conclusion === null) return \"pass\";",
+      "expect": ["D4"]
+    },
+    "M1b_empty_check_runs_still_judged": {
+      "_why": "The canary on the OTHER input: with a non-empty required set and an EMPTY check-run listing every context reads as 'missing', which is indistinguishable from a transport failure. Judging that as a plain `false` would publish a verdict built on an empty measurement (self-satisfying-metric-weak-verifier §A7).",
+      "from": "  if (latest.size === 0) {",
+      "to": "  if (false) {",
+      "expect": ["D8"]
+    },
+    "M2_no_cache_header_dropped": {
+      "_why": "MEASURED 2026-10-01: the same Actions listing URL served a window 12 days stale until asked not to cache. D14 asserts the header at the SERVER — what was received — so dropping it on the wire cannot pass. Kept for cost asymmetry (free vs a false release verdict), not for a measured rate; see the script's `api()` header.",
+      "from": "          \"Cache-Control\": \"no-cache\",\n",
+      "to": "",
+      "expect": ["D14"]
+    }
+  }
+}
