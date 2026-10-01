@@ -160,10 +160,9 @@ jobs:
         run: |
           set +e
           for p in \
-            "branches/main/protection/required_status_checks" \
-            "branches/main/protection" \
             "branches/main" \
-            "rulesets"
+            "commits/main/check-runs?per_page=100" \
+            "commits/main/status"
           do
             CODE=$(curl -sS -o /tmp/body.json -w '%{http_code}' \
               -H "Accept: application/vnd.github+json" \
@@ -171,7 +170,16 @@ jobs:
               -H "X-GitHub-Api-Version: 2022-11-28" \
               "https://api.github.com/repos/${{ github.repository }}/$p")
             echo "=== $p -> HTTP $CODE"
-            head -c 600 /tmp/body.json; echo
+            case "$p" in
+              branches/main)
+                echo "--- .protection:"; jq -c '.protection' /tmp/body.json
+                echo "--- .protection.required_status_checks.contexts:"; jq -c '.protection.required_status_checks.contexts // "ABSENT"' /tmp/body.json
+                echo "--- .protection_url present:"; jq -r 'has("protection_url")' /tmp/body.json ;;
+              commits/main/check-runs*)
+                echo "--- total_count + names:"; jq -c '{total:.total_count, names:[.check_runs[].name]|sort}' /tmp/body.json ;;
+              commits/main/status)
+                echo "--- state + contexts:"; jq -c '{state:.state, n:(.statuses|length)}' /tmp/body.json ;;
+            esac
           done
           echo "=== token scopes advertised by the API:"
           curl -sS -D /tmp/h -o /dev/null \
