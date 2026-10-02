@@ -772,7 +772,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 4
     container:
-      image: mcr.microsoft.com/playwright:v1.62.1-jammy
+      image: mcr.microsoft.com/playwright:v1.63.0-jammy
 
     steps:
       - name: Checkout
@@ -1138,7 +1138,7 @@ jobs:
       needs.detect-changes.outputs.code == 'true' ||
       needs.detect-changes.outputs.force == 'true'
     container:
-      image: mcr.microsoft.com/playwright:v1.62.1-jammy
+      image: mcr.microsoft.com/playwright:v1.63.0-jammy
 
     steps:
       - name: Checkout
@@ -1654,7 +1654,7 @@ jobs:
       needs.detect-changes.outputs.code == 'true' ||
       needs.detect-changes.outputs.force == 'true'
     container:
-      image: mcr.microsoft.com/playwright:v1.62.1-jammy
+      image: mcr.microsoft.com/playwright:v1.63.0-jammy
 
     steps:
       - name: Checkout
