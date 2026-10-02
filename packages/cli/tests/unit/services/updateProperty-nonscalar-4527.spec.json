@@ -1,0 +1,53 @@
+{
+  "_doc": "Revert-verify mutants for req 394389b1-fcf8-4af1-962f-fad2b943f0a1 (issue #4527) — the NON-SCALAR guard in `createUpdatePropertyService` (service_call `updateProperty`). ⛔ The subject is in packages/services, which NO workflow jest-runs — the axes therefore live in packages/cli, gated by test-coverage-cli, whose moduleNameMapper resolves @kitelev/exocortex-services to package SOURCE. The harness also runs the req 5d2c7ede suite (W-axes) on purpose: the ORDER of the two guards is load-bearing, so a mutant that removes the empty-value guard must be seen to break BOTH the #4516 wording and this req's control. Set `tree`/`subject` to YOUR checkout before running.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/services/src/grounding-service-factories.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/cli/jest.config.js packages/cli/tests/unit/services/updateProperty-nonscalar-4527.test.ts packages/cli/tests/unit/services/updateProperty-empty-list-null-4516.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_guard_not_wired": {
+      "_note": "Severs the call to the non-scalar predicate, type-preserving. Reddens every refusal axis of this req; the controls (N6 populated array, N7 scalars, N8 the #4516 wording) and all W-axes stay GREEN — the two predicates do not overlap.",
+      "from": "      const nonScalarForm = nonScalarValueForm(value);\n",
+      "to": "      const nonScalarForm: string | undefined = undefined;\n",
+      "expect": ["N1", "N2", "N3", "N4", "N5", "N9"]
+    },
+    "M2_predicate_rejects_any_array": {
+      "_note": "The TOO-BROAD predicate: refuse every array instead of only one with a non-scalar element. Reddens the populated-array controls in BOTH suites (N6 here, W5 in the #4516 suite) and nothing else — multi-value writes would have died silently.",
+      "from": "    return value.every(isScalar)\n      ? undefined\n      : \"an array with a non-scalar element\";\n",
+      "to": "    return \"an array with a non-scalar element\";\n",
+      "expect": ["N6", "W5"]
+    },
+    "M3_predicate_ignores_array_elements": {
+      "_note": "The TOO-NARROW predicate: judge the container only, never its elements. Reddens exactly the two array forms — N4 (`[\"a\",{}]` → `- [object Object]`) and N5 (`[[1]]` → flattened to `- 1`) — while the object forms (N1-N3) stay refused.",
+      "from": "    return value.every(isScalar)\n      ? undefined\n      : \"an array with a non-scalar element\";\n",
+      "to": "    return undefined;\n",
+      "expect": ["N4", "N5"]
+    },
+    "M4_message_omits_corruption": {
+      "_note": "Keeps the refusal, drops the word the issue's acceptance criterion demands. Reddens every axis that asserts the WORDING (N2 explicitly, N3 and N9 through their /CORRUPT/i matchers) — the second deliverable of this req is the message, not only the refusal.",
+      "from": "refusing rather than CORRUPTING the key.",
+      "to": "refusing rather than writing it.",
+      "expect": ["N2", "N3", "N9"]
+    },
+    "M5_empty_guard_removed": {
+      "_note": "Removes the req 5d2c7ede guard that must run FIRST. Proves the ORDER is load-bearing and that this guard does NOT substitute for it: `\"\"` is a scalar and `[]` is a (vacuously) scalar array, so both sail through and get WRITTEN (W1, W2, W6 red), while `null` — whose typeof is \"object\" — is caught here and answered with a CORRUPTION message instead of the clearing one (W4 and this req's control N8 red).",
+      "from": "      const emptyForm = emptyPropertyValueForm(value);\n      if (emptyForm !== undefined) {\n        throw new Error(\n          `updateProperty: the value for ${property} is ${emptyForm} — refusing rather than writing a junk key that looks like a cleared property. To clear it, use the removeProperty service_call (or the remove-property CLI verb).`,\n        );\n      }\n",
+      "to": "",
+      "expect": ["N8", "W1", "W2", "W4", "W6"]
+    },
+    "M6_scalar_set_drops_boolean": {
+      "_note": "Narrows the scalar set so a BOOLEAN becomes non-scalar. Exists because the five mutants above leave N7 — the control saying every scalar form is still written — reddened by NOTHING: an unproven control is worse than a missing one, since it manufactures confidence (integration-test-revert-verify §A130: the axis exists, the mutant for it does not; NOT §A35 defensive and NOT §A118 a dead condition). Reddens exactly N7 and nothing else: strings and the populated array (N6, W5, W7) stay scalar, so only the boolean sub-case of N7 flips.",
+      "from": "    typeof v === \"string\" || typeof v === \"number\" || typeof v === \"boolean\";\n",
+      "to": "    typeof v === \"string\" || typeof v === \"number\";\n",
+      "expect": ["N7"]
+    }
+  }
+}
