@@ -1103,15 +1103,25 @@ export class GroundingExecutor {
     // non-string-scalar), silently blanking whatever was on disk.
     //
     // ⛤ Refusing here is NOT symmetry with the sibling grounding types — it is
-    // PARITY WITH THE OTHER WRITER OF THE SAME FRONTMATTER KEY. `cli
-    // set-property` already refuses an empty value fail-loud (req 501cdf2c,
+    // PARITY WITH ANOTHER WRITER OF THE SAME FRONTMATTER KEY. `cli set-property`
+    // already refuses an empty value fail-loud (req 501cdf2c,
     // `assertNonEmptyValue`): an empty string writes a junk key that LOOKS like a
     // successful clear, and a consumer branching on "does the property exist"
     // starts seeing it as present-with-an-empty-value. Clearing has its own path
     // (`property_delete` / `remove-property`). Until this guard the root CLI
     // command refused while THIS path — the one both the plugin button and `cli
-    // apply` take — accepted, so the two writers of one key disagreed (UI/CLI
-    // parity, #3417).
+    // apply` take — accepted (UI/CLI parity, #3417).
+    //
+    // ⛔ But the parity defect is closed 2 OF 3, NOT fully — saying otherwise here
+    // would be a claim the next reader takes as established. Writers of this key
+    // were enumerated (review of this PR, 2026-10-02), and the THIRD is still
+    // open: `createUpdatePropertyService` in
+    // `packages/services/src/grounding-service-factories.ts` guards only
+    // `value === undefined`, i.e. exactly this class — and it has a LIVE authored
+    // carrier, `exoas-exocmd/exocmd/c4616dcd-…` ("Set result value",
+    // `serviceId: updateProperty`, property pinned to `ems__Effort_result`, value
+    // taken from user input), so a blank field there still writes
+    // `ems__Effort_result: ""`. Filed separately rather than widened into this PR.
     //
     // ⛔ The predicate is STRICT (`=== ""`), NOT `trim() === ""`, and that is the
     // measured half: req 501cdf2c's sweep of all three canonical vaults (34 327
@@ -3763,8 +3773,9 @@ export class GroundingExecutor {
       return {
         success: false,
         error:
-          "property_append: appendExpression resolved to an empty value — " +
-          "refusing rather than appending an empty list element",
+          `property_append: appendExpression for ${grounding.targetProperty} resolved to an ` +
+          `empty value — refusing rather than appending an empty list element. To drop the ` +
+          `property use property_delete (or the remove-property CLI verb).`,
       };
     }
 
