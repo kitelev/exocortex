@@ -42,9 +42,13 @@ import * as yaml from "js-yaml";
  *     structurally (no pipe inside the `if`), not by matching the old text.
  *   • V3 is the `|| true` half. `continue-on-error` and `|| true` swallow the same exit
  *     code at different layers; an axis on the YAML key alone leaves the shell half open.
- *   • V4/V5 are the INPUT half of the gate: a step that runs 20 tests against no baseline
- *     reds forever, so the committed baselines are part of the contract, per executing
- *     spec file and not merely "at least one PNG somewhere".
+ *   • V4/V5 are the BASELINE half of the gate: a step that runs its tests against no
+ *     baseline reds forever, so the committed baselines are part of the contract, per
+ *     executing spec file and not merely "at least one PNG somewhere". ⛤ Their population
+ *     is enumerated recursively since #4512 removed the `testIgnore` filter — see
+ *     `executingVisualSpecs` for why a flat scan is now a false verdict. Whether the
+ *     filter is back is judged by a separate axis over the config, in
+ *     `visual-testignore-gate.test.ts`; THIS file judges the workflow step.
  *   • V6 is the input canary. Every predicate above is vacuously green if the parse
  *     silently stopped finding the job or the step (a rename, a restructure), so the
  *     scan has to assert it found its subject.
@@ -116,15 +120,45 @@ describe("test-component can red on a visual regression (#4506)", () => {
   const swallowsExitInShell = (script: string): boolean =>
     /\|\|\s*(?:true|:)\s*$/m.test(script);
 
-  /** Spec files Playwright will actually run in CI under `--grep visual`. */
+  /**
+   * Spec files Playwright will actually run in CI under `--grep visual`, as paths relative
+   * to `tests/component` (which is also how `snapshotPathTemplate` lays out
+   * `{snapshotDir}/{testFileDir}/{testFileName}-snapshots`).
+   *
+   * ⛔ Enumerated RECURSIVELY, and that is load-bearing. This used to be a flat
+   * `readdirSync` whose comment stated that `testIgnore: ["**\/visual\/**"]` dropped the
+   * `visual/` subdirectory under CI, so only top-level specs executed. That was true when
+   * #4510 shipped and is FALSE since #4512 removed the filter: a flat scan would now
+   * under-report the executing population, and V4/V5 would silently stop judging the
+   * baselines of every spec in `visual/` — the half that had no baselines at all.
+   *
+   * `--grep visual` matches the test's title PATH, which includes the spec's file path, so
+   * `visual/<name>.visual.spec.tsx` is selected by both its directory and its filename.
+   * That the filter is gone is not assumed here: it is a separate axis over the config,
+   * read through the TypeScript parser, in `visual-testignore-gate.test.ts`.
+   */
   const executingVisualSpecs = (): string[] => {
-    // `testIgnore: ["**/visual/**"]` under CI drops the `visual/` SUBDIRECTORY; the
-    // top-level `*.visual.spec.tsx` files have no `visual/` path segment and do run.
-    // Measured in the run above: the only spec paths present in the step's log are the
-    // two top-level ones, and `tests/component/visual/` appears zero times.
-    return readdirSync(componentTestDir)
-      .filter((f) => f.endsWith(".visual.spec.tsx"))
-      .sort();
+    const out: string[] = [];
+    const walk = (dir: string, rel: string): void => {
+      for (const entry of readdirSync(dir)) {
+        if (entry === "__snapshots__") continue;
+        const abs = path.join(dir, entry);
+        // statSync FOLLOWS symlinks; Dirent predicates would silently skip a symlinked
+        // subtree (harness-invocation-surface §A10).
+        let st;
+        try {
+          st = statSync(abs);
+        } catch {
+          continue;
+        }
+        const next = rel ? `${rel}/${entry}` : entry;
+        if (st.isDirectory()) walk(abs, next);
+        else if (st.isFile() && entry.endsWith(".visual.spec.tsx"))
+          out.push(next);
+      }
+    };
+    walk(componentTestDir, "");
+    return out.sort();
   };
 
   // ---- axes --------------------------------------------------------------------------
