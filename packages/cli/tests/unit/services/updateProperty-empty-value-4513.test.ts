@@ -112,15 +112,22 @@ describe("createUpdatePropertyService — empty-value refusal (#4513)", () => {
   });
 
   it("V4 control — a non-empty string is not refused even when it is only whitespace: the predicate does not trim", async () => {
-    // ⛔ This axis pins the PREDICATE, not a use case. Measured 2026-10-02:
-    // through this factory a raw " " is serialized with quoteScalars=false, so
-    // the file gets `key: ` + spaces and js-yaml reads it back as NULL — i.e.
-    // "still written" is true byte-wise only. The 5 live
-    // exo__DisplayNameSpec_separator carriers are QUOTED (`" "`, `" · "`), a
-    // form this serializer cannot emit at all, so the usual "a trimming guard
+    // ⛔ This axis pins the PREDICATE, not a use case. The 5 live
+    // exo__DisplayNameSpec_separator carriers are QUOTED (`" "`, `" · "`), so
+    // the usual "a trimming guard
     // would make them unwritable" argument does NOT apply here. Strict is still
     // right for a narrower reason: it refuses strictly less than a trimming
     // predicate and matches both sibling writers byte for byte.
+    //
+    // ⛤ AMENDED by #4520 (req 61e3441e), in the same change rather than left to
+    // drift (retracted-claim-outranks-its-correction): this comment used to say
+    // a raw `" "` is written with `quoteScalars=false` so js-yaml reads it back
+    // as NULL, i.e. that "still written" was true byte-wise only. That was a
+    // measurement of the PRE-#4520 factory. It now serialises a string value
+    // first, so `" "` lands QUOTED and round-trips as one space — axis W4 of
+    // `updateProperty-serialise-4520.test.ts` pins exactly that. The assertion
+    // below is unchanged and still passes: it matches the KEY and the separator,
+    // which both forms carry.
     const fs = makeFsStub({ [TARGET]: FM });
     await makeService(fs).execute("any-iri", {
       property: "exo__DisplayNameSpec_separator",

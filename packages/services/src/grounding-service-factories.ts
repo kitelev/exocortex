@@ -4,6 +4,8 @@ import {
   iriToVaultPath,
   FrontmatterService,
   matchFrontmatterBlock,
+  isUnquotedWikilink,
+  serializeYamlScalar,
 } from "@kitelev/exocortex-core";
 import type {
   ClassRefResolver,
@@ -612,12 +614,63 @@ export function createUpdatePropertyService(
           `updateProperty: the value for ${property} is an empty string — refusing rather than writing a junk key that looks like a cleared property. To clear it, use the removeProperty service_call (or the remove-property CLI verb).`,
         );
       }
+      // Issue #4520 (req 61e3441e) — the sibling-writer half of the #4405 /
+      // #4424 truncation class. `FrontmatterService.updateProperty`'s contract
+      // is ALREADY-FORMATTED YAML: it writes what it is handed. Until this
+      // guard+serialise pair, this factory handed it `userInput.value`
+      // verbatim, so a user typing `PR #42 merged` into the modal of a
+      // `service_call updateProperty` grounding wrote `prop: PR #42 merged`,
+      // which every YAML reader takes as `PR` with ` #42 merged` as a comment.
+      // Three shapes are WORSE than truncation — `fix: broken parse`,
+      // `- item` and a multi-line value make js-yaml throw on the whole
+      // frontmatter BLOCK, so the asset collapses at every read (measured on
+      // this tree 2026-10-02 through the real FrontmatterService).
+      //
+      // ⛔ NO ORIGIN DISCRIMINATOR HERE, and that is measured rather than
+      // inherited from #4424. There the same variable carries both an author's
+      // YAML (a deliberate flow array) and substituted user text, so the fix
+      // had to record WHERE the value came from. On this path it does not:
+      // across all three canonical vaults (SPARQL --no-cache, 2026-10-02) the
+      // 8 authored groundings with `serviceId: updateProperty` pin ONLY
+      // `property` in `serviceCallPayload` — `ems__Effort_result`,
+      // `…_startTimestamp`, `…_endTimestamp`, `…_plannedStartTimestamp`,
+      // `…_plannedEndTimestamp`, `ems__Effort_scheduledDate` — and two of them
+      // (`abdbdf09` Convert-to-task, `e8c1d18a` Convert-to-project) never
+      // reach this factory at all, short-circuited by `targetValueRef` in
+      // `executeServiceCall`. `value` is caller/user input, full stop, so a
+      // `substitutionApplied`-style flag would be a constant here. Copying
+      // #4424's shape on the strength of symmetry is the argument that
+      // produced too broad a predicate once already
+      // (integration-test-revert-verify §A27).
+      //
+      // ⛔ THE ORDER IS LOAD-BEARING, exactly as it is for req 29e0d1b6 on the
+      // `property_set` path: `serializeYamlScalar` quotes a bare `[[uid]]` on
+      // its leading `[`, so serialising FIRST would make `isUnquotedWikilink`
+      // blind and turn a loud refusal into a silent successful write — the
+      // flow-sequence data loss that guard exists to prevent. The refusal also
+      // sits with the other input guards, BEFORE the file is resolved or read,
+      // so it is total.
+      //
+      // ⛔ `typeof value === "string"` is load-bearing too, and also measured:
+      // `serializeYamlScalar` returns `String(value)` for a non-string, which
+      // collapses an ARRAY value from a two-item YAML list to the single line
+      // `prop: a,b`. `updateProperty`'s own `serializeValue` already handles
+      // `Array.isArray` as a list and non-string scalars via `String()`, so
+      // restricting this step to strings keeps arrays, numbers and booleans
+      // byte-identical by construction.
+      if (typeof value === "string" && isUnquotedWikilink(value)) {
+        throw new Error(
+          `updateProperty: the value for ${property} is ${value} — an UNQUOTED wikilink. YAML reads it as a flow sequence, so the graph would receive a literal instead of a link (silent data loss). Pass the QUOTED form (the quotes are part of the string, e.g. --input '{"value":"\\"[[<uid>]]\\""}').`,
+        );
+      }
+      const valueToWrite =
+        typeof value === "string" ? serializeYamlScalar(value) : value;
       const filePath = await pathResolver.resolveTargetPath(targetIRI);
       const content = await fsAdapter.readFile(filePath);
       const updated = frontmatterService.updateProperty(
         content,
         property,
-        value,
+        valueToWrite,
       );
       await fsAdapter.updateFile(filePath, updated);
     },

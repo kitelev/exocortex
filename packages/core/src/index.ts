@@ -279,10 +279,16 @@ export { FrontmatterService } from "./utilities/FrontmatterService";
 // property_append (#4250) and the RenameToUidService flow-array alias site
 // (ticket 77ffc37a) hand to FrontmatterService.updateProperty; the CLI batch
 // update-label writer went with the dead BatchExecutor (ticket 99a904a9).
+// isUnquotedWikilink — the ONE "is this value a bare, flow-sequence-shaped
+// wikilink?" predicate (req 29e0d1b6). Exposed so every writer that takes its
+// value from a caller refuses the same shape: the property_set step in
+// GroundingExecutor and the service_call updateProperty factory in
+// packages/services (req 61e3441e, issue #4520).
 export {
   quoteYamlString,
   serializeYamlScalar,
   scalarTypingForRange,
+  isUnquotedWikilink,
   type DeclaredRangeTyping,
   STRING_SCALAR_PROPERTIES,
 } from "./utilities/yamlScalar";
