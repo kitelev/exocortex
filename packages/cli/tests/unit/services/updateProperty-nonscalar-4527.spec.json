@@ -42,6 +42,12 @@
       "from": "      const emptyForm = emptyPropertyValueForm(value);\n      if (emptyForm !== undefined) {\n        throw new Error(\n          `updateProperty: the value for ${property} is ${emptyForm} — refusing rather than writing a junk key that looks like a cleared property. To clear it, use the removeProperty service_call (or the remove-property CLI verb).`,\n        );\n      }\n",
       "to": "",
       "expect": ["N8", "W1", "W2", "W4", "W6"]
+    },
+    "M6_scalar_set_drops_boolean": {
+      "_note": "Narrows the scalar set so a BOOLEAN becomes non-scalar. Exists because the five mutants above leave N7 — the control saying every scalar form is still written — reddened by NOTHING: an unproven control is worse than a missing one, since it manufactures confidence (integration-test-revert-verify §A130: the axis exists, the mutant for it does not; NOT §A35 defensive and NOT §A118 a dead condition). Reddens exactly N7 and nothing else: strings and the populated array (N6, W5, W7) stay scalar, so only the boolean sub-case of N7 flips.",
+      "from": "    typeof v === \"string\" || typeof v === \"number\" || typeof v === \"boolean\";\n",
+      "to": "    typeof v === \"string\" || typeof v === \"number\";\n",
+      "expect": ["N7"]
     }
   }
 }
