@@ -18,13 +18,15 @@
       "_why": "The mutant #4497 asks for: the sweep collapses to a single package, which is the pre-fix state of the root `lint` script. Broad on purpose — see _note_broad_mutant.",
       "from": "const { inScope, notLintable } = derivePackages();",
       "to": "const { inScope: _derived, notLintable } = derivePackages();\nconst inScope = _derived.slice(0, 1);",
-      "expect": ["EL1", "EL2", "EL5", "EL7", "EL8", "EL9", "EL11"]
+      "expect": ["EL1", "EL2", "EL5", "EL7", "EL8", "EL9", "EL11"],
+      "_note": "Recorded run, not a prediction from the theme: the sweep collapsing to the first package starves every axis whose fixture puts its subject in the SECOND one — EL2 (new error in beta), EL5 (fatal in beta), EL8 (warning in beta), EL9 (beta with zero files), EL11 (report over beta) — plus EL1 (the scope line itself) and EL7, which then reports a narrowed sweep (rc=2) instead of the stale baseline it asserts. EL3/EL4/EL6/EL10 stay green: their fixtures hold everything in the first package. This is the breadth the issue's acceptance criteria asked for; the single-concern mutants are M2-M11."
     },
     "M2_ts_project_exclusion_ignored": {
       "_why": "Drops the second conjunct of scope derivation, so a package eslint CANNOT judge (packages/cli in production, `excluded` in the fixture) is swept anyway and its fatals/findings reach the verdict. EL4 holds the property that such a package is dropped WITH its reason printed.",
       "from": "    if (excludedBy) notLintable.push({ name, excludedBy });",
       "to": "    if (false) notLintable.push({ name, excludedBy });",
-      "expect": ["EL4"]
+      "expect": ["EL3", "EL4"],
+      "_note": "EL3 is a MEASURED extra, read before it was written down (integration-test-revert-verify A44): EL3 drives its narrowing THROUGH the TS-project exclusion (it moves beta out of the project while the baseline still names it), which is the very conjunct this mutant removes — beta then stays in scope, the lost set is empty, and the run exits 0 instead of 2. So EL3 and EL4 are the two sides of one mechanism: EL4 holds 'an unjudgeable package is dropped with its reason printed', EL3 holds 'a sweep narrower than the baseline is not a pass'. Both must react."
     },
     "M3_fatals_absorbed_silently": {
       "_why": "A fatal parse error inside the derived scope stops being rc=2. Without this guard the run would call itself clean over files it never judged — the exact shape that 122 baselined `cli` parse errors would have had.",

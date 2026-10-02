@@ -330,8 +330,7 @@ const entriesOf = () =>
 
 if (UPDATE) {
   const entries = entriesOf();
-  writeFileSync(
-    BASELINE,
+  const raw =
     JSON.stringify(
       {
         _doc:
@@ -343,9 +342,29 @@ if (UPDATE) {
       },
       null,
       2,
-    ) + "\n",
-    "utf8",
-  );
+    ) + "\n";
+  // ⛔ The baseline is matched by lint-staged's `*.{json,md}` prettier task, so a
+  // writer that formats it differently gives the file TWO owners: `--update` would
+  // expand `scope` onto five lines, the next commit would collapse it back, and the
+  // author would see churn on an unchanged corpus forever. Defer to prettier — one
+  // owner of the format. Fail-open with a printed note if it is unavailable (this is
+  // the author-only path; the gate never writes).
+  let formatted = raw;
+  try {
+    const prettier = await import("prettier");
+    const options = (await prettier.resolveConfig(BASELINE)) ?? {};
+    formatted = await prettier.format(raw, {
+      ...options,
+      parser: "json",
+      filepath: BASELINE,
+    });
+  } catch (err) {
+    console.error(
+      `   ⚠ prettier unavailable (${String(err)}); wrote raw JSON. The next commit\u2019s` +
+        "\n   lint-staged run will reformat it — commit that reformat alongside this file.",
+    );
+  }
+  writeFileSync(BASELINE, formatted, "utf8");
   console.log(
     `✅ baseline written: ${entries.length} (file, rule) pair(s), ${errorCount} error(s), ` +
       `scope [${inScope.join(", ")}]`,
