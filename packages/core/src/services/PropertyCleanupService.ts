@@ -116,7 +116,47 @@ export class PropertyCleanupService {
     }
 
     const cleanedFrontmatter = cleanedLines.join("\n");
-    return content.replace(frontmatterRegex, `---\n${cleanedFrontmatter}\n---`);
+    // Issue #4528 (req `a00031b2-43cd-47fa-8486-4493e22f4386`) — the replacement
+    // is a FUNCTION, not a string, and that is load-bearing. As a string, JS
+    // interprets `$$`, `$&`, `` $` ``, `$'` and `$1`..`$99` inside it as special
+    // replacement patterns — and the string here is built from the FILE'S OWN
+    // frontmatter, so any such sequence in a surviving VALUE rewrote the file.
+    // A function's return value is inserted verbatim
+    // ([[string-replace-dollar-corruption]]).
+    //
+    // ⛔ Measured on `origin/main` `cbff7ef5` through this very service, bytes
+    // read back (`ems__Effort_result: <value>` plus one empty property):
+    //   `cost $& ref`   → the WHOLE matched block re-inserted inside the value:
+    //                     a duplicate `exo__Asset_label`, the empty key the
+    //                     repair had just removed RESURRECTED, a stray
+    //                     `--- ref` and two closing `---` (93 → 155 bytes)
+    //   `cost $1 ref`   → capture group 1 (the original frontmatter) inlined
+    //   `cost $100`     → ⛔ an ORDINARY money value: `$1` expands and `00` is
+    //                     appended, yielding `ems__Effort_area:00`
+    //   `cost $` + backtick → everything BEFORE the match (empty) — silently deleted
+    //   `cost $' ref`   → everything AFTER the match (the note BODY) swallowed
+    //   `cost $$100`    → silently becomes `cost $100`
+    //
+    // ⛤ `$1` DOES expand here, unlike the generic floor's warning that a `$1`
+    // fixture is vacuous: that holds for a pattern WITHOUT capture groups, and
+    // `frontmatterRegex` has one. Measured, not inherited. The axes therefore
+    // carry BOTH `$&` (survives a refactor that drops the group) and `$100`
+    // (the realistic carrier: 169 live assets across the three canonical vaults
+    // hold a frontmatter value with a corrupting `$`-form, 2026-10-03).
+    //
+    // ⛔ This is the REPAIR path (`apply clean-properties`, the sanctioned cure
+    // for the empty-value class — founder decision #4274 / req `5d2c7ede`), i.e.
+    // the one path whose entire job is to leave every surviving value
+    // byte-identical. The cure corrupted what it was meant to preserve.
+    //
+    // ⛤ A splice-by-index would also work and is not needed: the regex is
+    // `^`-anchored and non-global, so there is exactly one match and it starts
+    // at index 0 — the only hazard was `$`-interpretation, which the function
+    // replacer removes entirely, at a one-token diff.
+    return content.replace(
+      frontmatterRegex,
+      () => `---\n${cleanedFrontmatter}\n---`,
+    );
   }
 
   /**

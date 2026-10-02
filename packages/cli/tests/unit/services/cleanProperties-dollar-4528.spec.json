@@ -1,0 +1,41 @@
+{
+  "_doc": "Revert-verify mutants for req a00031b2-43cd-47fa-8486-4493e22f4386 (issue #4528) — `PropertyCleanupService.removeEmptyPropertiesFromContent` must not hand a data-bearing string to String.replace. ⛔ One mutant PER `.replace` site, as the issue mandates: M1 is the fixed site (the frontmatter block rewrite), M2 is the other site in the same method (the list-item prefix strip, whose replacement is a constant and therefore NOT data-bearing — the mutant proves the axes notice if it starts behaving otherwise). M3 is the control on the repair logic itself, so the byte-identity axes cannot pass by the repair having become a no-op. The axes live in packages/cli because the product path to this service (createCleanPropertiesService → apply clean-properties) is in packages/services, which no workflow jest-runs; packages/cli/jest.config.js maps BOTH @kitelev/exocortex-core and @kitelev/exocortex-services to package SOURCE, so the mutation is seen. Set `tree`/`subject` to YOUR checkout before running.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/PropertyCleanupService.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/cli/jest.config.js packages/cli/tests/unit/services/cleanProperties-dollar-4528.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_string_replacement_restored": {
+      "_note": "THE defect, restored verbatim: the replacement goes back to being a STRING built from the file's own frontmatter, so JS reads `$&`, `$`-backtick, `$'`, `$$` and `$1`..`$99` inside a surviving value as replacement patterns. Reddens every byte-identity axis (P1-P5) and the structural one; the controls that carry no `$` (P6 repair completeness, P7 populated list, P8 untouched asset) stay GREEN — which is what makes P1-P5 non-vacuous rather than a side effect of the repair breaking.",
+      "from": "      () => `---\\n${cleanedFrontmatter}\\n---`,\n",
+      "to": "      `---\\n${cleanedFrontmatter}\\n---`,\n",
+      "expect": ["P1", "P2", "P3", "P4", "P5"]
+    },
+    "M2_list_item_strip_keeps_prefix": {
+      "_note": "The OTHER `.replace` site of the same method (`item.replace(/^\\s+- /, \"\")`), mandated by the issue as its own mutant. Its replacement is a CONSTANT, so it is not part of the $-class — but it decides whether a list item counts as empty. Substituting `\"$&\"` keeps the `- ` prefix, so an all-empty list stops looking empty and survives the repair: P6 (every empty form removed) reddens, while the populated-list control P7 stays green.",
+      "from": "              const itemValue = item.replace(/^\\s+- /, \"\").trim();\n",
+      "to": "              const itemValue = item.replace(/^\\s+- /, \"$&\").trim();\n",
+      "expect": ["P6"]
+    },
+    "M3_repair_disabled": {
+      "_note": "Control on the repair itself: stop removing empty scalar properties. Reddens every axis that asserts the empty key is GONE (P1, P2, P3, P6, P7) and leaves the pure byte-identity ones (P4, P5) and the no-op asset (P8) green. Without this mutant, P1/P3 could be satisfied by a repair that silently stopped working.",
+      "from": "        if (this.isEmptyValue(value)) {\n",
+      "to": "        if (false && this.isEmptyValue(value)) {\n",
+      "expect": ["P1", "P2", "P3", "P6", "P7"]
+    },
+    "M4_assembly_adds_blank_line": {
+      "_note": "Exists because folding the first three mutants into sets left P8 — the control saying an asset with nothing empty comes out byte-identical — reddened by NOTHING (integration-test-revert-verify §A130: the axis exists, the mutant for it does not; an unproven control manufactures confidence). Appending one newline to the assembled frontmatter keeps every LINE present, so the containment axes P1/P3/P4 and the regexp controls P6/P7 stay green, and only the byte-identity axis notices.",
+      "from": "    const cleanedFrontmatter = cleanedLines.join(\"\\n\");\n",
+      "to": "    const cleanedFrontmatter = cleanedLines.join(\"\\n\") + \"\\n\";\n",
+      "expect": ["P8"]
+    }
+  }
+}
