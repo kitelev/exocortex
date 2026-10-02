@@ -282,9 +282,33 @@ jobs:
       - name: Setup Node & install deps
         uses: ./.github/actions/setup-node-pnpm
 
-      - name: Lint
+      # Issue #4497 — this step REPLACES a `npm run lint` that carried
+      # `continue-on-error: true`, and the flag is the load-bearing half of that
+      # issue. It was added 2025-10-02 by fa5251f8, whose subject is "fix(ci):
+      # allow lint WARNINGS to not fail CI" — but a step with that flag cannot
+      # fail its job at all, so the required check `lint` was green at ANY number
+      # of eslint ERRORS. Measured on main@204898e1, right before this change:
+      # `npm run lint` exited 1 with 206 problems (56 errors) and `lint` was green.
+      #
+      # The flag was never needed for its stated purpose either: eslint exits 0
+      # when only warnings are present and 1 when any error is (verified both ways
+      # on this tree). So for a year it suppressed nothing it was asked to and
+      # everything it was not. ⛔ Widening the path list while it stood would have
+      # shipped a measurer with no consequence — a gate with no red outcome.
+      #
+      # The guard therefore replaces that step rather than joining it: it is the
+      # only eslint step in this job and it has NO continue-on-error. It derives
+      # its scope (every packages/*/src the eslint TS project can judge — five
+      # packages, not the one the old script named) and ratchets a baseline of
+      # (file, rule) pairs, so the 115 pre-existing errors stay frozen while a NEW
+      # one reddens. Warnings are reported and not gated, which is what fa5251f8
+      # actually asked for. Measured 14.0 s locally vs 9.7 s for the single-package
+      # step it replaces; this job measured 71 s on main@88a8c4e0 against the
+      # 2-minute budget. It needs no workspace build (type-aware linting resolves
+      # the workspace through tsconfig `paths` to src, not dist — verified with
+      # core/services dist absent), so it stays first and fails fast.
+      - name: Lint ratchet (eslint debt, every lintable packages/*/src)
         run: npm run lint
-        continue-on-error: true
 
       # D1 CI Path 2 (task e0f6e6fd): guard against shard-assignment drift.
       # Playwright shard configs are hand-maintained lists; this step fails

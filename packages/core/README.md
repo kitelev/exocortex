@@ -99,7 +99,7 @@ const removed = fm.removeProperty(updated, "ems__Effort_status");
 ```bash
 npm run build    # tsc → dist/
 npm test         # jest
-npm run lint     # eslint src --ext .ts
+# lint: from the repo root — `npm run lint` (ratchet) / `npm run lint:report` (#4497)
 ```
 
 ## License

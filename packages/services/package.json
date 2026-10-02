@@ -17,7 +17,6 @@
   "scripts": {
     "build": "tsc",
     "test": "jest",
-    "lint": "eslint src --ext .ts",
     "clean": "rm -rf dist"
   },
   "keywords": [
