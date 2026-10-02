@@ -115,13 +115,13 @@ async function write(value: unknown, key = KEY): Promise<FsStub> {
 }
 
 describe("createUpdatePropertyService — value serialisation (#4520)", () => {
-  it("W1 a value carrying ` #` round-trips through js-yaml byte for byte", async () => {
+  it("W1 @req:61e3441e-08e2-483b-8ffc-385f2cd2ac69 a value carrying ` #` round-trips through js-yaml byte for byte", async () => {
     // Pre-fix: `ems__Effort_result: PR #42 merged` → js-yaml returns "PR".
     const fs = await write("PR #42 merged");
     expect(loadBack(fs.writes[0].content, KEY)).toBe("PR #42 merged");
   });
 
-  it("W2 a value carrying `: ` keeps the whole frontmatter BLOCK parseable", async () => {
+  it("W2 @req:61e3441e-08e2-483b-8ffc-385f2cd2ac69 a value carrying `: ` keeps the whole frontmatter BLOCK parseable", async () => {
     // Pre-fix this is not truncation but total loss: js-yaml throws on the
     // block ("bad indentation of a mapping entry"), so EVERY key of the asset
     // disappears from every reader, not just this one.
@@ -135,14 +135,14 @@ describe("createUpdatePropertyService — value serialisation (#4520)", () => {
     expect(parsed["exo__Asset_label"]).toBe("Existing");
   });
 
-  it("W3 a value opening with a YAML indicator round-trips (`- item`, `? maybe`, `*ref`, `&anchor`)", async () => {
+  it("W3 @req:61e3441e-08e2-483b-8ffc-385f2cd2ac69 a value opening with a YAML indicator round-trips (`- item`, `? maybe`, `*ref`, `&anchor`)", async () => {
     for (const v of ["- item", "? maybe", "*ref", "&anchor"]) {
       const fs = await write(v);
       expect(loadBack(fs.writes[0].content, KEY)).toBe(v);
     }
   });
 
-  it("W4 leading / trailing / only-whitespace values round-trip instead of being trimmed to null", async () => {
+  it("W4 @req:61e3441e-08e2-483b-8ffc-385f2cd2ac69 leading / trailing / only-whitespace values round-trip instead of being trimmed to null", async () => {
     // Pre-fix: ` indented` came back "indented", `done ` came back "done" and
     // `" "` came back NULL — a junk key that looks like a cleared property,
     // which is what the #4513 guard on this same factory refuses for `""`.
@@ -152,12 +152,12 @@ describe("createUpdatePropertyService — value serialisation (#4520)", () => {
     }
   });
 
-  it("W5 a multi-line value round-trips as one string", async () => {
+  it("W5 @req:61e3441e-08e2-483b-8ffc-385f2cd2ac69 a multi-line value round-trips as one string", async () => {
     const fs = await write("line1\nline2");
     expect(loadBack(fs.writes[0].content, KEY)).toBe("line1\nline2");
   });
 
-  it("W6 the live-corpus shapes are written BYTE-IDENTICALLY to the pre-fix revision", async () => {
+  it("W6 @req:61e3441e-08e2-483b-8ffc-385f2cd2ac69 the live-corpus shapes are written BYTE-IDENTICALLY to the pre-fix revision", async () => {
     // The control group, and the reason the authored corpus changes by zero
     // bytes: all six live groundings that reach this factory pin a
     // timestamp / date property. These expectations are the LITERAL lines the
@@ -177,7 +177,7 @@ describe("createUpdatePropertyService — value serialisation (#4520)", () => {
     }
   });
 
-  it("W7 a NON-STRING value is untouched: an array is still a multi-line YAML list", async () => {
+  it("W7 @req:61e3441e-08e2-483b-8ffc-385f2cd2ac69 a NON-STRING value is untouched: an array is still a multi-line YAML list", async () => {
     // ⛔ The `typeof value === "string"` guard is what makes this true.
     // `serializeYamlScalar` returns `String(value)` for a non-string, so
     // serialising unconditionally collapses the list to `prop: a,b` — measured
@@ -192,12 +192,12 @@ describe("createUpdatePropertyService — value serialisation (#4520)", () => {
     ]);
   });
 
-  it("W8 a number and a boolean keep their native YAML type", async () => {
+  it("W8 @req:61e3441e-08e2-483b-8ffc-385f2cd2ac69 a number and a boolean keep their native YAML type", async () => {
     expect((await write(42)).writes[0].content).toContain(`\n${KEY}: 42\n`);
     expect((await write(true)).writes[0].content).toContain(`\n${KEY}: true\n`);
   });
 
-  it("W9 a BARE wikilink is REFUSED, and nothing is read or written", async () => {
+  it("W9 @req:61e3441e-08e2-483b-8ffc-385f2cd2ac69 a BARE wikilink is REFUSED, and nothing is read or written", async () => {
     // Parity with req 29e0d1b6 on the `property_set` path, through the SAME
     // predicate (`isUnquotedWikilink`, now shared from core). The refusal must
     // precede the serialisation: `serializeYamlScalar` quotes `[[uid]]` on its
@@ -214,7 +214,7 @@ describe("createUpdatePropertyService — value serialisation (#4520)", () => {
     expect(fs.reads).toHaveLength(0);
   });
 
-  it("W10 the refusal names the property and the quoted form to use instead", async () => {
+  it("W10 @req:61e3441e-08e2-483b-8ffc-385f2cd2ac69 the refusal names the property and the quoted form to use instead", async () => {
     const fs = makeFsStub({ [TARGET]: FM });
     await expect(
       makeService(fs).execute("any-iri", {
@@ -224,7 +224,7 @@ describe("createUpdatePropertyService — value serialisation (#4520)", () => {
     ).rejects.toThrow(/ems__Effort_result[\s\S]*QUOTED form/);
   });
 
-  it("W11 control — a wikilink embedded in PROSE is a string either way and passes", async () => {
+  it("W11 @req:61e3441e-08e2-483b-8ffc-385f2cd2ac69 control — a wikilink embedded in PROSE is a string either way and passes", async () => {
     // Scope of the predicate: only an ENTIRELY bracketed value is
     // flow-sequence-shaped. This one carries no silent-literal risk.
     const fs = await write("see [[7b9b3116]] for details");
@@ -233,7 +233,7 @@ describe("createUpdatePropertyService — value serialisation (#4520)", () => {
     );
   });
 
-  it("W12 control — the setStatus twin is NOT double-serialised", async () => {
+  it("W12 @req:61e3441e-08e2-483b-8ffc-385f2cd2ac69 control — the setStatus twin is NOT double-serialised", async () => {
     // `createSetStatusService` builds `"[[<uid>]]"` itself — a complete
     // double-quoted scalar, i.e. the engine's own output. This axis pins that
     // #4520 did not widen to it (the issue names `:672` as out of scope).
