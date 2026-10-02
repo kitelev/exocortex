@@ -284,11 +284,20 @@ export { FrontmatterService } from "./utilities/FrontmatterService";
 // value from a caller refuses the same shape: the property_set step in
 // GroundingExecutor and the service_call updateProperty factory in
 // packages/services (req 61e3441e, issue #4520).
+// isEmptyPropertyValue / emptyPropertyValueForm — the ONE "does this value
+// write a key that looks like a CLEARED property?" predicate (req
+// 5d2c7ede-b053-4dac-a667-7c4f5e4b22da, issue #4516). Exposed for the two
+// writers it can reach: `cli set-property` and the service_call updateProperty
+// factory in packages/services. The property_set / property_append groundings
+// do NOT use it — their value is string-typed, so its list/null branches are
+// unreachable there.
 export {
   quoteYamlString,
   serializeYamlScalar,
   scalarTypingForRange,
   isUnquotedWikilink,
+  isEmptyPropertyValue,
+  emptyPropertyValueForm,
   type DeclaredRangeTyping,
   STRING_SCALAR_PROPERTIES,
 } from "./utilities/yamlScalar";
