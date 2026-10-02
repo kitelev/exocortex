@@ -1,0 +1,47 @@
+{
+  "_doc": "Revert-verify for the visual-regression gate (issue #4506): the required `test-component` job must be able to red on a visual regression. Axes V1-V7 live in visual-regression-gate.test.ts; the subject is `.github/workflows/ci.yml` itself, read through a YAML parser. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout. Recorded runs: see the PR body. ⛔ V4/V5 (committed Linux baselines) have NO mutant here and that is a third legitimate outcome, not an omission: their subject is the PRESENCE OF FILES on disk, and this driver mutates the TEXT of one subject — a text edit of ci.yml cannot unmake a PNG (harness-invocation-surface §A138). Their flip was predicated manually on a copy of the tree (`mv` the two `*-snapshots` directories aside → V4 and V5 red; restore → green; recorded in the PR body), and their predicates additionally run against in-test fixtures inside V7's positive control. V7 likewise has no mutant here, for the same structural reason: its subject is the PREDICATES, exercised over literal historical shapes inside the test file, not the content of ci.yml. An earlier draft also asserted the shipped step inside V7, which made it red under every mutant — non-addressed, so a red set no longer identified which property broke (§A43); that half was removed and lives in V1/V2/V3 where it belongs.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/.github/workflows/ci.yml",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true node ./node_modules/jest/bin/jest.js --config packages/obsidian-plugin/jest.config.js packages/obsidian-plugin/tests/unit/build/visual-regression-gate.test.ts --coverageThreshold='{}' --verbose 2>&1",
+  "red_re": "› (V\\d+\\w*) ",
+  "mutants": {
+    "M1_reinstate_continue_on_error": {
+      "_why": "The defect the issue names: the step carries the flag again, so its exit 1 never reaches the job verdict. This is the exact shape measured green-over-red on main@1bc3ee46 and the 11 merges before it.",
+      "from": "          npx playwright test -c packages/obsidian-plugin/playwright-ct.config.ts --grep visual\n",
+      "to": "          npx playwright test -c packages/obsidian-plugin/playwright-ct.config.ts --grep visual\n        continue-on-error: true\n",
+      "expect": ["V1"]
+    },
+    "M2_reinstate_pipeline_keyed_probe": {
+      "_why": "Restores the snapshot probe whose condition is keyed on a PIPELINE's exit status (`ls … | head -1`). A pipeline exits with its LAST command's status, so `head` pinned the condition false and the baseline-generating branch was dead code — the mechanism that hid the missing baselines. V2 is the only axis for it; V1/V3 stay green because this mutant adds neither the flag nor `|| true`.",
+      "from": "          npx playwright test -c packages/obsidian-plugin/playwright-ct.config.ts --grep visual\n",
+      "to": "          if ! ls packages/obsidian-plugin/tests/component/__snapshots__/**/*-linux.png 2>/dev/null | head -1; then\n            echo \"Linux snapshots not found\"\n            npx playwright test -c packages/obsidian-plugin/playwright-ct.config.ts --grep visual --update-snapshots\n          else\n            npx playwright test -c packages/obsidian-plugin/playwright-ct.config.ts --grep visual\n          fi\n",
+      "expect": ["V2"]
+    },
+    "M3_reinstate_shell_swallow": {
+      "_why": "The OTHER swallowing layer: `|| true` inside the script. `continue-on-error` and `|| true` discard the same exit code at different levels, so an axis on the YAML key alone would leave this half open — V3 is what makes the pair complete.",
+      "from": "          npx playwright test -c packages/obsidian-plugin/playwright-ct.config.ts --grep visual\n",
+      "to": "          npx playwright test -c packages/obsidian-plugin/playwright-ct.config.ts --grep visual || true\n",
+      "expect": ["V3"]
+    },
+    "M4_rename_the_job": {
+      "_why": "Kills the INPUT of the scan rather than the property it judges: with no `test-component` key the step list is empty, so V1/V2/V3 become VACUOUSLY green. V6 is the canary that must red on exactly this. If V6 ever stops reding here, every other axis is unfalsifiable (self-satisfying-metric-weak-verifier §A58).",
+      "from": "  test-component:\n",
+      "to": "  test-component-renamed-by-mutant:\n",
+      "expect": ["V6"]
+    },
+    "M5_document_continue_on_error_false": {
+      "_why": "The subtle reintroduction: someone 'documents' the decision as `continue-on-error: false`. Semantically that is the default and harmless, but it reinstates the SHAPE — and the next edit flips the value, not the structure. V1 therefore judges the key's PRESENCE, and this mutant is what pins that choice; a value-reading predicate (`=== true`) would pass here.",
+      "from": "          npx playwright test -c packages/obsidian-plugin/playwright-ct.config.ts --grep visual\n",
+      "to": "          npx playwright test -c packages/obsidian-plugin/playwright-ct.config.ts --grep visual\n        continue-on-error: false\n",
+      "expect": ["V1"]
+    }
+  }
+}
