@@ -8,6 +8,10 @@ const EPISODE_UID = "51ffac65-5043-4863-b16e-c974ec4a5ef0"; // life__Episode
 const LABEL_PROP_UID = "12a6151b-801f-4be2-bd6e-a787eedd56ae"; // exo__Asset_label
 const START_PROP_UID = "bf82fb62-d3cb-449d-8518-4a22ed96558d"; // life__Episode_start
 const END_PROP_UID = "f797730f-0898-47e8-a2c1-eb968dd9dc9f"; // life__Episode_end
+const START_TS_PROP_UID = "19915a87-3e5a-4e6b-81c9-32a860e5f83d"; // life__Episode_startTimestamp
+const END_TS_PROP_UID = "6f6ea686-dfdd-4391-971c-d4c0ccaac7e1"; // life__Episode_endTimestamp
+/** The format the LIVE parts e910fa27 / e8ded318 carry in exoas-public/life. */
+const TS_FORMAT = "DD.MM.YYYY HH:mm";
 const SPEC_CLASS = "07eab746-0874-4676-9d98-dbaad1bc6fb8"; // exo__DisplayNameSpec
 const LITERAL_CLASS = "4d5437c9-788e-4a6d-9be0-4af3a84554f4"; // exo__PrintedLiteral
 const PROPERTY_CLASS = "7d58de40-d941-4a66-88e2-13afc4fdc41d"; // exo__PrintedProperty
@@ -74,6 +78,27 @@ function episodeVault(): { service: PrintNameRuleService; resolver: DisplayNameR
     exo__PrintedProperty_property: `[[${END_PROP_UID}|life__Episode_end]]`,
   });
 
+  // --- the two SHIPPED timestamp parts (orders 4 and 5, live as e910fa27 / e8ded318). The live
+  // period spec carries FIVE parts, so the fixture carries five: an episode authored with the
+  // day pair leaves 4-5 empty and they collapse with their separator, which is why every axis
+  // written before the timestamp properties existed still asserts the same string (req 0fc2c853).
+  addFile("base-start-ts.md", {
+    exo__Asset_uid: "base-start-ts",
+    exo__Instance_class: [`[[${PROPERTY_CLASS}|exo__PrintedProperty]]`],
+    exo__DisplayNamePart_of: `[[${BASE_SPEC}]]`,
+    exo__DisplayNamePart_order: 4,
+    exo__PrintedProperty_property: `[[${START_TS_PROP_UID}|life__Episode_startTimestamp]]`,
+    exo__PrintedProperty_format: TS_FORMAT,
+  });
+  addFile("base-end-ts.md", {
+    exo__Asset_uid: "base-end-ts",
+    exo__Instance_class: [`[[${PROPERTY_CLASS}|exo__PrintedProperty]]`],
+    exo__DisplayNamePart_of: `[[${BASE_SPEC}]]`,
+    exo__DisplayNamePart_order: 5,
+    exo__PrintedProperty_property: `[[${END_TS_PROP_UID}|life__Episode_endTimestamp]]`,
+    exo__PrintedProperty_format: TS_FORMAT,
+  });
+
   // --- 📍 ongoing spec: participates only while isEpisodeOngoing(metadata) is true
   addFile(`${ONGOING_SPEC}.md`, {
     exo__Asset_uid: ONGOING_SPEC,
@@ -121,6 +146,18 @@ function episodeMeta(
   };
   if (opts.start != null) m.life__Episode_start = opts.start;
   if (opts.end != null) m.life__Episode_end = opts.end;
+  return m;
+}
+
+function instantEpisodeMeta(
+  opts: { startTs?: unknown; endTs?: unknown; label?: string } = {},
+): Record<string, unknown> {
+  const m: Record<string, unknown> = {
+    exo__Instance_class: [`[[${EPISODE_UID}]]`],
+    exo__Asset_label: opts.label ?? "Перелёт",
+  };
+  if (opts.startTs != null) m.life__Episode_startTimestamp = opts.startTs;
+  if (opts.endTs != null) m.life__Episode_endTimestamp = opts.endTs;
   return m;
 }
 
@@ -327,6 +364,101 @@ describe("PrintNameRuleService — 📍 ongoing life__Episode via the isEpisodeO
     });
     expect(rendered).toBe("Ship the release");
     expect(rendered).not.toContain("📍");
+  });
+});
+
+/**
+ * The INSTANT-bounded half (req 0fc2c853). Production-shape and deliberately NOT a predicate
+ * unit test: the deliverable is the COMPOSITION of the two live specs — the 📍 literal of
+ * `fd33cc03` (priority 200) prefixed onto the period line of `b836acf7` (priority 100), whose
+ * parts 4 and 5 print the very same two properties the predicate reads. A test that called the
+ * predicate directly could not see that the marker and the printed time come from one reading;
+ * the value-form matrix lives in `core/tests/domain/display-name/episodeOngoingInstantBounds`.
+ *
+ * Clock: LOCAL 2026-08-04T00:27 in the simulated UTC+5 zone (the same instant the suite above
+ * fixes), so an interval EARLIER today (00:00–00:10) and one LATER today (01:00–02:00) both fit
+ * inside the same calendar day — the only shape that separates the interval reading from the
+ * day-truncating one.
+ */
+describe("PrintNameRuleService — 📍 ongoing life__Episode via INSTANT bounds [req 0fc2c853]", () => {
+  let restoreDate: () => void;
+
+  beforeEach(() => {
+    restoreDate = installFakeOffsetDate(OFFSET_HOURS, FIXED_INSTANT);
+    expect(new Date().getDate()).toBe(4); // guard: LOCAL day
+    expect(new Date().getUTCDate()).toBe(3); // guard: UTC day differs
+    expect(new Date().getHours()).toBe(0);
+    expect(new Date().getMinutes()).toBe(27);
+  });
+
+  afterEach(() => restoreDate());
+
+  it("[C1] @req:0fc2c853-b292-45e7-aa85-cf9091bd3032 an interval CONTAINING now composes 📍 ahead of the period line, and the line prints the TIME", () => {
+    const { resolver } = episodeVault();
+    const rendered = resolver.resolve({
+      metadata: instantEpisodeMeta({
+        startTs: "2026-08-04T00:00:00",
+        endTs: "2026-08-04T01:00:00",
+      }),
+      basename: "instant-ongoing",
+    });
+    // EMPTY classTemplates: the vault specs alone drive both the marker and the line, and the
+    // time comes from the SHIPPED `DD.MM.YYYY HH:mm` format rather than from any TS default.
+    expect(rendered).toBe("📍 Перелёт · 04.08.2026 00:00 · 04.08.2026 01:00");
+  });
+
+  it("[C2] @req:0fc2c853-b292-45e7-aa85-cf9091bd3032 an interval EARLIER TODAY loses the 📍 while still printing its time — the user-visible delta", () => {
+    const { resolver } = episodeVault();
+    const rendered = resolver.resolve({
+      metadata: instantEpisodeMeta({
+        startTs: "2026-08-04T00:00:00",
+        endTs: "2026-08-04T00:10:00",
+      }),
+      basename: "instant-finished",
+    });
+    // Under the day-truncating reading both bounds are "2026-08-04" = today, so 📍 would burn
+    // for the whole day. The period line is unchanged either way, which is what makes the
+    // marker the only difference.
+    expect(rendered).toBe("Перелёт · 04.08.2026 00:00 · 04.08.2026 00:10");
+    expect(rendered).not.toContain("📍");
+  });
+
+  it("[C3] @req:0fc2c853-b292-45e7-aa85-cf9091bd3032 an interval LATER TODAY carries no 📍 either", () => {
+    const { resolver } = episodeVault();
+    const rendered = resolver.resolve({
+      metadata: instantEpisodeMeta({
+        startTs: "2026-08-04T01:00:00",
+        endTs: "2026-08-04T02:00:00",
+      }),
+      basename: "instant-upcoming",
+    });
+    expect(rendered).toBe("Перелёт · 04.08.2026 01:00 · 04.08.2026 02:00");
+  });
+
+  it("[C4] @req:0fc2c853-b292-45e7-aa85-cf9091bd3032 the live OPEN shape — a Date-valued startTimestamp with no end keeps its 📍", () => {
+    // `818179d5` ("Заклинило шею") is this shape, and an unquoted YAML timestamp reaches the
+    // plugin as a Date (measured 2026-10-03, js-yaml 5.4.2 / YAML11_SCHEMA).
+    const { resolver } = episodeVault();
+    const rendered = resolver.resolve({
+      metadata: instantEpisodeMeta({
+        startTs: new Date("2026-08-04T00:00:00Z"),
+        label: "Заклинило шею",
+      }),
+      basename: "instant-open",
+    });
+    expect(rendered).toBe("📍 Заклинило шею · 04.08.2026 00:00");
+  });
+
+  it("[C5] @req:0fc2c853-b292-45e7-aa85-cf9091bd3032 a DAY-bounded episode in the SAME vault is untouched — negative control for the instant branch", () => {
+    // The fixture now carries all five printed parts, exactly as the live period spec does. A
+    // day-authored episode must still render the pre-timestamp string: parts 4-5 collapse with
+    // their separator, and the verdict still comes from the day key.
+    const { resolver } = episodeVault();
+    const rendered = resolver.resolve({
+      metadata: episodeMeta({ start: "2026-08-01", end: "2026-08-10" }),
+      basename: "day-bounded-control",
+    });
+    expect(rendered).toBe("📍 Отпуск · 2026-08-01 · 2026-08-10");
   });
 });
 
