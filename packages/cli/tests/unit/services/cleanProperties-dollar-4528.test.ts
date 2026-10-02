@@ -32,8 +32,16 @@ import { createCleanPropertiesService } from "@kitelev/exocortex-services";
  * true in general, FALSE here: `frontmatterRegex` is
  * `/^---\n([\s\S]*?)\n---/` and has one group, measured rather than inherited.
  * `$&` stays the primary axis (it survives a refactor that drops the group);
- * `$100` is the realistic one — 169 live assets across the three canonical
- * vaults carry a frontmatter value with a corrupting `$`-form (2026-10-03).
+ * `$100` is the realistic one — 79 live assets across the three canonical vaults
+ * carry a frontmatter value with a form that actually corrupts (2026-10-03).
+ *
+ * ⛔ WHICH FORMS CORRUPT IS A MEASUREMENT, NOT A READING: pushing every token
+ * through this exact regex shows `$$`, `$&`, `` $` ``, `$'`, `$01` and `$1` with
+ * any trailing digits corrupt, while `$0` and `$2`..`$9` are INERT — with ONE
+ * capture group, groups 2..9 do not exist, so JS leaves them literal (`cost $2
+ * 500` comes out byte-identical). The first revision of these axes said "169",
+ * counting every `$`+digit bucket — a predicate WIDER than "corrupts", inflating
+ * the figure 2.1×. P4 therefore carries only forms proven to corrupt.
  *
  * ⛔ WHY THESE AXES LIVE IN `packages/cli`. The subject is in `packages/core`,
  * but the path the product reaches it through (`createCleanPropertiesService` →
@@ -135,7 +143,7 @@ describe("cleanEmptyProperties — surviving values stay byte-identical (#4528)"
       "cost $' ref",
       "cost $$100",
       "cost $1 ref",
-      "a $0 $9 $99 mix",
+      "a $01 $10 $1000 mix",
     ]) {
       const after = await repair(assetWith(value));
       expect(after.split("\n")).toContain(`ems__Effort_result: ${value}`);

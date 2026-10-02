@@ -141,8 +141,21 @@ export class PropertyCleanupService {
     // fixture is vacuous: that holds for a pattern WITHOUT capture groups, and
     // `frontmatterRegex` has one. Measured, not inherited. The axes therefore
     // carry BOTH `$&` (survives a refactor that drops the group) and `$100`
-    // (the realistic carrier: 169 live assets across the three canonical vaults
-    // hold a frontmatter value with a corrupting `$`-form, 2026-10-03).
+    // (the realistic carrier: 79 live assets across the three canonical vaults
+    // hold a frontmatter value with a form that actually corrupts, 2026-10-03).
+    //
+    // ⛔ ONLY THESE FORMS CORRUPT, and the list is from EXECUTION — every token
+    // was pushed through this exact regex: `$$`, `$&`, `` $` ``, `$'`, `$01`, and
+    // `$1` with any digits after it (`$10`, `$12`, `$100`, `$1000`). ⛔ `$0` and
+    // `$2`..`$9` are INERT — with ONE capture group, group 2..9 does not exist,
+    // so JS leaves the token literal and `cost $2 500` comes out byte-identical.
+    // An earlier revision of this comment (and of commit 45d32a2c) said "169",
+    // counting every `$`+digit bucket; that predicate was WIDER than "corrupts"
+    // and inflated the figure 2.1×. The corrected sweep is deduped by
+    // assetspace-relative path: 16 (vault-my) + 16 (vault-tbank) + 79
+    // (vault-exodev), the first 16 being the same shared assetspace mounted
+    // twice ⇒ 79 distinct. Hits by form: `$$` 147 · `$1` 44 · `` $` `` 8 ·
+    // `$&` 6 · `$'` 4.
     //
     // ⛔ This is the REPAIR path (`apply clean-properties`, the sanctioned cure
     // for the empty-value class — founder decision #4274 / req `5d2c7ede`), i.e.
