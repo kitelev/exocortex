@@ -17,52 +17,38 @@
     "ME1_port_not_stored": {
       "from": "    this.declaredRanges = options?.declaredRanges;",
       "to": "    this.declaredRanges = undefined;",
-      "expect": [
-        "K8",
-        "K9",
-        "K12"
-      ],
-      "_note": "Drops the wiring entirely: every typing axis falls back to the shape rule. K10/K11 (controls) and K13/K14 (verbatim) must stay green — they assert the pre-ticket shape, which is what this mutant restores. ⛤ K12 was ABSENT from the measured red set on the first run, and that was a real finding about the AXIS, not about this mutant: K12 then asserted a canonical integer under xsd:integer, and property_set writes an untyped value VERBATIM, so both outcomes were the bare `-1003912427125`. The axis was green for an independent reason. K12 now uses xsd:string / `42`, where bare and quoted differ."
+      "expect": ["K8", "K9", "K12", "K18"],
+      "_note": "Drops the wiring entirely: every typing axis falls back to the shape rule. K10/K11 (controls) and K13/K14 (verbatim) must stay green — they assert the pre-ticket shape, which is what this mutant restores. ⛤ K18 was added to `expect` on 2026-10-02 (issue #4518) only AFTER reading why it reddens, not to silence the driver (§A44): ticket afb25c43 introduced K18 — the ARRAY emission point — AFTER these expectations were measured, and with the port unwired the array items fall back to the same shape rule as the scalar, so each canonical negative integer is quoted on its leading `-`. K19 is K18's port-absent control and asserts exactly that quoted form, so it stays green. ⛤ K20 (added here) also stays green: with `this.declaredRanges` undefined the property_set gate is never entered and the value is written verbatim, which for `true` is the same bare `true` the fixed code emits — the same 'green for an independent reason' shape K12 had on the first run. ⛤ K12 was ABSENT from the measured red set on the first run, and that was a real finding about the AXIS, not about this mutant: K12 then asserted a canonical integer under xsd:integer, and property_set writes an untyped value VERBATIM, so both outcomes were the bare `-1003912427125`. The axis was green for an independent reason. K12 now uses xsd:string / `42`, where bare and quoted differ."
     },
     "ME2_create_instance_does_not_read_the_port": {
       "from": "    const declaredRanges = this.declaredRanges\n      ? await this.declaredRanges(Object.keys(properties))\n      : undefined;",
       "to": "    const declaredRanges = this.declaredRanges\n      ? new Map<string, readonly string[]>()\n      : undefined;",
-      "expect": [
-        "K8",
-        "K9"
-      ],
-      "_note": "Type-PRESERVING (§A36): the port is still consulted for PRESENCE, so `declaredRanges` keeps its `ReadonlyMap | undefined` type and the lookup below still type-checks — it just never asks the port for anything. The first form assigned a bare `undefined`, which narrowed the variable to `undefined` and broke `.get` at the call site (TS2339 → BROKEN, no verdict)."
+      "expect": ["K8", "K9", "K18"],
+      "_note": "⛤ K18 added to `expect` 2026-10-02 (issue #4518) with its reason read first, not dictated by the driver (§A44): this mutant kills the create_instance READ, and K18 — introduced later by ticket afb25c43 — IS a create_instance axis (the array emission point), so an empty map makes every item fall back to the shape rule and be quoted. K12 stays green because property_set keeps its own read, and K20 (property_set) likewise. Type-PRESERVING (§A36): the port is still consulted for PRESENCE, so `declaredRanges` keeps its `ReadonlyMap | undefined` type and the lookup below still type-checks — it just never asks the port for anything. The first form assigned a bare `undefined`, which narrowed the variable to `undefined` and broke `.get` at the call site (TS2339 → BROKEN, no verdict)."
     },
     "ME2b_create_instance_lookup_ignores_the_key": {
       "from": "        : (suppliedKey) => declaredRanges.get(suppliedKey),",
       "to": "        : (_suppliedKey) => undefined,",
-      "expect": [
-        "K8",
-        "K9"
-      ],
-      "_note": "The threading is present but yields nothing: separates 'the port is read' (ME2) from 'its answer reaches the serializer'."
+      "expect": ["K8", "K9", "K18"],
+      "_note": "The threading is present but yields nothing: separates 'the port is read' (ME2) from 'its answer reaches the serializer'. ⛤ K18 added to `expect` 2026-10-02 (issue #4518) for the same measured reason as ME2 — the lookup this mutant blinds is the create_instance one, and K18 is a create_instance axis added later by ticket afb25c43; its items lose their declared range and are quoted by the shape rule. K12/K20 (property_set) stay green."
     },
     "ME3_typing_gate_removed_untyped_values_routed_through_the_serializer": {
       "from": "      scalarTypingForRange(declaredRange) !== undefined\n        ? serializeYamlScalar(\n            substitutedValue,\n            isStringScalarProperty,\n            declaredRange,\n          )\n        : isStringScalarProperty\n          ? serializeYamlScalar(substitutedValue, true)\n          : substitutedValue;",
       "to": "      true\n        ? serializeYamlScalar(\n            substitutedValue,\n            isStringScalarProperty,\n            declaredRange,\n          )\n        : isStringScalarProperty\n          ? serializeYamlScalar(substitutedValue, true)\n          : substitutedValue;",
-      "expect": [
-        "K13"
-      ],
+      "expect": ["K13"],
       "_note": "⛤ The gate's own mutant. With the gate gone, a deliberate flow array [\"[[ems__Task]]\"] is quoted on its leading `[` (needsYamlQuoting's YAML_LEADING_INDICATORS) and multi-class convert breaks — K13 is the axis that says so. K14's pre-quoted wikilink survives because serializeYamlScalar passes a complete double-quoted scalar through verbatim, so it stays green; that asymmetry is measured, not predicted."
     },
     "ME4_property_set_does_not_read_the_port": {
       "from": "    const declaredRange = this.declaredRanges\n      ? (await this.declaredRanges([rangeLookupKey])).get(rangeLookupKey)\n      : undefined;",
       "to": "    const declaredRange: readonly string[] | undefined = undefined;",
-      "expect": [
-        "K12"
-      ],
+      "expect": ["K12"],
       "_note": "property_set side only; the create_instance axes keep their own read. ⛤ Also read zero on the first run for the same reason as ME1 — see its note; the rewritten K12 is what makes this read load-bearing."
     },
     "ME5_string_scalar_flag_forced_on_under_a_declared_range": {
       "from": "        ? serializeYamlScalar(\n            substitutedValue,\n            isStringScalarProperty,\n            declaredRange,\n          )",
       "to": "        ? serializeYamlScalar(substitutedValue, true, declaredRange)",
-      "expect": [],
-      "_note": "⛔ NO DISTINGUISHING INPUT on this axis set, and that is stated rather than papered over (§A35): under a numeric declared range the declaration wins over the string-semantic flag inside needsYamlQuoting (the integer branch returns before the quoteAmbiguousScalars check), so passing `true` changes nothing for K12. It would matter only for a property that is BOTH in STRING_SCALAR_PROPERTIES and carries a numeric range — exo__Asset_label / aliases with an xsd:integer range, of which the three vaults hold none (that combination is nonsense by construction). The argument is threaded faithfully anyway so the two sites of this executor agree."
+      "expect": ["K20"],
+      "_note": "⛔ THIS MUTANT'S PREVIOUS `expect: []` WAS WRONG, and the correction is shown rather than silently applied (issue #4518). The retracted claim read: «NO DISTINGUISHING INPUT on this axis set … it would matter only for a property that is BOTH in STRING_SCALAR_PROPERTIES and carries a numeric range». It is inverted: forcing the flag to `true` is a literal no-op for a property that IS in STRING_SCALAR_PROPERTIES (there `isStringScalarProperty` is already `true`), so the mutation can only differ where the property is NOT in the set. ⛤ MEASURED on this tree 2026-10-02 (serializeYamlScalar(value, false|true, range), 12 inputs): `true`/`false` under xsd:string → bare vs quoted; `010` / `1_000` / `0x1F` / `08` / `12345678901234567890` under xsd:integer → bare vs quoted; `yes` under xsd:boolean → bare vs quoted. Only the CANONICAL lexical forms (`42`, `-1003912427125`, `1.5`) are indistinguishable, because for those the numeric branch returns before the quoteAmbiguousScalars check — which is the part of the retracted claim that was true, and the part that made the false conclusion look measured. ⇒ the mutation is faithful and load-bearing; what was missing was an AXIS (integration-test-revert-verify §A130), so K20 was added rather than this mutant repointed or removed (the issue's outcome 2 as literally worded). K20 pins `true` under an xsd:string range on a property outside STRING_SCALAR_PROPERTIES staying BARE — the carve-out `!CANONICAL_YAML_BOOLEAN` in needsYamlQuoting, with 233 live carriers in `exoas-flow` (measured 2026-09-19, yamlScalar.ts), so the input is production-real, not invented for the mutant."
     }
   }
 }
