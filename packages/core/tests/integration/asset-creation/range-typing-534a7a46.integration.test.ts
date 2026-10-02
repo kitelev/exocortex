@@ -355,6 +355,36 @@ describe("create_instance / property_set type a scalar by the declared range (ti
     );
   });
 
+  it(`K20 property_set leaves a canonical lowercase BOOLEAN bare under an xsd:string range — K12's paired control on the same path @req:${REQ}`, async () => {
+    const exec = executorWith(
+      fs,
+      rangesOf({ flow__Stage_flag: ["xsd:string"] }),
+    );
+    const result = await exec.execute(
+      propertySetGrounding("flow__Stage_flag", "true"),
+      TARGET_IRI,
+      TARGET_PATH,
+    );
+    expect(result.success).toBe(true);
+    // ⛤ The axis ME5 needed. It was MISSING, not unwritable
+    // (integration-test-revert-verify §A130): `flow__Stage_flag` is NOT in
+    // STRING_SCALAR_PROPERTIES, so the executor passes
+    // `isStringScalarProperty === false`, `needsYamlQuoting` reaches the
+    // xsd:string arm, and that arm's `!CANONICAL_YAML_BOOLEAN` carve-out leaves
+    // `true` BARE (233 live bare lowercase booleans under xsd:string in
+    // `exoas-flow`, measured 2026-09-19 — see the `declaredRange` JSDoc in
+    // yamlScalar.ts). Force that second argument to `true` (ME5) and the
+    // string-semantic branch fires FIRST and quotes it.
+    //
+    // Paired with K12 — same path, same range, differing ONLY in the VALUE:
+    // `42` IS quoted there. The pair states what the xsd:string rule actually
+    // promises (quote a number-shaped value, leave a canonical boolean alone)
+    // instead of hooking ME5 alone.
+    expect(
+      lineOf(fs.getContent(TARGET_PATH) as string, "flow__Stage_flag"),
+    ).toBe("flow__Stage_flag: true");
+  });
+
   it(`K13 property_set leaves a deliberate FLOW ARRAY verbatim when no range types the property — the gate's axis @req:${REQ}`, async () => {
     const exec = executorWith(
       fs,

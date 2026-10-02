@@ -23,9 +23,24 @@ export default defineConfig({
   // Run tests in parallel
   fullyParallel: true,
 
-  // Skip visual tests in CI until Linux snapshots are generated
-  // Visual tests require platform-specific snapshots due to rendering differences
-  testIgnore: process.env.CI ? ["**/visual/**"] : [],
+  // Issue #4512 — there is deliberately NO `testIgnore` here.
+  //
+  // It used to carry `testIgnore: process.env.CI ? ["**/visual/**"] : []`, which dropped the
+  // `tests/component/visual/` SUBDIRECTORY from CI: 3 specs, 40 tests, measured as zero
+  // occurrences of that path in the job log. The pattern matches a path SEGMENT, so the
+  // top-level `tests/component/*.visual.spec.tsx` were never affected — two filters, two
+  // different subjects (#4506 was the verdict half, this was the input half).
+  //
+  // Its own stated condition was "until Linux snapshots are generated". That is now
+  // satisfied for every executing visual spec: #4510 committed the top-level baselines,
+  // this change committed the rest. So the hedge is removed WITH the filter rather than
+  // left standing — a hedge that outlives its subject makes every later reader pay a probe
+  // (migration-pre-verify-use-case §A6).
+  //
+  // ⛔ Reinstating any `testIgnore` that excludes `visual/` is guarded by
+  // `tests/unit/build/visual-testignore-gate.test.ts`, which reads THIS file through the
+  // TypeScript parser — a line-anchored grep would miss a key authored on a continuation
+  // line and return a false verdict.
 
   // Fail CI if you accidentally left test.only
   forbidOnly: !!process.env.CI,

@@ -1,0 +1,41 @@
+{
+  "_doc": "Revert-verify mutants for issue #4429 (branch fix/4429-empty-resolution-append) — `property_append` and `property_set` refuse a value expression that RESOLVES to an empty string. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). The harness runs the new axes TOGETHER with the pre-existing GroundingExecutor suites (property_append — which carries NAMED axes U1/U4-U9 captured by the same red_re — plus the general suite and property_replace), so a guard that was too broad shows up as a RED CONTROL rather than passing unnoticed. The two guards have DIFFERENT predicates on purpose (append keys on the DECODED item, set on the RAW substituted value) and therefore get one mutant each; M3/M4 pin that both predicates are STRICT `=== \"\"` rather than `trim()`.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/GroundingExecutor.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/services/GroundingExecutor.empty-resolution-4429.test.ts tests/unit/services/GroundingExecutor.property_append.test.ts tests/unit/services/GroundingExecutor.test.ts tests/unit/services/GroundingExecutor.property_replace.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_append_empty_resolution_guard_removed": {
+      "_note": "#4429 primary item. Removes the refusal on an appendExpression that RESOLVED to an empty string (the `=== undefined` guard above it catches only an ABSENT expression). Predicted E1 E2 — both halves redden together BY CONSTRUCTION: an input provided as \"\" and an explicitly quoted-empty `\"\"` decode to the SAME empty item, which is exactly why one check covers both. E3 stays green and is the LOAD-BEARING control: it proves the refusal keys on the empty EXPRESSION, not on the list containing an empty element — otherwise a guard reading `existing` would pass E1/E2 while breaking the ordinary append. E7 also stays green (whitespace is a different item, not an empty one).",
+      "from": "    if (plain === \"\") {\n",
+      "to": "    if (false) {\n",
+      "expect": ["E1", "E2"]
+    },
+    "M2_set_empty_resolution_guard_removed": {
+      "_note": "#4429 secondary item — the one the issue left as an open DECISION. Removes the refusal on a property_set value that RESOLVED to an empty string, restoring the silent blanking. Predicted E4 E5: a substitution fed by a blank named input (the missing-input gate counts \"\" as PROVIDED) and a literal empty value are the two ways the resolved value reaches the writer empty. E6 stays green — the predicate is strict, so a whitespace-only value is untouched by this mutant in either direction.",
+      "from": "    if (substitutedValue === \"\") {\n",
+      "to": "    if (false) {\n",
+      "expect": ["E4", "E5"]
+    },
+    "M3_set_guard_widened_to_trim": {
+      "_note": "The TOO-BROAD half of the same guard: widening the strict `=== \"\"` into `trim() === \"\"` — the shape that symmetry-with-the-sibling would suggest and that req 501cdf2c's measurement forbids (0 carriers of `key: \"\"` but 15 of `key: \" \"` across 34 327 files / 331 263 keys, 2026-08-23). Predicted E6 ALONE: the refusal axes E4/E5 pass either way (an empty string trims to itself), so only the whitespace control notices. That asymmetry is the point — it shows E6 is load-bearing and not decoration. ⛔ E6's fixture MUST pass the whitespace in RAW form on a string-scalar property: this guard reads the raw substituted value, so a QUOTED `'\" \"'` is three characters of which none is whitespace and this mutant is VACUOUS on it (measured 2026-10-02 — the first version of E6 used the quoted form and M3 reddened nothing). The append-side twin M4 does not share that constraint, because `executePropertyAppend` decodes BEFORE its predicate.",
+      "from": "    if (substitutedValue === \"\") {\n",
+      "to": "    if (substitutedValue.trim() === \"\") {\n",
+      "expect": ["E6"]
+    },
+    "M4_append_guard_widened_to_trim": {
+      "_note": "The same widening on the append side. Predicted E7 ALONE: this method's item identity IS the decoded string and the dedup compares those, so `\" \"` is a DIFFERENT item from `\"\"` and must still be appended; E1/E2 pass either way. Pins that the append predicate is strict for a MECHANICAL reason (item identity), not by copying the set guard.",
+      "from": "    if (plain === \"\") {\n",
+      "to": "    if (plain.trim() === \"\") {\n",
+      "expect": ["E7"]
+    }
+  }
+}

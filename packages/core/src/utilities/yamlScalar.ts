@@ -583,3 +583,40 @@ export function serializeYamlScalar(
     ? quoteYamlString(value)
     : value;
 }
+
+/**
+ * req 29e0d1b6 — is this about-to-be-written frontmatter value a BARE (unquoted)
+ * wikilink?
+ *
+ * `[[uid]]` written without surrounding quotes is a YAML flow SEQUENCE, not a
+ * string, so the RDF converter emits a literal and the reference is lost. The
+ * quoted form (`"[[uid]]"`, quotes part of the value) is the correct shape and
+ * is deliberately NOT matched here.
+ *
+ * Scope: the value must be ENTIRELY bracketed (after trimming) — so `[[a]]`, but
+ * also `[[a]] and [[b]]` / `[[a]]\n[[b]]`, which are just as flow-sequence-shaped
+ * and just as lossy; refusing them is intended. A wikilink embedded in
+ * surrounding prose (`see [[a]] for details`) is a string either way, carries no
+ * silent-literal risk, and passes.
+ *
+ * ⛤ Live `targetValueSubstitution` groundings DO carry a wikilink literally
+ * (`"[[8bc0c038-…]]"` → the `$nowLocal` token; 5 occurrences in the pinned
+ * exocmd assetspace). They never reach this guard in that shape because
+ * `CommandResolver` dereferences the wikilink to the target's label first, so
+ * the executor sees `$nowLocal`. That safety is a property of the RESOLVER, not
+ * of the data: were that dereference to stop, those groundings would start
+ * failing here — loudly, which is the correct failure, but the coupling is worth
+ * knowing.
+ *
+ * ⛤ Shared by the TWO writers of a frontmatter key that take their value from
+ * a caller: `GroundingExecutor.executePropertySet` (req 29e0d1b6) and the
+ * `service_call updateProperty` factory in `packages/services` (req 61e3441e,
+ * issue #4520). It lives here, with the sibling shape predicates, rather than
+ * private to either of them: a second COPY of a safety predicate is how two
+ * writers of one key come to disagree about a value.
+ */
+export function isUnquotedWikilink(value: string): boolean {
+  // `[\s\S]` rather than `.` + the `s` flag: the root tsconfig targets ES6 and
+  // the dotAll flag is ES2018+ (`TS1501` in CI typecheck).
+  return /^\[\[[\s\S]*\]\]$/.test(value.trim());
+}

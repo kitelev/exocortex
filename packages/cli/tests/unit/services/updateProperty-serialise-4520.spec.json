@@ -1,0 +1,39 @@
+{
+  "_doc": "Revert-verify mutants for issue #4520 / req 61e3441e (branch fix-4520-serialise-updateproperty) — `createUpdatePropertyService` (the `service_call` grounding `updateProperty`) SERIALISES a string value through `serializeYamlScalar` before handing it to `FrontmatterService.updateProperty`, and refuses an UNQUOTED wikilink strictly BEFORE serialising. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). ⛔ The SUBJECT lives in `packages/services/src`, the AXES in `packages/cli/tests` — on purpose: no workflow runs jest for `packages/services` (`test-ci-batched.sh` drives exactly three configs — obsidian-plugin, cli, core), so axes placed beside the subject would sit outside every gate. `packages/cli/jest.config.js` is run whole by the required `test-coverage-cli` and maps BOTH `@kitelev/exocortex-services` and `@kitelev/exocortex-core` to package SOURCE, so the mutated copy is what the axes exercise. The harness drives the new axes TOGETHER with the three pre-existing cli suites that import the same package — one of them (`CliServiceRegistryPopulator`) mocks core with a MANUAL ESM factory and therefore fails at LINK TIME if the subject imports a core export the factory does not name, which is a red control for exactly this change. ⛤ MEASURED MATRIX (this tree, control 0 red / rc=0): M1 [W1 W2 W3 W4 W5] · M2 [W7] · M3 [W9 W10] · M4 [W6 W11]. ⛔ TWO AXES ARE REDDENED BY NO MUTANT OF THIS DIFF, and that is named rather than left to look like coverage: W8 (a number / boolean keeps its native YAML type) is green under M2 BY ARITHMETIC — `serializeYamlScalar(42)` is the string \"42\", which `serializeValue` then emits bare, so the two designs are indistinguishable on that input; W12 (the `setStatus` twin) restates a PRE-EXISTING contract, like the V3/V5/V6 controls of the #4513 spec next door. A 'serialise setStatus too' mutant was measured and NOT shipped: `serializeYamlScalar` passes a COMPLETE double-quoted scalar through verbatim, so double-serialising `\"[[<uid>]]\"` is a no-op and such a mutant could not redden W12. ⛤ That measurement also corrects the mechanism the issue gives for excluding `:672` ('a second serializer would spoil it'): for the shape this factory builds it would not. The exclusion stands on the other ground — a second writer on the engine's own output — and the no-op is a property of the CURRENT shape, not a guarantee: were the factory to build a BARE uid, the serializer would quote it on its leading `[` and the safety would be accidental. W12 pins the shape. ⛔ `tree` / `subject` ARE THE PLACEHOLDER ON PURPOSE, and it is a CI gate, not a convention: `scripts/check-spec-anchors.mjs` (step «Guard mutant-driver spec anchors» of the required `lint` job) resolves `subject` and reports a machine-absolute path as a DEAD anchor — `unresolvable: /Users/…` — because that path does not exist in the runner's checkout. ⛤ The local sweep (`~/.claude/bin/spec-anchor-sweep.py`) CANNOT see this class by construction: on the authoring machine the path resolves, so the predicate is satisfied by the environment rather than by the artefact (harness-invocation-surface). 242 of the 243 committed specs carry this placeholder; the one that did not was this file, measured 2026-10-02. To run the matrix, substitute both fields into a COPY and drive that.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/services/src/grounding-service-factories.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/cli/jest.config.js tests/unit/services/updateProperty-serialise-4520.test.ts tests/unit/services/updateProperty-empty-value-4513.test.ts tests/unit/services/CliServiceRegistryPopulator.test.ts tests/unit/services/instantiate-prototype-subtree.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_serialisation_removed": {
+      "_note": "The primary item of #4520: the value goes to `updateProperty` verbatim again, as it did before this change. Type-preserving (`const valueToWrite = value;` keeps the same `unknown` type) rather than `if (false)`, so a compile failure cannot be mistaken for a vacuous axis (ITRV §A36/§A97). The byte-identity axes W6/W8 and the refusal axes W9/W10 MUST stay green: they describe what this change leaves alone, and a mutant that reddens them would mean the serialisation is doing more than it claims.",
+      "from": "      const valueToWrite =\n        typeof value === \"string\" ? serializeYamlScalar(value) : value;\n",
+      "to": "      const valueToWrite = value;\n",
+      "expect": ["W1", "W2", "W3", "W4", "W5"]
+    },
+    "M2_string_guard_dropped": {
+      "_note": "Serialise UNCONDITIONALLY — the naive form, and the one measured wrong before the guard was written: `serializeYamlScalar` returns `String(value)` for a non-string, so a two-item array value collapses from a multi-line YAML list to the single line `prop: a,b`. W8 stays green BY ARITHMETIC, not by luck: `serializeYamlScalar(42)` is the string `\"42\"`, which `serializeValue` then emits bare — byte-identical. So this mutant is addressable to the array axis alone.",
+      "from": "      const valueToWrite =\n        typeof value === \"string\" ? serializeYamlScalar(value) : value;\n",
+      "to": "      const valueToWrite = serializeYamlScalar(value);\n",
+      "expect": ["W7"]
+    },
+    "M3_guard_reads_the_serialised_value": {
+      "_note": "THE ORDER, which req 992f0a75 states is part of the requirement and not a preference. Feeding the guard the SERIALISED value is semantically identical to serialising first: `serializeYamlScalar` quotes a bare `[[uid]]` on its leading `[`, so `isUnquotedWikilink` never matches again and the loud refusal becomes a silent successful write. Expressed as one argument rather than as a statement reorder so the mutation has exactly ONE anchor and changes nothing else. ⛔ A separate 'guard removed entirely' mutant is NOT shipped: it would produce the SAME red set by construction (both let the write succeed), and two mutants with one red set prove one conjunct, not two (ITRV §A110).",
+      "from": "if (typeof value === \"string\" && isUnquotedWikilink(value)) {",
+      "to": "if (typeof value === \"string\" && isUnquotedWikilink(serializeYamlScalar(value))) {",
+      "expect": ["W9", "W10"]
+    },
+    "M4_guard_widened_to_substring": {
+      "_note": "The TOO-BROAD half of the same guard: `includes(\"[[\")` instead of the shape-exact predicate. It refuses a wikilink embedded in prose (a string either way, no silent-literal risk — W11) and the already-correct pre-quoted form (W6's fourth case), which is why the predicate is anchored on the WHOLE trimmed value. Keeps the `typeof` conjunct so the mutation stays type-preserving.",
+      "from": "if (typeof value === \"string\" && isUnquotedWikilink(value)) {",
+      "to": "if (typeof value === \"string\" && value.includes(\"[[\")) {",
+      "expect": ["W6", "W11"]
+    }
+  }
+}
