@@ -1112,16 +1112,16 @@ export class GroundingExecutor {
     // command refused while THIS path — the one both the plugin button and `cli
     // apply` take — accepted (UI/CLI parity, #3417).
     //
-    // ⛔ But the parity defect is closed 2 OF 3, NOT fully — saying otherwise here
-    // would be a claim the next reader takes as established. Writers of this key
-    // were enumerated (review of this PR, 2026-10-02), and the THIRD is still
-    // open: `createUpdatePropertyService` in
-    // `packages/services/src/grounding-service-factories.ts` guards only
-    // `value === undefined`, i.e. exactly this class — and it has a LIVE authored
-    // carrier, `exoas-exocmd/exocmd/c4616dcd-…` ("Set result value",
-    // `serviceId: updateProperty`, property pinned to `ems__Effort_result`, value
-    // taken from user input), so a blank field there still writes
-    // `ems__Effort_result: ""`. Filed separately rather than widened into this PR.
+    // ⛤ The parity defect is now closed 3 OF 3 (#4513, 2026-10-02). The writers
+    // of this key were enumerated during the review of PR #4511 and the third
+    // one — `createUpdatePropertyService` in
+    // `packages/services/src/grounding-service-factories.ts`, which guarded only
+    // `value === undefined` — carries the same strict `=== ""` refusal since
+    // then. ⛔ Its axes do NOT live next to it: `packages/services` is built but
+    // never jest-run by CI (and its one suite does not even execute on `main`),
+    // so they sit in `packages/cli/tests/unit/services/`, which
+    // `test-coverage-cli` gates. Count the writers again before widening this
+    // claim — "3 of 3" is a measurement, not an invariant.
     //
     // ⛔ The predicate is STRICT (`=== ""`), NOT `trim() === ""`, and that is the
     // measured half: req 501cdf2c's sweep of all three canonical vaults (34 327

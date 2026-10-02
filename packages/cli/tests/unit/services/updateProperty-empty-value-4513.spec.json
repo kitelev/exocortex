@@ -1,0 +1,27 @@
+{
+  "_doc": "Revert-verify mutants for issue #4513 (branch fix/4513-updateproperty-empty-value) — `createUpdatePropertyService` (service_call `updateProperty`, the THIRD writer of a frontmatter key) refuses a value that IS the empty string. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). ⛔ The SUBJECT lives in `packages/services/src`, the AXES in `packages/cli/tests` — on purpose: CI builds `packages/services` and never jest-runs it (and its one suite does not even execute on origin/main@474e9dd5, `TS2339 YAML11_SCHEMA`), while `packages/cli/jest.config.js` is run whole by the required `test-coverage-cli` and maps `@kitelev/exocortex-services` to the package SOURCE, so the mutated copy is what the axes exercise. The harness runs the new axes TOGETHER with the two pre-existing cli suites that import the same package, so a guard that was too broad surfaces as a RED CONTROL instead of passing unnoticed.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/services/src/grounding-service-factories.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/exocortex/node_modules",
+    "packages/obsidian-plugin/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/cli/jest.config.js tests/unit/services/updateProperty-empty-value-4513.test.ts tests/unit/services/CliServiceRegistryPopulator.test.ts tests/unit/services/instantiate-prototype-subtree.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_empty_value_guard_removed": {
+      "_note": "#4513 primary item. Neutralises the refusal on a value that IS the empty string, restoring the junk write (`prop: \"\"` that looks like a cleared property). The mutation is TYPE-PRESERVING (same `value === <string literal>` shape, a sentinel that can never arrive) rather than `if (false)`, so a compile failure cannot be mistaken for a vacuous axis (ITRV §A36/§A97). Predicted V1 V2 — they redden together BY CONSTRUCTION: V1 pins that the refusal is TOTAL (nothing written) and V2 that the message is diagnosable; one guard carries both. V4 stays green and is the LOAD-BEARING control for the opposite direction — it proves the refusal keys on the empty string and not on whitespace. V3/V5/V6 stay green: they restate the pre-existing contract, which this mutant does not touch.",
+      "from": "      if (value === \"\") {\n",
+      "to": "      if (value === \"__4513_SENTINEL_NEVER_SUBMITTED__\") {\n",
+      "expect": ["V1", "V2"]
+    },
+    "M2_guard_widened_to_trim": {
+      "_note": "The TOO-BROAD half of the same guard: widening the strict `=== \"\"` into a trim() test — the shape that symmetry-with-the-siblings suggests and that req 501cdf2c's measurement forbids (0 carriers of `key: \"\"` but 15 of `key: \" \"` across 34 327 files / 331 263 keys, 2026-08-23: exo__PrintedLiteral_literal ×9, exo__DisplayNameSpec_separator ×6 — both free-text scalars reachable through this factory). Predicted V4 ALONE: the refusal axes V1/V2 pass either way (an empty string trims to itself), so only the whitespace control notices. That asymmetry is the point — it shows V4 is load-bearing and not decoration. ⛤ Unlike the `property_set` twin in #4511 (whose M3 was first vacuous on a QUOTED whitespace fixture), this predicate reads `userInput.value` DIRECTLY — no YAML scalar decoding sits between the form field and the guard — so V4's fixture is a raw one-character space and the widened predicate sees it.",
+      "from": "      if (value === \"\") {\n",
+      "to": "      if (typeof value === \"string\" && value.trim() === \"\") {\n",
+      "expect": ["V4"]
+    }
+  }
+}

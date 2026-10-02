@@ -548,6 +548,49 @@ export function createUpdatePropertyService(
           `updateProperty requires userInput.value — pass it via --input '{"value":"<value>"}' (e.g. set-planned-start: --input '{"value":"2026-07-25T09:00:00"}')`,
         );
       }
+      // Issue #4513 — the guard above rejects an ABSENT value and says nothing
+      // about one that IS the empty string. `""` passed, and
+      // `FrontmatterService.updateProperty` wrote it verbatim.
+      //
+      // ⛤ This is the THIRD writer of the same frontmatter key, and the
+      // refusal is PARITY WITH THE OTHER TWO rather than symmetry for its own
+      // sake: `cli set-property` refuses an empty value fail-loud
+      // (`assertNonEmptyValue`, req 501cdf2c) and so do the `property_set` /
+      // `property_append` groundings (#4429, PR #4511). `prop: ""` writes a
+      // junk key that LOOKS like a successful clear, and a consumer branching
+      // on "does the property exist" then sees it as present-with-an-empty-
+      // value. Clearing has its own path (the `removeProperty` service_call /
+      // the `remove-property` CLI verb), which the message names.
+      //
+      // ⛔ Not hypothetical: 8 authored groundings carry
+      // `exocmd__Grounding_serviceId: updateProperty` (measured across the
+      // three canonical vaults, 2026-10-02). Two of them (`abdbdf09` "Convert
+      // to task", `e8c1d18a` "Convert to project") never reach this factory —
+      // `GroundingExecutor.executeServiceCall` short-circuits them into the
+      // class-flip path. The remaining SIX pin the property in
+      // `serviceCallPayload` and take the value from user input
+      // (`ems__Effort_result`, `…_startTimestamp`, `…_endTimestamp`,
+      // `…_plannedStartTimestamp`, `…_plannedEndTimestamp`,
+      // `…_scheduledDate`), so a blank field wrote `prop: ""` on every one of
+      // them. There is no legitimate case in the refused set.
+      //
+      // ⛔ The predicate is STRICT (`=== ""`), NEVER `trim() === ""`, and that
+      // half is MEASURED: req 501cdf2c's sweep of all three canonical vaults
+      // (34 327 files / 331 263 keys, 2026-08-23) found **0** carriers of
+      // `key: ""` but **15** of `key: " "` — `exo__PrintedLiteral_literal` (9)
+      // and `exo__DisplayNameSpec_separator` (6). Both are free-text scalars
+      // reachable through this factory, so a trimming predicate would make
+      // them unwritable. The boundary is named rather than the guard widened.
+      //
+      // ⛤ `null` is deliberately NOT refused here. It is a different class
+      // (a typed null, not "the user submitted nothing"), it has no measured
+      // carrier either way, and widening on a hunch is exactly what the
+      // measurement above exists to prevent.
+      if (value === "") {
+        throw new Error(
+          `updateProperty: the value for ${property} is an empty string — refusing rather than writing a junk key that looks like a cleared property. To clear it, use the removeProperty service_call (or the remove-property CLI verb).`,
+        );
+      }
       const filePath = await pathResolver.resolveTargetPath(targetIRI);
       const content = await fsAdapter.readFile(filePath);
       const updated = frontmatterService.updateProperty(
