@@ -524,6 +524,69 @@ export interface IPathResolver {
 }
 
 /**
+ * Names the NON-SCALAR form of a `userInput.value`, or `undefined` when the
+ * value is writable as frontmatter: a scalar (`string` / `number` / `boolean`)
+ * or an array of scalars.
+ *
+ * Issue #4527, req `394389b1-fcf8-4af1-962f-fad2b943f0a1`. The form is used in
+ * the refusal message, which must name CORRUPTION — not clearing. Measured on
+ * `origin/main` `cbff7ef5` by feeding values through the real
+ * `createUpdatePropertyService` + real `FrontmatterService` and reading the
+ * bytes back:
+ *
+ * | `value`         | written                        | re-parsed            |
+ * |-----------------|--------------------------------|----------------------|
+ * | `{}`            | `key: [object Object]`         | `["object Object"]`  |
+ * | `{a:1}`         | `key: [object Object]`         | `["object Object"]`  |
+ * | `[{}]`          | `key:` + `  - [object Object]` | `["[object Object]"]`|
+ * | `["a",{}]`      | `  - a` + `  - [object Object]`| `["a","[object …]"]` |
+ * | `[[1]]`         | `  - 1`                        | `["1"]`              |
+ *
+ * ⛤ Three measured facts shape the predicate:
+ *  1. `{}` and `{a:1}` write the SAME line — the object's contents are not
+ *     serialised at all, they are lost.
+ *  2. `[object Object]` starts with `[`, so `FrontmatterService.parseObject`
+ *     reads it as a flow sequence: a scalar write comes back as an ARRAY.
+ *  3. ⛔ The class is WIDER than `[object Object]`: a nested array FLATTENS
+ *     (`String([1])` === `"1"`), silently and without that literal appearing
+ *     anywhere. ⇒ the predicate judges "scalar or array of scalars"; a
+ *     substring search for `[object Object]` would miss part of the class.
+ *
+ * ⛔ WHY THIS LIVES HERE AND NOT IN `yamlScalar.ts` next to
+ * `emptyPropertyValueForm`. The sibling writer `cli set-property` already
+ * refuses non-scalars through its OWN copy (`assertScalarOrScalarArray`) with a
+ * DIFFERENT message (`--input.value must be a scalar …`), a different surface
+ * (`--input.value` vs a grounding's `userInput`) and a different position in
+ * the chain (there it runs BEFORE the empty-value guard and owns the `null`
+ * message; here it runs AFTER it and `null` never reaches it). The only
+ * shareable part is the three-line `typeof` classification; everything that
+ * matters — wording, order, surface — diverges, and both messages are pinned
+ * by the controls of two active requirements (`501cdf2c`, `5d2c7ede`). A core
+ * export would therefore add a third owner of "what is a scalar" with no
+ * consumer needing the same predicate+message pair.
+ *
+ * ⛔ The `null` branch is UNREACHABLE on this path and kept deliberately:
+ * `emptyPropertyValueForm` runs FIRST and refuses `null` with its own, more
+ * specific wording about clearing. The branch exists so the predicate stays
+ * correct standalone — and the ORDER is pinned by a control axis, because
+ * swapping the two guards would answer a cleared property with a corruption
+ * message (req §Границы предиката).
+ */
+function nonScalarValueForm(value: unknown): string | undefined {
+  const isScalar = (v: unknown): boolean =>
+    typeof v === "string" || typeof v === "number" || typeof v === "boolean";
+  if (isScalar(value)) return undefined;
+  if (Array.isArray(value)) {
+    return value.every(isScalar)
+      ? undefined
+      : "an array with a non-scalar element";
+  }
+  if (value === null) return "null";
+  const kind = typeof value;
+  return kind === "object" ? "an object" : `a ${kind}`;
+}
+
+/**
  * Shared factory for the `updateProperty` `service_call` grounding.
  *
  * Reads the target file via `IFileSystemReader.readFile`, applies
@@ -645,6 +708,39 @@ export function createUpdatePropertyService(
       if (emptyForm !== undefined) {
         throw new Error(
           `updateProperty: the value for ${property} is ${emptyForm} — refusing rather than writing a junk key that looks like a cleared property. To clear it, use the removeProperty service_call (or the remove-property CLI verb).`,
+        );
+      }
+      // Issue #4527 (req `394389b1-fcf8-4af1-962f-fad2b943f0a1`) — the class
+      // the empty-value guard above EXPLICITLY scoped out (req `5d2c7ede`
+      // §Non-goals item 3: "`value: {}` on writer 3 — a different class, its
+      // own ticket"). The two predicates do not overlap and the two MESSAGES
+      // must not either: `prop: []` looks like a cleared property, while
+      // `prop: [object Object]` looks like CORRUPTION, and sending whoever hits
+      // it to `remove-property` would send them to diagnose the wrong form.
+      //
+      // ⛔ THE ORDER IS LOAD-BEARING. `emptyPropertyValueForm` runs FIRST so
+      // `null` (whose `typeof` is `"object"`) keeps the #4516 wording about
+      // clearing; swapping the two would answer a cleared property with a
+      // corruption message. A control axis pins exactly that.
+      //
+      // ⛔ And it sits with the other INPUT guards — before the path is
+      // resolved and before the file is read — so the refusal is TOTAL: a
+      // guard placed after the write would still "throw" and still satisfy a
+      // rejects-only assertion while the key was already corrupted on disk.
+      //
+      // ⛤ The input is reachable on the live surface, not hypothetical:
+      // `apply.ts` parses `--input` with `JSON.parse` and only requires the TOP
+      // LEVEL to be an object, so `apply <cmd> --input '{"value":{}}'` arrives
+      // here as `value = {}`; `UserInput.value` is `unknown`, so any
+      // programmatic caller (plugin, composite grounding) is unconstrained too.
+      // The 8 authored groundings with `serviceId: updateProperty` pin only
+      // `property` and take the value from user input (measured across the three
+      // canonical vaults, 2026-10-02, req `5d2c7ede`) — i.e. the value side is
+      // precisely what this factory does not control.
+      const nonScalarForm = nonScalarValueForm(value);
+      if (nonScalarForm !== undefined) {
+        throw new Error(
+          `updateProperty: the value for ${property} is ${nonScalarForm} — refusing rather than CORRUPTING the key. A non-scalar is stringified on the way out, so the file would carry the literal "[object Object]" (or a silently flattened list) and the data passed here would be gone. Pass a scalar (string/number/boolean) or an array of scalars.`,
         );
       }
       // Issue #4520 (req 61e3441e) — the sibling-writer half of the #4405 /
