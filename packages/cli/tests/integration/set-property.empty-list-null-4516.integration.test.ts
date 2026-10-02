@@ -23,9 +23,12 @@
  * hijacks `null` into the generic "empty value" wording.
  *
  * Revert-verify (~/dotfiles/.claude/rules/integration-test-revert-verify.md) —
- * the mutants live in `set-property.empty-list-null-4516.spec.json` (this
- * file's call site) and `yamlScalar-empty-property-value-4516.spec.json` (the
- * shared predicate; its mutants redden axes in BOTH suites of this req).
+ * the mutants live in TWO specs, both under `packages/cli/tests/integration/`
+ * and named here by repo-relative path on purpose (a bare basename is how a pointer to a spec goes dead unnoticed: check-spec-anchors.mjs parses the specs' `from` anchors, never their prose):
+ *   - `packages/cli/tests/integration/set-property-empty-list-null-4516.setproperty-wiring.spec.json`
+ *     — THIS file's call site (wiring).
+ *   - `packages/cli/tests/integration/set-property-empty-list-null-4516.predicate.spec.json`
+ *     — the shared predicate; its mutants redden axes in BOTH suites.
  * Expectations were taken by RUNNING the matrix, not predicted.
  */
 import {

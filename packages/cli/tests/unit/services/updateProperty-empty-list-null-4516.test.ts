@@ -35,9 +35,12 @@ import {
  * EXECUTION, not by reasoning, that the repair path (`apply clean-properties`)
  * is not broken by a write guard.
  *
- * Mutants: `updateProperty-empty-list-null-4516.spec.json` (this file's call
- * site) and `yamlScalar-empty-property-value-4516.spec.json` (the shared
- * predicate, which reddens axes in BOTH suites of this req).
+ * Mutants — TWO specs, both under `packages/cli/tests/integration/`, named by
+ * repo-relative path on purpose (a bare basename is how a pointer to a spec goes dead unnoticed: check-spec-anchors.mjs parses the specs' `from` anchors, never their prose):
+ *   - `packages/cli/tests/integration/set-property-empty-list-null-4516.updateproperty-wiring.spec.json`
+ *     — THIS file's call site (wiring).
+ *   - `packages/cli/tests/integration/set-property-empty-list-null-4516.predicate.spec.json`
+ *     — the shared predicate, which reddens axes in BOTH suites.
  */
 
 const REQ = "@req:5d2c7ede-b053-4dac-a667-7c4f5e4b22da";

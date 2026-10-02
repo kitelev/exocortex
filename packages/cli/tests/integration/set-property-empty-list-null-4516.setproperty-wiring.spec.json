@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for req 5d2c7ede-b053-4dac-a667-7c4f5e4b22da (issue #4516) — the WIRING of the shared predicate into `cli set-property`. The sibling spec `packages/core/src/utilities/yamlScalar-empty-property-value-4516.spec.json` mutates the predicate's SEMANTICS; this one answers the other question — is it actually ON the production path (ITRV §ПЯТАЯ механика: a guard whose call site is unreachable is identical to no guard, under a fully green suite). Set `tree`/`subject` to YOUR checkout before running.",
+  "_doc": "Revert-verify mutants for req 5d2c7ede-b053-4dac-a667-7c4f5e4b22da (issue #4516) — the WIRING of the shared predicate into `cli set-property`. The sibling spec `packages/cli/tests/integration/set-property-empty-list-null-4516.predicate.spec.json` mutates the predicate's SEMANTICS; this one answers the other question — is it actually ON the production path (ITRV §ПЯТАЯ механика: a guard whose call site is unreachable is identical to no guard, under a fully green suite). Set `tree`/`subject` to YOUR checkout before running.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/set-property.ts",
   "symlink_node_modules": [
