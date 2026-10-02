@@ -8,19 +8,35 @@ const DAY_KEY_LENGTH = 10;
 const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
+ * A wall-clock key, `YYYY-MM-DDTHH:mm:ss` — the 19-character generalisation of the day key
+ * (req 0fc2c853). Fixed-width zero-padded fields, so lexicographic comparison is exact
+ * chronological order, exactly as it is for the 10-character form.
+ *
+ * The separator accepts a space as well as `T`, and the seconds are optional, because that is
+ * what the SHIPPED RENDERER of the same two properties accepts
+ * (`DisplayNameTemplateEngine.applyValueFormat`). Keeping the two readings identical is what
+ * makes 📍 light at the time the user sees printed.
+ */
+const INSTANT_KEY_RE = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/;
+
+/**
  * The built-in display-matcher host functions (req 5cd9fffe), living in core so BOTH surfaces
  * run the same predicate.
  *
  * A host function is the escape hatch a `exo__DisplayNameSpec` reaches for when its condition
  * cannot be phrased as value-equality, because it looks OUTWARD: at another asset
  * (`isEffortBlocked` resolves `ems__Effort_blocker` and reads ITS status) or at an ambient
- * comparand (`isEpisodeOngoing` compares against TODAY, which no frontmatter carries).
+ * comparand (`isEpisodeOngoing` compares against NOW, which no frontmatter carries).
  *
  * ⛤ These lived in the plugin until req 5cd9fffe, which is why the CLI naming oracle
  * (`resolve-display-name`, req f17f7c57) silently skipped the 2 specs of 35 that name them —
  * the engine is fail-closed, so an unregistered name means the spec simply never participates.
  * Measured 2026-08-15: 83 assets carry the properties these two read (74 `ems__Effort_blocker`
- * + 9 `life__Episode_start`).
+ * + 9 `life__Episode_start`). Re-measured in `vault-my` 2026-10-03, after the class gained
+ * instant bounds: `life__Episode_start` 9, `_end` 8, `life__Episode_startTimestamp` **1**,
+ * `_endTimestamp` **0** — so the instant branch (req 0fc2c853) is exercised by one live asset
+ * and the acceptance case "📍 only inside the interval" cannot be shown on live data: no
+ * episode carries a full interval yet. That is a fact about the corpus, not a gap in the axes.
  *
  * ⛤ Moving them cost no new port surface: `isEffortBlocked`'s only two Obsidian calls were
  * `getFirstLinkpathDest` followed by `getFileCache(...)?.frontmatter`, and that composition IS
@@ -259,46 +275,181 @@ function toDayKey(value: unknown): string | null {
   }
   if (typeof raw !== "string") return null;
 
-  const cleaned = raw
-    .replace(/^\[\[|\]\]$/g, "")
-    .replace(/^"|"$/g, "")
-    .trim();
+  const cleaned = unwrapDateish(raw);
   const key = cleaned.slice(0, DAY_KEY_LENGTH);
   if (!DAY_KEY_RE.test(key)) return null;
   // The regex checks SHAPE only — "2026-13-45" and "2026-02-31" match it. Round-tripping
   // through Date.UTC rejects them, so "malformed → not ongoing" holds for quoted values too
   // (an unquoted typo never reaches here: YAML rolls it over into a Date).
   const [year, month, day] = key.split("-").map(Number);
-  const probe = new Date(Date.UTC(year, month - 1, day));
-  if (
-    probe.getUTCFullYear() !== year ||
-    probe.getUTCMonth() !== month - 1 ||
-    probe.getUTCDate() !== day
-  ) {
-    return null;
-  }
+  if (!isRealCalendarDay(year, month, day)) return null;
   return key;
 }
 
 /**
- * True iff the episode's period contains today, boundaries INCLUSIVE.
+ * Strip the frontmatter decoration a date-ish value may arrive wrapped in: brackets, quotes,
+ * surrounding whitespace. Shared by the day key and the wall-clock key so the two agree on what
+ * a value even IS before they disagree about its granularity.
  *
- * - `start` on or before today AND (`end` absent OR on or after today) → ongoing.
- * - An episode that has started and carries NO end counts as ongoing indefinitely. That is
- *   intended: the marker doubles as a "you forgot to close this" signal.
- * - Absent / malformed `start`, or a malformed `end`, → false (fail-closed). An asset that
- *   cannot be judged must not claim to be happening now.
+ * ⛔ Deliberately NOT shared with the seven other inline unwrap chains in the display-name path —
+ * see {@link unwrapWikilink}'s note: they strip in a different ORDER and replacing them would
+ * silently change matcher identity. That consolidation is issue #4056, not a tidy-up here.
+ */
+function unwrapDateish(raw: string): string {
+  return raw
+    .replace(/^\[\[|\]\]$/g, "")
+    .replace(/^"|"$/g, "")
+    .trim();
+}
+
+/**
+ * True iff `year-month-day` is a day that actually exists. Extracted from {@link toDayKey} so the
+ * wall-clock key rejects "2026-02-31T10:00:00" by the same rule rather than by a second copy of it
+ * — a second copy is only ever exercised by its own caller's tests, which is how the dual-IRI
+ * defect in this very file survived three readings.
+ */
+function isRealCalendarDay(year: number, month: number, day: number): boolean {
+  const probe = new Date(Date.UTC(year, month - 1, day));
+  return (
+    probe.getUTCFullYear() === year &&
+    probe.getUTCMonth() === month - 1 &&
+    probe.getUTCDate() === day
+  );
+}
+
+/**
+ * True iff a frontmatter value is ABSENT in the sense the episode predicate means: missing, null,
+ * an empty list, or whitespace. Extracted verbatim from the end-bound check below so the day pair
+ * and the instant pair answer "is this bound set?" identically.
+ */
+function isAbsentValue(raw: unknown): boolean {
+  return (
+    raw === undefined ||
+    raw === null ||
+    (Array.isArray(raw) && raw.length === 0) ||
+    String(raw).trim() === ""
+  );
+}
+
+/**
+ * Normalise a frontmatter timestamp to its `YYYY-MM-DDTHH:mm:ss` WALL-CLOCK key — the clock as
+ * WRITTEN in the file — or null when it is absent, empty or not a well-formed instant
+ * (req 0fc2c853).
  *
- * Day keys are `YYYY-MM-DD`, so lexicographic comparison is exact calendar order.
+ * ⛤ This reading is NOT a new convention: it is the one the already-shipped renderer of these two
+ * properties uses. `DisplayNameTemplateEngine.applyValueFormat` takes its components literally
+ * from the stored value — UTC getters for a `Date`, a regex over an ISO string — precisely because
+ * a zone-less YAML timestamp is parsed as UTC, so a `Date`'s UTC fields ARE the digits the author
+ * typed. Reading the predicate the same way makes the JUDGE agree with the DISPLAY: 📍 lights at
+ * the time printed beside it.
+ *
+ * ⚠ Measured 2026-10-03 (js-yaml 5.4.2 under `YAML11_SCHEMA`, the schema
+ * `FileSystemVaultAdapter` loads frontmatter with): an UNQUOTED `2026-08-10T07:00:00` arrives as a
+ * **Date**, not a string — a zone-less value is read as that instant in UTC. Only the QUOTED form
+ * stays a string. The task that commissioned this work recorded the opposite ("the `T` form
+ * arrives as a string"); that note described the quoted case. Both branches are therefore live and
+ * both are covered.
+ *
+ * ⛔ An explicit zone (`…Z`, `±HH:MM`) is IGNORED, in both branches and for the same reason: the
+ * renderer ignores it too, so honouring it here alone would light the marker at a time other than
+ * the one on screen. Latent today — the canonical writer
+ * (`DateFormatter.toLocalTimestamp`) emits no suffix and 1 of 1 live carriers is zone-less — and
+ * deliberately left to the standing single-source-of-TZ question, where the renderer and this
+ * predicate must move together.
+ *
+ * A DATE-ONLY value in a timestamp property reads as that day's midnight: the same reading the day
+ * key makes in reverse, and the only one that keeps an open episode's marker behaving as it does
+ * for a day-bounded one.
+ */
+function toWallClockKey(value: unknown): string | null {
+  let raw = value;
+  if (Array.isArray(raw)) {
+    if (raw.length === 0) return null;
+    raw = raw[0];
+  }
+
+  if (raw instanceof Date) {
+    if (Number.isNaN(raw.getTime())) return null;
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const day = `${String(raw.getUTCFullYear()).padStart(4, "0")}-${pad(raw.getUTCMonth() + 1)}-${pad(raw.getUTCDate())}`;
+    return `${day}T${pad(raw.getUTCHours())}:${pad(raw.getUTCMinutes())}:${pad(raw.getUTCSeconds())}`;
+  }
+  if (typeof raw !== "string") return null;
+
+  const cleaned = unwrapDateish(raw);
+  const match = INSTANT_KEY_RE.exec(cleaned);
+  if (match === null) {
+    // No time component at all → midnight of that day, if the day itself is well-formed.
+    const day = toDayKey(cleaned);
+    return day === null ? null : `${day}T00:00:00`;
+  }
+
+  const [, year, month, day, hours, minutes, seconds] = match;
+  if (!isRealCalendarDay(Number(year), Number(month), Number(day))) return null;
+  // The regex pins the WIDTH of each field, not its range: "25:61" matches it. A wall clock the
+  // calendar cannot name must fail closed rather than sort after every real "now".
+  if (Number(hours) > 23 || Number(minutes) > 59 || Number(seconds ?? "0") > 59) return null;
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds ?? "00"}`;
+}
+
+/**
+ * NOW as the same `YYYY-MM-DDTHH:mm:ss` wall-clock key, built from the LOCAL getters.
+ *
+ * Same local basis as {@link localToday} and the `$today` / `$nowLocal` date-token line: the
+ * comparand for "is this happening now" is the clock the user is reading, not UTC.
+ */
+function localNowKey(now: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${localToday(now)}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+
+/**
+ * True iff the episode's period contains NOW, boundaries INCLUSIVE.
+ *
+ * The class carries TWO period formats and they are mutually exclusive per episode (founder
+ * interview 2026-08-07, decision 2) — so which one is read is decided by the data, not by a
+ * setting:
+ *
+ * - **Instant bounds** (`life__Episode_startTimestamp` / `_endTimestamp`, req 0fc2c853) — judged
+ *   against the current wall clock to the second. A two-hour flight is therefore marked for two
+ *   hours, which is the whole point: under a day-truncating reading both of its bounds collapse to
+ *   today and 📍 burns from midnight to midnight.
+ * - **Day bounds** (`life__Episode_start` / `_end`, req 8a47ff93) — judged against TODAY, exactly
+ *   as before, INCLUDING a value that carries a time component, which still compares by its
+ *   calendar day. Day granularity is the right answer for most episodes and is not deprecated.
+ *
+ * Shared by both readings:
+ *
+ * - A bound that has started and carries NO end counts as ongoing indefinitely. That is intended:
+ *   the marker doubles as a "you forgot to close this" signal.
+ * - Absent / malformed start, or a malformed end, → false (fail-closed). An asset that cannot be
+ *   judged must not claim to be happening now.
+ * - Keys are fixed-width and zero-padded (`YYYY-MM-DD`, `YYYY-MM-DDTHH:mm:ss`), so lexicographic
+ *   comparison is exact chronological order.
+ *
+ * ⛔ A PRESENT but unreadable `life__Episode_startTimestamp` fails closed and does **not** fall
+ * back to the day pair. A junk instant must not be silently answered at a coarser granularity:
+ * that would turn "I cannot read this" into "it is happening", which is the one direction this
+ * predicate must never fail in.
+ *
+ * ⛔ The instant pair WINS over a co-present day pair. Unobservable in a conformant corpus (the
+ * two formats are exclusive), specified so a non-conformant asset gets a deterministic answer
+ * rather than one that depends on the order the properties happen to be read in — and never a
+ * MIXTURE of the two, which is what the exclusivity decision forbids.
  *
  * ⛤ Takes no {@link VaultMetadataPort}: unlike its sibling it resolves no other asset, reading
  * only the rendered instance's own period. It is a host function rather than a value-equality
- * matcher purely because the comparand — TODAY — is ambient.
+ * matcher purely because the comparand — NOW — is ambient.
  */
 export function isEpisodeOngoing(
   metadata: Record<string, unknown>,
   now: Date = new Date(),
 ): boolean {
+  const rawStartInstant = metadata.life__Episode_startTimestamp;
+  if (!isAbsentValue(rawStartInstant)) {
+    return isInstantPeriodOngoing(rawStartInstant, metadata.life__Episode_endTimestamp, now);
+  }
+
   const start = toDayKey(metadata.life__Episode_start);
   if (start === null) return false;
 
@@ -306,16 +457,31 @@ export function isEpisodeOngoing(
   if (start > today) return false;
 
   const rawEnd = metadata.life__Episode_end;
-  const endIsAbsent =
-    rawEnd === undefined ||
-    rawEnd === null ||
-    (Array.isArray(rawEnd) && rawEnd.length === 0) ||
-    String(rawEnd).trim() === "";
-  if (endIsAbsent) return true;
+  if (isAbsentValue(rawEnd)) return true;
 
   const end = toDayKey(rawEnd);
   if (end === null) return false;
   return end >= today;
+}
+
+/**
+ * The instant-bounded half of {@link isEpisodeOngoing}, structurally identical to the day-bounded
+ * half one granularity finer — same inclusivity, same open-end reading, same fail-closed
+ * direction. Split out rather than inlined so the two readings can be seen to be the same shape,
+ * and so neutralising one in a revert-verify leaves the other visibly untouched.
+ */
+function isInstantPeriodOngoing(rawStart: unknown, rawEnd: unknown, now: Date): boolean {
+  const start = toWallClockKey(rawStart);
+  if (start === null) return false;
+
+  const nowKey = localNowKey(now);
+  if (start > nowKey) return false;
+
+  if (isAbsentValue(rawEnd)) return true;
+
+  const end = toWallClockKey(rawEnd);
+  if (end === null) return false;
+  return end >= nowKey;
 }
 
 /**
