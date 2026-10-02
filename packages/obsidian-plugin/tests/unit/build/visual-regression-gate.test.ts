@@ -226,17 +226,17 @@ describe("test-component can red on a visual regression (#4506)", () => {
     expect(probesViaPipelineStatus(historicalRun)).toBe(true); // V2
     expect(swallowsExitInShell(historicalRun)).toBe(true); // V3
 
-    // The shipped step is the mirror image on all three.
-    const shipped = testComponentSteps.filter(runsVisualRegression)[0];
-    expect(carriesContinueOnError(shipped)).toBe(false);
-    expect(probesViaPipelineStatus(shipped.run as string)).toBe(false);
-    expect(swallowsExitInShell(shipped.run as string)).toBe(false);
+    // ⛔ Deliberately NOT asserting the shipped step here. That is V1/V2/V3's job, and
+    // duplicating it made this axis red under EVERY mutant — i.e. non-addressed, so a
+    // mutant's red set stopped identifying which property it broke
+    // (integration-test-revert-verify §A43). This axis judges the PREDICATES, over
+    // literals, and therefore has no mutant in the sibling spec by construction.
 
     // A `continue-on-error: false` must still be rejected by V1 — the axis judges the
     // key's PRESENCE, so a later "documented false" cannot reintroduce the shape.
-    expect(carriesContinueOnError({ run: "x", "continue-on-error": false })).toBe(
-      true,
-    );
+    expect(
+      carriesContinueOnError({ run: "x", "continue-on-error": false }),
+    ).toBe(true);
     // And V2 must not fire on a legitimate `||` (it is not a pipe).
     expect(probesViaPipelineStatus('if [ -n "$A" ] || [ -n "$B" ]; then')).toBe(
       false,
