@@ -26,12 +26,24 @@
  *       (locks `inheritedCreatedPath`, which A1 alone leaves free)
  *   A4  the created path is a VALUE source, orthogonal to the step's TARGET:
  *       the second create_instance still writes its own new file
+ *   A10 the FIFTH signature: a `workflow_transition` step's postAction, loaded
+ *       and executed by `executeWorkflowTransition`, also sees what an earlier
+ *       step created (issue #4521 — this level shipped with PR #4344 but was
+ *       locked by nothing, so its mutant M12 could only declare a zero)
  */
 
 import {
   GroundingExecutor,
   ServiceRegistry,
+  type WorkflowResolverPort,
+  type GroundingLoaderPort,
 } from "../../../src/services/GroundingExecutor";
+import { AssetClass } from "../../../src/domain/constants/AssetClass";
+import { EffortStatus } from "../../../src/domain/constants/EffortStatus";
+import type {
+  WorkflowDefinition,
+  WorkflowTransitionDefinition,
+} from "../../../src/domain/models/WorkflowDefinition";
 import {
   clearResolvers,
   getResolver,
@@ -97,6 +109,17 @@ const TARGET_MARKER = `__SUBSTITUTE__target__${TOKEN_UID}__`;
 
 /** The property that receives the reference to the previously-created asset. */
 const LINK_PROPERTY = "ims__Verification_subject";
+
+/**
+ * A10 only — the `workflow_transition` dispatcher reads the click-target's class
+ * and current status from frontmatter before it can resolve a transition, so its
+ * click-target needs both (the other axes never reach that dispatcher).
+ */
+const TASK_UID = "1b20a8f0-d745-4e93-91db-4531b3df120e";
+const DOING_UID = "027e78f4-6e16-4b36-b8fb-5510507d5745";
+const DONE_UID = "7b9b3116-7c3c-438c-9618-94fe301320a6";
+const WF_CLICK_TARGET_SEED = `---\nexo__Asset_uid: ${CLICK_TARGET_UID}\nexo__Instance_class:\n  - "[[${TASK_UID}]]"\nems__Effort_status: "[[${DOING_UID}]]"\n---\nNorm body`;
+const POST_ACTION_UID = "pa-create-link";
 
 /** Step 1: creates the RECORD the later step must point at. */
 function createRecordStep(): GroundingDefinition {
@@ -347,5 +370,89 @@ describe("GroundingExecutor — `createdInstance` substitution token (req c0122d
 
     // The click-target is byte-identical to its seed.
     expect(files.get(CLICK_TARGET_PATH)).toBe(CLICK_TARGET_SEED);
+  });
+
+  it("A10 a `workflow_transition` step's postAction ALSO substitutes the asset an earlier step created — the FIFTH signature on the thread @req:c0122d7f-1c48-4bc7-b0b8-02dc109b16c4", async () => {
+    const { files, reader, writer } = makeFs({
+      [CLICK_TARGET_PATH]: WF_CLICK_TARGET_SEED,
+    });
+
+    const transitions: WorkflowTransitionDefinition[] = [
+      {
+        from: EffortStatus.DOING,
+        to: EffortStatus.DONE,
+        label: "\u2713 Done",
+        isRollback: false,
+        postActions: [POST_ACTION_UID],
+      },
+    ];
+    const workflow: WorkflowDefinition = {
+      id: "wf-task",
+      name: "Task Default Workflow",
+      targetClass: AssetClass.TASK,
+      states: [],
+      transitions,
+      initialState: EffortStatus.DRAFT,
+      terminalStates: [EffortStatus.DONE, EffortStatus.TRASHED],
+      isDefault: true,
+    };
+    const workflowResolver: WorkflowResolverPort = {
+      resolveForAssetOrNull: jest.fn().mockResolvedValue(workflow),
+    };
+    const loadedActions: string[] = [];
+    const groundingLoader: GroundingLoaderPort = async (uid) => {
+      loadedActions.push(uid);
+      return uid === POST_ACTION_UID ? createLinkStep() : null;
+    };
+
+    const exec = new GroundingExecutor(
+      reader,
+      writer,
+      new ServiceRegistry(),
+      undefined,
+      { workflowResolver, groundingLoader },
+    );
+
+    // Step 1 creates the RECORD; step 2 is a workflow_transition whose
+    // postAction creates the LINK asset that must point at that record.
+    const composite = gnd({
+      type: GroundingType.COMPOSITE,
+      steps: [
+        createRecordStep(),
+        gnd({
+          id: "step-wf-transition",
+          type: GroundingType.WORKFLOW_TRANSITION,
+          direction: "forward",
+        }),
+      ],
+    });
+
+    const res = await exec.execute(
+      composite,
+      CLICK_TARGET_IRI,
+      CLICK_TARGET_PATH,
+    );
+    expect(res.success).toBe(true);
+
+    // Fixture liveness (the A2b role for THIS axis): the dispatcher really ran —
+    // it advanced the status and really loaded the postAction. Without these two
+    // the assertion below could pass for the wrong reason (no postAction at all
+    // would simply leave no link asset, and `createdIn` would fail on a
+    // confusing "undefined" rather than on the forward being dropped).
+    expect(loadedActions).toEqual([POST_ACTION_UID]);
+    expect(files.get(CLICK_TARGET_PATH)).toContain(
+      `ems__Effort_status: "[[${DONE_UID}]]"`,
+    );
+
+    const [recordPath] = createdIn(files, "/vault/records");
+    const [, linkContent] = createdIn(files, "/vault/links");
+
+    // The postAction's created asset points at the RECORD created by step 1…
+    expect(linkContent).toContain(
+      `${LINK_PROPERTY}: "[[${bareUid(recordPath)}]]"`,
+    );
+    // …not at the click-target, and no raw marker survived.
+    expect(linkContent).not.toContain(CLICK_TARGET_UID);
+    expect(linkContent).not.toContain("__SUBSTITUTE__");
   });
 });
