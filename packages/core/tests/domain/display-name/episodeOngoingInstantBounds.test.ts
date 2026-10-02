@@ -83,10 +83,14 @@ describe(`hostFunctions.isEpisodeOngoing — INSTANT bounds [req 0fc2c853]`, () 
     ).toBe(false);
   });
 
-  it(`[E4] ${REQ} the instant boundaries are INCLUSIVE — start == now and end == now both count`, () => {
+  it(`[E4] ${REQ} the START boundary is INCLUSIVE — an episode beginning exactly now counts`, () => {
     // The equality point is REACHABLE by construction: the clock is fixed and the fixture names
     // the same second, so a `>` / `>=` flip is observable rather than measure-zero
     // ([[integration-test-revert-verify]] §A65).
+    //
+    // ⛤ Split from the END boundary deliberately. Held as one axis, the two mutants that flip the
+    // two comparisons produced the SAME single red key, so the matrix could not show that both
+    // conjuncts were locked ([[integration-test-revert-verify]] §A110).
     expect(
       isEpisodeOngoing(
         episode({
@@ -95,6 +99,9 @@ describe(`hostFunctions.isEpisodeOngoing — INSTANT bounds [req 0fc2c853]`, () 
         }),
       ),
     ).toBe(true);
+  });
+
+  it(`[E16] ${REQ} the END boundary is INCLUSIVE — an episode finishing exactly now still counts`, () => {
     expect(
       isEpisodeOngoing(
         episode({
@@ -216,9 +223,28 @@ describe(`hostFunctions.isEpisodeOngoing — INSTANT bounds [req 0fc2c853]`, () 
     expect(isEpisodeOngoing(episode({ life__Episode_startTimestamp: "2026-08-11" }))).toBe(false);
   });
 
-  it(`[E14] ${REQ} a well-SHAPED but impossible wall clock is fail-closed (25:61, Feb 31)`, () => {
-    // The field widths match, so a shape-only check would accept "2026-08-10T25:61:00" and sort
-    // it after every real now — marking the episode ongoing forever.
+  it(`[E14] ${REQ} a well-SHAPED but impossible wall clock is fail-closed (25:61, 00:61, Feb 31)`, () => {
+    // The field widths match, so a shape-only check would accept these and compare them
+    // lexicographically against a real now.
+    //
+    // ⛔ The first two cases are the ones that DISCRIMINATE, and finding that out took running the
+    // mutant: "25:61" in the START bound is NOT a discriminating input, because the impossible
+    // HOUR alone sorts past now, so the verdict is false with and without the range check. The
+    // guard earns its keep on (a) an impossible MINUTE inside an hour that is earlier than now,
+    // and (b) an impossible value in the END bound — where it would otherwise sort after every
+    // real now and mark the episode ongoing forever. Without them the guard would have read as
+    // defensive ([[integration-test-revert-verify]] §A130: the missing axis, not a dead guard).
+    expect(
+      isEpisodeOngoing(episode({ life__Episode_startTimestamp: "2026-08-10T00:61:00" })),
+    ).toBe(false);
+    expect(
+      isEpisodeOngoing(
+        episode({
+          life__Episode_startTimestamp: "2026-08-10T01:00:00",
+          life__Episode_endTimestamp: "2026-08-10T25:61:00",
+        }),
+      ),
+    ).toBe(false);
     expect(
       isEpisodeOngoing(episode({ life__Episode_startTimestamp: "2026-08-10T25:61:00" })),
     ).toBe(false);

@@ -1,0 +1,120 @@
+{
+  "_doc": "Revert-verify matrix for req 0fc2c853 — a life__Episode with INSTANT bounds (life__Episode_startTimestamp/_endTimestamp) is ongoing only INSIDE the interval, while the DAY-bounded reading of req 8a47ff93 stays byte-identical. The harness runs BOTH surfaces because the guarantee is split across them: the core file is the VALUE-FORM matrix (what the YAML parser can hand the predicate — Date, quoted string, zoned string, date-only, junk), the plugin file is the PRODUCTION-SHAPE composition (the real scanVault -> DisplayNameResolver over an in-memory vault carrying both live specs AND the two shipped timestamp printed parts, so the marker and the printed time are proven to come from one reading). ⛔ The 14 pre-existing axes bound to req 8a47ff93 carry NO [Xn] key, so `red_re` cannot see them; that is deliberate rather than an oversight — their own revert-verify is recorded in req 8a47ff93, and here they are the GREEN control. A mutant that reddened only them would surface as `красных НЕТ, но rc != control_rc`, which the driver already diagnoses, so the blind spot is loud rather than silent. Both files being REACHED is proven by the matrix itself: M1 reddens keys from both (C* and E*). `red_re` anchors on the `● <suite> › <title>` failure header rather than on a bare key, because jest echoes the SOURCE LINE of a neighbouring it(...) in its diff context (integration-test-revert-verify §A44/§A104).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/domain/display-name/hostFunctions.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../..\" && node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config packages/core/jest.config.js tests/domain/display-name/episodeOngoingInstantBounds.test.ts --verbose 2>&1; rc_core=$?; node ./node_modules/jest/bin/jest.js --config packages/obsidian-plugin/jest.config.js tests/unit/domain/display-name/PrintNameRuleService.episodeOngoing.test.ts --verbose 2>&1; rc_plugin=$?; echo \"HARNESS rc_core=$rc_core rc_plugin=$rc_plugin\"; [ \"$rc_core\" -eq 0 ] && [ \"$rc_plugin\" -eq 0 ]",
+  "mutants": {
+    "M1_instant_branch_not_wired": {
+      "_note": "Removes the DISPATCH, so every episode falls through to the day path — the state of the world before this req. The WIRING axis (feature-sdd Step 4 §3): it reddens the branch's own axes AND proves both surfaces are reached (C* keys come from the plugin file, E* from the core file). ⛤ Taken BY RUNNING. Every instant-branch axis goes false; E7 and E9 flip ON TOP of that because their fixtures also carry a day pair that DOES contain today, so without the branch the day path answers 'ongoing' where they require false. Green and expected to stay so: E2/E3 and C2/C3 (false at either granularity), E8 (its fixture has no `_start`, so the day path is fail-closed anyway), E10/E11/E14 and C5 (the day path, untouched).",
+      "from": "  const rawStartInstant = metadata.life__Episode_startTimestamp;\n  if (!isAbsentValue(rawStartInstant)) {\n    return isInstantPeriodOngoing(rawStartInstant, metadata.life__Episode_endTimestamp, now);\n  }\n\n",
+      "to": "",
+      "expect": [
+        "C1",
+        "C4",
+        "E1",
+        "E12",
+        "E13",
+        "E15",
+        "E16",
+        "E4",
+        "E5",
+        "E6",
+        "E7",
+        "E9"
+      ]
+    },
+    "M2_start_compared_by_DAY": {
+      "_note": "The defect on the START side: truncate both sides of the start comparison to the calendar day. An interval LATER today then counts as already begun. ⛤ Exactly the two axes whose start is LATER TODAY — the only shape this mutant can reach. Every other fixture's start is already at or before now at BOTH granularities, so truncating the start comparison changes nothing for them.",
+      "from": "  const nowKey = localNowKey(now);\n  if (start > nowKey) return false;\n",
+      "to": "  const nowKey = localNowKey(now);\n  if (start.slice(0, 10) > nowKey.slice(0, 10)) return false;\n",
+      "expect": ["C3", "E3"]
+    },
+    "M3_end_compared_by_DAY": {
+      "_note": "The HEADLINE defect — the founder's actual complaint. Truncating the end comparison to the day makes an interval that finished hours ago still count as ongoing, so the marker burns from midnight to midnight. ⛤ C2/E2 are the intervals EARLIER TODAY — the founder's complaint. E6 joins because its second case is a Date-valued pair that is also entirely earlier today, and E9 joins because its instant pair is earlier today too: day-truncating it makes the episode ongoing, which is precisely the coarse answer the precedence axis forbids.",
+      "from": "  const end = toWallClockKey(rawEnd);\n  if (end === null) return false;\n  return end >= nowKey;\n",
+      "to": "  const end = toWallClockKey(rawEnd);\n  if (end === null) return false;\n  return end.slice(0, 10) >= nowKey.slice(0, 10);\n",
+      "expect": ["C2", "E2", "E6", "E9"]
+    },
+    "M4_start_boundary_exclusive": {
+      "_note": "`start > nowKey` -> `>=`: an episode starting exactly NOW stops counting. Pins the inclusivity of the lower bound; the equality point is reachable because the clock is fixed and the fixture names the same second. ⛤ One axis, and only since E4 was split from E16 — held together, this mutant and M5 produced the SAME single red key (§A110).",
+      "from": "  if (start > nowKey) return false;\n",
+      "to": "  if (start >= nowKey) return false;\n",
+      "expect": ["E4"]
+    },
+    "M5_end_boundary_exclusive": {
+      "_note": "`end >= nowKey` -> `>`: an episode ending exactly NOW stops counting. The mirror of M4. ⛤ The other half of that split; the pair M4/M5 now reddens two DIFFERENT keys, which is what makes both conjuncts visibly locked.",
+      "from": "  return end >= nowKey;\n",
+      "to": "  return end > nowKey;\n",
+      "expect": ["E16"]
+    },
+    "M6_open_interval_not_ongoing": {
+      "_note": "An open interval (startTimestamp, no endTimestamp) stops being ongoing. That is the shape of the ONE live carrier today (818179d5), so this mutant removes the only behaviour a real asset currently exercises. ⛤ E5/C4 are the explicit open-interval axes. E12/E13/E15 join because their concern is the FORM of the start value, so they are authored open — which this mutant also breaks. That is not noise: it says the open reading carries most of the value-form matrix.",
+      "from": "  if (isAbsentValue(rawEnd)) return true;\n\n  const end = toWallClockKey(rawEnd);",
+      "to": "  if (isAbsentValue(rawEnd)) return false;\n\n  const end = toWallClockKey(rawEnd);",
+      "expect": ["C4", "E12", "E13", "E15", "E5"]
+    },
+    "M7_unreadable_start_fails_OPEN": {
+      "_note": "An unreadable startTimestamp answers `true` instead of fail-closed — i.e. 'I cannot read this' becomes 'it is happening', the one direction the predicate must never fail in. ⛤ E7 is the named fail-closed axis; E14 joins because an impossible wall clock IS an unreadable start, so the same fail-open flip reaches it.",
+      "from": "  const start = toWallClockKey(rawStart);\n  if (start === null) return false;\n",
+      "to": "  const start = toWallClockKey(rawStart);\n  if (start === null) return true;\n",
+      "expect": ["E14", "E7"]
+    },
+    "M8_unreadable_end_fails_OPEN": {
+      "_note": "An unreadable endTimestamp answers `true` instead of fail-closed. ⛤ E8 is the named axis; E14 joins through its impossible-END case — the case added after M12 measured zero (see M12's note).",
+      "from": "  const end = toWallClockKey(rawEnd);\n  if (end === null) return false;\n",
+      "to": "  const end = toWallClockKey(rawEnd);\n  if (end === null) return true;\n",
+      "expect": ["E14", "E8"]
+    },
+    "M9_now_built_from_UTC_getters": {
+      "_note": "The LOCAL-BASIS mutant: build NOW from the UTC getters. The fixtures are deliberately set in a simulated UTC+5 zone at a local hour where the local and UTC days DIFFER, so this is observable; in a UTC runner it would be a no-op and the axes would pass with and without the local basis ([[jest-timezone-sensitive-tests]]). ⛤ Every axis whose verdict depends on the time of day on the LOCAL day. The 'not ongoing' axes stay green by construction (they are false under either basis), which is why the fixtures place local and UTC on DIFFERENT days: in a UTC runner this mutant is a no-op and the whole set would pass with and without the local basis.",
+      "from": "  return `${localToday(now)}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;",
+      "to": "  return `${String(now.getUTCFullYear()).padStart(4, \"0\")}-${pad(now.getUTCMonth() + 1)}-${pad(now.getUTCDate())}T${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())}`;",
+      "expect": ["C1", "C4", "E1", "E12", "E13", "E15", "E16", "E4", "E5", "E6"]
+    },
+    "M10_Date_read_with_LOCAL_getters": {
+      "_note": "Read a Date-valued timestamp through the LOCAL getters instead of the UTC ones. That breaks the agreement with the shipped renderer (applyValueFormat reads a Date's UTC fields), so the marker would light at a time other than the one printed — and it shifts every unquoted production value by the zone offset. ⛤ Exactly the two Date-valued axes, one per surface — the mutant is addressed, and the other axes are string-valued so it cannot reach them.",
+      "from": "    const day = `${String(raw.getUTCFullYear()).padStart(4, \"0\")}-${pad(raw.getUTCMonth() + 1)}-${pad(raw.getUTCDate())}`;\n    return `${day}T${pad(raw.getUTCHours())}:${pad(raw.getUTCMinutes())}:${pad(raw.getUTCSeconds())}`;",
+      "to": "    const day = `${String(raw.getFullYear()).padStart(4, \"0\")}-${pad(raw.getMonth() + 1)}-${pad(raw.getDate())}`;\n    return `${day}T${pad(raw.getHours())}:${pad(raw.getMinutes())}:${pad(raw.getSeconds())}`;",
+      "expect": ["C4", "E6"]
+    },
+    "M11_explicit_zone_HONOURED": {
+      "_note": "The rejected ALTERNATIVE design, pinned so it cannot be reintroduced as a 'fix': honour an explicit zone in the string branch by parsing it to its true instant and reading it back through the local getters. The predicate would then judge a zoned value at a different time than the renderer PRINTS it — 📍 missing beside a visible '01:30'. ⛤ One axis, which is the point: the rejected alternative is observable on exactly the input it would change, and nowhere else.",
+      "from": "  const cleaned = unwrapDateish(raw);\n  const match = INSTANT_KEY_RE.exec(cleaned);",
+      "to": "  const cleaned = unwrapDateish(raw);\n  if (/(?:Z|[+-]\\d{2}:?\\d{2})$/.test(cleaned)) {\n    const zoned = new Date(cleaned);\n    if (!Number.isNaN(zoned.getTime())) {\n      const padZ = (n: number) => String(n).padStart(2, \"0\");\n      return `${String(zoned.getFullYear()).padStart(4, \"0\")}-${padZ(zoned.getMonth() + 1)}-${padZ(zoned.getDate())}T${padZ(zoned.getHours())}:${padZ(zoned.getMinutes())}:${padZ(zoned.getSeconds())}`;\n    }\n  }\n  const match = INSTANT_KEY_RE.exec(cleaned);",
+      "expect": ["E12"]
+    },
+    "M12_wall_clock_range_check_removed": {
+      "_note": "Drop the hours/minutes/seconds RANGE check. The regex pins field WIDTH only, so '2026-08-10T25:61:00' would be accepted and sort after every real now — marking the episode ongoing forever. ⛤ This mutant FIRST MEASURED ZERO, and that was a missing axis rather than a dead guard ([[integration-test-revert-verify]] §A130). '25:61' in the START bound does not discriminate: the impossible HOUR alone sorts past now, so the verdict is false with and without the check. E14 was extended with the two inputs that DO discriminate — an impossible MINUTE inside an earlier hour, and an impossible value in the END bound, where it would otherwise sort after every real now and mark the episode ongoing forever.",
+      "from": "  if (Number(hours) > 23 || Number(minutes) > 59 || Number(seconds ?? \"0\") > 59) return null;\n",
+      "to": "",
+      "expect": ["E14"]
+    },
+    "M13_date_only_fails_closed": {
+      "_note": "A date-only value in a timestamp property returns null instead of reading as that day's midnight, so a mis-authored but perfectly readable bound loses its marker entirely. ⛤ One axis, addressed.",
+      "from": "    const day = toDayKey(cleaned);\n    return day === null ? null : `${day}T00:00:00`;",
+      "to": "    return null;",
+      "expect": ["E13"]
+    },
+    "M14_day_pair_wins_over_instant_pair": {
+      "_note": "Reverses the precedence: the instant reading engages only when the day pair is ABSENT. A non-conformant asset carrying both then gets the coarse answer, and — worse — an unreadable startTimestamp silently falls back to the day pair. ⛤ Exactly the two axes that carry BOTH pairs — E9 by design (precedence) and E7 because reversing the precedence is also what makes an unreadable startTimestamp fall back to the day pair. The two consequences are one mutant, which is why they are one note.",
+      "from": "  if (!isAbsentValue(rawStartInstant)) {\n",
+      "to": "  if (!isAbsentValue(rawStartInstant) && isAbsentValue(metadata.life__Episode_start)) {\n",
+      "expect": ["E7", "E9"]
+    },
+    "M15_calendar_round_trip_removed": {
+      "_note": "Drop the calendar round-trip from the shared day validator, so an impossible day ('2026-02-31T01:00:00') is accepted by the wall-clock key. Also the control that the EXTRACTED helper is really shared: it must redden the instant axis, while the day-key axes of req 8a47ff93 that rely on the same check stay invisible to red_re by design. ⛤ Reddens through E14's Feb-31 case, so the EXTRACTED day validator is shown to be really shared with the wall-clock key rather than duplicated. The day-key axes of req 8a47ff93 that rest on the same check are invisible to `red_re` by design (see _doc).",
+      "from": "  const probe = new Date(Date.UTC(year, month - 1, day));\n  return (\n",
+      "to": "  const probe = new Date(Date.UTC(year, month - 1, day));\n  if (true) return true;\n  return (\n",
+      "expect": ["E14"]
+    }
+  }
+}
