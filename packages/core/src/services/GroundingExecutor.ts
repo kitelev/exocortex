@@ -28,6 +28,7 @@ import {
   decodeYamlQuotedScalar,
   decodeYamlSequenceItem,
   isCompleteDoubleQuotedScalar,
+  isUnquotedWikilink,
   quoteYamlString,
   scalarTypingForRange,
   serializeYamlScalar,
@@ -589,36 +590,6 @@ export class ServiceRegistry {
 const MAX_COMPOSITE_DEPTH = 20;
 
 /**
- * req 29e0d1b6 — is this about-to-be-written frontmatter value a BARE (unquoted)
- * wikilink?
- *
- * `[[uid]]` written without surrounding quotes is a YAML flow SEQUENCE, not a
- * string, so the RDF converter emits a literal and the reference is lost. The
- * quoted form (`"[[uid]]"`, quotes part of the value) is the correct shape and
- * is deliberately NOT matched here.
- *
- * Scope: the value must be ENTIRELY bracketed (after trimming) — so `[[a]]`, but
- * also `[[a]] and [[b]]` / `[[a]]\n[[b]]`, which are just as flow-sequence-shaped
- * and just as lossy; refusing them is intended. A wikilink embedded in
- * surrounding prose (`see [[a]] for details`) is a string either way, carries no
- * silent-literal risk, and passes.
- *
- * ⛤ Live `targetValueSubstitution` groundings DO carry a wikilink literally
- * (`"[[8bc0c038-…]]"` → the `$nowLocal` token; 5 occurrences in the pinned
- * exocmd assetspace). They never reach this guard in that shape because
- * `CommandResolver` dereferences the wikilink to the target's label first, so
- * the executor sees `$nowLocal`. That safety is a property of the RESOLVER, not
- * of the data: were that dereference to stop, those groundings would start
- * failing here — loudly, which is the correct failure, but the coupling is worth
- * knowing.
- */
-function isUnquotedWikilink(value: string): boolean {
-  // `[\s\S]` rather than `.` + the `s` flag: the root tsconfig targets ES6 and
-  // the dotAll flag is ES2018+ (`TS1501` in CI typecheck).
-  return /^\[\[[\s\S]*\]\]$/.test(value.trim());
-}
-
-/**
  * Executes grounding actions for dynamic commands (RFC-009 §5.4).
  *
  * The "write side" of the Dynamic Command System. Once a precondition passes,
@@ -1062,6 +1033,12 @@ export class GroundingExecutor {
       grounding.targetValueRef !== undefined &&
       /\$/.test(grounding.targetValueRef);
     let substitutedValue: string;
+    // #4424 — the ORIGIN of the value, recorded WHERE THE VALUE IS PRODUCED.
+    // Everything below the write site sees one `string`, so origin cannot be
+    // recovered there: an author's `["[[ems__Task]]"]` and a user's
+    // `["not a list"` are the same bytes to any shape test. The flag is
+    // consumed by the serialisation step after the unquoted-wikilink guard.
+    let substitutionApplied = false;
     if (isInputRef) {
       const resolvedRef = this.substituteVariables(
         grounding.targetValueRef as string,
@@ -1087,12 +1064,97 @@ export class GroundingExecutor {
         };
       }
       substitutedValue = `"[[${bareRef}]]"`;
+      // ⛤ `substitutionApplied` stays FALSE here on purpose. This branch does
+      // not hand through an author's YAML nor a user's scalar — the executor
+      // itself built the final quoted wikilink two lines up, from a reference
+      // normalised by `extractAssetReference`. Its contract (bare uid in,
+      // `"[[uid]]"` out) belongs to req b06129dc; re-serialising the executor's
+      // own output would put a second writer on that shape.
     } else {
       substitutedValue = this.substituteVariables(
         effectiveValue,
         targetIRI,
         userInput,
       );
+      // `substituteVariables` is a pure string rewrite: a template carrying no
+      // resolvable `$…` token comes back byte-identical (every branch of it is
+      // a `.replace`). So inequality IS the mechanism "something was
+      // substituted into this value", not a guess about the value's shape.
+      //
+      // ⛔ READ THIS BEFORE WIDENING THE DISCRIMINATOR. `targetValueQuery`
+      // reaches this line too (its `effectiveValue` is the NamedQuery result),
+      // and it stays out of the serialisation step below only because that
+      // result carries no `$…` token — i.e. the exclusion rests on a MEASURED
+      // INVARIANT OF THE CORPUS (2026-10-02: 4 live `targetValueQuery`
+      // carriers, all resolving to an asset reference), NOT on a guard. A query
+      // that one day returns text containing a `$…` token flips this flag and
+      // the value starts being serialised, which is a VISIBLE change (sudden
+      // quoting), not a silent one. So if this discriminator is ever widened —
+      // or `resolveTargetValueQuery` gains a literal-returning path — exclude
+      // `targetValueQuery` STRUCTURALLY (it has its own contract, req
+      // bbaa37e1) instead of letting the invariant carry it; an invariant goes
+      // stale without announcing itself.
+      substitutionApplied = substitutedValue !== effectiveValue;
+    }
+
+    // #4429 — nothing above checks the RESOLVED value for emptiness. The
+    // missing-input gate reads the TEMPLATE, and `""` counts as PROVIDED there
+    // (`v !== undefined && v !== null`), so a named input the user left blank
+    // passes it; `$target.<prop>` and `targetValueQuery` can resolve to "" on
+    // their own. `updateProperty` then writes `prop: ""` (or a bare `prop:` for a
+    // non-string-scalar), silently blanking whatever was on disk.
+    //
+    // ⛤ Refusing here is NOT symmetry with the sibling grounding types — it is
+    // PARITY WITH ANOTHER WRITER OF THE SAME FRONTMATTER KEY. `cli set-property`
+    // already refuses an empty value fail-loud (req 501cdf2c,
+    // `assertNonEmptyValue`): an empty string writes a junk key that LOOKS like a
+    // successful clear, and a consumer branching on "does the property exist"
+    // starts seeing it as present-with-an-empty-value. Clearing has its own path
+    // (`property_delete` / `remove-property`). Until this guard the root CLI
+    // command refused while THIS path — the one both the plugin button and `cli
+    // apply` take — accepted (UI/CLI parity, #3417).
+    //
+    // ⛤ The parity defect is now closed 3 OF 3 (#4513, 2026-10-02). The writers
+    // of this key were enumerated during the review of PR #4511 and the third
+    // one — `createUpdatePropertyService` in
+    // `packages/services/src/grounding-service-factories.ts`, which guarded only
+    // `value === undefined` — carries the same strict `=== ""` refusal since
+    // then. ⛔ Its axes do NOT live next to it: no workflow ever runs jest for
+    // `packages/services` (`test-ci-batched.sh` drives exactly three configs —
+    // obsidian-plugin, cli, core — and CI touches the package only through
+    // `npm run build -w @kitelev/exocortex-services`), so axes placed there
+    // would sit outside every gate. The suite itself is HEALTHY locally (57/57
+    // on `474e9dd5`); it is unreachable, not broken. They sit in
+    // `packages/cli/tests/unit/services/`, which `test-coverage-cli` gates.
+    // Count the writers again before widening this claim — "3 of 3" is a
+    // measurement, not an invariant.
+    //
+    // ⛔ The predicate is STRICT (`=== ""`), NOT `trim() === ""`, and that is the
+    // measured half: req 501cdf2c's sweep of all three canonical vaults (34 327
+    // files / 331 263 keys, 2026-08-23) found **0** carriers of `key: ""` but
+    // **15** of `key: " "` — `exo__PrintedLiteral_literal` (9) and
+    // `exo__DisplayNameSpec_separator` (6). A trimming predicate would make those
+    // two properties unwritable by this grounding.
+    //
+    // ⛤ The predicate is on the RAW substituted value, NOT its decoded form — the
+    // opposite choice from `executePropertyAppend`'s guard, on purpose. There is
+    // no comparison here and no "which element" ambiguity: the bytes are written
+    // as they are, so the defect is exactly "a substitution produced nothing",
+    // while a two-character `""` authored as `targetValueLiteral` is a deliberate
+    // quoted-empty scalar. Nothing in the authored corpus uses that form
+    // (measured on `packages/exoas-exocmd`, 2026-10-02: 0 empty value
+    // expressions), so the boundary is named rather than the guard widened.
+    //
+    // The `targetValueRef` branch above never reaches this: an empty ref is
+    // already refused there, with the more specific broken-link message.
+    if (substitutedValue === "") {
+      return {
+        success: false,
+        error:
+          `property_set: the value for ${grounding.targetProperty} resolved to an empty ` +
+          `value — refusing rather than writing a junk key that looks like a cleared ` +
+          `property. To clear it, use property_delete (or the remove-property CLI verb).`,
+      };
     }
 
     // Issue #3779: for string-semantic properties (`exo__Asset_label`,
@@ -1209,6 +1271,71 @@ export class GroundingExecutor {
       };
     }
 
+    // #4424 (follow-up of #4405) — a SUBSTITUTED value on an untyped,
+    // non-string-semantic property is serialised; an AUTHORED one is not.
+    //
+    // `updateProperty` writes verbatim, so before this step a user's
+    // `$input.note` = `PR #42 merged` landed bare and every YAML reader took
+    // `PR` and treated ` #42 merged` as a comment — silent truncation at rc 0.
+    // Routing the whole untyped branch through `serializeYamlScalar` is the
+    // fix that was implemented, MEASURED WRONG and reverted: it quotes the
+    // deliberate flow array `["[[ems__Task]]"]` of the multi-class convert
+    // path on its leading `[` (axis K13 of req 675cb0ab). Both values are
+    // plain strings at the write site; what differs is where they came from,
+    // which is why the discriminator is recorded at production (above) and not
+    // derived here from the bytes.
+    //
+    // Three conditions, each load-bearing:
+    //  - `substitutionApplied` — an authored literal is YAML the author wrote;
+    //    req 675cb0ab's last scenario requires it verbatim and K13 / K14 pin
+    //    it. This clause is what keeps them byte-identical.
+    //  - no declared typing range — a typed value is already serialised by the
+    //    branch above, with the range forwarded (ticket 534a7a46).
+    //  - not string-semantic — `exo__Asset_label` / `aliases` are already
+    //    serialised above with `quoteAmbiguousScalars`, which is STRICTLY
+    //    stronger than the call here; applying it twice would be a no-op but
+    //    would also make two steps responsible for one property.
+    //
+    // ⛔ Placed AFTER the req 29e0d1b6 guard above, and the order is the
+    // requirement, not a preference: `serializeYamlScalar` quotes a bare
+    // `[[uid]]` on its leading `[`, so serialising FIRST makes
+    // `isUnquotedWikilink` blind and turns that req's loud refusal into a
+    // successful write (measured on the first attempt: axis B4 of
+    // `GroundingExecutor.updatedat-stamp.test.ts` went red).
+    //
+    // ⛤ Radius, measured on the live graph 2026-10-02 (vault-exodev, 668 322
+    // triples): of the 34 `property_set` value-sources — targetValueRef 18,
+    // targetValueSubstitution 8, targetValueLiteral 4, targetValueQuery 4 —
+    // exactly NINE reach this branch with a substitution: the 8
+    // `targetValueSubstitution` groundings (each references a
+    // `SubstitutionToken` asset that `CommandResolver` dereferences to its
+    // label, so the executor receives `$nowLocal` ×5, `$today`, `$todayStart`,
+    // `$target`) plus `f79e2d7d` (`targetValueLiteral: $input.label`, which is
+    // string-semantic and keeps going through the branch above). All nine
+    // remain byte-identical — a timestamp, a date and an `obsidian://` IRI all
+    // pass `needsYamlQuoting` bare (their colons are followed by digits or
+    // `/`, never whitespace). So the authored corpus changes by zero bytes and
+    // what this closes is the user-text channel: `$input.<key>` free text, and
+    // any grounding authored in a user's own vault.
+    //
+    // `targetValueQuery` is deliberately NOT included. Its value is computed by
+    // a NamedQuery, not substituted — the flag above is false for it and this
+    // step leaves it alone, exactly as today. Its own contract is req bbaa37e1,
+    // and the 4 live carriers all resolve to an asset reference, which
+    // `resolveTargetValueQuery` already emits as `"[[…]]"`. Widening to it
+    // would be the symmetry-as-argument that produced too broad a predicate
+    // once already (integration-test-revert-verify §A27).
+    const writtenValue =
+      substitutionApplied &&
+      scalarTypingForRange(declaredRange) === undefined &&
+      !isStringScalarProperty
+        ? // the guarded value, not `substitutedValue`: in this branch the two
+          // are the same string (it IS the `else` of the ternary above), and
+          // naming the guarded one keeps "serialise what the guard passed"
+          // readable as the single relation it is.
+          serializeYamlScalar(valueToWrite)
+        : valueToWrite;
+
     // req faf269bf Scenarios 1+3 — resolve WHICH asset this step writes into.
     // Absent `targetQuery` (every existing grounding) keeps `filePath` exactly
     // as handed in — click-target, or the created instance when the composite
@@ -1231,7 +1358,7 @@ export class GroundingExecutor {
       this.frontmatterService.updateProperty(
         content,
         grounding.targetProperty,
-        valueToWrite,
+        writtenValue,
       ),
       grounding.targetProperty,
     );
@@ -1583,9 +1710,15 @@ export class GroundingExecutor {
     // label form (CommandResolver may have downgraded when class TBox file is
     // absent from resolution store, see #3220).
     //
-    // Link-to-parent (30b9e8d8) uses the same serviceId but carries NO
-    // targetValueRef (driven via inputSchema+userInput) and so flows past
-    // this short-circuit into the registered updateProperty service below.
+    // ⛔ The example this comment used to give — Link-to-parent (`30b9e8d8`) —
+    // NO LONGER EXISTS (measured 2026-10-02: absent from all three canonical
+    // vaults, and `exoas-exocmd` returns 404 for it on `main`; the only copies
+    // left are in stale `*-full` replicas snapshotted 2026-06-16). The BRANCH
+    // it illustrated is still live and still needed: a grounding with this
+    // serviceId but NO `targetValueRef` (property and value driven via
+    // inputSchema + userInput) flows past this short-circuit into the
+    // registered updateProperty service below. Of the 8 authored groundings
+    // that dispatch `updateProperty` today, 6 take that path.
     if (serviceId === "updateProperty") {
       // RFC 918a2b65 Phase 4 — class-flip dispatch via typed `targetValueRef`
       // only. Legacy `targetValue` path removed after vault migration
@@ -3624,6 +3757,16 @@ export class GroundingExecutor {
    * not yet introduced in the codebase; existing executors also use Error):
    * - Missing `targetProperty` / `appendExpression` on the grounding definition.
    * - `$target.<prop>` resolved to undefined / null / array.
+   * - `appendExpression` RESOLVES to an empty string (#4429). The guard above
+   *   rejects an ABSENT expression and says nothing about one that resolves to
+   *   nothing; an empty resolution would add a list element the author never
+   *   named, and the Set-based dedup would then make it idempotent — surviving
+   *   every re-run and reading as deliberate. ⚠ Same narrow cost the sibling
+   *   `property_replace` guard carries: `$targetFolder` legitimately resolves to
+   *   "" for an asset at the vault root, so such a grounding is refused too. No
+   *   authored grounding uses `$targetFolder` as a VALUE expression (measured on
+   *   `packages/exoas-exocmd`, 2026-10-02), and `property_delete` covers
+   *   intentional removal, so refusing loudly is the safer trade.
    */
   private async executePropertyAppend(
     grounding: GroundingDefinition,
@@ -3682,6 +3825,37 @@ export class GroundingExecutor {
     const plain = isCompleteDoubleQuotedScalar(resolvedValue)
       ? decodeYamlQuotedScalar(resolvedValue)
       : resolvedValue;
+
+    // #4429 — the `=== undefined` guard above rejects an ABSENT appendExpression
+    // and says nothing about one that RESOLVES to nothing. Appending "" adds a
+    // list element the author never named, and the Set-based dedup below makes
+    // that element IDEMPOTENT: it survives every re-run and reads as deliberate.
+    // Mirrors the refusal `executePropertyReplace` grew for the same root cause
+    // (#4314 / PR #4428), including its placement — AFTER resolution, BEFORE the
+    // list is touched.
+    //
+    // The predicate is on the DECODED value, not the raw resolution, because
+    // this method's identity for a list item IS its decoded form (the dedup
+    // below compares `decodeYamlSequenceItem` outputs). So a stored `- ""` and
+    // an `appendExpression` of `'""'` are the same empty item, and both are
+    // refused by one check.
+    //
+    // ⚠ Known narrow cost, same as the replace guard: `$targetFolder`
+    // legitimately resolves to "" for an asset at the vault root. Measured on
+    // the authored corpus (`packages/exoas-exocmd`, 2026-10-02): `$targetFolder`
+    // appears only as `exocmd__Grounding_targetFolder` — never as a VALUE
+    // expression — so no authored grounding is refused by this, and
+    // `property_delete` covers intentional removal.
+    if (plain === "") {
+      return {
+        success: false,
+        error:
+          `property_append: appendExpression for ${grounding.targetProperty} resolved to an ` +
+          `empty value — refusing rather than appending an empty list element. To drop the ` +
+          `property use property_delete (or the remove-property CLI verb).`,
+      };
+    }
+
     const seen = new Set(existing.map(decodeYamlSequenceItem));
     let merged: string[];
     if (seen.has(plain)) {

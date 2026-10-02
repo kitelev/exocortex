@@ -16,16 +16,29 @@ import { serializeYamlScalar } from "@kitelev/exocortex-core";
  * hand-rolled notion of "needs quoting" that would drift from it. Plain text
  * still comes out bare — quoting is applied only where the grammar demands it.
  *
- * ⛔ #4405 names a SECOND writer — `property_set` on an undeclared,
- * non-string-semantic property — and that half is deliberately NOT fixed here.
- * `GroundingExecutor` already routes declared-range and string-semantic values
- * through this serialiser (ticket 534a7a46) and leaves the rest verbatim ON
- * PURPOSE: there the value is YAML an author wrote, so quoting it would break
- * the deliberate flow array `["[[ems__Task]]"]` of the multi-class convert —
- * pinned by axis K13 of `range-typing-534a7a46.integration.test.ts`
- * (@req:675cb0ab). Fixing it needs a way to tell author-written YAML from
- * substituted user input, which is a design question, not a serialisation one.
- * Here no such ambiguity exists: the value comes from a textbox a human typed.
+ * ⛤ #4405 names a SECOND writer — `property_set` on an undeclared,
+ * non-string-semantic property — and that half is now CLOSED TOO, by #4424 /
+ * @req:992f0a75. The paragraph below used to end "fixing it needs a way to tell
+ * author-written YAML from substituted user input, which is a design question,
+ * not a serialisation one"; the design question has an answer, so the sentence
+ * is corrected here rather than only appended to
+ * (retracted-claim-outranks-its-correction).
+ *
+ * The answer is NOT a serialisation rule: `GroundingExecutor` records the
+ * value's ORIGIN where the value is PRODUCED (did `substituteVariables`
+ * actually replace anything) and consumes that flag at a step placed strictly
+ * AFTER the unquoted-wikilink guard of @req:29e0d1b6. A substituted value is
+ * serialised; YAML an author wrote in the grounding stays verbatim, so the
+ * deliberate flow array `["[[ems__Task]]"]` of the multi-class convert still
+ * lands as a list — pinned by axis K13 of
+ * `range-typing-534a7a46.integration.test.ts` (@req:675cb0ab) and by J3 of
+ * `grounding-substituted-value-origin-4424.integration.test.ts`. Declared-range
+ * and string-semantic values keep going through this serialiser as before
+ * (ticket 534a7a46).
+ *
+ * Here no such ambiguity ever existed: the value comes from a textbox a human
+ * typed, so this file needs no discriminator — which is why the two halves were
+ * fixed separately rather than together.
  *
  * @param value - The value to format
  * @returns The formatted string value
