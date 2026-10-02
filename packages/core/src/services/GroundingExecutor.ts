@@ -1062,6 +1062,12 @@ export class GroundingExecutor {
       grounding.targetValueRef !== undefined &&
       /\$/.test(grounding.targetValueRef);
     let substitutedValue: string;
+    // #4424 — the ORIGIN of the value, recorded WHERE THE VALUE IS PRODUCED.
+    // Everything below the write site sees one `string`, so origin cannot be
+    // recovered there: an author's `["[[ems__Task]]"]` and a user's
+    // `["not a list"` are the same bytes to any shape test. The flag is
+    // consumed by the serialisation step after the unquoted-wikilink guard.
+    let substitutionApplied = false;
     if (isInputRef) {
       const resolvedRef = this.substituteVariables(
         grounding.targetValueRef as string,
@@ -1087,12 +1093,23 @@ export class GroundingExecutor {
         };
       }
       substitutedValue = `"[[${bareRef}]]"`;
+      // ⛤ `substitutionApplied` stays FALSE here on purpose. This branch does
+      // not hand through an author's YAML nor a user's scalar — the executor
+      // itself built the final quoted wikilink two lines up, from a reference
+      // normalised by `extractAssetReference`. Its contract (bare uid in,
+      // `"[[uid]]"` out) belongs to req b06129dc; re-serialising the executor's
+      // own output would put a second writer on that shape.
     } else {
       substitutedValue = this.substituteVariables(
         effectiveValue,
         targetIRI,
         userInput,
       );
+      // `substituteVariables` is a pure string rewrite: a template carrying no
+      // resolvable `$…` token comes back byte-identical (every branch of it is
+      // a `.replace`). So inequality IS the mechanism "something was
+      // substituted into this value", not a guess about the value's shape.
+      substitutionApplied = substitutedValue !== effectiveValue;
     }
 
     // #4429 — nothing above checks the RESOLVED value for emptiness. The
@@ -1269,6 +1286,71 @@ export class GroundingExecutor {
       };
     }
 
+    // #4424 (follow-up of #4405) — a SUBSTITUTED value on an untyped,
+    // non-string-semantic property is serialised; an AUTHORED one is not.
+    //
+    // `updateProperty` writes verbatim, so before this step a user's
+    // `$input.note` = `PR #42 merged` landed bare and every YAML reader took
+    // `PR` and treated ` #42 merged` as a comment — silent truncation at rc 0.
+    // Routing the whole untyped branch through `serializeYamlScalar` is the
+    // fix that was implemented, MEASURED WRONG and reverted: it quotes the
+    // deliberate flow array `["[[ems__Task]]"]` of the multi-class convert
+    // path on its leading `[` (axis K13 of req 675cb0ab). Both values are
+    // plain strings at the write site; what differs is where they came from,
+    // which is why the discriminator is recorded at production (above) and not
+    // derived here from the bytes.
+    //
+    // Three conditions, each load-bearing:
+    //  - `substitutionApplied` — an authored literal is YAML the author wrote;
+    //    req 675cb0ab's last scenario requires it verbatim and K13 / K14 pin
+    //    it. This clause is what keeps them byte-identical.
+    //  - no declared typing range — a typed value is already serialised by the
+    //    branch above, with the range forwarded (ticket 534a7a46).
+    //  - not string-semantic — `exo__Asset_label` / `aliases` are already
+    //    serialised above with `quoteAmbiguousScalars`, which is STRICTLY
+    //    stronger than the call here; applying it twice would be a no-op but
+    //    would also make two steps responsible for one property.
+    //
+    // ⛔ Placed AFTER the req 29e0d1b6 guard above, and the order is the
+    // requirement, not a preference: `serializeYamlScalar` quotes a bare
+    // `[[uid]]` on its leading `[`, so serialising FIRST makes
+    // `isUnquotedWikilink` blind and turns that req's loud refusal into a
+    // successful write (measured on the first attempt: axis B4 of
+    // `GroundingExecutor.updatedat-stamp.test.ts` went red).
+    //
+    // ⛤ Radius, measured on the live graph 2026-10-02 (vault-exodev, 668 322
+    // triples): of the 34 `property_set` value-sources — targetValueRef 18,
+    // targetValueSubstitution 8, targetValueLiteral 4, targetValueQuery 4 —
+    // exactly NINE reach this branch with a substitution: the 8
+    // `targetValueSubstitution` groundings (each references a
+    // `SubstitutionToken` asset that `CommandResolver` dereferences to its
+    // label, so the executor receives `$nowLocal` ×5, `$today`, `$todayStart`,
+    // `$target`) plus `f79e2d7d` (`targetValueLiteral: $input.label`, which is
+    // string-semantic and keeps going through the branch above). All nine
+    // remain byte-identical — a timestamp, a date and an `obsidian://` IRI all
+    // pass `needsYamlQuoting` bare (their colons are followed by digits or
+    // `/`, never whitespace). So the authored corpus changes by zero bytes and
+    // what this closes is the user-text channel: `$input.<key>` free text, and
+    // any grounding authored in a user's own vault.
+    //
+    // `targetValueQuery` is deliberately NOT included. Its value is computed by
+    // a NamedQuery, not substituted — the flag above is false for it and this
+    // step leaves it alone, exactly as today. Its own contract is req bbaa37e1,
+    // and the 4 live carriers all resolve to an asset reference, which
+    // `resolveTargetValueQuery` already emits as `"[[…]]"`. Widening to it
+    // would be the symmetry-as-argument that produced too broad a predicate
+    // once already (integration-test-revert-verify §A27).
+    const writtenValue =
+      substitutionApplied &&
+      scalarTypingForRange(declaredRange) === undefined &&
+      !isStringScalarProperty
+        ? // the guarded value, not `substitutedValue`: in this branch the two
+          // are the same string (it IS the `else` of the ternary above), and
+          // naming the guarded one keeps "serialise what the guard passed"
+          // readable as the single relation it is.
+          serializeYamlScalar(valueToWrite)
+        : valueToWrite;
+
     // req faf269bf Scenarios 1+3 — resolve WHICH asset this step writes into.
     // Absent `targetQuery` (every existing grounding) keeps `filePath` exactly
     // as handed in — click-target, or the created instance when the composite
@@ -1291,7 +1373,7 @@ export class GroundingExecutor {
       this.frontmatterService.updateProperty(
         content,
         grounding.targetProperty,
-        valueToWrite,
+        writtenValue,
       ),
       grounding.targetProperty,
     );
