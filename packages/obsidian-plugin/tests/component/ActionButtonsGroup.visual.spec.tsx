@@ -389,4 +389,44 @@ test.describe("ActionButtonsGroup Visual Regression", () => {
 
     await expect(component).toHaveScreenshot("long-labels.png");
   });
+
+  /**
+   * Transplanted from `tests/component/visual/ActionButtonsGroup.visual.spec.tsx` when that
+   * spec was removed (issue #4512). It was the ONE scenario of its seven that this file did
+   * not already cover — measured, not assumed: the other six duplicate tests above, which
+   * cover their shapes more widely (4 groups vs 2-3, hover in 3 variants vs 2, plus
+   * responsive / disabled / long-label cases the removed spec had no equivalent for).
+   *
+   * `:focus-visible` styling is a different code path from `:hover`, and this file had zero
+   * `.focus()` calls before this test.
+   */
+  test("focus state - primary button", async ({ mount, page }) => {
+    const groups: ButtonGroup[] = [
+      {
+        id: "test",
+        title: "Focus Test",
+        buttons: [
+          {
+            id: "btn-focus",
+            label: "Focus Me",
+            variant: "primary",
+            visible: true,
+            onClick: async () => {},
+          },
+        ],
+      },
+    ];
+
+    const component = await mount(
+      <div style={{ width: "400px", padding: "20px" }}>
+        <ActionButtonsGroup groups={groups} />
+      </div>,
+    );
+
+    await component.locator("button").focus();
+    // Wait for CSS transition, as the hover tests above do.
+    await page.waitForTimeout(300);
+
+    await expect(component).toHaveScreenshot("focus-primary.png");
+  });
 });

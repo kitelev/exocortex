@@ -1,0 +1,55 @@
+{
+  "_doc": "Revert-verify mutants for issue #4424, req 992f0a75-55cc-4a06-a66b-ee6bdb9e8102 — SUBJECT: packages/core/src/services/GroundingExecutor.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout. Guards enumerated from `git diff -U0` (integration-test-revert-verify §A8). The harness drives BOTH halves of the subject in one output: the new axes (J*) and req 675cb0ab's own suite (K*), because the authored half is not 'a neighbour not to break' — it is the second half of what this change decides, and K13 is its sharpest axis. ⛤ M4 is an ОБЪЯВЛЕННЫЙ НОЛЬ (expect []) and carries the mandatory `_canary`: the conjunct it removes is provably an identity, so a red set is not available for it.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/GroundingExecutor.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/integration/grounding-substituted-value-origin-4424.integration.test.ts tests/integration/asset-creation/range-typing-534a7a46.integration.test.ts 2>&1",
+  "env_var": "SUT",
+  "red_re": "› ([JK]\\d+[a-z]?) ",
+  "mutants": {
+    "M1_discriminator_never_fires": {
+      "from": "      substitutionApplied = substitutedValue !== effectiveValue;",
+      "to": "      substitutionApplied = false;",
+      "expect": ["J1", "J2"],
+      "_note": "The defect as it shipped: a substituted value is handed to updateProperty verbatim, so user text carrying ' #' / ': ' is truncated or breaks the frontmatter. Everything else must stay green — in particular the authored half (J3 / J4 / K13 / K14), whose pre-change shape this mutant restores, and J5, whose live shapes need no quoting either way."
+    },
+    "M2_discriminator_always_fires": {
+      "from": "      substitutionApplied = substitutedValue !== effectiveValue;",
+      "to": "      substitutionApplied = true;",
+      "expect": ["J3", "K13"],
+      "_note": "The reverted obvious fix, reached from the other side: with origin ignored, an AUTHORED flow array is serialised and quoted on its leading `[`, which is exactly the measurement that killed the first attempt. J4 / K14 stay green because a pre-quoted wikilink is a COMPLETE double-quoted scalar and needsYamlQuoting passes it through — that is why the last Gherkin scenario of req 675cb0ab holds unconditionally rather than by luck. J7 / J8 stay green because the other two conjuncts, not this one, hold them."
+    },
+    "M3_obvious_fix_serialise_inside_the_ternary": {
+      "from": "          : substitutedValue;",
+      "to": "          : serializeYamlScalar(substitutedValue);",
+      "expect": ["J3", "J6", "K13"],
+      "_note": "Byte-for-byte the attempt the issue records as implemented-measured-wrong-and-reverted. It reddens the authored half (J3 / K13) AND the ordering axis (J6): serialising before the guard quotes a bare `[[uid]]` on its leading `[`, isUnquotedWikilink stops seeing it, and req 29e0d1b6's loud refusal becomes a successful write. Three reds, one concern — the mutation is the whole wrong design, not one guard (integration-test-revert-verify §A139)."
+    },
+    "M4_string_semantic_conjunct_removed": {
+      "from": "      !isStringScalarProperty\n        ? //",
+      "to": "      true\n        ? //",
+      "expect": [],
+      "_canary": "M1_discriminator_never_fires",
+      "_note": "ОБЪЯВЛЕННЫЙ НОЛЬ (integration-test-revert-verify §A135): zero reds is the CORRECT outcome and it is declared, not discovered. The conjunct is provably an IDENTITY, not a guard: on a string-semantic property the branch above has already applied serializeYamlScalar(v, true), whose rule is STRICTLY STRONGER than the plain serializeYamlScalar(v) this step would add — if the first pass quoted, its output is a complete double-quoted scalar and the second pass returns it verbatim; if the first pass left the value bare under the stronger rule, the weaker rule leaves it bare too. The conjunct is kept for a different reason than correctness: it keeps ONE step responsible for one property. The canary names a mutant of this same spec that MUST redden, so a zero here cannot be confused with a harness that stopped delivering the mutation."
+    },
+    "M5_typing_conjunct_removed": {
+      "from": "      scalarTypingForRange(declaredRange) === undefined &&",
+      "to": "      true &&",
+      "expect": ["J7"],
+      "_note": "Unlike M4 this conjunct IS load-bearing, and the arithmetic says why: the typed branch emits a canonical NEGATIVE integer BARE (that is the whole point of ticket 534a7a46), and a second, range-LESS pass quotes it on its leading `-` — re-introducing the sh:datatype violation that ticket removed. K8 / K12 stay green: they drive create_instance and an authored literal, neither of which carries a substitution."
+    },
+    "M6_serialisation_moved_before_the_guard": {
+      "from": "    if (isUnquotedWikilink(valueToWrite)) {",
+      "to": "    if (isUnquotedWikilink(serializeYamlScalar(valueToWrite))) {",
+      "expect": ["J6"],
+      "_note": "Isolates the ORDER from the discriminator: the gate still decides correctly, only the guard now judges the SERIALISED form and so never fires on a substituted bare wikilink. Type-preserving (§A36) — serializeYamlScalar is already imported in this file and returns string. One red, exactly the ordering axis: K13 stays green because a quoted flow array is not `^\\[\\[…\\]\\]$`, so no refusal is raised and the written value is unchanged."
+    }
+  }
+}

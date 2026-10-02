@@ -57,6 +57,14 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => {
   // `SyntaxError: ... does not provide an export named ...`, not a silent
   // undefined.
   const matchFrontmatterBlock = (_content: string): null => null;
+  // #4520: the `updateProperty` factory in `@kitelev/exocortex-services` now
+  // refuses a bare wikilink and serialises a STRING value before handing it to
+  // `FrontmatterService.updateProperty`, so it imports both helpers through
+  // this same mocked specifier at module-evaluation time. The deps-omitted path
+  // tested here never invokes the factory body, so shape stubs suffice — see
+  // the ⛔ above: a manual factory must name EVERY export its consumers import.
+  const isUnquotedWikilink = (_value: string): boolean => false;
+  const serializeYamlScalar = (value: unknown): string => String(value);
   return {
     ServiceRegistry,
     FrontmatterService,
@@ -65,6 +73,8 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => {
     iriToVaultPath,
     extractAssetReference,
     matchFrontmatterBlock,
+    isUnquotedWikilink,
+    serializeYamlScalar,
   };
 });
 
