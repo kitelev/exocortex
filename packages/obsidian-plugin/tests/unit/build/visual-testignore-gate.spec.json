@@ -1,0 +1,39 @@
+{
+  "_doc": "Revert-verify for the INPUT half of the visual gate (issue #4512): the required `test-component` job must actually receive the visual specs it judges. Axes T1-T3 live in visual-testignore-gate.test.ts; the subject here is `packages/obsidian-plugin/playwright-ct.config.ts`, which is a DIFFERENT file from the sibling spec visual-regression-gate.spec.json (subject `.github/workflows/ci.yml`) — the driver carries one subject per spec, so the two halves of the gate cannot share a spec (integration-test-revert-verify §A117). Substitute `<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>` before running.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/playwright-ct.config.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true node ./node_modules/jest/bin/jest.js --config packages/obsidian-plugin/jest.config.js packages/obsidian-plugin/tests/unit/build/visual-testignore-gate.test.ts --coverageThreshold='{}' --verbose 2>&1",
+  "red_re": "› ([A-Z]+\\d+\\w*) ",
+  "mutants": {
+    "M1_reinstate_testignore": {
+      "_why": "The defect this issue removed, in its shipped form: the CI branch of `testIgnore` excludes the `visual/` subdirectory again, so the required job stops receiving 23 of the 46 visual tests. T1 is the only axis for it — T2 stays green because the config object and both spec halves are still found, which is exactly the point: a filter that drops the subject does NOT look like a broken scan.",
+      "from": "  // Fail CI if you accidentally left test.only\n",
+      "to": "  testIgnore: process.env.CI ? [\"**/visual/**\"] : [],\n\n  // Fail CI if you accidentally left test.only\n",
+      "expect": ["T1"]
+    },
+    "M2_reinstate_testignore_on_continuation_lines": {
+      "_why": "The SAME defect authored so that no single line contains both the key and the pattern. A line-anchored grep (`^\\s*testIgnore.*visual`) returns ABSENT here and would declare the config healthy — this mutant is what makes 'read it through the TypeScript parser' a measured property rather than a claim in a comment (self-satisfying-metric-weak-verifier §A102). It must red the same single axis as M1; if it ever stops, the axis has regressed to text matching.",
+      "from": "  // Fail CI if you accidentally left test.only\n",
+      "to": "  testIgnore:\n    process.env.CI\n      ? [\"**/visual/**\"]\n      : [],\n\n  // Fail CI if you accidentally left test.only\n",
+      "expect": ["T1"]
+    },
+    "M3_rename_sibling_key": {
+      "_why": "Kills the INPUT of the scan instead of the property it judges: with `testDir` renamed, the parse no longer reaches the shape it thinks it is reading. T1 would stay VACUOUSLY green (no `testIgnore` key ⇒ empty pattern set ⇒ nothing to exclude), which is indistinguishable from a healthy config — so T2 is the canary that must red on exactly this. If T2 ever stops reding here, T1 is unfalsifiable (self-satisfying-metric-weak-verifier §A58).",
+      "from": "  testDir: \"./tests/component\",\n",
+      "to": "  testDirectory: \"./tests/component\",\n",
+      "expect": ["T2"]
+    }
+  },
+  "_no_mutant": {
+    "T3": "Its subject is the PREDICATES, exercised over literal historical shapes inside the test file, not the shipped config. A mutant on the config cannot reach it, and asserting the shipped config inside T3 as well would make it red under EVERY mutant — non-addressed, so a red set would stop identifying which property broke (integration-test-revert-verify §A43). That half is T1/T2's job and lives there.",
+    "T2_file_sizes": "The size half of T2 judges the PRESENCE and SIZE of spec files on disk; this driver mutates the TEXT of one subject and cannot empty a spec file. Verified by a manual flip on a copy of the tree instead (integration-test-revert-verify §A138): truncating `tests/component/visual/PropertyFields.visual.spec.tsx` to 0 bytes reds T2 and leaves T1/T3 green; restoring it returns rc=0."
+  }
+}

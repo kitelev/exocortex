@@ -241,6 +241,66 @@ test.describe("DailyTasksTable Visual Regression", () => {
 
     await expect(component).toHaveScreenshot("table-empty.png");
   });
+
+  /**
+   * The two tests below were transplanted from
+   * `tests/component/visual/DailyTasksTable.visual.spec.tsx` when that spec was removed
+   * (issue #4512). They were the ONLY two of its ten scenarios this file did not already
+   * cover — measured per test, not inferred from names: the other eight duplicate tests in
+   * this describe, and the four `DailyTasksTableWithToggle` tests below have no counterpart
+   * in the removed spec at all (it did not even import that component).
+   */
+
+  test("row hover", async ({ mount, page }) => {
+    // Runs on THIS file's `mockTasks` — no fixture transplant needed: the row selector keys
+    // on `data-path` (rendered by `daily-tasks/DailyTasksTableRow.tsx`) and `task1.md` is
+    // present here. This file had zero `.hover()` calls before this test.
+    const component = await mount(
+      <div style={{ width: "800px", padding: "20px" }}>
+        <DailyTasksTable tasks={mockTasks} showEmptySlots={false} />
+      </div>,
+    );
+
+    await component.locator('tr[data-path="task1.md"]').hover();
+    await page.waitForTimeout(100);
+
+    await expect(component).toHaveScreenshot("table-row-hover.png");
+  });
+
+  test("completed meeting with combined icons", async ({ mount }) => {
+    // ⛤ Fixture transplanted too, and deliberately: `mockTasks` above has no task with
+    // `isDone` AND `isMeeting` both true, so the icon-combination path is unreachable on
+    // it. Re-authored in THIS file's shape (human-readable `status`, real timestamps,
+    // width wrapper) rather than copied from the removed spec, which used ontology-UID
+    // statuses and null timestamps.
+    const completedMeeting: DailyTask[] = [
+      {
+        file: { path: "meeting-done.md", basename: "meeting-done" },
+        path: "meeting-done.md",
+        title: "Completed Meeting",
+        label: "Retro",
+        startTime: "14:00",
+        endTime: "15:00",
+        startTimestamp: new Date("2025-01-15T14:00:00").getTime(),
+        endTimestamp: new Date("2025-01-15T15:00:00").getTime(),
+        status: "Done",
+        metadata: {},
+        isDone: true,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: true,
+        isBlocked: false,
+      },
+    ];
+
+    const component = await mount(
+      <div style={{ width: "800px", padding: "20px" }}>
+        <DailyTasksTable tasks={completedMeeting} showEmptySlots={false} />
+      </div>,
+    );
+
+    await expect(component).toHaveScreenshot("table-completed-meeting.png");
+  });
 });
 
 test.describe("DailyTasksTableWithToggle Visual Regression", () => {
