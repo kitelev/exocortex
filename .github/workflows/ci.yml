@@ -1168,18 +1168,25 @@ jobs:
       - name: iPhone mobile-load smoke (WebKit, Issue #3464)
         run: npx playwright test -c packages/obsidian-plugin/playwright-mobile-smoke.config.ts
 
-      - name: Run visual regression tests (update snapshots if missing)
+      # Issue #4506 — this step is the visual half of the required `test-component`
+      # gate, so it carries NO `continue-on-error` and NO `|| true`: a visual
+      # regression has to be able to red the job it belongs to.
+      #
+      # The Linux baselines live in the repo (`*-chromium-linux.png`), committed from
+      # this job's own `linux-visual-snapshots` artifact, so the run compares against
+      # them instead of writing them. A NEW visual test with no Linux baseline reds
+      # here by design — download that artifact and commit the baseline it produced.
+      #
+      # ⛔ Do not reintroduce the previous `if ! ls <glob> | head -1` snapshot probe:
+      # a pipeline's exit status is its LAST command's, so `head` made the condition
+      # ALWAYS false and the baseline-generating branch was dead code. Measured on
+      # main@1bc3ee46 and the 11 merges before it: every run took the `else` branch,
+      # reported `20 failed`, exited 1 — and the flag above swallowed it, so the
+      # required job was green across all 12.
+      - name: Run visual regression tests
         run: |
           export NODE_OPTIONS="--max-old-space-size=4096"
-          # Check if Linux snapshots exist, if not generate them
-          if ! ls packages/obsidian-plugin/tests/component/__snapshots__/**/*-linux.png 2>/dev/null | head -1; then
-            echo "Linux snapshots not found, generating baseline snapshots..."
-            npx playwright test -c packages/obsidian-plugin/playwright-ct.config.ts --grep visual --update-snapshots || true
-          else
-            echo "Running visual regression tests against existing snapshots..."
-            npx playwright test -c packages/obsidian-plugin/playwright-ct.config.ts --grep visual
-          fi
-        continue-on-error: true
+          npx playwright test -c packages/obsidian-plugin/playwright-ct.config.ts --grep visual
 
       - name: Upload component test report
         if: always()

@@ -4,6 +4,8 @@ import {
   iriToVaultPath,
   FrontmatterService,
   matchFrontmatterBlock,
+  isUnquotedWikilink,
+  serializeYamlScalar,
 } from "@kitelev/exocortex-core";
 import type {
   ClassRefResolver,
@@ -548,12 +550,127 @@ export function createUpdatePropertyService(
           `updateProperty requires userInput.value — pass it via --input '{"value":"<value>"}' (e.g. set-planned-start: --input '{"value":"2026-07-25T09:00:00"}')`,
         );
       }
+      // Issue #4513 — the guard above rejects an ABSENT value and says nothing
+      // about one that IS the empty string. `""` passed, and
+      // `FrontmatterService.updateProperty` wrote it verbatim.
+      //
+      // ⛤ This is the THIRD writer of the same frontmatter key, and the
+      // refusal is PARITY WITH THE OTHER TWO rather than symmetry for its own
+      // sake: `cli set-property` refuses an empty value fail-loud
+      // (`assertNonEmptyValue`, req 501cdf2c) and so do the `property_set` /
+      // `property_append` groundings (#4429, PR #4511). `prop: ""` writes a
+      // junk key that LOOKS like a successful clear, and a consumer branching
+      // on "does the property exist" then sees it as present-with-an-empty-
+      // value. Clearing has its own path (the `removeProperty` service_call /
+      // the `remove-property` CLI verb), which the message names.
+      //
+      // ⛔ Not hypothetical: 8 authored groundings carry
+      // `exocmd__Grounding_serviceId: updateProperty` (measured across the
+      // three canonical vaults, 2026-10-02). Two of them (`abdbdf09` "Convert
+      // to task", `e8c1d18a` "Convert to project") never reach this factory —
+      // `GroundingExecutor.executeServiceCall` short-circuits them into the
+      // class-flip path. The remaining SIX pin the property in
+      // `serviceCallPayload` and take the value from user input
+      // (`ems__Effort_result`, `…_startTimestamp`, `…_endTimestamp`,
+      // `…_plannedStartTimestamp`, `…_plannedEndTimestamp`,
+      // `…_scheduledDate`), so a blank field wrote `prop: ""` on every one of
+      // them. There is no legitimate case in the refused set.
+      //
+      // ⛔ The predicate is STRICT (`=== ""`), NEVER `trim() === ""` — but NOT
+      // for the reason the sibling guards give, and the difference was measured
+      // here rather than inherited. `property_set`'s comment argues that a
+      // trimming predicate would make the live whitespace carriers unwritable;
+      // THROUGH THIS FACTORY that argument does not hold, because this path
+      // cannot write them in the first place. `updateProperty` calls
+      // `serializeValue(property, value)` with the DEFAULT `quoteScalars=false`,
+      // so a raw `" "` is emitted as `key: ` + spaces and js-yaml reads it back
+      // as **null**, and `" · "` comes back as `"·"` — measured 2026-10-02 by
+      // feeding both through the real `FrontmatterService`. The 5 live
+      // `exo__DisplayNameSpec_separator` carriers are all in QUOTED form
+      // (`" "`, `" · "`), which this serializer cannot emit at all, and a
+      // trimming predicate would not have refused `" · "` anyway (three
+      // characters, `trim()` non-empty).
+      //
+      // ⇒ strict stays, on a narrower and true ground: it refuses STRICTLY LESS
+      // than a trimming predicate and matches both sibling writers byte for
+      // byte, so the three writers of this key cannot disagree on a value.
+      //
+      // ⛔ The residual hole is NAMED rather than silently widened: `value: []`
+      // writes a BARE key (`prop:`) and `value: null` writes `prop: null`, both
+      // of which js-yaml reads as null — literally the "junk key that looks like
+      // a cleared property" this guard's own message describes. It is live:
+      // 4 assets in `exoas-period` carry `exo__DisplayNameSpec_separator: ""`
+      // (created 2026-09-20) and the loader skips every one of them with
+      // `Invalid IRI: Literal value cannot be empty`, so they contribute zero
+      // triples. ⛤ Parity is NOT broken by leaving it: `assertNonEmptyValue`
+      // and `executePropertySet` carry the same residue, so "3 of 3" holds for
+      // the empty-STRING class. Filed against all three writers together.
+      //
+      // ⛤ req 501cdf2c's sweep (34 327 files / 331 263 keys) found 0 carriers of
+      // `key: ""` on 2026-08-23; the 4 above appeared after it. The number is a
+      // dated measurement, not an invariant — re-measure before quoting it.
+      if (value === "") {
+        throw new Error(
+          `updateProperty: the value for ${property} is an empty string — refusing rather than writing a junk key that looks like a cleared property. To clear it, use the removeProperty service_call (or the remove-property CLI verb).`,
+        );
+      }
+      // Issue #4520 (req 61e3441e) — the sibling-writer half of the #4405 /
+      // #4424 truncation class. `FrontmatterService.updateProperty`'s contract
+      // is ALREADY-FORMATTED YAML: it writes what it is handed. Until this
+      // guard+serialise pair, this factory handed it `userInput.value`
+      // verbatim, so a user typing `PR #42 merged` into the modal of a
+      // `service_call updateProperty` grounding wrote `prop: PR #42 merged`,
+      // which every YAML reader takes as `PR` with ` #42 merged` as a comment.
+      // Three shapes are WORSE than truncation — `fix: broken parse`,
+      // `- item` and a multi-line value make js-yaml throw on the whole
+      // frontmatter BLOCK, so the asset collapses at every read (measured on
+      // this tree 2026-10-02 through the real FrontmatterService).
+      //
+      // ⛔ NO ORIGIN DISCRIMINATOR HERE, and that is measured rather than
+      // inherited from #4424. There the same variable carries both an author's
+      // YAML (a deliberate flow array) and substituted user text, so the fix
+      // had to record WHERE the value came from. On this path it does not:
+      // across all three canonical vaults (SPARQL --no-cache, 2026-10-02) the
+      // 8 authored groundings with `serviceId: updateProperty` pin ONLY
+      // `property` in `serviceCallPayload` — `ems__Effort_result`,
+      // `…_startTimestamp`, `…_endTimestamp`, `…_plannedStartTimestamp`,
+      // `…_plannedEndTimestamp`, `ems__Effort_scheduledDate` — and two of them
+      // (`abdbdf09` Convert-to-task, `e8c1d18a` Convert-to-project) never
+      // reach this factory at all, short-circuited by `targetValueRef` in
+      // `executeServiceCall`. `value` is caller/user input, full stop, so a
+      // `substitutionApplied`-style flag would be a constant here. Copying
+      // #4424's shape on the strength of symmetry is the argument that
+      // produced too broad a predicate once already
+      // (integration-test-revert-verify §A27).
+      //
+      // ⛔ THE ORDER IS LOAD-BEARING, exactly as it is for req 29e0d1b6 on the
+      // `property_set` path: `serializeYamlScalar` quotes a bare `[[uid]]` on
+      // its leading `[`, so serialising FIRST would make `isUnquotedWikilink`
+      // blind and turn a loud refusal into a silent successful write — the
+      // flow-sequence data loss that guard exists to prevent. The refusal also
+      // sits with the other input guards, BEFORE the file is resolved or read,
+      // so it is total.
+      //
+      // ⛔ `typeof value === "string"` is load-bearing too, and also measured:
+      // `serializeYamlScalar` returns `String(value)` for a non-string, which
+      // collapses an ARRAY value from a two-item YAML list to the single line
+      // `prop: a,b`. `updateProperty`'s own `serializeValue` already handles
+      // `Array.isArray` as a list and non-string scalars via `String()`, so
+      // restricting this step to strings keeps arrays, numbers and booleans
+      // byte-identical by construction.
+      if (typeof value === "string" && isUnquotedWikilink(value)) {
+        throw new Error(
+          `updateProperty: the value for ${property} is ${value} — an UNQUOTED wikilink. YAML reads it as a flow sequence, so the graph would receive a literal instead of a link (silent data loss). Pass the QUOTED form (the quotes are part of the string, e.g. --input '{"value":"\\"[[<uid>]]\\""}').`,
+        );
+      }
+      const valueToWrite =
+        typeof value === "string" ? serializeYamlScalar(value) : value;
       const filePath = await pathResolver.resolveTargetPath(targetIRI);
       const content = await fsAdapter.readFile(filePath);
       const updated = frontmatterService.updateProperty(
         content,
         property,
-        value,
+        valueToWrite,
       );
       await fsAdapter.updateFile(filePath, updated);
     },
