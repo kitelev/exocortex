@@ -1095,6 +1095,52 @@ export class GroundingExecutor {
       );
     }
 
+    // #4429 — nothing above checks the RESOLVED value for emptiness. The
+    // missing-input gate reads the TEMPLATE, and `""` counts as PROVIDED there
+    // (`v !== undefined && v !== null`), so a named input the user left blank
+    // passes it; `$target.<prop>` and `targetValueQuery` can resolve to "" on
+    // their own. `updateProperty` then writes `prop: ""` (or a bare `prop:` for a
+    // non-string-scalar), silently blanking whatever was on disk.
+    //
+    // ⛤ Refusing here is NOT symmetry with the sibling grounding types — it is
+    // PARITY WITH THE OTHER WRITER OF THE SAME FRONTMATTER KEY. `cli
+    // set-property` already refuses an empty value fail-loud (req 501cdf2c,
+    // `assertNonEmptyValue`): an empty string writes a junk key that LOOKS like a
+    // successful clear, and a consumer branching on "does the property exist"
+    // starts seeing it as present-with-an-empty-value. Clearing has its own path
+    // (`property_delete` / `remove-property`). Until this guard the root CLI
+    // command refused while THIS path — the one both the plugin button and `cli
+    // apply` take — accepted, so the two writers of one key disagreed (UI/CLI
+    // parity, #3417).
+    //
+    // ⛔ The predicate is STRICT (`=== ""`), NOT `trim() === ""`, and that is the
+    // measured half: req 501cdf2c's sweep of all three canonical vaults (34 327
+    // files / 331 263 keys, 2026-08-23) found **0** carriers of `key: ""` but
+    // **15** of `key: " "` — `exo__PrintedLiteral_literal` (9) and
+    // `exo__DisplayNameSpec_separator` (6). A trimming predicate would make those
+    // two properties unwritable by this grounding.
+    //
+    // ⛤ The predicate is on the RAW substituted value, NOT its decoded form — the
+    // opposite choice from `executePropertyAppend`'s guard, on purpose. There is
+    // no comparison here and no "which element" ambiguity: the bytes are written
+    // as they are, so the defect is exactly "a substitution produced nothing",
+    // while a two-character `""` authored as `targetValueLiteral` is a deliberate
+    // quoted-empty scalar. Nothing in the authored corpus uses that form
+    // (measured on `packages/exoas-exocmd`, 2026-10-02: 0 empty value
+    // expressions), so the boundary is named rather than the guard widened.
+    //
+    // The `targetValueRef` branch above never reaches this: an empty ref is
+    // already refused there, with the more specific broken-link message.
+    if (substitutedValue === "") {
+      return {
+        success: false,
+        error:
+          `property_set: the value for ${grounding.targetProperty} resolved to an empty ` +
+          `value — refusing rather than writing a junk key that looks like a cleared ` +
+          `property. To clear it, use property_delete (or the remove-property CLI verb).`,
+      };
+    }
+
     // Issue #3779: for string-semantic properties (`exo__Asset_label`,
     // `aliases`) a substitution-derived value (e.g. a relabel `$input.label`
     // = "Meeting: Q3") may contain YAML-significant characters. `updateProperty`
@@ -3624,6 +3670,16 @@ export class GroundingExecutor {
    * not yet introduced in the codebase; existing executors also use Error):
    * - Missing `targetProperty` / `appendExpression` on the grounding definition.
    * - `$target.<prop>` resolved to undefined / null / array.
+   * - `appendExpression` RESOLVES to an empty string (#4429). The guard above
+   *   rejects an ABSENT expression and says nothing about one that resolves to
+   *   nothing; an empty resolution would add a list element the author never
+   *   named, and the Set-based dedup would then make it idempotent — surviving
+   *   every re-run and reading as deliberate. ⚠ Same narrow cost the sibling
+   *   `property_replace` guard carries: `$targetFolder` legitimately resolves to
+   *   "" for an asset at the vault root, so such a grounding is refused too. No
+   *   authored grounding uses `$targetFolder` as a VALUE expression (measured on
+   *   `packages/exoas-exocmd`, 2026-10-02), and `property_delete` covers
+   *   intentional removal, so refusing loudly is the safer trade.
    */
   private async executePropertyAppend(
     grounding: GroundingDefinition,
@@ -3682,6 +3738,36 @@ export class GroundingExecutor {
     const plain = isCompleteDoubleQuotedScalar(resolvedValue)
       ? decodeYamlQuotedScalar(resolvedValue)
       : resolvedValue;
+
+    // #4429 — the `=== undefined` guard above rejects an ABSENT appendExpression
+    // and says nothing about one that RESOLVES to nothing. Appending "" adds a
+    // list element the author never named, and the Set-based dedup below makes
+    // that element IDEMPOTENT: it survives every re-run and reads as deliberate.
+    // Mirrors the refusal `executePropertyReplace` grew for the same root cause
+    // (#4314 / PR #4428), including its placement — AFTER resolution, BEFORE the
+    // list is touched.
+    //
+    // The predicate is on the DECODED value, not the raw resolution, because
+    // this method's identity for a list item IS its decoded form (the dedup
+    // below compares `decodeYamlSequenceItem` outputs). So a stored `- ""` and
+    // an `appendExpression` of `'""'` are the same empty item, and both are
+    // refused by one check.
+    //
+    // ⚠ Known narrow cost, same as the replace guard: `$targetFolder`
+    // legitimately resolves to "" for an asset at the vault root. Measured on
+    // the authored corpus (`packages/exoas-exocmd`, 2026-10-02): `$targetFolder`
+    // appears only as `exocmd__Grounding_targetFolder` — never as a VALUE
+    // expression — so no authored grounding is refused by this, and
+    // `property_delete` covers intentional removal.
+    if (plain === "") {
+      return {
+        success: false,
+        error:
+          "property_append: appendExpression resolved to an empty value — " +
+          "refusing rather than appending an empty list element",
+      };
+    }
+
     const seen = new Set(existing.map(decodeYamlSequenceItem));
     let merged: string[];
     if (seen.has(plain)) {
