@@ -237,6 +237,15 @@ describe("createUpdatePropertyService — value serialisation (#4520)", () => {
     // `createSetStatusService` builds `"[[<uid>]]"` itself — a complete
     // double-quoted scalar, i.e. the engine's own output. This axis pins that
     // #4520 did not widen to it (the issue names `:672` as out of scope).
+    //
+    // ⛤ Measured, because the issue's stated mechanism does not hold for this
+    // shape: `serializeYamlScalar` passes a COMPLETE double-quoted scalar
+    // through verbatim, so a second serialisation here would be a NO-OP, not
+    // the corruption the issue predicts. The exclusion stands on the other
+    // ground — a second writer on the engine's own output — and the no-op is a
+    // property of the CURRENT shape, not a guarantee: were this factory to
+    // build a BARE uid, the serializer would quote it on its leading `[`. This
+    // axis pins the shape, which is what makes the exclusion safe.
     const fs = makeFsStub({
       [TARGET]: `---\nems__Effort_status: "[[old]]"\n---\nbody\n`,
     });
