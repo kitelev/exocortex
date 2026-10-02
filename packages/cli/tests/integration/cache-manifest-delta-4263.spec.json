@@ -13,17 +13,39 @@
     "M1_modified_files_invisible_(root-mtime-class)": {
       "from": "    } else if (previous.mtimeMs !== stamp.mtimeMs || previous.size !== stamp.size) {\n      modified.push(relPath);",
       "to": "    } else if ((previous.mtimeMs !== stamp.mtimeMs || previous.size !== stamp.size) && false) {\n      modified.push(relPath);",
-      "expect": ["A1", "U3"]
+      "expect": [
+        "A1",
+        "A2",
+        "A5",
+        "A6",
+        "A7",
+        "A10",
+        "A11",
+        "A13",
+        "A14",
+        "A15",
+        "A16",
+        "A17",
+        "U3",
+        "U5",
+        "U7",
+        "U9",
+        "U10",
+        "U14"
+      ],
+      "_note": "⛤ expect widened 2026-10-02 (#4480) to the MEASURED set, after the §A43 addressability check and not to make the run agree (integration-test-revert-verify §A44). The mutated line IS the guard that classifies a file as `modified`; with it dead no edit is ever seen, so every axis whose verdict that classification produces reds — ONE mechanism, three sides of it: the validity verdict on an edit (A1 :209 / U3 :204 `expect(await cache.isCacheValid()).toBe(false)`), the delta path an edit must take (A2, A7, A10, A14, A17, U7, U9, U14 — all `expect(<x>.mode).toBe(\"delta\")`), and the rebuild guards that are REACHED only for a modified file (A5, A6, A11, A15, A16, U5 — all `…toBe(\"rebuild\")`); plus A13 :826 `expect(writeTargets.length).toBeGreaterThan(0)` (no modification ⇒ no delta write). Exemplary failure — U10, the unit axis over the mutated function itself: `tests/unit/cache/CacheManager.test.ts:412 expect(diffManifest(cached, current)).toEqual({… modified: […] …})` reads the classification directly. ⛤ Why §A43's remedy (retarget the mutation deeper) does NOT apply: measured `Tests: 18 failed, 16 passed, 34 total` — the harness reaches its verdict (so not §A55), and the 16 passing axes are a SEMANTICALLY COHERENT remainder (add / remove / absent / corrupt / FileSpace / formatVersion / unwalkable / temp-sweep), which a stand-toppling mutation would not leave. Nor is there a deeper point: `modified.push(relPath)` is the write line and yields the same set, and the size half of the predicate is already pinned on its own by M20. ⛔ None of the 18 reds for a third cause — every failing assertion was read (2026-10-02)."
     },
     "M2_delta_reparses_whole_vault": {
       "from": "      strict: false,\n      files,\n      fileSpacePrefixes: cached.metadata.fileSpacePrefixes,",
       "to": "      strict: false,\n      files: adapter.getAllFiles(),\n      fileSpacePrefixes: cached.metadata.fileSpacePrefixes,",
-      "expect": ["A2", "U3"]
+      "expect": ["A2", "A4", "A9", "A10", "A17", "U3", "U4", "U9", "U14"],
+      "_note": "⛤ expect widened 2026-10-02 (#4480) after reading EVERY failing assertion (§A44). One mechanism: the mutation swaps the file set handed to `convertVault` for the whole vault, so every axis that asserts WHICH files a delta re-parsed reds — and nothing else does (measured `Tests: 9 failed, 25 passed, 34 total`, so §A43 addressability holds). Two observables of that one mechanism: the converter spy (U3 :210, U4 :236, U9 :393, U14 :544 — all `expect(convertCalls[0]?.files?.map((f) => f.path)).toEqual([…])`) and the integration `reparsed` list (A2 :283, A4 :368, A9 :667, A17 :1048; A10 :717 is its negative form, `expect(reparsed).not.toContain(<TBox class file>)`). Exemplary failure: `tests/unit/cache/CacheManager.test.ts:210` receives all four fixture files where one was expected."
     },
     "M3_referrer_scan_removed": {
       "from": "    if (referrerIris.size > 0 || referrerNeedles.size > 0) {",
       "to": "    if (referrerIris.size > 99999 || referrerNeedles.size > 99999) {",
-      "expect": ["A4", "A9", "A10"]
+      "expect": ["A4", "A9", "A10", "A16", "A17"],
+      "_note": "⛤ A16 and A17 added 2026-10-02 (#4480) after reading their failing assertions (§A44). Both ride the mutated guard: with the referrer scan gated off nothing is re-parsed through a changed target, so the delta's triple set stops equalling a from-scratch rebuild — A16 `:1005 expect(tripleKeys(human.triples)).toEqual(await fullRebuildKeys())` (Task B's `ems__Effort_parent` keeps the stale symbolic `ems#Sprint` instead of the new file-IRI, visible in the diff) and A17 `:1048 expect(reparsed).toEqual([bRel, pRel].sort())` (the referrer that resolves through the new alias is never enqueued). The old expect named only the three axes that existed when the scan was written."
     },
     "M4_tbox_guard_removed": {
       "from": "const TBOX_FORM = new RegExp(`^${PREFIX_PATTERN_SOURCE}__\\\\S+$`);",
@@ -34,7 +56,8 @@
     "M5_inferred_layer_dropped_on_delta": {
       "from": "    if (cached.metadata.inferenceEnabled) {\n      const nextByPath",
       "to": "    if (cached.metadata.inferenceEnabled && false) {\n      const nextByPath",
-      "expect": ["A7", "A14"]
+      "expect": ["A7", "A14", "U7"],
+      "_note": "⛤ U7 added 2026-10-02 (#4480) after reading the assertion it breaks (§A44). This mutant disables the whole inference block, so the persisted layer is DROPPED instead of kept, and U7 pins exactly that: `tests/unit/cache/CacheManager.test.ts:343 expect(kept.triples).toHaveLength(4)` receives 3 after a label-only delta. Same axis and same assertion as M17, which mutates the gate one level in — U7 pins both the enable flag and the per-delta gate."
     },
     "M6_inferred_layer_kept_stale_on_delta": {
       "from": "        inferredTriples = result.inferred;\n        inferred = inferredTriples.map(this.serializeTriple);",
@@ -44,7 +67,8 @@
     "M7_threshold_removed": {
       "from": "    if (changed > population * DELTA_REBUILD_RATIO) {",
       "to": "    if (changed > population * 99) {",
-      "expect": ["A6", "U5"]
+      "expect": ["A6", "U5", "U14"],
+      "_note": "⛤ U14 added 2026-10-02 (#4480) after reading the assertion it breaks (§A44). U14 is the BOUNDARY axis over the very comparison this mutant breaks: with the ratio pushed to 99 nothing ever exceeds it, so `tests/unit/cache/CacheManager.test.ts:552 expect((await cache.loadOrBuild()).mode).toBe(\"rebuild\")` (3 of 4 changed, i.e. > 50 %) receives \"delta\". U5 is the over-threshold case and U14 the strict-inequality edge; M26, which mutates the operator alone, reds U14 only."
     },
     "M8_filespace_guard_removed": {
       "from": "      if (frontmatter && frontmatterDeclaresFileSpaceAnyForm(frontmatter)) {",
@@ -54,7 +78,8 @@
     "M10_removed_entries_kept": {
       "from": "      if (removed.has(entry.path)) {\n        continue;\n      }\n      nextFiles.push(",
       "to": "      if (removed.has(entry.path) && false) {\n        continue;\n      }\n      nextFiles.push(",
-      "expect": ["A3", "U4"]
+      "expect": ["A3", "A4", "A16", "U4"],
+      "_note": "⛤ A4 and A16 added 2026-10-02 (#4480) after reading their failing assertions (§A44). One mechanism: with the `continue` gated off a removed file's entry survives in `nextFiles`, so any axis that ends by comparing the delta against a from-scratch rebuild reds — A4 `:391 expect(tripleKeys(removed.triples)).toEqual(await fullRebuildKeys())` and A16 `:1005` the same matcher on the alias-removal leg. A3 and U4 (already declared) assert the disappearance directly; these two assert it through rebuild parity."
     },
     "M11_bare_bodylink_needle_removed": {
       "from": "      if (needles.has(linkpathOf(t.object.value))) {",
@@ -79,17 +104,20 @@
     "M15_alias_diff_removed": {
       "from": "      if (previous && !sameSet(oldAliases, newAliases)) {",
       "to": "      if (previous && !sameSet(oldAliases, newAliases) && false) {",
-      "expect": ["A10"]
+      "expect": ["A10", "A17"],
+      "_note": "⛤ A17 added 2026-10-02 (#4480) after reading the assertion it breaks (§A44). The alias diff is what enqueues the referrers that resolve through an alias, and A17 is the ADDITION leg of that guard (A10, already declared, is the CHANGE leg): gated off, `tests/integration/cache-manifest-delta-4263.integration.test.ts:1048 expect(reparsed).toEqual([bRel, pRel].sort())` loses `bRel` — the very referrer the new alias was supposed to reach."
     },
     "M16_inference_flag_replaced_by_length": {
       "from": "    if (cached.metadata.inferenceEnabled) {",
       "to": "    if (cached.inferred.length > 0) {",
-      "expect": ["A14"]
+      "expect": ["A7", "A14"],
+      "_note": "⛤ A7 added 2026-10-02 (#4480) after reading the assertion it breaks (§A44). A7's middle leg exists precisely to make the flag-vs-length distinction observable: it drives the layer to EMPTY while inference stays ENABLED, so substituting `cached.inferred.length > 0` for the flag skips the recompute and the prototype-inherited triple never arrives — `tests/integration/cache-manifest-delta-4263.integration.test.ts:580 expect(objectsOf(withProto.triples, aRel)).toContain(inheritedArea)` fails. So A7 is a DEPENDENCY of the flag, not an unrelated axis."
     },
     "M18_layer_never_recomputed": {
       "from": "      if (inferenceInputsChanged(cached, nextByPath, [...reparsed, ...removed])) {",
       "to": "      if (inferenceInputsChanged(cached, nextByPath, [...reparsed, ...removed]) && false) {",
-      "expect": ["A14", "A7"]
+      "expect": ["A7", "A14", "U7"],
+      "_note": "⛤ U7 added to `expect` 2026-10-02 (#4480) only after READING the assertion it breaks (§A44). Mirror of M17: this mutant forces the gate's FALSE branch, so the delta that DOES change an engine input (`writeFile(\"a.md\", \"CLASS:Task\")`) never re-materializes the layer and the now-stale hand-seeded triple survives — `tests/unit/cache/CacheManager.test.ts:353 expect(delta.triples).toHaveLength(4)` receives 5 (measured on a mutated copy, 2026-10-02). Same gate, same axis, opposite branch: U7 is why both M17 and M18 red it, and dropping it from `expect` would have let A14/A7 cover for it silently."
     },
     "M19_tbox_marker_not_set_for_skipped": {
       "from": "    if (!tbox && triples.length === 0) {",
@@ -114,7 +142,8 @@
     "M23_format_version_check_removed": {
       "from": "        raw.metadata.formatVersion !== CACHE_FORMAT_VERSION ||",
       "to": "        false ||",
-      "expect": ["U12"]
+      "expect": ["A18", "U12"],
+      "_note": "⛤ A18 added to `expect` 2026-10-02 (#4480) only after READING the assertion it breaks (§A44). A18's whole premise is that a WARM cache carrying `formatVersion: 2` must be rejected and rebuilt — it is the integration-level axis over exactly the conjunct this mutant deletes. With the check gone `readCacheData` accepts the v2 file, so `tests/integration/cache-manifest-delta-4263.integration.test.ts:1194 expect(await cache.isCacheValid()).toBe(false)` receives true (measured on a mutated copy, 2026-10-02). U12 is the unit-level sibling of the same conjunct; the old `expect` named only it because the mutant was written while reading the unit suite."
     },
     "M24_save_inferred_without_cache_no_throw": {
       "from": "    if (!cached) {\n      throw new Error(\n        `Cannot save inferred triples: no valid cache at ${this.cachePath} (build the cache first)`,\n      );\n    }",
@@ -144,7 +173,8 @@
     "M17_inference_gate_always_recomputes": {
       "from": "      if (inferenceInputsChanged(cached, nextByPath, [...reparsed, ...removed])) {",
       "to": "      if (inferenceInputsChanged(cached, nextByPath, [...reparsed, ...removed]) || true) {",
-      "expect": ["A14"]
+      "expect": ["A14", "U7"],
+      "_note": "⛤ U7 added to `expect` 2026-10-02 (#4480) only after READING the assertion it breaks, not to make the run agree (integration-test-revert-verify §A44). U7 pins BOTH branches of this very gate, and this mutant forces the TRUE one: with `|| true` the label-only delta (`writeFile(\"a.md\", \"A2\")`, which touches no engine input) still re-runs the real engines, they infer nothing from that fixture, and the hand-seeded inferred triple is dropped — `tests/unit/cache/CacheManager.test.ts:343 expect(kept.triples).toHaveLength(4)` receives 3 (measured on a mutated copy, 2026-10-02). So U7 is a DEPENDENCY of this gate's false branch, not an unrelated axis; the old `expect` named only the integration axis A14 because the mutant was authored while reading that suite."
     },
     "M29_tbox_alias_frontmatter_probe_removed": {
       "from": "        newAlias: frontmatterHasTBoxFormAlias(frontmatter),\n",
