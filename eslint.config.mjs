@@ -224,8 +224,13 @@ export default tseslint.config(
   },
   // M5a package rename (packages/exocortex -> packages/core) git-mv's every core
   // file, so lint-staged now lints all of them and surfaces lint debt that
-  // PRE-DATES rule tightening and is NOT gated by CI (`npm run lint` covers only
-  // packages/obsidian-plugin/src). These violations existed dormant on main; the
+  // PRE-DATES rule tightening. ⛤ Corrected by #4497: at the time this entry was
+  // written CI's eslint step covered only packages/obsidian-plugin/src AND could
+  // not fail its job (`continue-on-error`), so the debt was gated by nothing.
+  // `npm run lint` is now the ratchet in scripts/check-eslint-debt.mjs and covers
+  // every lintable packages/*/src, this file included — so these suppressions are
+  // what keeps the ratchet's baseline from carrying them. These violations existed
+  // dormant on main; the
   // behavior-preserving rename is not their cause. Suppress only the surfaced
   // rules for exactly the affected debt files so the rename can land green.
   // ⛔ Do NOT extend this list — fix the debt and remove the entry instead.
@@ -298,7 +303,8 @@ export default tseslint.config(
   // is the documented Node.js-only loader (CLI path) and already reaches `fs/promises`
   // / `path` through dynamic `await import()`; the same three lines exist on
   // origin/main (1171e0ae:43,45,215). `packages/core` has no `Platform` to guard on
-  // and CI `lint` covers only packages/obsidian-plugin/src, so the warning was dormant.
+  // and at the time of writing CI `lint` covered only packages/obsidian-plugin/src
+  // (and could not fail — see #4497), so the warning was dormant. It is in scope now.
   // Suppress ONLY this rule for exactly this file; follow-up: an FS-free core
   // (move loadFromVaultFS to the CLI package) removes the entry.
   {
