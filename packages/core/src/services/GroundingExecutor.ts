@@ -1117,11 +1117,15 @@ export class GroundingExecutor {
     // one — `createUpdatePropertyService` in
     // `packages/services/src/grounding-service-factories.ts`, which guarded only
     // `value === undefined` — carries the same strict `=== ""` refusal since
-    // then. ⛔ Its axes do NOT live next to it: `packages/services` is built but
-    // never jest-run by CI (and its one suite does not even execute on `main`),
-    // so they sit in `packages/cli/tests/unit/services/`, which
-    // `test-coverage-cli` gates. Count the writers again before widening this
-    // claim — "3 of 3" is a measurement, not an invariant.
+    // then. ⛔ Its axes do NOT live next to it: no workflow ever runs jest for
+    // `packages/services` (`test-ci-batched.sh` drives exactly three configs —
+    // obsidian-plugin, cli, core — and CI touches the package only through
+    // `npm run build -w @kitelev/exocortex-services`), so axes placed there
+    // would sit outside every gate. The suite itself is HEALTHY locally (57/57
+    // on `474e9dd5`); it is unreachable, not broken. They sit in
+    // `packages/cli/tests/unit/services/`, which `test-coverage-cli` gates.
+    // Count the writers again before widening this claim — "3 of 3" is a
+    // measurement, not an invariant.
     //
     // ⛔ The predicate is STRICT (`=== ""`), NOT `trim() === ""`, and that is the
     // measured half: req 501cdf2c's sweep of all three canonical vaults (34 327
@@ -1639,9 +1643,15 @@ export class GroundingExecutor {
     // label form (CommandResolver may have downgraded when class TBox file is
     // absent from resolution store, see #3220).
     //
-    // Link-to-parent (30b9e8d8) uses the same serviceId but carries NO
-    // targetValueRef (driven via inputSchema+userInput) and so flows past
-    // this short-circuit into the registered updateProperty service below.
+    // ⛔ The example this comment used to give — Link-to-parent (`30b9e8d8`) —
+    // NO LONGER EXISTS (measured 2026-10-02: absent from all three canonical
+    // vaults, and `exoas-exocmd` returns 404 for it on `main`; the only copies
+    // left are in stale `*-full` replicas snapshotted 2026-06-16). The BRANCH
+    // it illustrated is still live and still needed: a grounding with this
+    // serviceId but NO `targetValueRef` (property and value driven via
+    // inputSchema + userInput) flows past this short-circuit into the
+    // registered updateProperty service below. Of the 8 authored groundings
+    // that dispatch `updateProperty` today, 6 take that path.
     if (serviceId === "updateProperty") {
       // RFC 918a2b65 Phase 4 — class-flip dispatch via typed `targetValueRef`
       // only. Legacy `targetValue` path removed after vault migration

@@ -15,22 +15,22 @@ import {
  * `property_append` groundings (#4429, PR #4511).
  *
  * ⛔ WHY THESE AXES LIVE IN `packages/cli` AND NOT NEXT TO THE SUBJECT.
- * `packages/services` is **built** by CI (`npm run build -w
- * @kitelev/exocortex-services`, `ci.yml`) and **never jest-run** — no workflow
- * invokes `packages/services/jest.config.js`. That is not a theoretical rot
- * risk: on `origin/main@474e9dd5` that single suite does not even execute
- * (`TS2339: Property 'YAML11_SCHEMA' does not exist …`, measured 2026-10-02 in
- * the pristine checkout), so the three pre-existing `createUpdatePropertyService`
- * contract assertions living there are currently guarding nothing. Axes placed
- * beside the subject would be tautologically green (`hook-matcher-vs-declared-
- * surface`: the input never reaches them). `packages/cli/jest.config.js` has no
- * allow-list (`testMatch: tests/**\/*.test.ts`), `test-coverage-cli` runs it
- * whole, and `test-coverage` — a required check — fails if that job fails. Its
- * `moduleNameMapper` resolves `@kitelev/exocortex-services` to the package
- * SOURCE, so these axes exercise the real factory, not a built artefact.
+ * No workflow ever runs jest for `packages/services`: `test-ci-batched.sh`
+ * drives exactly three configs (obsidian-plugin, cli, core), and CI touches the
+ * package only through `npm run build -w @kitelev/exocortex-services`. Axes
+ * placed beside the subject would therefore sit outside every gate — green or
+ * red, nothing would read them (`hook-matcher-vs-declared-surface`: the input
+ * never reaches them). The suite itself is HEALTHY (57/57 on `474e9dd5`); it is
+ * UNREACHABLE, not broken.
  *
- * ⛤ V3/V5/V6 restate the pre-existing contract on purpose: they are the only
- * live copies of it until the services suite is repaired.
+ * `packages/cli/jest.config.js` has no allow-list (`testMatch:
+ * tests/**\/*.test.ts`), `test-coverage-cli` runs it whole, and `test-coverage`
+ * — a required check — fails if that job fails. Its `moduleNameMapper` resolves
+ * `@kitelev/exocortex-services` to the package SOURCE, so these axes exercise
+ * the real factory, not a built artefact.
+ *
+ * ⛤ V3/V5/V6 restate the pre-existing contract on purpose: the gated copy of it
+ * has to live inside the gate.
  *
  * Mutants: `updateProperty-empty-value-4513.spec.json`.
  */
@@ -111,10 +111,16 @@ describe("createUpdatePropertyService — empty-value refusal (#4513)", () => {
     expect(fs.writes[0].content).toMatch(/ems__Effort_result: shipped/);
   });
 
-  it("V4 control — a whitespace-only value is still written (predicate is strict `=== \"\"`)", async () => {
-    // The boundary req 501cdf2c measured: 0 live carriers of `key: ""`, but 15
-    // of `key: " "` (exo__PrintedLiteral_literal ×9, exo__DisplayNameSpec_
-    // separator ×6). A trim()-widened guard would make those unwritable.
+  it("V4 control — a non-empty string is not refused even when it is only whitespace: the predicate does not trim", async () => {
+    // ⛔ This axis pins the PREDICATE, not a use case. Measured 2026-10-02:
+    // through this factory a raw " " is serialized with quoteScalars=false, so
+    // the file gets `key: ` + spaces and js-yaml reads it back as NULL — i.e.
+    // "still written" is true byte-wise only. The 5 live
+    // exo__DisplayNameSpec_separator carriers are QUOTED (`" "`, `" · "`), a
+    // form this serializer cannot emit at all, so the usual "a trimming guard
+    // would make them unwritable" argument does NOT apply here. Strict is still
+    // right for a narrower reason: it refuses strictly less than a trimming
+    // predicate and matches both sibling writers byte for byte.
     const fs = makeFsStub({ [TARGET]: FM });
     await makeService(fs).execute("any-iri", {
       property: "exo__DisplayNameSpec_separator",

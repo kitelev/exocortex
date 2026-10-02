@@ -574,18 +574,39 @@ export function createUpdatePropertyService(
       // `…_scheduledDate`), so a blank field wrote `prop: ""` on every one of
       // them. There is no legitimate case in the refused set.
       //
-      // ⛔ The predicate is STRICT (`=== ""`), NEVER `trim() === ""`, and that
-      // half is MEASURED: req 501cdf2c's sweep of all three canonical vaults
-      // (34 327 files / 331 263 keys, 2026-08-23) found **0** carriers of
-      // `key: ""` but **15** of `key: " "` — `exo__PrintedLiteral_literal` (9)
-      // and `exo__DisplayNameSpec_separator` (6). Both are free-text scalars
-      // reachable through this factory, so a trimming predicate would make
-      // them unwritable. The boundary is named rather than the guard widened.
+      // ⛔ The predicate is STRICT (`=== ""`), NEVER `trim() === ""` — but NOT
+      // for the reason the sibling guards give, and the difference was measured
+      // here rather than inherited. `property_set`'s comment argues that a
+      // trimming predicate would make the live whitespace carriers unwritable;
+      // THROUGH THIS FACTORY that argument does not hold, because this path
+      // cannot write them in the first place. `updateProperty` calls
+      // `serializeValue(property, value)` with the DEFAULT `quoteScalars=false`,
+      // so a raw `" "` is emitted as `key: ` + spaces and js-yaml reads it back
+      // as **null**, and `" · "` comes back as `"·"` — measured 2026-10-02 by
+      // feeding both through the real `FrontmatterService`. The 5 live
+      // `exo__DisplayNameSpec_separator` carriers are all in QUOTED form
+      // (`" "`, `" · "`), which this serializer cannot emit at all, and a
+      // trimming predicate would not have refused `" · "` anyway (three
+      // characters, `trim()` non-empty).
       //
-      // ⛤ `null` is deliberately NOT refused here. It is a different class
-      // (a typed null, not "the user submitted nothing"), it has no measured
-      // carrier either way, and widening on a hunch is exactly what the
-      // measurement above exists to prevent.
+      // ⇒ strict stays, on a narrower and true ground: it refuses STRICTLY LESS
+      // than a trimming predicate and matches both sibling writers byte for
+      // byte, so the three writers of this key cannot disagree on a value.
+      //
+      // ⛔ The residual hole is NAMED rather than silently widened: `value: []`
+      // writes a BARE key (`prop:`) and `value: null` writes `prop: null`, both
+      // of which js-yaml reads as null — literally the "junk key that looks like
+      // a cleared property" this guard's own message describes. It is live:
+      // 4 assets in `exoas-period` carry `exo__DisplayNameSpec_separator: ""`
+      // (created 2026-09-20) and the loader skips every one of them with
+      // `Invalid IRI: Literal value cannot be empty`, so they contribute zero
+      // triples. ⛤ Parity is NOT broken by leaving it: `assertNonEmptyValue`
+      // and `executePropertySet` carry the same residue, so "3 of 3" holds for
+      // the empty-STRING class. Filed against all three writers together.
+      //
+      // ⛤ req 501cdf2c's sweep (34 327 files / 331 263 keys) found 0 carriers of
+      // `key: ""` on 2026-08-23; the 4 above appeared after it. The number is a
+      // dated measurement, not an invariant — re-measure before quoting it.
       if (value === "") {
         throw new Error(
           `updateProperty: the value for ${property} is an empty string — refusing rather than writing a junk key that looks like a cleared property. To clear it, use the removeProperty service_call (or the remove-property CLI verb).`,
