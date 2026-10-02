@@ -1,0 +1,23 @@
+{
+  "_doc": "Revert-verify mutants for req 5d2c7ede-b053-4dac-a667-7c4f5e4b22da (issue #4516) — the WIRING of the shared predicate into `createUpdatePropertyService` (service_call `updateProperty`). Mirrors the set-property wiring spec; for the predicate's semantics see `packages/cli/tests/integration/set-property-empty-list-null-4516.predicate.spec.json`. ⛔ The subject is in packages/services, which NO workflow jest-runs — the axes therefore live in packages/cli, gated by test-coverage-cli, whose moduleNameMapper resolves @kitelev/exocortex-services to package SOURCE. Set `tree`/`subject` to YOUR checkout before running.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/services/src/grounding-service-factories.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/cli/jest.config.js packages/cli/tests/integration/set-property.empty-list-null-4516.integration.test.ts packages/cli/tests/unit/services/updateProperty-empty-list-null-4516.test.ts --verbose 2>&1",
+  "mutants": {
+    "G1_guard_not_wired": {
+      "_note": "Severs the call to the shared predicate in this writer, type-preserving. Reddens every refusal axis of writer 3 — the new empty-list/null ones (W1-W4) AND the pre-existing empty-string one (W6, #4513) — since one call site carries all of them. The set-property axes stay green. ⛤ W8 (the repair path still removes empty properties) must stay GREEN under this mutant: it drives PropertyCleanupService, which never reaches this guard — that is the executed proof the issue asked for that a write guard cannot break `apply clean-properties`.",
+      "from": "      const emptyForm = emptyPropertyValueForm(value);\n",
+      "to": "      const emptyForm: string | undefined = undefined;\n",
+      "expect": ["W1", "W2", "W3", "W4", "W6"]
+    }
+  }
+}

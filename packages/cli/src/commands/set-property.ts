@@ -5,6 +5,7 @@ import {
   FrontmatterService,
   serializeYamlScalar,
   STRING_SCALAR_PROPERTIES,
+  emptyPropertyValueForm,
 } from "@kitelev/exocortex-core";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { WikilinkValidator } from "../services/WikilinkValidator.js";
@@ -60,6 +61,24 @@ function assertScalarOrScalarArray(value: unknown): void {
  * "does the property exist" starts seeing it as present-with-an-empty-value.
  * Clearing has its own command (`remove-property`), which the message names.
  *
+ * ⛤ WIDENED by req `5d2c7ede-b053-4dac-a667-7c4f5e4b22da` (issue #4516) from a
+ * literal `=== ""` to the shared {@link emptyPropertyValueForm}, which also
+ * names an EMPTY LIST. `--input '{"value":[]}'` used to pass
+ * `assertScalarOrScalarArray` (an empty array IS an array of scalars,
+ * vacuously) and write a BARE `prop:` key — the very "junk key that looks like
+ * a cleared property" this message describes. Measured 2026-10-03 on
+ * `origin/main` `eb12e620`: on an EXISTING property it additionally DESTROYED
+ * the value (`"Existing channel"` → `null`), so the damage was data loss and
+ * not only a stray key.
+ *
+ * ⛔ The predicate's `null` branch is UNREACHABLE on this path, and that is
+ * deliberate rather than overlooked: `assertScalarOrScalarArray` runs FIRST
+ * (line order below) and refuses `null` with its own, more specific message
+ * (`--input.value must be a scalar … not null`). The shared predicate carries
+ * the branch for the OTHER writer, `createUpdatePropertyService`, where `null`
+ * does arrive and did write `prop: null`. ⇒ a mutant removing the null branch
+ * reddens that writer's axes, not these — by construction.
+ *
  * ⛔ The predicate is STRICT (`=== ""`), NOT `String(value).trim() === ""`.
  * A whitespace-ONLY value is legitimate and live: a measurement of all three
  * canonical vaults (34 327 files / 331 263 keys, 2026-08-23) found **0** carriers
@@ -77,9 +96,10 @@ function assertScalarOrScalarArray(value: unknown): void {
  * name-check and guarded-route refusals.
  */
 function assertNonEmptyValue(property: string, value: unknown): void {
-  if (value !== "") return;
+  const form = emptyPropertyValueForm(value);
+  if (form === undefined) return;
   throw new Error(
-    `Refusing to set "${property}" to an EMPTY value — an empty string writes a junk key (${property}: "") ` +
+    `Refusing to set "${property}" to an EMPTY value — ${form} ` +
       `rather than clearing the property. To delete it use:  exocortex remove-property <path> --property ${property} --vault <v>`,
   );
 }

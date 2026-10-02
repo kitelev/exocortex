@@ -620,3 +620,86 @@ export function isUnquotedWikilink(value: string): boolean {
   // the dotAll flag is ES2018+ (`TS1501` in CI typecheck).
   return /^\[\[[\s\S]*\]\]$/.test(value.trim());
 }
+
+/**
+ * Does this caller-supplied value write a key that LOOKS like a cleared
+ * property? Returns a human-readable description of the form, or `undefined`
+ * when the value is a legitimate one.
+ *
+ * Req `5d2c7ede-b053-4dac-a667-7c4f5e4b22da` (issue #4516) — the residual half
+ * of the class req `501cdf2c` closed. That req refused `value === ""` in all
+ * three writers of a frontmatter key and EXPLICITLY scoped out the two
+ * neighbours that produce the SAME observable:
+ *
+ * | value | what lands in the file | what a YAML reader sees |
+ * |---|---|---|
+ * | `""`  | `prop: ""`  | `""` — refused since #4513 |
+ * | `[]`  | `prop:` (BARE key) | `null` (js-yaml) |
+ * | `null`| `prop: null` | `null` (js-yaml) |
+ *
+ * A bare `prop:` is literally the thing the shipped guard's own message
+ * describes — "a junk key that looks like a cleared property". Measured
+ * 2026-10-03 on `origin/main` `eb12e620` by feeding each form through the real
+ * writers and reading the bytes back from disk; `cli set-property --input
+ * '{"value":[]}'` additionally DESTROYED an existing value (`"Existing
+ * channel"` → `null`), so the damage is data loss, not only a junk key.
+ *
+ * ⛤ `value: null` is worse than the issue's framing: js-yaml reads it back as
+ * `null`, but `FrontmatterService.parseObject` — the reader on the CLI/loader
+ * path — reads the STRING `"null"`. That fabricates a literal nobody wrote; on
+ * a reference-typed property it is a dangling literal instead of an edge.
+ *
+ * ⛔ The predicate refuses ONLY THE EMPTY list, never a populated one: a
+ * multi-value write is legitimate and measured working (`["a","b"]` → `prop:`
+ * plus two `- ` items). And it is STRICT on strings — `=== ""`, never
+ * `trim() === ""`: a measurement of all three canonical vaults (55 429 files /
+ * 572 162 keys, 2026-10-03) found 22 live WHITESPACE-only carriers
+ * (`exo__DisplayNameSpec_separator` 13, `exo__PrintedLiteral_literal` 9), and a
+ * trimming predicate would make those unwritable (req `501cdf2c` §Границы).
+ *
+ * ⛤ Why an empty list is junk follows from a MECHANISM, not from a count:
+ * `PropertyCleanupService.isEmptyValue` treats `[]` (and `null`, and `""`) as
+ * empty, and `apply clean-properties` DELETES it — so the product already
+ * classifies an empty list as junk, and a writer accepting it creates exactly
+ * what its sibling command immediately removes. Clearing has its own path,
+ * which each caller's message names. The same measurement found 0 carriers of
+ * `key: ""`, `key: null` and `key: []`.
+ *
+ * ⛔ `{}` is deliberately NOT here. `cli set-property` already refuses it
+ * (`assertScalarOrScalarArray`: "not object") and `createUpdatePropertyService`
+ * writes `[object Object]` — silent corruption, which is a DIFFERENT class from
+ * "looks like a clear" and needs its own message. Named as a non-goal of the
+ * req rather than folded in.
+ *
+ * ⛤ Shared by the TWO writers it can actually reach: `cli set-property`
+ * (`assertNonEmptyValue`) and the `service_call updateProperty` factory in
+ * `packages/services`. It lives here with the sibling shape predicates for the
+ * reason `isUnquotedWikilink` does: a second COPY of a safety predicate is how
+ * two writers of one key come to disagree about a value.
+ *
+ * ⛔ `GroundingExecutor.executePropertySet` / `executePropertyAppend` do NOT
+ * use it, and that is measured rather than overlooked: their value is
+ * `string`-typed (`substitutedValue: string`, `resolvedValue: string`), so the
+ * list and null branches are unreachable there and an axis over them would be
+ * vacuous. Their own `=== ""` refusal stays as it is.
+ */
+export function emptyPropertyValueForm(value: unknown): string | undefined {
+  if (value === "") {
+    return 'an empty string (writes a junk `prop: ""` key)';
+  }
+  if (value === null) {
+    return "null (writes `prop: null`, which a YAML reader sees as null)";
+  }
+  if (Array.isArray(value) && value.length === 0) {
+    return "an empty list (writes a BARE `prop:` key, which a YAML reader sees as null)";
+  }
+  return undefined;
+}
+
+/**
+ * Boolean face of {@link emptyPropertyValueForm} — see its doc for the measured
+ * boundary (strict on strings, empty list only, `{}` excluded on purpose).
+ */
+export function isEmptyPropertyValue(value: unknown): boolean {
+  return emptyPropertyValueForm(value) !== undefined;
+}

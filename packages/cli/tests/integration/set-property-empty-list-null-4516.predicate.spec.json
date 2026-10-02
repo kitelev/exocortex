@@ -1,0 +1,41 @@
+{
+  "_doc": "Revert-verify mutants for req 5d2c7ede-b053-4dac-a667-7c4f5e4b22da (issue #4516, branch fix-4516-empty-list-null) — the SHARED predicate `emptyPropertyValueForm`. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute; they are committed as placeholders because a machine-absolute path in a committed spec is reported as a DEAD anchor by scripts/check-spec-anchors.mjs). ⛔ The SUBJECT is in packages/core, the AXES in packages/cli — on purpose: no workflow runs jest for packages/services (where the second writer lives) and the cli config is run whole by the required test-coverage-cli, whose moduleNameMapper resolves BOTH @kitelev/exocortex-core and @kitelev/exocortex-services to package SOURCE, so a mutated core file is what the axes exercise. This spec is the one that matters most: it mutates the single definition two writers share, so each mutant reddens axes in BOTH suites at once — which is exactly the property the shared predicate was introduced for. ⛤ The two WIRING specs of this req (same feature, different subjects — they answer \"is the guard on the production path\" rather than \"does the predicate judge correctly\") are `packages/cli/tests/integration/set-property-empty-list-null-4516.setproperty-wiring.spec.json` and `packages/cli/tests/integration/set-property-empty-list-null-4516.updateproperty-wiring.spec.json`. All three are named by repo-relative path on purpose: a bare basename is how a pointer to a spec goes dead unnoticed: check-spec-anchors.mjs parses the specs' `from` anchors, never their prose.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/utilities/yamlScalar.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/cli/jest.config.js packages/cli/tests/integration/set-property.empty-list-null-4516.integration.test.ts packages/cli/tests/unit/services/updateProperty-empty-list-null-4516.test.ts --verbose 2>&1",
+  "mutants": {
+    "Y1_empty_list_branch_dead": {
+      "_note": "The PRIMARY item of #4516: kills the empty-LIST branch while keeping the expression's SHAPE (`value.length === -1` can never hold, so the branch is unreachable but still type-checks — ITRV §A36/§A97, a compile failure must not be mistakable for a vacuous axis). Reddens the `[]` refusals of BOTH writers at once, which is the whole point of one shared definition.",
+      "from": "  if (Array.isArray(value) && value.length === 0) {\n",
+      "to": "  if (Array.isArray(value) && value.length === -1) {\n",
+      "expect": ["E1", "E2", "W1", "W2"]
+    },
+    "Y2_null_branch_dead": {
+      "_note": "Kills the NULL branch, type-preserving via a sentinel that can never arrive. ⛔ Expected to redden ONLY the writer-3 axes: on the `cli set-property` path `assertScalarOrScalarArray` refuses `null` FIRST with its own message, so E6 (which pins exactly that) stays green. That asymmetry is the measured reason the predicate carries a branch one of its two callers cannot reach.",
+      "from": "  if (value === null) {\n",
+      "to": "  if (value === \"__4516_SENTINEL_NEVER_NULL__\") {\n",
+      "expect": ["W3", "W4"]
+    },
+    "Y3_list_branch_too_broad": {
+      "_note": "The TOO-BROAD half: refuse ANY array instead of an empty one. Reddens only the populated-list controls — the refusal axes pass either way, so without E3/W5 this regression would ship green and silently kill every multi-value write. This is the `integration-test-revert-verify` §A27 trap the issue warned about by name.",
+      "from": "  if (Array.isArray(value) && value.length === 0) {\n",
+      "to": "  if (Array.isArray(value)) {\n",
+      "expect": ["E3", "W5"]
+    },
+    "Y4_string_branch_widened_to_trim": {
+      "_note": "The inherited too-broad half: widening the strict `=== \"\"` into a trim() test. Reddens only the whitespace controls (E5/W7); the empty-string axes pass either way. 22 live carriers across the three canonical vaults, 2026-10-03 — exo__DisplayNameSpec_separator 13, exo__PrintedLiteral_literal 9.",
+      "from": "  if (value === \"\") {\n",
+      "to": "  if (typeof value === \"string\" && value.trim() === \"\") {\n",
+      "expect": ["E5", "W7"]
+    }
+  }
+}

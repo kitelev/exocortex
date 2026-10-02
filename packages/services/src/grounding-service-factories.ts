@@ -6,6 +6,7 @@ import {
   matchFrontmatterBlock,
   isUnquotedWikilink,
   serializeYamlScalar,
+  emptyPropertyValueForm,
 } from "@kitelev/exocortex-core";
 import type {
   ClassRefResolver,
@@ -595,23 +596,55 @@ export function createUpdatePropertyService(
       // than a trimming predicate and matches both sibling writers byte for
       // byte, so the three writers of this key cannot disagree on a value.
       //
-      // ⛔ The residual hole is NAMED rather than silently widened: `value: []`
-      // writes a BARE key (`prop:`) and `value: null` writes `prop: null`, both
-      // of which js-yaml reads as null — literally the "junk key that looks like
-      // a cleared property" this guard's own message describes. It is live:
-      // 4 assets in `exoas-period` carry `exo__DisplayNameSpec_separator: ""`
-      // (created 2026-09-20) and the loader skips every one of them with
-      // `Invalid IRI: Literal value cannot be empty`, so they contribute zero
-      // triples. ⛤ Parity is NOT broken by leaving it: `assertNonEmptyValue`
-      // and `executePropertySet` carry the same residue, so "3 of 3" holds for
-      // the empty-STRING class. Filed against all three writers together.
+      // ⛤ THE RESIDUAL HOLE IS NOW CLOSED — req
+      // `5d2c7ede-b053-4dac-a667-7c4f5e4b22da` (issue #4516). The predicate
+      // moved from a literal `value === ""` to the shared
+      // `emptyPropertyValueForm`, which also names `value: []` (writes a BARE
+      // `prop:`) and `value: null` (writes `prop: null`). Both are literally
+      // the "junk key that looks like a cleared property" this message
+      // describes, and `null` is worse than that framing: js-yaml reads it back
+      // as null, but `FrontmatterService.parseObject` — the reader on the
+      // CLI/loader path — reads the STRING `"null"`, fabricating a literal
+      // nobody wrote.
+      //
+      // ⛔ It was LIVE, and the inflow was measured rather than argued: three
+      // instances in 13 days. 4 assets in `exoas-period` carried
+      // `exo__DisplayNameSpec_separator: ""` (created 2026-09-20; the loader
+      // skipped every one with `Invalid IRI: Literal value cannot be empty`, so
+      // four period classes got no displayName while 14 part triples sat in the
+      // graph waiting for the spec), and two `exoas-tbank` archived efforts
+      // carried a bare `ems__Effort_parent:` — a Done, archived effort with real
+      // timestamps that did not exist for the graph at all. The third turned up
+      // 2026-10-02, SIX DAYS after #4274 closed.
+      //
+      // ⛤ SCOPE BOUNDARY vs the founder decision #4274 (2026-09-26, variant 1:
+      // repair the data + add visibility, do NOT change the loader): that
+      // decision heals what already exists, this guard stops the inflow. They
+      // are different SETS, not the same one measured twice — the loader-skip
+      // detector catches assets the loader rejects WHOLE (2 files on
+      // 2026-10-03), while the 82 bare `key:` carriers the same sweep found are
+      // mostly tolerated by it.
+      //
+      // ⛔ Only TWO of the three writers carry the widened predicate, and the
+      // third is excluded by MEASUREMENT, not oversight:
+      // `GroundingExecutor.executePropertySet` / `executePropertyAppend` take a
+      // `string`-typed value (`substitutedValue: string`,
+      // `resolvedValue: string`), so `[]` and `null` cannot reach them and a
+      // guard there would be a dead branch under a vacuous axis. `cli
+      // set-property` already refused `null` before this req
+      // (`assertScalarOrScalarArray`: "not object/null", which runs first) and
+      // keeps that more specific message; what it gained is the `[]` case.
+      // ⇒ "3 of 3" still holds for the empty-STRING class; for THIS class the
+      // honest count is "2 of 2 reachable writers". Count again before widening
+      // either claim — both are measurements, not invariants.
       //
       // ⛤ req 501cdf2c's sweep (34 327 files / 331 263 keys) found 0 carriers of
       // `key: ""` on 2026-08-23; the 4 above appeared after it. The number is a
       // dated measurement, not an invariant — re-measure before quoting it.
-      if (value === "") {
+      const emptyForm = emptyPropertyValueForm(value);
+      if (emptyForm !== undefined) {
         throw new Error(
-          `updateProperty: the value for ${property} is an empty string — refusing rather than writing a junk key that looks like a cleared property. To clear it, use the removeProperty service_call (or the remove-property CLI verb).`,
+          `updateProperty: the value for ${property} is ${emptyForm} — refusing rather than writing a junk key that looks like a cleared property. To clear it, use the removeProperty service_call (or the remove-property CLI verb).`,
         );
       }
       // Issue #4520 (req 61e3441e) — the sibling-writer half of the #4405 /

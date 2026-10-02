@@ -1129,6 +1129,16 @@ export class GroundingExecutor {
     // Count the writers again before widening this claim — "3 of 3" is a
     // measurement, not an invariant.
     //
+    // ⛤ AMENDED by req `5d2c7ede-b053-4dac-a667-7c4f5e4b22da` (issue #4516), in
+    // the SAME change rather than left to drift: the two NEIGHBOURING empty
+    // forms — `value: []` (writes a BARE `prop:`) and `value: null` — were the
+    // residual half of this class, and they are now refused by the shared
+    // `emptyPropertyValueForm`. ⛔ THIS writer is deliberately NOT among the
+    // two that carry it, and the reason is a measurement: `substitutedValue` is
+    // `string`-typed (see its declaration above), so neither form can reach
+    // here at all — a widened guard would be a dead branch under a vacuous
+    // axis. The `=== ""` refusal below is the whole of this path's share.
+    //
     // ⛔ The predicate is STRICT (`=== ""`), NOT `trim() === ""`, and that is the
     // measured half: req 501cdf2c's sweep of all three canonical vaults (34 327
     // files / 331 263 keys, 2026-08-23) found **0** carriers of `key: ""` but
