@@ -8,10 +8,11 @@ import {
  *
  * The logic moved to `packages/core` so the CLI naming oracle runs the SAME predicate. Unlike its
  * sibling {@link BlockerHelpers}, nothing here ever touched Obsidian — the predicate reads only
- * the rendered instance's own `life__Episode_start` / `life__Episode_end`, which is why the move
- * needed no port at all. It is still a host function rather than a value-equality matcher because
- * the comparand — TODAY — is ambient: no frontmatter carries it, so `matchPath`/`matchValue`
- * cannot express "this period contains now".
+ * the rendered instance's own period (`life__Episode_start`/`_end`, or the instant pair
+ * `life__Episode_startTimestamp`/`_endTimestamp` — req 0fc2c853), which is why the move needed no
+ * port at all. It is still a host function rather than a value-equality matcher because the
+ * comparand — NOW — is ambient: no frontmatter carries it, so `matchPath`/`matchValue` cannot
+ * express "this period contains now".
  *
  * The class survives only to keep the existing import path and static-method shape working.
  */
@@ -28,9 +29,11 @@ export class EpisodePeriodHelpers {
   }
 
   /**
-   * True iff the episode's period contains today, boundaries INCLUSIVE. An episode that has
-   * started and carries no end counts as ongoing indefinitely — intended, since the marker
-   * doubles as a "you forgot to close this" signal. Absent or malformed dates → false
+   * True iff the episode's period contains NOW, boundaries INCLUSIVE — judged to the SECOND when
+   * the episode carries instant bounds (`life__Episode_startTimestamp`/`_endTimestamp`,
+   * req 0fc2c853) and by the calendar DAY when it carries the day pair (req 8a47ff93). An episode
+   * that has started and carries no end counts as ongoing indefinitely — intended, since the
+   * marker doubles as a "you forgot to close this" signal. Absent or malformed bounds → false
    * (fail-closed): an asset that cannot be judged must not claim to be happening now.
    */
   static isEpisodeOngoing(
