@@ -223,7 +223,7 @@ describe(`hostFunctions.isEpisodeOngoing — INSTANT bounds [req 0fc2c853]`, () 
     expect(isEpisodeOngoing(episode({ life__Episode_startTimestamp: "2026-08-11" }))).toBe(false);
   });
 
-  it(`[E14] ${REQ} a well-SHAPED but impossible wall clock is fail-closed (25:61, 00:61, Feb 31)`, () => {
+  it(`[E14] ${REQ} an impossible WALL CLOCK is fail-closed (00:61 in an earlier hour, 25:61 in the end bound)`, () => {
     // The field widths match, so a shape-only check would accept these and compare them
     // lexicographically against a real now.
     //
@@ -234,6 +234,11 @@ describe(`hostFunctions.isEpisodeOngoing — INSTANT bounds [req 0fc2c853]`, () 
     // and (b) an impossible value in the END bound — where it would otherwise sort after every
     // real now and mark the episode ongoing forever. Without them the guard would have read as
     // defensive ([[integration-test-revert-verify]] §A130: the missing axis, not a dead guard).
+    //
+    // ⛔ Split from E17/E18 deliberately: held as one axis, the three mutants that remove the three
+    // separate guards (range check, calendar round-trip, NaN-Date) all reddened this ONE key, so
+    // the matrix could not show that all three conjuncts were locked (§A110). That is the same
+    // defect the E4/E16 split fixed earlier in this same requirement.
     expect(
       isEpisodeOngoing(episode({ life__Episode_startTimestamp: "2026-08-10T00:61:00" })),
     ).toBe(false);
@@ -248,9 +253,31 @@ describe(`hostFunctions.isEpisodeOngoing — INSTANT bounds [req 0fc2c853]`, () 
     expect(
       isEpisodeOngoing(episode({ life__Episode_startTimestamp: "2026-08-10T25:61:00" })),
     ).toBe(false);
+  });
+
+  it(`[E17] ${REQ} an impossible CALENDAR DAY inside a timestamp is fail-closed (Feb 31)`, () => {
+    // Locks the day validator that toWallClockKey SHARES with toDayKey rather than duplicating.
+    // Discriminating only in the START bound: without the round-trip the key "2026-02-31T01:00:00"
+    // sorts BEFORE a real August now, so the episode reads as started and — being open — ongoing.
+    // The mirror case in the END bound would NOT discriminate (February sorts before August), so
+    // it is deliberately absent rather than kept as reassurance.
     expect(
       isEpisodeOngoing(episode({ life__Episode_startTimestamp: "2026-02-31T01:00:00" })),
     ).toBe(false);
+  });
+
+  it(`[E18] ${REQ} an INVALID Date object is fail-closed`, () => {
+    // ⛤ Measured 2026-10-03: js-yaml 5.4.2 under YAML11_SCHEMA does NOT produce an invalid Date —
+    // it leaves an impossible timestamp as a STRING ("2026-02-31T01:00:00", "2026-13-45T01:00:00",
+    // "2026-08-10T25:61:00" all stay strings), so this input does not arrive from the CLI's
+    // frontmatter path. It is kept and locked anyway because the DAY sibling treats the shape as
+    // reachable on the Obsidian surface — req 8a47ff93 carries the same assertion for toDayKey and
+    // records "NaN-Date guard removed 1 RED" in its own revert-verify. Following that precedent
+    // beats inventing a different policy for the identical shape one granularity down.
+    //
+    // ⛔ Not defensive in the §A35 sense: removing the guard FLIPS the verdict. The UTC getters
+    // then yield NaN, the key becomes "0NaN-NaN-NaNTNaN:NaN:NaN", and "0" sorts before "2" — so an
+    // unreadable Date would read as started, and open, hence ongoing forever.
     expect(
       isEpisodeOngoing(
         episode({ life__Episode_startTimestamp: new Date("not-a-timestamp") }),
