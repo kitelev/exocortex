@@ -67,9 +67,9 @@
     "@types/jest": "^30.0.0",
     "@types/node": "^22.20.1",
     "esbuild": "^0.28.2",
-    "jest": "^30.4.2",
+    "jest": "^30.5.2",
     "reflect-metadata": "^0.2.2",
-    "ts-jest": "^29.4.12",
+    "ts-jest": "^29.4.14",
     "tsyringe": "^4.8.0",
     "typescript": "^5.9.3"
   }
