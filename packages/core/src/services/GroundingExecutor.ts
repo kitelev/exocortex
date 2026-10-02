@@ -1109,6 +1109,20 @@ export class GroundingExecutor {
       // resolvable `$…` token comes back byte-identical (every branch of it is
       // a `.replace`). So inequality IS the mechanism "something was
       // substituted into this value", not a guess about the value's shape.
+      //
+      // ⛔ READ THIS BEFORE WIDENING THE DISCRIMINATOR. `targetValueQuery`
+      // reaches this line too (its `effectiveValue` is the NamedQuery result),
+      // and it stays out of the serialisation step below only because that
+      // result carries no `$…` token — i.e. the exclusion rests on a MEASURED
+      // INVARIANT OF THE CORPUS (2026-10-02: 4 live `targetValueQuery`
+      // carriers, all resolving to an asset reference), NOT on a guard. A query
+      // that one day returns text containing a `$…` token flips this flag and
+      // the value starts being serialised, which is a VISIBLE change (sudden
+      // quoting), not a silent one. So if this discriminator is ever widened —
+      // or `resolveTargetValueQuery` gains a literal-returning path — exclude
+      // `targetValueQuery` STRUCTURALLY (it has its own contract, req
+      // bbaa37e1) instead of letting the invariant carry it; an invariant goes
+      // stale without announcing itself.
       substitutionApplied = substitutedValue !== effectiveValue;
     }
 
