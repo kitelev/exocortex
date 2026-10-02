@@ -1,5 +1,5 @@
 {
-  "_doc": "Product-effect half of the revert-verify for requirement a2c868e9 (ticket c3de23a8): the merged rule list reaching a real GroundingExecutor run. Carries M1 (the lost-rule defect D1) ALONE, so rc stays machine-readable — rc=0 means the axes still discriminate. The duplicate-entry mutants, which redden nothing here by construction, live in the companion `inheritance-merge-a2c868e9.effect-uncovered.spec.json` together with the measurement proving why. Every `expect` is the MEASURED red set (§A97).",
+  "_doc": "Revert-verify for requirement a2c868e9 (ticket c3de23a8) — the merged rule list reaching a real GroundingExecutor run. Carries BOTH halves: M1 (the lost-rule defect D1), which reddens G1+G2, and M2/M3 (the duplicate-entry defect D2), which redden NOTHING by construction and say so with a DECLARED ZERO (`\"expect\": []` + `_canary`). Every `expect` is the MEASURED red set (§A97).\n\n⛤ The two halves used to live in two files (`…effect.spec.json` + `…effect-uncovered.spec.json`). That split was an artefact of a DRIVER LIMITATION, not of the subject: before 2026-10-02 `mutant-driver.py` collapsed an empty `expect` into `None` (`parse_mutant` returned `(expect or None)`), so «I expect zero red» was INEXPRESSIBLE and a spec carrying M2/M3 was permanently rc=2 — hence they were quarantined into a companion file whose own `_doc` recorded «this spec returns rc=2 BY CONSTRUCTION». The declared-zero mechanism (ITRV §A135: `expect: []` plus a mandatory `_canary` naming a mutant of the SAME spec that does redden) removed that limitation, so the split lost its reason and the files were merged (issue #4521). The merge is legal because `subject`, `harness`, `red_re` and `symlink_node_modules` were byte-identical in both files — asserted mechanically by the merge script, not by eye.\n\n⛤ Why the merge beats adding a reddening mutant to the companion (issue #4521 option 1): the companion had NO canary candidate of its own (both its mutants were declared zeros), so a canary had to come from somewhere — and the only reddening mutant for this subject is M1, which already lived here. Adding a SECOND reddening mutant would have duplicated M1's guarantee and made the file's own name (`effect-uncovered`) false. ⛔ And retiring M2/M3 into `_doc` as §A138 was wrong for a different reason: §A138 is «no mutant is presentable here», whereas M2/M3 COMPILE and RUN fine — they merely change no observable outcome. Retiring them would have deleted the only detector of the executor guard disappearing (see `_note_M2_M3`).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -17,12 +17,24 @@
       "_note": "Rebuilds the grounding map LAST-WINS (the pre-fix shape), type-preserving: the map stays Map<string, Rule[]>, each name just keeps a single-element bucket. This is defect D1 — a grounding's earlier conditional rule is dropped before any logic runs. Predicted: U1 on the unit harness, G1+G2 on the effect harness.",
       "from": "    if (bucket) bucket.push(g);\n    else groundingByName.set(g.targetPropertyName, [g]);",
       "to": "    groundingByName.set(g.targetPropertyName, [g]);",
-      "expect": [
-        "G1",
-        "G2"
-      ]
+      "expect": ["G1", "G2"]
+    },
+    "M2_splice_guard_removed": {
+      "_note": "Drops the once-only guard around the splice, so the grounding rules are re-emitted for EVERY universal rule they shadow. This is defect D2. It has NO product effect: applyInheritanceRuleStep opens with `if (properties[rule.targetPropertyName] !== undefined) continue`, so the duplicate is swallowed and the write is idempotent — the effect harness is expected to stay GREEN, and that is the measurement proving the guard's product-level inertness, not a gap in the axis.",
+      "from": "      if (!usedFromGrounding.has(u.targetPropertyName)) {\n        out.push(...override);\n        usedFromGrounding.add(u.targetPropertyName);\n      }",
+      "to": "      out.push(...override);\n      usedFromGrounding.add(u.targetPropertyName);",
+      "expect": [],
+      "_canary": "M1_grounding_map_last_wins"
+    },
+    "M3_used_marker_removed": {
+      "_note": "Removes the used-marker, so the SECOND loop appends every grounding rule a second time. Same idempotence argument as M2 for the product effect; the list is visibly wrong.",
+      "from": "        usedFromGrounding.add(u.targetPropertyName);\n",
+      "to": "",
+      "expect": [],
+      "_canary": "M1_grounding_map_last_wins"
     }
   },
-  "_note_rc": "rc=0 here is load-bearing: this file is the one a runner can judge by exit code. Mutants that cannot redden are deliberately NOT kept here — they would pin rc at 2 forever and mask a real regression. They are in the -uncovered companion.",
-  "_note_red_re": "`red_re` anchors on the `● <suite> › <title>` failure header rather than the bare `[Xn]` key. jest echoes the SOURCE LINE of a neighbouring `it(...)` inside its diff context, so a key-only pattern reports a GREEN axis as red (same class as integration-test-revert-verify §A104). Measured while building this spec: the first key-only pattern produced 'красных НЕТ' at rc=1 on every mutant."
+  "_note_rc": "rc=0 is load-bearing: this file is judged by exit code. ⛤ It stays machine-readable even though M2/M3 cannot redden, because their zero is DECLARED (`expect: []` + `_canary: M1…`) rather than unexpressed — the driver then judges them in BOTH directions (the canary must really redden, and a NON-empty red set on a declared zero is reported as a false declaration). ⛔ The companion file's old claim «mutants that cannot redden are deliberately NOT kept here — they would pin rc at 2 forever» was TRUE ONLY of the pre-2026-10-02 driver and is RETRACTED: pinning no longer happens, so quarantining such mutants no longer buys anything.",
+  "_note_red_re": "`red_re` anchors on the `● <suite> › <title>` failure header rather than the bare `[Xn]` key. jest echoes the SOURCE LINE of a neighbouring `it(...)` inside its diff context, so a key-only pattern reports a GREEN axis as red (same class as integration-test-revert-verify §A104). Measured while building this spec: the first key-only pattern produced 'красных НЕТ' at rc=1 on every mutant.",
+  "_note_M2_M3": "M2 and M3 are predicted EMPTY ON PURPOSE, and the emptiness is the THING BEING GUARDED, not a gap. They reproduce the duplicate-entry defect (D2), which has no observable outcome here because `GroundingExecutor.applyInheritanceRuleStep` opens with `if (properties[rule.targetPropertyName] !== undefined) continue` — the second copy of a rule is skipped and the write is idempotent. Measured 2026-09-25 and re-measured 2026-10-02 (issue #4521): control 0 red, M2 0 red, M3 0 red. ⛔ A NON-empty red set on either of them means that guard is GONE from the executor: the duplicate would then apply twice, and this spec is the only place that would notice — which is exactly why they are kept as APPLIED mutants rather than deleted. Their canary is M1: it proves the mutation is still being DELIVERED to this harness, so their zero is a fact about the product and not about a broken driver pipeline."
 }

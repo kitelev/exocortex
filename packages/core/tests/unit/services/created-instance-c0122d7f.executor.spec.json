@@ -1,91 +1,75 @@
 {
- "_doc": "Revert-verify mutants for requirement c0122d7f-1c48-4bc7-b0b8-02dc109b16c4 (ticket ff7709cb, PR #4344) — the `createdInstance` substitution token, EXECUTOR side: the four-level thread (executeComposite -> executeStep -> execute -> executeCreateInstance -> ResolverContext), the value-only inheritance into a nested composite, the null=skip negative control, and the `substituteVariables` guard. Run from the repo root after replacing the path placeholders: python3 ~/.claude/bin/mutant-driver.py <this file>. Axis names are A<N>, matching the test titles.",
- "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
- "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/GroundingExecutor.ts",
- "symlink_node_modules": [
-  "node_modules",
-  "packages/cli/node_modules",
-  "packages/core/node_modules",
-  "packages/test-utils/node_modules",
-  "packages/obsidian-plugin/node_modules",
-  "packages/req-audit/node_modules"
- ],
- "harness": "cd \"$(dirname {subject})/../../../..\" && node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/services/GroundingExecutor.createdInstanceToken.test.ts packages/core/tests/unit/services/CommandResolver.substitutionToken.test.ts --verbose 2>&1",
- "red_re": "›\\s+(A\\d+[a-z]?)\\s",
- "_note_control_axes": "КОНТРОЛЬНЫЕ ОСИ БЕЗ МУТАНТА — ЭТО ИХ ПРОДУКТ, А НЕ ДЫРА (§A118). A2b и A4 не краснеют ни у одного мутанта этого набора НАМЕРЕННО: их предмет — не гвард req c0122d7f, а (A2b) ЖИВОСТЬ ФИКСТУРЫ PropertyDefault-пути, то есть доказательство, что отсутствие свойства в A2 есть `null` резолвера, а не мёртвый путь записи; и (A4) РАЗЛИЧЕНИЕ ПОНЯТИЙ значение-против-цели, то есть что шаг пишет свой новый файл, а не в созданный ранее. Мутант на них потребовал бы ломать ЧУЖОЙ механизм (ветку `target` / таргетинг шага), который этот PR не трогает. ⛔ Не городить мутанта на контрольную ось: её зелень при мутациях предмета и есть её вердикт.",
- "mutants": {
-  "M1_composite_to_step": {
-   "from": "          lastCreatedPath ?? inheritedCreatedPath,",
-   "to": "          undefined,",
-   "expect": [
-    "A1",
-    "A3"
-   ]
+  "_doc": "Revert-verify mutants for requirement c0122d7f-1c48-4bc7-b0b8-02dc109b16c4 (ticket ff7709cb, PR #4344) — the `createdInstance` substitution token, EXECUTOR side: the four-level thread (executeComposite -> executeStep -> execute -> executeCreateInstance -> ResolverContext), the value-only inheritance into a nested composite, the null=skip negative control, and the `substituteVariables` guard. Run from the repo root after replacing the path placeholders: python3 ~/.claude/bin/mutant-driver.py <this file>. Axis names are A<N>, matching the test titles.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/GroundingExecutor.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../..\" && node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/services/GroundingExecutor.createdInstanceToken.test.ts packages/core/tests/unit/services/CommandResolver.substitutionToken.test.ts --verbose 2>&1",
+  "red_re": "›\\s+(A\\d+[a-z]?)\\s",
+  "_note_control_axes": "КОНТРОЛЬНЫЕ ОСИ БЕЗ МУТАНТА — ЭТО ИХ ПРОДУКТ, А НЕ ДЫРА (§A118). A2b и A4 не краснеют ни у одного мутанта этого набора НАМЕРЕННО: их предмет — не гвард req c0122d7f, а (A2b) ЖИВОСТЬ ФИКСТУРЫ PropertyDefault-пути, то есть доказательство, что отсутствие свойства в A2 есть `null` резолвера, а не мёртвый путь записи; и (A4) РАЗЛИЧЕНИЕ ПОНЯТИЙ значение-против-цели, то есть что шаг пишет свой новый файл, а не в созданный ранее. Мутант на них потребовал бы ломать ЧУЖОЙ механизм (ветку `target` / таргетинг шага), который этот PR не трогает. ⛔ Не городить мутанта на контрольную ось: её зелень при мутациях предмета и есть её вердикт.",
+  "mutants": {
+    "M1_composite_to_step": {
+      "_note": "Level 1 of the thread: executeComposite stops passing what an earlier step created into executeStep. ⛤ Also reddens A10 (measured 2026-10-02, issue #4521 — NOT a silently appended axis): this mutant cuts the thread at a level ABOVE the fifth signature, and a workflow_transition's postAction receives its createdInstancePath from the very same `execute(...)` argument, so severing any earlier level starves BOTH the direct step (A1/A3) and the postAction (A10). That is a property of the LEVELS' ORDER, not a weakness of A10: the mutant that isolates the fifth signature alone is M12_postaction_forward, and it reddens A10 and nothing else.",
+      "from": "          lastCreatedPath ?? inheritedCreatedPath,",
+      "to": "          undefined,",
+      "expect": ["A1", "A3", "A10"]
+    },
+    "M2a_step_to_execute": {
+      "_note": "Level 2 of the thread: executeStep stops forwarding the created path into execute. ⛤ Also reddens A10 (measured 2026-10-02, issue #4521 — NOT a silently appended axis): this mutant cuts the thread at a level ABOVE the fifth signature, and a workflow_transition's postAction receives its createdInstancePath from the very same `execute(...)` argument, so severing any earlier level starves BOTH the direct step (A1/A3) and the postAction (A10). That is a property of the LEVELS' ORDER, not a weakness of A10: the mutant that isolates the fifth signature alone is M12_postaction_forward, and it reddens A10 and nothing else.",
+      "from": "      userInput,\n      createdInstancePath,\n    );",
+      "to": "      userInput,\n      undefined,\n    );",
+      "expect": ["A1", "A3", "A10"]
+    },
+    "M2b_step_to_nested": {
+      "from": "        depth,\n        createdInstancePath,\n      );",
+      "to": "        depth,\n        undefined,\n      );",
+      "expect": ["A3"]
+    },
+    "M3_execute_to_createinstance": {
+      "_note": "Level 3 of the thread: execute stops forwarding the created path into executeCreateInstance. ⛤ Also reddens A10 (measured 2026-10-02, issue #4521 — NOT a silently appended axis): this mutant cuts the thread at a level ABOVE the fifth signature, and a workflow_transition's postAction receives its createdInstancePath from the very same `execute(...)` argument, so severing any earlier level starves BOTH the direct step (A1/A3) and the postAction (A10). That is a property of the LEVELS' ORDER, not a weakness of A10: the mutant that isolates the fifth signature alone is M12_postaction_forward, and it reddens A10 and nothing else.",
+      "from": "        case GroundingType.CREATE_INSTANCE:\n          return await this.executeCreateInstance(\n            grounding,\n            targetIRI,\n            targetFilePath,\n            userInput,\n            createdInstancePath,\n          );",
+      "to": "        case GroundingType.CREATE_INSTANCE:\n          return await this.executeCreateInstance(\n            grounding,\n            targetIRI,\n            targetFilePath,\n            userInput,\n            undefined,\n          );",
+      "expect": ["A1", "A3", "A10"]
+    },
+    "M4_ctx_field": {
+      "_note": "Level 4 of the thread: the ResolverContext is built without the createdInstancePath field. ⛤ Also reddens A10 (measured 2026-10-02, issue #4521 — NOT a silently appended axis): this mutant cuts the thread at a level ABOVE the fifth signature, and a workflow_transition's postAction receives its createdInstancePath from the very same `execute(...)` argument, so severing any earlier level starves BOTH the direct step (A1/A3) and the postAction (A10). That is a property of the LEVELS' ORDER, not a weakness of A10: the mutant that isolates the fifth signature alone is M12_postaction_forward, and it reddens A10 and nothing else.",
+      "from": "      groundingTargetClassUid,\n      createdInstancePath,\n    };",
+      "to": "      groundingTargetClassUid,\n      createdInstancePath: undefined,\n    };",
+      "expect": ["A1", "A3", "A10"]
+    },
+    "M5_null_becomes_target_fallback": {
+      "from": "      if (!createdPath) return null;",
+      "to": "      if (!createdPath) return `\"[[${GroundingExecutor.extractBacklinkTarget(ctx.targetIRI ?? \"\", ctx.targetFilePath ?? \"\")}]]\"`;",
+      "expect": ["A2"]
+    },
+    "M6_value_inheritance_fallback": {
+      "from": "          lastCreatedPath ?? inheritedCreatedPath,\n        );",
+      "to": "          lastCreatedPath,\n        );",
+      "expect": ["A3"]
+    },
+    "M8_REGRESSION_seed_target_channel": {
+      "from": "    let lastCreatedPath: string | undefined;",
+      "to": "    let lastCreatedPath: string | undefined = inheritedCreatedPath;",
+      "expect": ["A6"]
+    },
+    "M10_drop_substituteVariables_guard": {
+      "from": "    if (/\\$createdInstance\\b/.test(value)) {",
+      "to": "    if (false && /\\$createdInstance\\b/.test(value)) {",
+      "expect": ["A7"]
+    },
+    "M12_postaction_forward": {
+      "_note": "The FIFTH signature on the thread: executeWorkflowTransition forwards the created path into each postAction's `this.execute(...)`. Dropping the argument compiles (the 5th parameter is optional), so the mutation is type-preserving and the postAction runs with no createdInstancePath — its `createdInstance` PropertyDefault entry is then silently skipped. ⛤ Issue #4521: the PREVIOUS M12 only INSERTED A COMMENT line above the existing one and changed no code at all — it was vacuous by construction (ITRV §A12 / §A125), so its `\"expect\": []` certified a NON-mutant as a measured zero. It declared an empty red set because at the time this level had NO axis (ITRV §A130: the axis was absent, not the mutant weak). A10 is that axis; the mutation is now real and the expectation is MEASURED.",
+      "from": "        userInput,\n        // req c0122d7f — FIFTH signature on the thread. A postAction of a\n        // workflow_transition inside a composite must see what an earlier step\n        // created, exactly like a direct step does; without this it would\n        // silently skip the PropertyDefault entry.\n        createdInstancePath,\n      );",
+      "to": "        userInput,\n        // MUTANT M12 — the FIFTH signature's forward is DROPPED. The 5th\n        // parameter is optional, so this compiles; the postAction then runs\n        // with no createdInstancePath and its PropertyDefault entry is\n        // silently skipped.\n      );",
+      "expect": ["A10"]
+    }
   },
-  "M2a_step_to_execute": {
-   "from": "      userInput,\n      createdInstancePath,\n    );",
-   "to": "      userInput,\n      undefined,\n    );",
-   "expect": [
-    "A1",
-    "A3"
-   ]
-  },
-  "M2b_step_to_nested": {
-   "from": "        depth,\n        createdInstancePath,\n      );",
-   "to": "        depth,\n        undefined,\n      );",
-   "expect": [
-    "A3"
-   ]
-  },
-  "M3_execute_to_createinstance": {
-   "from": "        case GroundingType.CREATE_INSTANCE:\n          return await this.executeCreateInstance(\n            grounding,\n            targetIRI,\n            targetFilePath,\n            userInput,\n            createdInstancePath,\n          );",
-   "to": "        case GroundingType.CREATE_INSTANCE:\n          return await this.executeCreateInstance(\n            grounding,\n            targetIRI,\n            targetFilePath,\n            userInput,\n            undefined,\n          );",
-   "expect": [
-    "A1",
-    "A3"
-   ]
-  },
-  "M4_ctx_field": {
-   "from": "      groundingTargetClassUid,\n      createdInstancePath,\n    };",
-   "to": "      groundingTargetClassUid,\n      createdInstancePath: undefined,\n    };",
-   "expect": [
-    "A1",
-    "A3"
-   ]
-  },
-  "M5_null_becomes_target_fallback": {
-   "from": "      if (!createdPath) return null;",
-   "to": "      if (!createdPath) return `\"[[${GroundingExecutor.extractBacklinkTarget(ctx.targetIRI ?? \"\", ctx.targetFilePath ?? \"\")}]]\"`;",
-   "expect": [
-    "A2"
-   ]
-  },
-  "M6_value_inheritance_fallback": {
-   "from": "          lastCreatedPath ?? inheritedCreatedPath,\n        );",
-   "to": "          lastCreatedPath,\n        );",
-   "expect": [
-    "A3"
-   ]
-  },
-  "M8_REGRESSION_seed_target_channel": {
-   "from": "    let lastCreatedPath: string | undefined;",
-   "to": "    let lastCreatedPath: string | undefined = inheritedCreatedPath;",
-   "expect": [
-    "A6"
-   ]
-  },
-  "M10_drop_substituteVariables_guard": {
-   "from": "    if (/\\$createdInstance\\b/.test(value)) {",
-   "to": "    if (false && /\\$createdInstance\\b/.test(value)) {",
-   "expect": [
-    "A7"
-   ]
-  },
-  "M12_UNCOVERED_postaction_forward": {
-   "from": "        userInput,\n        // req c0122d7f — FIFTH signature on the thread.",
-   "to": "        userInput,\n        // MUTANT M12 — forward removed\n        // req c0122d7f — FIFTH signature on the thread.",
-   "expect": []
-  }
- },
- "_note_M12": "M12 предсказан ПУСТЫМ НАМЕРЕННО: оси на пятую сигнатуру (postAction workflow_transition) НЕТ — её стенд требует workflowResolver + groundingLoader + статусной фикстуры, непропорционально остатку бюджета. Проброс отгружается (снимает ТИХИЙ отказ), но заперт ТИПОМ и ЧТЕНИЕМ, не осью. Пустой expect = ЗАЯВЛЕННОЕ непокрытие, а не промах матрицы."
+  "_note_M12": "M12 locks the FIFTH signature (workflow_transition postAction). ⛤ Its predecessor `M12_UNCOVERED_postaction_forward` declared `\"expect\": []` and was REFUSED by mutant-driver.py for carrying no `_canary` (issue #4521). ⛔ Attaching a canary would have been the WRONG fix: that mutant's `to` only inserted a comment line and changed no code, so a canary would have certified a non-mutant as a re-measured zero — worse than the rc=2 it caused. Two measurements, 2026-10-02, this tree: (1) the comment-only mutant is vacuous by construction; (2) a trial mutation that REALLY drops the forward reddened NO axis either — i.e. ITRV §A130, the axis was ABSENT. The axis (A10) is now written (`GroundingExecutor.createdInstanceToken.test.ts`) and the mutant is a real, type-preserving drop of the argument; its expectation is MEASURED, not declared. The `_UNCOVERED_` marker is gone from the name because the level is no longer uncovered.",
+  "_note_A10": "A10 (added 2026-10-02, issue #4521) locks the FIFTH signature of the thread — a workflow_transition step's postAction. Because it sits at the END of the chain, every mutant that cuts an EARLIER level (M1, M2a, M3, M4) reddens it as well; the per-mutant `_note`s say so explicitly. The mutant that isolates this level is M12_postaction_forward → ['A10'] alone. ⛔ M2b (step → NESTED composite) and M6 (value-inheritance fallback) do NOT redden A10: they cut branches a workflow_transition step never travels, which is why their red sets are unchanged."
 }
