@@ -65,6 +65,18 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => {
   // the ⛔ above: a manual factory must name EVERY export its consumers import.
   const isUnquotedWikilink = (_value: string): boolean => false;
   const serializeYamlScalar = (value: unknown): string => String(value);
+  // #4516 (req 5d2c7ede-b053-4dac-a667-7c4f5e4b22da): the `updateProperty`
+  // factory now asks the SHARED `emptyPropertyValueForm` predicate instead of
+  // carrying its own `value === ""` comparison, so that export is imported
+  // through this same mocked specifier at module-evaluation time. ⛔ See the ⛔
+  // above — a manual factory must name EVERY export its consumers import;
+  // adding the import without this line is a link-time `SyntaxError: ... does
+  // not provide an export named 'emptyPropertyValueForm'` that takes out all 8
+  // tests of this suite, not a silent undefined. The deps-omitted path tested
+  // here never invokes the factory body, so a shape stub returning undefined
+  // ("no value is empty") suffices.
+  const emptyPropertyValueForm = (_value: unknown): string | undefined =>
+    undefined;
   return {
     ServiceRegistry,
     FrontmatterService,
@@ -75,6 +87,7 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => {
     matchFrontmatterBlock,
     isUnquotedWikilink,
     serializeYamlScalar,
+    emptyPropertyValueForm,
   };
 });
 
