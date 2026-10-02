@@ -1112,16 +1112,20 @@ export class GroundingExecutor {
     // command refused while THIS path — the one both the plugin button and `cli
     // apply` take — accepted (UI/CLI parity, #3417).
     //
-    // ⛔ But the parity defect is closed 2 OF 3, NOT fully — saying otherwise here
-    // would be a claim the next reader takes as established. Writers of this key
-    // were enumerated (review of this PR, 2026-10-02), and the THIRD is still
-    // open: `createUpdatePropertyService` in
-    // `packages/services/src/grounding-service-factories.ts` guards only
-    // `value === undefined`, i.e. exactly this class — and it has a LIVE authored
-    // carrier, `exoas-exocmd/exocmd/c4616dcd-…` ("Set result value",
-    // `serviceId: updateProperty`, property pinned to `ems__Effort_result`, value
-    // taken from user input), so a blank field there still writes
-    // `ems__Effort_result: ""`. Filed separately rather than widened into this PR.
+    // ⛤ The parity defect is now closed 3 OF 3 (#4513, 2026-10-02). The writers
+    // of this key were enumerated during the review of PR #4511 and the third
+    // one — `createUpdatePropertyService` in
+    // `packages/services/src/grounding-service-factories.ts`, which guarded only
+    // `value === undefined` — carries the same strict `=== ""` refusal since
+    // then. ⛔ Its axes do NOT live next to it: no workflow ever runs jest for
+    // `packages/services` (`test-ci-batched.sh` drives exactly three configs —
+    // obsidian-plugin, cli, core — and CI touches the package only through
+    // `npm run build -w @kitelev/exocortex-services`), so axes placed there
+    // would sit outside every gate. The suite itself is HEALTHY locally (57/57
+    // on `474e9dd5`); it is unreachable, not broken. They sit in
+    // `packages/cli/tests/unit/services/`, which `test-coverage-cli` gates.
+    // Count the writers again before widening this claim — "3 of 3" is a
+    // measurement, not an invariant.
     //
     // ⛔ The predicate is STRICT (`=== ""`), NOT `trim() === ""`, and that is the
     // measured half: req 501cdf2c's sweep of all three canonical vaults (34 327
@@ -1639,9 +1643,15 @@ export class GroundingExecutor {
     // label form (CommandResolver may have downgraded when class TBox file is
     // absent from resolution store, see #3220).
     //
-    // Link-to-parent (30b9e8d8) uses the same serviceId but carries NO
-    // targetValueRef (driven via inputSchema+userInput) and so flows past
-    // this short-circuit into the registered updateProperty service below.
+    // ⛔ The example this comment used to give — Link-to-parent (`30b9e8d8`) —
+    // NO LONGER EXISTS (measured 2026-10-02: absent from all three canonical
+    // vaults, and `exoas-exocmd` returns 404 for it on `main`; the only copies
+    // left are in stale `*-full` replicas snapshotted 2026-06-16). The BRANCH
+    // it illustrated is still live and still needed: a grounding with this
+    // serviceId but NO `targetValueRef` (property and value driven via
+    // inputSchema + userInput) flows past this short-circuit into the
+    // registered updateProperty service below. Of the 8 authored groundings
+    // that dispatch `updateProperty` today, 6 take that path.
     if (serviceId === "updateProperty") {
       // RFC 918a2b65 Phase 4 — class-flip dispatch via typed `targetValueRef`
       // only. Legacy `targetValue` path removed after vault migration
