@@ -1,0 +1,261 @@
+{
+  "_doc": "Frozen eslint ERROR debt for every lintable packages/<p>/src (issue #4497). Keys are (file, rule) pairs with counts; `scope` is the derived package list. ⛔ Fix a new finding — do NOT add it here. See scripts/check-eslint-debt.mjs.",
+  "scope": ["core", "obsidian-plugin", "req-audit", "services", "test-utils"],
+  "entries": [
+    {
+      "file": "packages/core/src/application/errors/ApplicationErrorHandler.ts",
+      "rule": "@typescript-eslint/unbound-method",
+      "count": 1
+    },
+    {
+      "file": "packages/core/src/infrastructure/sparql/executors/BGPExecutor.ts",
+      "rule": "no-console",
+      "count": 1
+    },
+    {
+      "file": "packages/core/src/infrastructure/sparql/executors/FilterExecutor.ts",
+      "rule": "eslint-comments/no-restricted-disable",
+      "count": 1
+    },
+    {
+      "file": "packages/core/src/infrastructure/sparql/executors/FilterExecutor.ts",
+      "rule": "eslint-comments/require-description",
+      "count": 1
+    },
+    {
+      "file": "packages/core/src/infrastructure/sparql/executors/PropertyPathExecutor.ts",
+      "rule": "no-console",
+      "count": 1
+    },
+    {
+      "file": "packages/core/src/infrastructure/sparql/filters/FunctionRegistry.ts",
+      "rule": "eslint-comments/require-description",
+      "count": 1
+    },
+    {
+      "file": "packages/core/src/infrastructure/sparql/filters/functions/HashFunctions.ts",
+      "rule": "(no-rule)",
+      "count": 5
+    },
+    {
+      "file": "packages/core/src/infrastructure/sparql/filters/functions/HashFunctions.ts",
+      "rule": "eslint-comments/require-description",
+      "count": 5
+    },
+    {
+      "file": "packages/core/src/services/LoggingService.ts",
+      "rule": "eslint-comments/no-restricted-disable",
+      "count": 1
+    },
+    {
+      "file": "packages/core/src/services/LoggingService.ts",
+      "rule": "eslint-comments/require-description",
+      "count": 1
+    },
+    {
+      "file": "packages/core/src/services/LoggingService.ts",
+      "rule": "no-console",
+      "count": 4
+    },
+    {
+      "file": "packages/core/src/services/LoggingService.ts",
+      "rule": "obsidianmd/rule-custom-message",
+      "count": 1
+    },
+    {
+      "file": "packages/core/src/services/OrderSpecResolver.ts",
+      "rule": "no-console",
+      "count": 1
+    },
+    {
+      "file": "packages/core/src/utilities/parseYamlFrontmatter.ts",
+      "rule": "no-console",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/src/adapters/logging/Logger.ts",
+      "rule": "eslint-comments/disable-enable-pair",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/src/adapters/logging/Logger.ts",
+      "rule": "eslint-comments/no-restricted-disable",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/src/adapters/logging/Logger.ts",
+      "rule": "eslint-comments/require-description",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/src/adapters/logging/Logger.ts",
+      "rule": "obsidianmd/rule-custom-message",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/src/domain/layout/CommandPanel.ts",
+      "rule": "no-console",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/src/ExocortexPlugin.ts",
+      "rule": "eslint-comments/no-restricted-disable",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/src/ExocortexPlugin.ts",
+      "rule": "eslint-comments/require-description",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/src/ExocortexPlugin.ts",
+      "rule": "no-console",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/src/infrastructure/adapters/ApplyDepsFactory.ts",
+      "rule": "no-console",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/src/infrastructure/adapters/DedupUidsCommands.ts",
+      "rule": "no-console",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/src/infrastructure/adapters/ExoSyncParityFactory.ts",
+      "rule": "no-console",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/src/infrastructure/adapters/lazyNodeModules.ts",
+      "rule": "(no-rule)",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/src/infrastructure/adapters/lazyNodeModules.ts",
+      "rule": "eslint-comments/disable-enable-pair",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/src/infrastructure/adapters/ObsidianCommandPromptAdapter.ts",
+      "rule": "eslint-comments/no-restricted-disable",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/src/infrastructure/adapters/SyncCommands.ts",
+      "rule": "no-console",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/src/infrastructure/di/ObsidianLogger.ts",
+      "rule": "no-console",
+      "count": 4
+    },
+    {
+      "file": "packages/obsidian-plugin/src/infrastructure/di/ObsidianNotificationService.ts",
+      "rule": "no-console",
+      "count": 4
+    },
+    {
+      "file": "packages/obsidian-plugin/src/infrastructure/layout/LayoutParser.ts",
+      "rule": "no-console",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/src/infrastructure/reflect-metadata-shim.ts",
+      "rule": "eslint-comments/no-restricted-disable",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/src/infrastructure/reflect-metadata-shim.ts",
+      "rule": "eslint-comments/require-description",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/src/infrastructure/utils/FunctionReplacer.ts",
+      "rule": "eslint-comments/no-restricted-disable",
+      "count": 5
+    },
+    {
+      "file": "packages/obsidian-plugin/src/infrastructure/utils/FunctionReplacer.ts",
+      "rule": "eslint-comments/require-description",
+      "count": 6
+    },
+    {
+      "file": "packages/obsidian-plugin/src/presentation/body/BodyLinkPatch.ts",
+      "rule": "eslint-comments/no-restricted-disable",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/src/presentation/components/ErrorBoundary.tsx",
+      "rule": "no-console",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/src/presentation/graph-view/GraphViewPatch.ts",
+      "rule": "eslint-comments/no-restricted-disable",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/src/presentation/modals/DynamicFormModal.ts",
+      "rule": "no-console",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/src/presentation/properties/PropertiesLabelPatch.ts",
+      "rule": "no-console",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/src/presentation/properties/PropertiesLinkPatch.ts",
+      "rule": "eslint-comments/no-restricted-disable",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/src/presentation/renderers/cell-renderers/ActionsRenderer.tsx",
+      "rule": "no-console",
+      "count": 4
+    },
+    {
+      "file": "packages/obsidian-plugin/src/presentation/tab-titles/InlineTitlePatch.ts",
+      "rule": "eslint-comments/no-restricted-disable",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/src/presentation/tab-titles/TabTitlePatch.ts",
+      "rule": "eslint-comments/no-restricted-disable",
+      "count": 1
+    },
+    {
+      "file": "packages/req-audit/src/audit.ts",
+      "rule": "obsidianmd/rule-custom-message",
+      "count": 7
+    },
+    {
+      "file": "packages/req-audit/src/bin.ts",
+      "rule": "obsidianmd/rule-custom-message",
+      "count": 1
+    },
+    {
+      "file": "packages/test-utils/src/helpers/obsidian.helpers.ts",
+      "rule": "eslint-comments/no-restricted-disable",
+      "count": 1
+    },
+    {
+      "file": "packages/test-utils/src/helpers/obsidian.helpers.ts",
+      "rule": "eslint-comments/require-description",
+      "count": 1
+    },
+    {
+      "file": "packages/test-utils/src/reporters/flaky-reporter.ts",
+      "rule": "obsidianmd/rule-custom-message",
+      "count": 11
+    },
+    {
+      "file": "packages/test-utils/src/reporters/quarantine.ts",
+      "rule": "obsidianmd/rule-custom-message",
+      "count": 13
+    }
+  ]
+}

@@ -6,8 +6,7 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
-    "test": "jest",
-    "lint": "eslint src --ext .ts"
+    "test": "jest"
   },
   "keywords": [
     "testing",

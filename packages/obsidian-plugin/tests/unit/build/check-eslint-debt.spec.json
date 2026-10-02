@@ -1,0 +1,86 @@
+{
+  "_doc": "Revert-verify for the eslint-debt ratchet (issue #4497). The issue reported that the required `lint` job pointed eslint at ONE of six TypeScript packages; the load-bearing half it did not name is that the step carried `continue-on-error: true` (fa5251f8, \"allow lint WARNINGS to not fail CI\"), so the job was green at ANY number of eslint ERRORS — measured on main@204898e1: `npm run lint` rc=1 with 56 errors, `lint` green. This change removes the flagged step and replaces it with the guard. Axes EL1-EL11 live in check-eslint-debt.test.ts; the subject is the guard script itself. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout. Recorded runs: see the PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/scripts/check-eslint-debt.mjs",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/..\" && node ./node_modules/jest/bin/jest.js --config packages/obsidian-plugin/jest.config.js packages/obsidian-plugin/tests/unit/build/check-eslint-debt.test.ts --coverageThreshold='{}' 2>&1",
+  "red_re": "› (EL\\d+\\w*) ",
+  "_note_broad_mutant": "M1 is the mutant the issue's acceptance criteria name verbatim (\"narrow the scope back to one package\"). It is BROAD by construction — narrowing the sweep starves every axis whose fixture puts its finding in the second package — so its `expect` list is taken from the recorded run, not from the mutant's theme (integration-test-revert-verify §A44/§A54). M2-M11 are the single-concern mutants: each names one guarantee and reddens the one axis that holds it.",
+  "mutants": {
+    "M1_scope_narrowed_to_one_package": {
+      "_why": "The mutant #4497 asks for: the sweep collapses to a single package, which is the pre-fix state of the root `lint` script. Broad on purpose — see _note_broad_mutant.",
+      "from": "const { inScope, notLintable } = derivePackages();",
+      "to": "const { inScope: _derived, notLintable } = derivePackages();\nconst inScope = _derived.slice(0, 1);",
+      "expect": ["EL1", "EL2", "EL5", "EL7", "EL8", "EL9", "EL11"],
+      "_note": "Recorded run, not a prediction from the theme: the sweep collapsing to the first package starves every axis whose fixture puts its subject in the SECOND one — EL2 (new error in beta), EL5 (fatal in beta), EL8 (warning in beta), EL9 (beta with zero files), EL11 (report over beta) — plus EL1 (the scope line itself) and EL7, which then reports a narrowed sweep (rc=2) instead of the stale baseline it asserts. EL3/EL4/EL6/EL10 stay green: their fixtures hold everything in the first package. This is the breadth the issue's acceptance criteria asked for; the single-concern mutants are M2-M11."
+    },
+    "M2_ts_project_exclusion_ignored": {
+      "_why": "Drops the second conjunct of scope derivation, so a package eslint CANNOT judge (packages/cli in production, `excluded` in the fixture) is swept anyway and its fatals/findings reach the verdict. EL4 holds the property that such a package is dropped WITH its reason printed.",
+      "from": "    if (excludedBy) notLintable.push({ name, excludedBy });",
+      "to": "    if (false) notLintable.push({ name, excludedBy });",
+      "expect": ["EL3", "EL4"],
+      "_note": "EL3 is a MEASURED extra, read before it was written down (integration-test-revert-verify A44): EL3 drives its narrowing THROUGH the TS-project exclusion (it moves beta out of the project while the baseline still names it), which is the very conjunct this mutant removes — beta then stays in scope, the lost set is empty, and the run exits 0 instead of 2. So EL3 and EL4 are the two sides of one mechanism: EL4 holds 'an unjudgeable package is dropped with its reason printed', EL3 holds 'a sweep narrower than the baseline is not a pass'. Both must react."
+    },
+    "M3_fatals_absorbed_silently": {
+      "_why": "A fatal parse error inside the derived scope stops being rc=2. Without this guard the run would call itself clean over files it never judged — the exact shape that 122 baselined `cli` parse errors would have had.",
+      "from": "if (fatals.length > 0) {",
+      "to": "if (fatals.length > 99999) {",
+      "expect": ["EL5"]
+    },
+    "M4_counts_not_compared": {
+      "_why": "The baseline stores per-pair counts; if nothing reads them, a SECOND instance of an already-baselined pair is absorbed silently. This is the hole check-cli-types.mjs had to close once it noticed its own `count` field was never read.",
+      "from": "  .filter(([k, c]) => known.has(k) && c > (baseCount.get(k) ?? 0))",
+      "to": "  .filter(() => false)",
+      "expect": ["EL6"]
+    },
+    "M5_gone_pairs_not_reported": {
+      "_why": "Removes the second direction of fail-loud: a baselined pair that no longer occurs stops being a finding, so the baseline silently stops describing the code and becomes licence rather than a ratchet.",
+      "from": "const gonePairs = [...known].filter((k) => !found.has(k)).sort();",
+      "to": "const gonePairs = [];",
+      "expect": ["EL7"]
+    },
+    "M6_warnings_gated_as_errors": {
+      "_why": "Re-breaks what fa5251f8 actually asked for: warnings would fail the job. EL8 is the axis that keeps the author's recorded intent true while the mechanism changed under it.",
+      "from": "    if (m.severity === 1) {",
+      "to": "    if (m.severity === 99) {",
+      "expect": ["EL8"]
+    },
+    "M7_zero_linted_files_reads_green": {
+      "_why": "Removes the population floor. An in-scope package whose src/ exists but yields no judged file would read as clean — paths visited reported as content judged (self-satisfying-metric-weak-verifier §A58).",
+      "from": "if (empty.length > 0) {",
+      "to": "if (empty.length > 99999) {",
+      "expect": ["EL9"]
+    },
+    "M8_unreadable_baseline_reads_green": {
+      "_why": "An unparseable baseline falls back to an empty one, so every run would exit 0 over a baseline nobody can read — the disarm that check-cli-types.mjs documents for its own `--update`.",
+      "from": "  baseline = JSON.parse(readFileSync(BASELINE, \"utf8\"));",
+      "to": "  baseline = (() => { try { return JSON.parse(readFileSync(BASELINE, \"utf8\")); } catch { return { scope: inScope, entries: [] }; } })();",
+      "expect": ["EL10"]
+    },
+    "M9_narrowed_sweep_reads_green": {
+      "_why": "The sweep may cover fewer packages than the baseline names without saying so — i.e. the run judges less than it claims and still passes. This is the quiet half of the #4497 defect.",
+      "from": "const lost = baseline.scope.filter((p) => !inScope.includes(p));",
+      "to": "const lost = [];",
+      "expect": ["EL3"]
+    },
+    "M10_new_pairs_not_reported": {
+      "_why": "The ratchet stops reporting NEW (file, rule) pairs — a measurer with no consequence, which is precisely what widening the path list under a live `continue-on-error` would have shipped.",
+      "from": "const newPairs = [...found.keys()].filter((k) => !known.has(k)).sort();",
+      "to": "const newPairs = [];",
+      "expect": ["EL2"]
+    },
+    "M11_report_mode_gates": {
+      "_why": "`--report` is the advisory reading and must never gate; if it falls through to the verdict, `npm run lint:report` starts failing an author's working tree on pre-existing debt.",
+      "from": "if (REPORT) {",
+      "to": "if (false) {",
+      "expect": ["EL11"]
+    }
+  }
+}
