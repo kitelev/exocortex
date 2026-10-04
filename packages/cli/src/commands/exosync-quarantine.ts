@@ -63,7 +63,10 @@ import {
 import { wireObjectCache } from "../services/objectCacheTransport.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 
-export interface QuarantineCliOptions extends ExosyncSyncOptions {
+// `Omit<…, "repo">`: quarantine's own `--repo` is ONE key that disambiguates a
+// cross-repo path collision, while sync/pull/push's `--repo` (req 84033d13) is a
+// repeatable run filter — same flag name, different command, different shape.
+export interface QuarantineCliOptions extends Omit<ExosyncSyncOptions, "repo"> {
   /** `local` | `remote` | `file` (resolve). */
   take?: string;
   /** Path to a file whose content is the merged resolution (`--take file`). */

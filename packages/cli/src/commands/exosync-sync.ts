@@ -100,6 +100,35 @@ export interface ExosyncSyncOptions {
   conditionalRequests?: boolean;
   /** `false` from `--no-object-cache` (req 086df113). Default on. */
   objectCache?: boolean;
+  /**
+   * `--repo <owner/name>` (repeatable, req 84033d13): limit the run to these
+   * materialized repos. Absent / empty = every repo, exactly as before.
+   */
+  repo?: string[];
+}
+
+/**
+ * req 84033d13 — pick the specs named by `--repo`. A name matches a spec when
+ * it equals its `repoKey` (`owner/name#branch`) or that key without the
+ * `#branch` suffix. Order of `specs` is preserved (the caller still applies
+ * children-first ordering). Every name that matches nothing is returned in
+ * `unknown` — the caller refuses the run rather than silently syncing less
+ * than was asked for.
+ */
+export function selectReposForRun(
+  specs: readonly SyncRepoSpec[],
+  wanted: readonly string[] | undefined,
+): { specs: SyncRepoSpec[]; unknown: string[] } {
+  if (wanted === undefined || wanted.length === 0) {
+    return { specs: [...specs], unknown: [] };
+  }
+  const matches = (spec: SyncRepoSpec, name: string): boolean =>
+    spec.repoKey === name || spec.repoKey.split("#")[0] === name;
+  const unknown = wanted.filter((name) => !specs.some((s) => matches(s, name)));
+  return {
+    specs: specs.filter((s) => wanted.some((name) => matches(s, name))),
+    unknown,
+  };
 }
 
 /** Injectable dependencies (tests). */
@@ -142,7 +171,7 @@ const coreSchemaYaml: YamlCodec = {
  * Sync touches PRIVATE repos (404-hidden without a PAT) and pushes commits,
  * so a token is always required. */
 export function resolveToken(
-  opts: ExosyncSyncOptions,
+  opts: Pick<ExosyncSyncOptions, "token" | "tokenFromGh">,
   deps: ExosyncSyncDeps,
 ): string {
   if (opts.tokenFromGh === true) {
@@ -449,9 +478,9 @@ export async function runExosyncSync(
   const rawTransport =
     deps.transportFactory?.(token, opts.apiBase) ?? pushService.transport();
 
-  const { specs, warnings } = collectVaultSpecs(vaultPath);
+  const { specs: allSpecs, warnings } = collectVaultSpecs(vaultPath);
   for (const w of warnings) out(`warn: ${w}`);
-  if (specs.length === 0) {
+  if (allSpecs.length === 0) {
     out(
       "Nothing to sync — no materialized AssetSpaces with a GitHub source found in this vault.",
     );
@@ -472,7 +501,32 @@ export async function runExosyncSync(
     return 2;
   }
 
+  // req 84033d13 — `--repo` scopes the run. An unknown name refuses the run
+  // BEFORE any engine work (so no REST request is made): syncing a subset the
+  // caller did not ask for, or nothing while reporting success, would both be
+  // silent. The refusal names every rejected value and the available keys.
   const configDir = opts.configDir ?? ".obsidian";
+  const selection = selectReposForRun(allSpecs, opts.repo);
+  if (selection.unknown.length > 0) {
+    out(
+      `❌ --repo: not among the ${allSpecs.length} materialized repo(s): ${selection.unknown.join(", ")}. Available: ${allSpecs
+        .map((s) => s.repoKey.split("#")[0])
+        .join(", ")}`,
+    );
+    await appendSyncRunLog(
+      runLogPathFor(vaultPath, configDir),
+      runLogEntry({
+        command: "sync",
+        vault: vaultPath,
+        restCalls: 0,
+        quota: undefined,
+        exitCode: 2,
+      }),
+    );
+    return 2;
+  }
+  const specs = selection.specs;
+
   const watermarkPath = path.join(
     vaultPath,
     configDir,
@@ -702,6 +756,12 @@ function withSyncOptions(cmd: Command): Command {
     .option(
       "--no-object-cache",
       "Do not serve immutable git objects (commits/trees/blobs) from the local cache",
+    )
+    .option(
+      "--repo <owner/name>",
+      "Limit the run to this materialized repo (repeatable; owner/name or owner/name#branch). Default: every repo",
+      (value: string, previous: string[]) => [...previous, value],
+      [] as string[],
     );
 }
 
