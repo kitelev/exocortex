@@ -1,0 +1,51 @@
+{
+  "_doc": "Revert-verify for req 84033d13 (`exosync sync|pull|push --repo`), subject = packages/cli/src/commands/exosync-sync.ts. Axes R1-R8 in exosync-sync.repo-filter.test.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-sync.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-sync.repo-filter.test.ts 2>&1",
+  "red_re": "› (R\\d+\\w*) ",
+  "mutants": {
+    "M1_selection_ignored": {
+      "from": "  const specs = selection.specs;\n",
+      "to": "  const specs = allSpecs;\n",
+      "expect": ["R1", "R2", "R8"],
+      "_note": "Красит и R2: с третьим репо (gamma) любая ось с фильтром ловит «выбор проигнорирован» — gamma получает запросы. До правки ревью (два репо) R2 была слепа к этому мутанту."
+    },
+    "M2_unknown_name_not_refused": {
+      "from": "  if (selection.unknown.length > 0) {\n",
+      "to": "  if (false) {\n",
+      "expect": ["R4"]
+    },
+    "M3_option_not_wired_as_repo": {
+      "from": "      \"--repo <owner/name>\",\n",
+      "to": "      \"--repos <owner/name>\",\n",
+      "expect": ["R6"]
+    },
+    "M4_bare_owner_name_form_not_matched": {
+      "from": "    spec.repoKey === name || spec.repoKey.split(\"#\")[0] === name;\n",
+      "to": "    spec.repoKey === name || false;\n",
+      "expect": ["R1", "R2", "R4", "R5", "R8"]
+    },
+    "M5_no_default_list": {
+      "from": "      [] as string[],\n",
+      "to": "      undefined as unknown as string[],\n",
+      "expect": ["R7"]
+    },
+    "M6_filter_skipped_for_several_names": {
+      "from": "    specs: specs.filter((s) => wanted.some((name) => matches(s, name))),\n",
+      "to": "    specs: wanted.length > 1 ? [...specs] : specs.filter((s) => wanted.some((name) => matches(s, name))),\n",
+      "expect": ["R2"],
+      "_note": "Найден ревью PR #4534 (MEDIUM-1): на фикстуре из двух репо «оба названных прошли» неотличимо от «фильтр проигнорирован»; третий репо gamma делает R2 различающей."
+    },
+    "M7_scope_line_not_printed": {
+      "from": "  if (specs.length < allSpecs.length) {\n",
+      "to": "  if (false) {\n",
+      "expect": ["R8"]
+    }
+  }
+}
