@@ -9,9 +9,10 @@
  * Motivation (P22, roadmap 9bbda2be): a bot vault mounts 23 repos and the
  * engine walks them sequentially (~2.3 s each), while the bot writes to 6.
  *
- * Fixture: TWO declared + materialized repos with DISJOINT names (`alpha`,
- * `beta` — neither is a substring of the other, so a URL check cannot pass by
- * accident). The transport is the production-shape `FakeGitHubRepo` wrapped by
+ * Fixture: THREE declared + materialized repos with DISJOINT names (`alpha`,
+ * `beta`, `gamma` — none is a substring of another, so a URL check cannot pass
+ * by accident). Three, not two: with two repos "both named ran" is
+ * indistinguishable from "the filter was ignored" (review of PR #4534). The transport is the production-shape `FakeGitHubRepo` wrapped by
  * a recorder; "repo X was (not) touched" is read from the REQUEST URLS, i.e.
  * from what the engine actually asked the network for.
  */
@@ -31,9 +32,9 @@ const ASSET_SPACE_CLASS_UID = "73bd00e4-ccc0-4f3f-b20d-c4388c4588fb";
 const OWNER = "test-owner";
 const FAKE_PAT = "ghp_" + "D".repeat(36);
 
-function makeTwoRepoVault(): { vault: string; cleanup: () => void } {
+function makeThreeRepoVault(): { vault: string; cleanup: () => void } {
   const vault = mkdtempSync(path.join(tmpdir(), "exosync-repo-filter-"));
-  for (const repo of ["alpha", "beta"]) {
+  for (const repo of ["alpha", "beta", "gamma"]) {
     writeFileSync(
       path.join(vault, `decl-${repo}.md`),
       `---\nexo__Asset_uid: decl-${repo}\nexo__Instance_class:\n  - "[[${ASSET_SPACE_CLASS_UID}]]"\nexo__AssetSpace_source: https://github.com/${OWNER}/${repo}\n---\n\nDeclaration\n`,
@@ -70,50 +71,53 @@ const touched = (urls: string[], repo: string): boolean =>
 
 describe(`exosync --repo (req ${REQ})`, () => {
   it(`R1 @req:84033d13-7a17-4e1d-ab7c-97ddf9916cd6 one --repo runs only that repo; the other gets no request`, async () => {
-    const fx = makeTwoRepoVault();
+    const fx = makeThreeRepoVault();
     try {
       const r = await run(fx.vault, [`${OWNER}/alpha`]);
       expect(r.lines.join("\n")).toMatch(/ExoSync push: 1 repo\(s\)/);
       expect(r.urls.length).toBeGreaterThan(0);
       expect(touched(r.urls, "alpha")).toBe(true);
       expect(touched(r.urls, "beta")).toBe(false);
+      expect(touched(r.urls, "gamma")).toBe(false);
     } finally {
       fx.cleanup();
     }
   });
 
   it(`R2 @req:84033d13-7a17-4e1d-ab7c-97ddf9916cd6 --repo is repeatable: both named repos run`, async () => {
-    const fx = makeTwoRepoVault();
+    const fx = makeThreeRepoVault();
     try {
       const r = await run(fx.vault, [`${OWNER}/beta`, `${OWNER}/alpha`]);
       expect(r.lines.join("\n")).toMatch(/ExoSync push: 2 repo\(s\)/);
       expect(touched(r.urls, "alpha")).toBe(true);
       expect(touched(r.urls, "beta")).toBe(true);
+      expect(touched(r.urls, "gamma")).toBe(false);
     } finally {
       fx.cleanup();
     }
   });
 
   it(`R3 @req:84033d13-7a17-4e1d-ab7c-97ddf9916cd6 without --repo every materialized repo runs, as before`, async () => {
-    const fx = makeTwoRepoVault();
+    const fx = makeThreeRepoVault();
     try {
       const r = await run(fx.vault, undefined);
-      expect(r.lines.join("\n")).toMatch(/ExoSync push: 2 repo\(s\)/);
+      expect(r.lines.join("\n")).toMatch(/ExoSync push: 3 repo\(s\)/);
       expect(touched(r.urls, "alpha")).toBe(true);
       expect(touched(r.urls, "beta")).toBe(true);
+      expect(touched(r.urls, "gamma")).toBe(true);
     } finally {
       fx.cleanup();
     }
   });
 
   it(`R4 @req:84033d13-7a17-4e1d-ab7c-97ddf9916cd6 an unknown name exits 2 before any REST request and names what is available`, async () => {
-    const fx = makeTwoRepoVault();
+    const fx = makeThreeRepoVault();
     try {
       const r = await run(fx.vault, [`${OWNER}/alpha`, `${OWNER}/nope`]);
       expect(r.code).toBe(2);
       expect(r.urls).toEqual([]);
       const text = r.lines.join("\n");
-      expect(text).toMatch(/--repo: not among the 2 materialized repo\(s\): test-owner\/nope\./);
+      expect(text).toMatch(/--repo: not among the 3 materialized repo\(s\): "test-owner\/nope"\./);
       expect(text).toMatch(/Available: .*test-owner\/alpha/);
       expect(text).toMatch(/Available: .*test-owner\/beta/);
       expect(text).not.toMatch(/ExoSync push:/);
@@ -161,6 +165,21 @@ describe(`exosync --repo (req ${REQ})`, () => {
       const sub = root.commands.find((c) => c.name() === direction);
       const opt = sub?.options.find((o) => (o.long ?? "").startsWith("--repo"));
       expect(opt?.defaultValue).toEqual([]);
+    }
+  });
+
+  it(`R8 @req:84033d13-7a17-4e1d-ab7c-97ddf9916cd6 a filtered run names the repos it leaves out; an unfiltered run prints no such line`, async () => {
+    const fx = makeThreeRepoVault();
+    try {
+      const filtered = await run(fx.vault, [`${OWNER}/alpha`]);
+      expect(filtered.lines).toContain(
+        "--repo: 1 of 3 materialized repo(s) in this run; not in this run (their pending delta is NOT sent): test-owner/beta, test-owner/gamma",
+      );
+      const all = await run(fx.vault, undefined);
+      expect(all.lines.join("\n")).toMatch(/ExoSync push: 3 repo\(s\)/);
+      expect(all.lines.some((l) => l.startsWith("--repo:"))).toBe(false);
+    } finally {
+      fx.cleanup();
     }
   });
 });

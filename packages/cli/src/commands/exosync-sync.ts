@@ -509,7 +509,7 @@ export async function runExosyncSync(
   const selection = selectReposForRun(allSpecs, opts.repo);
   if (selection.unknown.length > 0) {
     out(
-      `❌ --repo: not among the ${allSpecs.length} materialized repo(s): ${selection.unknown.join(", ")}. Available: ${allSpecs
+      `❌ --repo: not among the ${allSpecs.length} materialized repo(s): ${selection.unknown.map((n) => JSON.stringify(n)).join(", ")}. Available: ${allSpecs
         .map((s) => s.repoKey.split("#")[0])
         .join(", ")}`,
     );
@@ -633,6 +633,19 @@ export async function runExosyncSync(
   out(
     `ExoSync ${direction}: ${specs.length} repo(s), vault ${vaultPath}`,
   );
+  // req 84033d13 — a filtered run says what it LEFT OUT. A pending delta of an
+  // unlisted repo is not sent by this run; without this line a caller with a
+  // static list (a bot) would never learn that a newly mounted repo it writes
+  // to is outside its list. The header above stays byte-identical (bot
+  // harnesses parse it), so the scope goes on its own line.
+  if (specs.length < allSpecs.length) {
+    const left = allSpecs
+      .filter((s) => !specs.includes(s))
+      .map((s) => s.repoKey.split("#")[0]);
+    out(
+      `--repo: ${specs.length} of ${allSpecs.length} materialized repo(s) in this run; not in this run (their pending delta is NOT sent): ${left.join(", ")}`,
+    );
+  }
   // Children before parents (deeper mount paths first) — D12 ordering.
   const ordered = orderChildrenFirst(specs);
   // Live in-flight trace so a long pull (the dominant restBlob phase) never
@@ -759,7 +772,7 @@ function withSyncOptions(cmd: Command): Command {
     )
     .option(
       "--repo <owner/name>",
-      "Limit the run to this materialized repo (repeatable; owner/name or owner/name#branch). Default: every repo",
+      "Limit the run to this materialized repo (repeatable; owner/name or owner/name#branch). Default: every repo. Runs with different --repo on one vault are NOT safe in parallel (shared watermark/cache files)",
       (value: string, previous: string[]) => [...previous, value],
       [] as string[],
     );
