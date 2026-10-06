@@ -15,6 +15,7 @@ import * as path from "node:path";
 
 import {
   ASSET_SPACE_CLASS_UID,
+  type ConditionalStoreIO,
   type RestCommitRequest,
   type RestCommitResponse,
   type RestCommitTransport,
@@ -22,8 +23,16 @@ import {
 
 import { runExosyncParity } from "../../../src/commands/exosync-parity.js";
 import { runExosyncSync } from "../../../src/commands/exosync-sync.js";
-import { runQuarantineList } from "../../../src/commands/exosync-quarantine.js";
-import { wireConditionalRequests } from "../../../src/services/conditionalRequestTransport.js";
+import {
+  runQuarantineList,
+  runQuarantineResolve,
+} from "../../../src/commands/exosync-quarantine.js";
+import {
+  settleConditionalStores,
+  unsettledConditionalStoreCount,
+  wireConditionalRequests,
+  withSettledConditionalStores,
+} from "../../../src/services/conditionalRequestTransport.js";
 
 const OWNER = "kitelev";
 const REPO = "exoas-public";
@@ -381,5 +390,124 @@ describe("the wiring is pinned at the command level @req:af002ec4-ec4e-4482-b7b5
     // Напечатанное обязано совпасть с фактом на проводе, иначе строка —
     // подпись, а не производная механизма.
     expect(notModified).toBe(remote.notModified());
+  });
+});
+
+/** A store whose writes hang until released — the window the settle exists for. */
+function heldStore(): ConditionalStoreIO & {
+  release: () => void;
+  disk: () => string | null;
+} {
+  let disk: string | null = null;
+  const pending: Array<() => void> = [];
+  return {
+    async read() {
+      return null;
+    },
+    writeAtomic(content) {
+      return new Promise<void>((resolve) => {
+        pending.push(() => {
+          disk = content;
+          resolve();
+        });
+      });
+    },
+    release: () => {
+      while (pending.length > 0) pending.shift()!();
+    },
+    disk: () => disk,
+  };
+}
+
+describe("a run ends with its ETag store on disk @req:0700c0e0-3dfb-4d45-bcaa-d93792b73905", () => {
+  // Two layers, each pinned on its own: D12 — the helper waits for the write
+  // even when the body throws (the path that reaches `process.exit()` in
+  // ErrorHandler.handle); D13-D16 — every command entry point goes through
+  // the helper. An axis on the helper alone would stay green if a command
+  // called its `*Unsettled` body directly.
+  let fixture: { vault: string; cleanup: () => void };
+
+  beforeEach(async () => {
+    fixture = makeVault({ pinnedPaths: [FILE_A] });
+    // D1-D3 wire caches outside any command; drain them so the count below
+    // measures THIS run only.
+    await settleConditionalStores();
+    expect(unsettledConditionalStoreCount()).toBe(0);
+  });
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  it("D12 the throw path re-throws only after the store write landed", async () => {
+    const io = heldStore();
+    const remote = conditionalRemote({ [FILE_A]: CONTENT_A });
+    const url = `https://api.github.com/repos/${OWNER}/${REPO}/git/refs/heads/main`;
+    let rejected = false;
+    const run = withSettledConditionalStores(async () => {
+      const { transport } = wireConditionalRequests(remote, { io, env: {} });
+      await transport({ method: "GET", url });
+      throw new Error("boom");
+    }).catch(() => {
+      rejected = true;
+    });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(rejected).toBe(false); // the write is held, so the run has not ended
+    io.release();
+    await run;
+    expect(rejected).toBe(true);
+    const disk = JSON.parse(io.disk() ?? "{}") as {
+      entries?: Record<string, { etag: string }>;
+    };
+    expect(disk.entries?.[url]?.etag).toBeDefined();
+  });
+
+  const deps = (remote: RestCommitTransport) => ({
+    transportFactory: () => remote,
+    out: () => undefined,
+    env: {},
+  });
+
+  it("D13 `exosync-parity` settles what it wired", async () => {
+    const remote = conditionalRemote({ [FILE_A]: CONTENT_A });
+    await runExosyncParity(
+      { vault: fixture.vault, token: FAKE_PAT },
+      deps(remote),
+    );
+    expect(remote.seen.length).toBeGreaterThan(0); // the run reached the wiring
+    expect(unsettledConditionalStoreCount()).toBe(0);
+  });
+
+  it("D14 `exosync sync` settles what it wired", async () => {
+    const remote = conditionalRemote({ [FILE_A]: CONTENT_A });
+    await runExosyncSync(
+      "pull",
+      { vault: fixture.vault, token: FAKE_PAT },
+      deps(remote),
+    );
+    expect(remote.seen.length).toBeGreaterThan(0);
+    expect(unsettledConditionalStoreCount()).toBe(0);
+  });
+
+  it("D15 `exosync quarantine list` settles what it wired", async () => {
+    const remote = conditionalRemote({ [FILE_A]: CONTENT_A });
+    await runQuarantineList(
+      { vault: fixture.vault, token: FAKE_PAT },
+      deps(remote),
+    );
+    expect(remote.seen.length).toBeGreaterThan(0);
+    expect(unsettledConditionalStoreCount()).toBe(0);
+  });
+
+  it("D16 `exosync quarantine resolve` settles what it wired, error path included", async () => {
+    // FILE_A is pinned but not in conflict, so resolve ends in an error after
+    // building its resolver (and wiring the cache). The verdict is not the
+    // subject here — the store is.
+    const remote = conditionalRemote({ [FILE_A]: CONTENT_A });
+    await runQuarantineResolve(
+      FILE_A,
+      { vault: fixture.vault, token: FAKE_PAT, take: "local" },
+      deps(remote),
+    ).catch(() => undefined);
+    expect(unsettledConditionalStoreCount()).toBe(0);
   });
 });

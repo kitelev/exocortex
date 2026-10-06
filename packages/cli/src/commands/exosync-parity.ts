@@ -295,10 +295,11 @@ function printParkedSection(
   }
 }
 
-/** Core flow, exported for tests. Returns the intended exit code. */
 /**
- * Public entry: settles the ETag store this run wired before returning or
- * re-throwing (req 0700c0e0 — see `withSettledConditionalStores`).
+ * Core flow, exported for tests. Returns the intended exit code.
+ *
+ * Settles the ETag store this run wired before returning or re-throwing
+ * (req 0700c0e0 — see `withSettledConditionalStores`).
  */
 export async function runExosyncParity(
   opts: ExosyncParityOptions,

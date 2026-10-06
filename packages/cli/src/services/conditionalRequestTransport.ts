@@ -82,6 +82,15 @@ function envDisables(env: NodeJS.ProcessEnv): boolean {
 /**
  * Caches wired in this process whose store may still have a write in flight
  * (req 0700c0e0: the store is written BEHIND each mutation).
+ *
+ * ⚠ One set per PROCESS, not per run. `settleConditionalStores()` drains
+ * every cache wired so far, so two overlapping runs in one process would
+ * settle each other's caches: a run finishing first takes the other's cache
+ * out of the set, and the later run can return before its own last write.
+ * The CLI runs one command per process and no caller overlaps runs today;
+ * overlapping them needs per-run scoping (e.g. AsyncLocalStorage) first.
+ * A cache wired OUTSIDE `withSettledConditionalStores` stays referenced here
+ * until the next settle.
  */
 const unsettled = new Set<ConditionalRequestCache>();
 
@@ -96,6 +105,16 @@ export function wireConditionalRequests(
   const cache = new ConditionalRequestCache({ io: opts.io });
   unsettled.add(cache);
   return { transport: withConditionalRequests(transport, cache), cache };
+}
+
+/**
+ * Caches wired and not yet settled. Exported so tests can pin that a command
+ * entry point settles what it wired: the set is drained synchronously when a
+ * settle starts, so a non-zero count after a command returned means the
+ * command bypassed `withSettledConditionalStores` (fs timing plays no part).
+ */
+export function unsettledConditionalStoreCount(): number {
+  return unsettled.size;
 }
 
 /** Wait until every wired cache has written its last mutation to disk. */

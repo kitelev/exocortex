@@ -456,13 +456,14 @@ function isFailureStatus(status: RepoSyncResult["status"]): boolean {
   );
 }
 
-/** Core flow, exported for tests. Returns the intended exit code:
+/**
+ * Core flow, exported for tests. Returns the intended exit code:
  * 0 = all repos clean; 1 = at least one repo unresolved/errored;
  * 2 = VACUOUS (no materialized sync units found — a green 0 here would be a
- * false certificate). */
-/**
- * Public entry: settles the ETag store this run wired before returning or
- * re-throwing (req 0700c0e0 — see `withSettledConditionalStores`).
+ * false certificate).
+ *
+ * Settles the ETag store this run wired before returning or re-throwing
+ * (req 0700c0e0 — see `withSettledConditionalStores`).
  */
 export async function runExosyncSync(
   direction: SyncDirection,

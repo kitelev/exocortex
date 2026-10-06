@@ -165,10 +165,11 @@ function buildResolver(
   return { resolver, specs, warnings };
 }
 
-/** `exosync quarantine list`. Exit 0 always (a list is never a failure). */
 /**
- * Public entry: settles the ETag store this run wired before returning or
- * re-throwing (req 0700c0e0 — see `withSettledConditionalStores`).
+ * `exosync quarantine list`. Exit 0 always (a list is never a failure).
+ *
+ * Settles the ETag store this run wired before returning or re-throwing
+ * (req 0700c0e0 — see `withSettledConditionalStores`).
  */
 export async function runQuarantineList(
   opts: QuarantineCliOptions,
@@ -272,10 +273,11 @@ function printPinnedNotConflicting(
   out(`Clear with: exosync sync --vault ${vaultPath} --token-from-gh`);
 }
 
-/** `exosync quarantine resolve <path> --take …`. Exit 0 on success, 1 on error. */
 /**
- * Public entry: settles the ETag store this run wired before returning or
- * re-throwing (req 0700c0e0 — see `withSettledConditionalStores`).
+ * `exosync quarantine resolve <path> --take …`. Exit 0 on success, 1 on error.
+ *
+ * Settles the ETag store this run wired before returning or re-throwing
+ * (req 0700c0e0 — see `withSettledConditionalStores`).
  */
 export async function runQuarantineResolve(
   conflictPath: string,
