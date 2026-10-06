@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for the plugin side of the creation gate (req f5b79260-f87c-4e73-8a34-19da341c7ec9): gated engine writer and service adapters, one session per execution, frontmatter read fresh from disk, rules read from disk on a cold start, and the cost guards — a cold start reads the vault once (memo dropped when the file list changes), a vault without a rule builds no name index. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute).",
+  "_doc": "Revert-verify mutants for the plugin side of the creation gate (req f5b79260-f87c-4e73-8a34-19da341c7ec9): gated engine writer and service adapters, one session per execution, frontmatter read fresh from disk, rules read from disk on a cold start through a per-file disk index (re-read only on a changed mtime:size fingerprint, the fingerprint recorded is the one observed BEFORE the read, a failed read keeps the previous value, a change is re-read from disk), and a vault without a rule builds no name index. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -47,10 +47,24 @@
       "expect": ["U4"]
     },
     "M53_a_cold_start_reads_no_rule_from_disk": {
-      "from": "        text = await this.app.vault.cachedRead(file);",
-      "to": "        text = file.path.length < 0 ? await this.app.vault.cachedRead(file) : null;",
-      "expect": ["U5", "U6", "U6b", "U6c", "U6d", "U6e", "U6f", "U6g", "U6h"],
-      "_note": "Every cold-start axis needs the disk: U6/U6f count cachedRead, the others expect a refusal from a rule only the disk can show."
+      "from": "        text = entry\n          ? await this.app.vault.read(file)\n          : await this.app.vault.cachedRead(file);",
+      "to": "        text = file.path.length < 0 ? await this.app.vault.read(file) : null;",
+      "expect": [
+        "U5",
+        "U6",
+        "U6b",
+        "U6c",
+        "U6d",
+        "U6e",
+        "U6f",
+        "U6g",
+        "U6h",
+        "U9",
+        "U9b",
+        "U9c",
+        "U9d"
+      ],
+      "_note": "Every cold-start axis needs the disk: U6/U6f count reads, the others expect a refusal from a rule only the disk can show."
     },
     "M60_the_cold_index_is_not_kept_across_commands": {
       "from": "      if (entry && entry.fp === fp) {",
@@ -60,26 +74,42 @@
     "M61_a_known_file_is_never_read_again": {
       "from": "      if (entry && entry.fp === fp) {",
       "to": "      if (entry) {",
-      "expect": ["U6c", "U6g"]
+      "expect": ["U6c", "U6g", "U9", "U9b", "U9c", "U9d"],
+      "_note": "U9–U9d all hinge on a KNOWN file being read again once its fingerprint changed (in flight, a late slow reader, a failing re-read of a changed rule, a lagging read cache) — never re-reading a known file breaks each of them."
     },
     "M68_the_fingerprint_without_mtime": {
-      "from": "      const fp = `${stat?.mtime ?? 0}:${stat?.size ?? 0}`;",
-      "to": "      const fp = `${stat?.size ?? 0}`;",
+      "from": "      const fp = stat ? `${stat.mtime ?? 0}:${stat.size ?? 0}` : null;",
+      "to": "      const fp = stat ? `${stat.size ?? 0}` : null;",
       "expect": ["U6c"]
     },
     "M72_the_fingerprint_without_size": {
-      "from": "      const fp = `${stat?.mtime ?? 0}:${stat?.size ?? 0}`;",
-      "to": "      const fp = `${stat?.mtime ?? 0}`;",
+      "from": "      const fp = stat ? `${stat.mtime ?? 0}:${stat.size ?? 0}` : null;",
+      "to": "      const fp = stat ? `${stat.mtime ?? 0}` : null;",
       "expect": ["U6g"]
     },
     "M70_a_failed_read_is_recorded_as_read": {
       "from": "      if (text === null) {\n        if (entry) out.push({ file, value: entry.value });",
-      "to": "      if (text === null) {\n        this.entries.set(file.path, { fp, value: this.extract(\"\", file) });\n        if (entry) out.push({ file, value: entry.value });",
+      "to": "      if (text === null) {\n        this.entries.set(file.path, { fp: fp ?? \"\", value: this.extract(\"\", file) });\n        if (entry) out.push({ file, value: entry.value });",
       "expect": ["U6e"]
     },
+    "M81_the_fingerprint_recorded_is_taken_after_the_read": {
+      "from": "      if (fp !== null) this.entries.set(file.path, { fp, value });",
+      "to": "      const after = (file as { stat?: { mtime?: number; size?: number } }).stat;\n      if (fp !== null) this.entries.set(file.path, { fp: `${after?.mtime ?? 0}:${after?.size ?? 0}`, value });",
+      "expect": ["U9", "U9b"]
+    },
+    "M82_a_failed_re_read_drops_a_known_value": {
+      "from": "        if (entry) out.push({ file, value: entry.value });\n        continue;\n      }\n      const value",
+      "to": "        continue;\n      }\n      const value",
+      "expect": ["U9c"]
+    },
+    "M85_a_change_is_re_read_from_the_read_cache": {
+      "from": "        text = entry\n          ? await this.app.vault.read(file)\n          : await this.app.vault.cachedRead(file);",
+      "to": "        text = await this.app.vault.cachedRead(file);",
+      "expect": ["U9d"]
+    },
     "M67_the_warm_rule_list_is_kept": {
-      "from": "    if (this.isWarm()) {\n      return this.app.vault.getMarkdownFiles().filter((file) =>",
-      "to": "    if (this.isWarm()) {\n      return (this as unknown as { w?: TFile[] }).w ??= this.app.vault.getMarkdownFiles().filter((file) =>",
+      "from": "      this.dropCold();\n      return this.app.vault.getMarkdownFiles().filter((file) =>",
+      "to": "      this.dropCold();\n      return (this as unknown as { w?: TFile[] }).w ??= this.app.vault.getMarkdownFiles().filter((file) =>",
       "expect": ["U8"]
     },
     "M62_the_name_index_is_built_without_a_rule": {

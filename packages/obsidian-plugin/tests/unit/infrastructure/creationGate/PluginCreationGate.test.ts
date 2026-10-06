@@ -166,6 +166,7 @@ function makeVault(
       getMarkdownFiles: () => [...files.keys()].map(tfile),
       read: async (f: TFile) => {
         calls.read++;
+        if (failOnce.delete(f.path)) throw new Error(`EIO: ${f.path}`);
         return files.get(f.path) ?? "";
       },
       cachedRead: async (f: TFile) => {
@@ -340,10 +341,10 @@ describe("creation gate in the plugin (req f5b79260)", () => {
     expect(v.calls.cachedRead).toBe(before);
     await writer.createFile(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ));
     await writer.createFile(`inbox/${NEW_TASK2}.md`, task(NEW_TASK2));
-    expect(v.calls.cachedRead).toBe(before + 2);
+    // N for the first pass, then one per file the previous command wrote — and
+    // nothing else: no rule ⇒ no chain walk ⇒ no fresh read of any asset.
+    expect(v.calls.cachedRead + v.calls.read).toBe(before + 2);
     expect(v.files.has(`inbox/${NEW_TASK2}.md`)).toBe(true);
-    // No rule ⇒ no chain walk ⇒ no fresh read of anything.
-    expect(v.calls.read).toBe(0);
   });
 
   it(`U6f ${REQ} cold: two judgements with nothing changed in between read the disk once`, async () => {
@@ -351,7 +352,7 @@ describe("creation gate in the plugin (req f5b79260)", () => {
     const gate = createPluginCreationGate(v.app);
     await gate.scope.assertAllowed(`inbox/${NEW_TASK}.md`, task(NEW_TASK));
     await gate.scope.assertAllowed(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ));
-    expect(v.calls.cachedRead).toBe(v.files.size);
+    expect(v.calls.cachedRead + v.calls.read).toBe(v.files.size);
   });
 
   it(`U6b ${REQ} cold: a rule the sync delivers between two commands acts at once`, async () => {
@@ -414,6 +415,105 @@ describe("creation gate in the plugin (req f5b79260)", () => {
     v.arrive(`exodev/${RULE}.md`, ruleText());
     v.index(`exodev/${RULE}.md`);
     await expect(writer.createFile(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ))).rejects.toThrow(/CREATION_GATE_REFUSED/);
+  });
+
+  // ── Interleaving: persistent TFile objects whose `stat` is replaced IN PLACE
+  //    on a change (as Obsidian's vault.onChange does), reads that can be held.
+  function liveVault(extra: Record<string, string>) {
+    const files = baseFiles();
+    files.delete(`exodev/${RULE}.md`);
+    for (const [p, t] of Object.entries(extra)) files.set(p, t);
+    let clock = 2_000;
+    const tfiles = new Map<string, TFile>();
+    const mk = (p: string): TFile =>
+      ({
+        path: p,
+        basename: p.replace(/^.*\//, "").replace(/\.md$/, ""),
+        extension: "md",
+        stat: { mtime: 1_000, size: (files.get(p) ?? "").length },
+      }) as unknown as TFile;
+    for (const p of files.keys()) tfiles.set(p, mk(p));
+    const holds = new Map<string, Promise<void>>();
+    const failOnce = new Set<string>();
+    /** What Obsidian's read cache still holds (a lagging `cachedRead`). */
+    const staleCache = new Map<string, string>();
+    const readNow = async (f: TFile, cached: boolean): Promise<string> => {
+      if (failOnce.delete(f.path)) throw new Error(`EIO: ${f.path}`);
+      const text = (cached ? staleCache.get(f.path) : undefined) ?? files.get(f.path) ?? "";
+      const hold = holds.get(f.path);
+      if (hold) {
+        holds.delete(f.path);
+        await hold;
+      }
+      return text; // the bytes as of the start of the read
+    };
+    const app = {
+      vault: {
+        getMarkdownFiles: () => [...tfiles.values()],
+        read: (f: TFile) => readNow(f, false),
+        cachedRead: (f: TFile) => readNow(f, true),
+      },
+      metadataCache: { initialized: false, getFileCache: () => null, getFirstLinkpathDest: () => null },
+    } as unknown as App;
+    const change = (p: string, text: string): void => {
+      files.set(p, text);
+      const f = tfiles.get(p) ?? mk(p);
+      (f as unknown as { stat: { mtime: number; size: number } }).stat = { mtime: clock++, size: text.length };
+      tfiles.set(p, f);
+    };
+    /** Hold the next read of `p` until the returned release is called. */
+    const hold = (p: string): (() => void) => {
+      let release!: () => void;
+      holds.set(p, new Promise<void>((r) => (release = r)));
+      return () => release();
+    };
+    const held = (p: string): boolean => holds.has(p);
+    return { app, change, hold, held, failOnce, staleCache };
+  }
+  const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+  const HOST = "exodev/host.md";
+
+  it(`U9 ${REQ} cold: a file edited into a rule WHILE its read is in flight is seen by the next command`, async () => {
+    const v = liveVault({ [HOST]: "plain\n" });
+    const gate = createPluginCreationGate(v.app);
+    const release = v.hold(HOST);
+    const first = gate.scope.assertAllowed(`inbox/${NEW_TASK}.md`, task(NEW_TASK));
+    while (v.held(HOST)) await tick();
+    v.change(HOST, ruleText());
+    release();
+    await first;
+    await expect(gate.scope.assertAllowed(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ))).rejects.toThrow(/CREATION_GATE_REFUSED/);
+  });
+
+  it(`U9b ${REQ} cold: a slow reader of the OLD text finishing after a reader of the NEW one does not hide the rule`, async () => {
+    const v = liveVault({ [HOST]: "plain\n" });
+    const gate = createPluginCreationGate(v.app);
+    const releaseA = v.hold(HOST);
+    const a = gate.scope.assertAllowed(`inbox/${NEW_TASK}.md`, task(NEW_TASK));
+    while (v.held(HOST)) await tick();
+    v.change(HOST, ruleText());
+    await expect(gate.scope.assertAllowed(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ))).rejects.toThrow(/CREATION_GATE_REFUSED/);
+    releaseA();
+    await a;
+    await expect(gate.scope.assertAllowed(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ))).rejects.toThrow(/CREATION_GATE_REFUSED/);
+  });
+
+  it(`U9c ${REQ} cold: a KNOWN rule whose re-read fails stays a rule for that command`, async () => {
+    const v = liveVault({ [HOST]: ruleText() });
+    const gate = createPluginCreationGate(v.app);
+    await expect(gate.scope.assertAllowed(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ))).rejects.toThrow(/CREATION_GATE_REFUSED/);
+    v.change(HOST, ruleText() + "\n"); // still a rule, new fingerprint
+    v.failOnce.add(HOST); // its re-read fails once
+    await expect(gate.scope.assertAllowed(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ))).rejects.toThrow(/CREATION_GATE_REFUSED/);
+  });
+
+  it(`U9d ${REQ} cold: a changed file is re-read from DISK, not from a lagging read cache`, async () => {
+    const v = liveVault({ [HOST]: "plain\n" });
+    const gate = createPluginCreationGate(v.app);
+    await gate.scope.assertAllowed(`inbox/${NEW_TASK}.md`, task(NEW_TASK));
+    v.staleCache.set(HOST, "plain\n"); // Obsidian's read cache still holds the old text
+    v.change(HOST, ruleText());
+    await expect(gate.scope.assertAllowed(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ))).rejects.toThrow(/CREATION_GATE_REFUSED/);
   });
 
   it(`U7 ${REQ} a warm vault without a rule: one in-memory pass, no name index, no disk read`, async () => {

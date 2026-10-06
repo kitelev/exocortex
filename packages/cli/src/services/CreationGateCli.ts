@@ -51,8 +51,10 @@ export function createFsFrontmatterByRef(fs: NodeFsAdapter): FrontmatterByRef {
         // the name shapes `findFileByUidFilename` accepts: `<uid>.md`, `<uid> …`, `<uid>-…`
         const exact = rest === ".md";
         if (!isUuid(head) || !(exact || rest.startsWith(" ") || rest.startsWith("-"))) continue;
-        // the first `<uid>.md` wins over `<uid> 2.md` / `<uid>-copy.md` and over a
-        // later `<uid>.md` elsewhere (as the adapter's own lookups pick the first)
+        // the gate's convention for duplicates: `<uid>.md` wins over `<uid> 2.md` /
+        // `<uid>-copy.md`, and of two `<uid>.md` the first in path order wins (as
+        // `findFileByUID` picks; `findFileByUidFilename` walks in readdir order and
+        // has no preference — the fallback only runs when this listing failed)
         if (exactHeads.has(head)) continue;
         if (exact) exactHeads.add(head);
         if (exact || !byUid.has(head)) byUid.set(head, rel);

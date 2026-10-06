@@ -37,10 +37,17 @@ function namesRuleClass(text: string): boolean {
  * pays one full disk pass and every later command reads only what changed: a
  * file the gate just wrote, a file the sync delivered, a file edited in place.
  * Nothing is trusted without reading it — a changed file is judged by what is
- * on disk now. A failed read keeps the file's previous value and leaves its
- * fingerprint unrecorded, so the next call reads it again. An entry is recorded
- * only AFTER its text was judged, so two commands judging at once can at worst
- * read a file twice, never skip one.
+ * on disk now (a re-read goes to the disk, not to Obsidian's read cache).
+ *
+ * ⛔ The invariant that keeps two commands judging at once from hiding a rule:
+ * the fingerprint RECORDED is the one observed BEFORE the read. A file that
+ * changes while its read is in flight, or a slow reader of the old text that
+ * finishes after a reader of the new one, records an old fingerprint next to
+ * the old value — it no longer matches the live one, so the next call reads the
+ * file again. (Recording the fingerprint observed after the read would pin the
+ * old value to the new fingerprint: U9 / U9b.) A failed read records nothing
+ * and keeps the file's previous value for this call (U9c); a file without a
+ * fingerprint is never recorded.
  */
 class DiskIndex<T> {
   private readonly entries = new Map<string, { fp: string; value: T }>();
@@ -50,6 +57,11 @@ class DiskIndex<T> {
     private readonly extract: (text: string, file: TFile) => T,
   ) {}
 
+  /** Forget everything (the warm path does not use the index). */
+  clear(): void {
+    this.entries.clear();
+  }
+
   /** The current value of every markdown file, in Obsidian's file-list order. */
   async values(): Promise<{ file: TFile; value: T }[]> {
     const files = this.app.vault.getMarkdownFiles();
@@ -58,7 +70,7 @@ class DiskIndex<T> {
     for (const file of files) {
       present.add(file.path);
       const stat = (file as { stat?: { mtime?: number; size?: number } }).stat;
-      const fp = `${stat?.mtime ?? 0}:${stat?.size ?? 0}`;
+      const fp = stat ? `${stat.mtime ?? 0}:${stat.size ?? 0}` : null;
       const entry = this.entries.get(file.path);
       if (entry && entry.fp === fp) {
         out.push({ file, value: entry.value });
@@ -66,7 +78,9 @@ class DiskIndex<T> {
       }
       let text: string | null;
       try {
-        text = await this.app.vault.cachedRead(file);
+        text = entry
+          ? await this.app.vault.read(file)
+          : await this.app.vault.cachedRead(file);
       } catch {
         text = null;
       }
@@ -75,7 +89,7 @@ class DiskIndex<T> {
         continue;
       }
       const value = this.extract(text, file);
-      this.entries.set(file.path, { fp, value });
+      if (fp !== null) this.entries.set(file.path, { fp, value });
       out.push({ file, value });
     }
     for (const path of [...this.entries.keys()]) {
@@ -115,9 +129,15 @@ export class PluginVaultView {
         return false;
       }
     });
+    // only the three names a lookup needs — not the whole frontmatter of every file
     this.coldNames = new DiskIndex(app, (text) => {
       try {
-        return parseCandidateFrontmatter(text);
+        const fm = parseCandidateFrontmatter(text);
+        return {
+          exo__Asset_uid: fm.exo__Asset_uid,
+          exo__Asset_label: fm.exo__Asset_label,
+          aliases: fm.aliases,
+        };
       } catch {
         return null;
       }
@@ -131,8 +151,15 @@ export class PluginVaultView {
     );
   }
 
+  /** Once warm, the cold indexes are dead weight: drop them. */
+  private dropCold(): void {
+    this.coldRules.clear();
+    this.coldNames.clear();
+  }
+
   async rules(): Promise<TFile[]> {
     if (this.isWarm()) {
+      this.dropCold();
       return this.app.vault.getMarkdownFiles().filter((file) =>
         namesCreationGateClass(
           (
@@ -154,7 +181,9 @@ export class PluginVaultView {
       const key = name.trim().toLowerCase();
       if (key.length > 0 && !byName.has(key)) byName.set(key, file);
     };
-    const entries = this.isWarm()
+    const warm = this.isWarm();
+    if (warm) this.dropCold();
+    const entries = warm
       ? this.app.vault.getMarkdownFiles().map((file) => ({
           file,
           value:
