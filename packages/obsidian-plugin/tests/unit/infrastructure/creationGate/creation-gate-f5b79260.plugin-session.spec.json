@@ -16,8 +16,7 @@
     "M43_an_allowed_write_is_not_journalled": {
       "from": "          const result = await method.call(target, path, content);\n          session.remember(path, content);\n",
       "to": "          const result = await method.call(target, path, content);\n",
-      "expect": ["U3", "U3j", "U6"],
-      "_note": "U6: the plugin learns about the gate's OWN writes through the same remember() call (CreationGateScope forwards it to the vault view), so without it every own write looks like a vault change and the cold start re-reads the disk."
+      "expect": ["U3", "U3j"]
     }
   }
 }

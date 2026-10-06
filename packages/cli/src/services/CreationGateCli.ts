@@ -40,6 +40,7 @@ export function createFsFrontmatterByRef(fs: NodeFsAdapter): FrontmatterByRef {
   const uidNamedFiles = (): Promise<Map<string, string>> => {
     uidNamed ??= (async () => {
       const byUid = new Map<string, string>();
+      const exactHeads = new Set<string>();
       for (const rel of await fs.getMarkdownFiles()) {
         // the directories `findFileByUidFilename` skips
         const dirs = rel.split("/").slice(0, -1);
@@ -50,16 +51,20 @@ export function createFsFrontmatterByRef(fs: NodeFsAdapter): FrontmatterByRef {
         // the name shapes `findFileByUidFilename` accepts: `<uid>.md`, `<uid> …`, `<uid>-…`
         const exact = rest === ".md";
         if (!isUuid(head) || !(exact || rest.startsWith(" ") || rest.startsWith("-"))) continue;
-        // `<uid>.md` wins over `<uid> 2.md` / `<uid>-copy.md`, whatever the listing order
-        if (!byUid.has(head) || exact) byUid.set(head, rel);
+        // the first `<uid>.md` wins over `<uid> 2.md` / `<uid>-copy.md` and over a
+        // later `<uid>.md` elsewhere (as the adapter's own lookups pick the first)
+        if (exactHeads.has(head)) continue;
+        if (exact) exactHeads.add(head);
+        if (exact || !byUid.has(head)) byUid.set(head, rel);
       }
       return byUid;
     })();
     // a failed listing is not kept: the next lookup tries again
-    uidNamed.catch(() => {
-      uidNamed = undefined;
+    const listing = uidNamed;
+    listing.catch(() => {
+      if (uidNamed === listing) uidNamed = undefined;
     });
-    return uidNamed;
+    return listing;
   };
   const readFrontmatter = async (path: string): Promise<Record<string, unknown> | null> => {
     try {
