@@ -20,31 +20,44 @@ import {
  * (UI/CLI parity, #3417). Nothing here knows a rule's values.
  */
 
+/** Does this text name the rule class at all (UID or label, any case)? A text pre-filter, a superset of `namesCreationGateClass`. */
+function namesRuleClass(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes(CREATION_GATE_CLASS_UID.toLowerCase()) ||
+    lower.includes(CREATION_GATE_CLASS_LABEL.toLowerCase())
+  );
+}
+
 /**
  * What the gate needs from the vault, split by cost so that a vault WITHOUT a
  * rule asset — every vault today — pays almost nothing per command:
  *
  * - **rules** — on a warm `metadataCache` an in-memory pass over the
- *   frontmatter Obsidian already holds (no disk read); on a cold start (the
- *   cache not yet `initialized`) the files are read from disk, a text
- *   pre-filter decides which are parsed, and the result is KEPT across
- *   executions until the vault's file list changes (count of markdown files +
- *   newest mtime, both from Obsidian's in-memory list) — a cold start pays one
- *   pass, not one per command. A warm result is not kept: the cache may still
- *   be indexing a file that just arrived, and a kept miss would outlive it.
- * - **names** (UID / label / alias / basename → file) — built only when a
- *   rule applies and a chain has to be walked, once per execution.
+ *   frontmatter Obsidian already holds (no disk read). A warm result is NOT
+ *   kept: the cache may still be indexing a file that just arrived, and a kept
+ *   miss would outlive it. On a cold start (the cache not yet `initialized`)
+ *   the files are read from disk, a text pre-filter decides which are parsed,
+ *   and the result is KEPT across commands until the file list changes — a
+ *   fingerprint of every file's mtime and size from Obsidian's in-memory list.
+ *   The gate's own allowed writes do not count as a change unless their text
+ *   names the rule class: a file that does not name it cannot be a rule, so a
+ *   cold start pays one disk pass, not one per creating command. A pass in which
+ *   a read failed is not kept.
+ * - **names** (UID / label / alias / basename → file) — built once per session
+ *   as soon as a rule asset exists (resolving a rule's own keys needs it); never
+ *   without one. On a cold start kept like the rules, but keyed on EVERY change,
+ *   the gate's own writes included (a later command may name what it wrote).
  *
  * Frontmatter of a located file is always read fresh from disk (`vault.read`),
  * because `metadataCache` lags a write made a moment earlier by the same
  * composite command (plugin-getfrontmatter-stale-in-composite).
  */
 export class PluginVaultView {
-  private cold?: {
-    stamp: string;
-    rules?: Promise<TFile[]>;
-    names?: Promise<Map<string, TFile>>;
-  };
+  private coldRules?: { stamp: string; rules?: Promise<TFile[]> };
+  private coldNames?: { stamp: string; names?: Promise<Map<string, TFile>> };
+  /** Cold start only: files the gate itself wrote, not naming the rule class → their fingerprint once seen. */
+  private readonly ownWrites = new Map<string, string | null>();
 
   constructor(private readonly app: App) {}
 
@@ -55,17 +68,37 @@ export class PluginVaultView {
     );
   }
 
-  /** The cold-start memo for the vault's current file list. */
-  private coldMemo(): NonNullable<PluginVaultView["cold"]> {
+  /** The gate allowed and wrote `path`; see {@link rules} for why it matters. */
+  noteOwnWrite(path: string, content: string): void {
+    if (this.isWarm() || namesRuleClass(content)) return;
+    this.ownWrites.set(path, null);
+  }
+
+  /**
+   * `[stamp of every file, stamp without the gate's own non-rule writes]`.
+   * An own write changed by someone else afterwards counts again.
+   */
+  private stamps(): [string, string] {
+    let all = 0;
+    let rulesOnly = 0;
+    let counted = 0;
     const files = this.app.vault.getMarkdownFiles();
-    let newest = 0;
     for (const file of files) {
-      const mtime = (file as { stat?: { mtime?: number } }).stat?.mtime ?? 0;
-      if (mtime > newest) newest = mtime;
+      const stat = (file as { stat?: { mtime?: number; size?: number } }).stat;
+      const mtime = stat?.mtime ?? 0;
+      const size = stat?.size ?? 0;
+      all = (Math.imul(all, 31) + mtime + size) | 0;
+      if (this.ownWrites.has(file.path)) {
+        const seen = this.ownWrites.get(file.path);
+        const now = `${mtime}:${size}`;
+        if (seen === null) this.ownWrites.set(file.path, now);
+        if (seen === null || seen === now) continue;
+        this.ownWrites.delete(file.path);
+      }
+      counted++;
+      rulesOnly = (Math.imul(rulesOnly, 31) + mtime + size) | 0;
     }
-    const stamp = `${files.length}:${newest}`;
-    if (this.cold?.stamp !== stamp) this.cold = { stamp };
-    return this.cold;
+    return [`${files.length}:${all}`, `${counted}:${rulesOnly}`];
   }
 
   private async diskText(file: TFile): Promise<string | null> {
@@ -78,7 +111,9 @@ export class PluginVaultView {
 
   rules(): Promise<TFile[]> {
     if (this.isWarm()) {
-      this.cold = undefined;
+      this.coldRules = undefined;
+      this.coldNames = undefined;
+      this.ownWrites.clear();
       return Promise.resolve(
         this.app.vault.getMarkdownFiles().filter((file) =>
           namesCreationGateClass(
@@ -91,16 +126,19 @@ export class PluginVaultView {
         ),
       );
     }
-    const memo = this.coldMemo();
+    const stamp = this.stamps()[1];
+    if (this.coldRules?.stamp !== stamp) this.coldRules = { stamp };
+    const memo = this.coldRules;
     memo.rules ??= (async () => {
-      const uid = CREATION_GATE_CLASS_UID.toLowerCase();
-      const label = CREATION_GATE_CLASS_LABEL.toLowerCase();
       const rules: TFile[] = [];
+      let failed = false;
       for (const file of this.app.vault.getMarkdownFiles()) {
         const text = await this.diskText(file);
-        if (text === null) continue;
-        const lower = text.toLowerCase();
-        if (!lower.includes(uid) && !lower.includes(label)) continue;
+        if (text === null) {
+          failed = true;
+          continue;
+        }
+        if (!namesRuleClass(text)) continue;
         try {
           if (namesCreationGateClass(parseCandidateFrontmatter(text).exo__Instance_class)) {
             rules.push(file);
@@ -109,14 +147,16 @@ export class PluginVaultView {
           continue;
         }
       }
+      if (failed) memo.rules = undefined;
       return rules;
     })();
     return memo.rules;
   }
 
-  /** UID / label / alias / basename → file. Warm: from `metadataCache`; cold: from disk, kept like {@link rules}. */
+  /** UID / label / alias / basename → file. Warm: from `metadataCache`; cold: from disk, kept (see the class note). */
   names(): Promise<Map<string, TFile>> {
     const warm = this.isWarm();
+    let failed = false;
     const build = async (): Promise<Map<string, TFile>> => {
       const byName = new Map<string, TFile>();
       const add = (name: unknown, file: TFile): void => {
@@ -134,6 +174,7 @@ export class PluginVaultView {
               | undefined) ?? null;
         } else {
           const text = await this.diskText(file);
+          if (text === null) failed = true;
           try {
             fm = text === null ? null : parseCandidateFrontmatter(text);
           } catch {
@@ -151,8 +192,13 @@ export class PluginVaultView {
       return byName;
     };
     if (warm) return build();
-    const memo = this.coldMemo();
-    memo.names ??= build();
+    const stamp = this.stamps()[0];
+    if (this.coldNames?.stamp !== stamp) this.coldNames = { stamp };
+    const memo = this.coldNames;
+    memo.names ??= build().then((byName) => {
+      if (failed) memo.names = undefined;
+      return byName;
+    });
     return memo.names;
   }
 
@@ -206,7 +252,10 @@ export class CreationGateScope implements CreationGateWriterSession {
   private current: CreationGateSession | null = null;
   private depth = 0;
 
-  constructor(private readonly open: () => CreationGateSession) {}
+  constructor(
+    private readonly open: () => CreationGateSession,
+    private readonly onWritten?: (path: string, content: string) => void,
+  ) {}
 
   private session(): CreationGateSession {
     return this.current ?? this.open();
@@ -218,6 +267,7 @@ export class CreationGateScope implements CreationGateWriterSession {
 
   remember(path: string, content: string): void {
     this.current?.remember(path, content);
+    this.onWritten?.(path, content);
   }
 
   async run<T>(fn: () => Promise<T>): Promise<T> {
@@ -248,7 +298,10 @@ export interface PluginCreationGate {
 
 export function createPluginCreationGate(app: App): PluginCreationGate {
   const view = new PluginVaultView(app);
-  const scope = new CreationGateScope(() => createPluginCreationGateSession(app, view));
+  const scope = new CreationGateScope(
+    () => createPluginCreationGateSession(app, view),
+    (path, content) => view.noteOwnWrite(path, content),
+  );
   return {
     scope,
     engineWriter: (writer) => withCreationGate(writer, scope),

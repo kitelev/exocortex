@@ -16,8 +16,8 @@
     "M56_the_engine_writer_is_not_gated": {
       "from": "    engineWriter: (writer) => withCreationGate(writer, scope),",
       "to": "    engineWriter: (writer) => writer,",
-      "expect": ["U1", "U5", "U6", "U6b", "U7"],
-      "_note": "U6, U6b and U7 measure the gate's cost THROUGH the engine writer: with the writer ungated the gate is never consulted, so the disk / frontmatter-index counters stay at zero (U6, U7) and the synced-in rule refuses nothing (U6b)."
+      "expect": ["U1", "U5", "U6", "U6b", "U6c", "U6d", "U6e", "U7", "U8"],
+      "_note": "U6–U6e, U7 and U8 drive the gate THROUGH the engine writer: with the writer ungated the gate is never consulted, so the disk / frontmatter-index counters stay at zero (U6, U7) and the rule that arrives / is edited in / is written / was unreadable refuses nothing (U6b, U6c, U6d, U6e, U8)."
     },
     "M57_the_service_adapter_is_not_gated": {
       "from": "    serviceAdapter: (adapter) => withCreationGate(adapter, scope),",
@@ -37,22 +37,49 @@
     "M53_a_cold_start_reads_no_rule_from_disk": {
       "from": "    try {\n      return await this.app.vault.cachedRead(file);",
       "to": "    try {\n      if (file.path.length >= 0) return null;\n      return await this.app.vault.cachedRead(file);",
-      "expect": ["U5", "U6", "U6b"]
+      "expect": ["U5", "U6", "U6b", "U6c", "U6d", "U6e", "U6f"],
+      "_note": "Every cold-start axis needs the disk: U6/U6f count cachedRead (now 0), U5/U6b/U6c/U6d/U6e expect a refusal from a rule only the disk can show."
     },
     "M60_the_cold_scan_is_not_kept_across_commands": {
-      "from": "    if (this.cold?.stamp !== stamp) this.cold = { stamp };",
-      "to": "    this.cold = { stamp };",
-      "expect": ["U6"]
+      "from": "    if (this.coldRules?.stamp !== stamp) this.coldRules = { stamp };",
+      "to": "    this.coldRules = { stamp };",
+      "expect": ["U6", "U6f"]
     },
     "M61_the_cold_memo_ignores_a_changed_vault": {
-      "from": "    const stamp = `${files.length}:${newest}`;",
-      "to": "    const stamp = `frozen:${files.length >= 0}`;",
-      "expect": ["U6", "U6b"]
+      "from": "    const stamp = this.stamps()[1];",
+      "to": "    const stamp = `frozen:${this.isWarm()}`;",
+      "expect": ["U6b", "U6c", "U6d"]
+    },
+    "M68_the_cold_key_holds_the_file_count_only": {
+      "from": "      rulesOnly = (Math.imul(rulesOnly, 31) + mtime + size) | 0;",
+      "to": "      rulesOnly = 0;",
+      "expect": ["U6c"]
+    },
+    "M69_an_own_write_naming_the_rule_class_is_excluded_too": {
+      "from": "    if (this.isWarm() || namesRuleClass(content)) return;",
+      "to": "    if (this.isWarm()) return;",
+      "expect": ["U6d"]
+    },
+    "M70_a_pass_with_a_failed_read_is_kept": {
+      "from": "      if (failed) memo.rules = undefined;",
+      "to": "      if (failed && rules.length < 0) memo.rules = undefined;",
+      "expect": ["U6e"]
+    },
+    "M71_own_writes_start_a_new_pass": {
+      "from": "    this.ownWrites.set(path, null);",
+      "to": "    void path;",
+      "expect": ["U6"]
+    },
+    "M67_the_warm_rule_list_is_kept": {
+      "from": "      this.ownWrites.clear();\n      return Promise.resolve(",
+      "to": "      this.ownWrites.clear();\n      return (this as unknown as { w?: Promise<TFile[]> }).w ??= Promise.resolve(",
+      "expect": ["U8"]
     },
     "M62_the_name_index_is_built_without_a_rule": {
       "from": "    async candidates() {\n      const out",
       "to": "    async candidates() {\n      names ??= view.names();\n      const out",
-      "expect": ["U6", "U7"]
+      "expect": ["U6", "U6e", "U6f", "U7"],
+      "_note": "U6/U6f/U7 count the extra pass; in U6e the eager name pass consumes the one failing read, so the rule pass sees the rule on the FIRST command and refuses the creation U6e expects to pass."
     }
   }
 }

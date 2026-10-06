@@ -46,6 +46,7 @@ const PRJ_STALE = "bbbb0000-0000-4000-8000-000000000005";
 const RULE = "eeee0000-0000-4000-8000-000000000001";
 const NEW_PRJ = "ffff0000-0000-4000-8000-0000000000a1";
 const NEW_TASK = "ffff0000-0000-4000-8000-0000000000b1";
+const NEW_TASK2 = "ffff0000-0000-4000-8000-0000000000b2";
 
 type Fm = Record<string, string | string[]>;
 
@@ -121,6 +122,10 @@ interface FakeVault {
   calls: { read: number; cachedRead: number; getFileCache: number };
   /** Put a file on "disk" as another writer would (the sync): new mtime, invisible to metadataCache. */
   arrive(p: string, text: string): void;
+  /** Obsidian catches up: metadataCache now holds the file's current frontmatter. */
+  index(p: string): void;
+  /** The next `cachedRead` of these paths throws (a transient read failure). */
+  failOnce: Set<string>;
   /** IFileSystemWriter-shaped (the grounding engine's writer). */
   writer: { createFile(p: string, c: string): Promise<string>; fileExists(p: string): Promise<boolean> };
   /** IVaultAdapter-shaped (`create`, as the duplicate service uses it). */
@@ -140,12 +145,13 @@ function makeVault(
   const mtimes = new Map<string, number>([...files.keys()].map((p) => [p, 1_000]));
   let clock = 2_000;
   const calls = { read: 0, cachedRead: 0, getFileCache: 0 };
+  const failOnce = new Set<string>();
   const tfile = (p: string): TFile =>
     ({
       path: p,
       basename: p.replace(/^.*\//, "").replace(/\.md$/, ""),
       extension: "md",
-      stat: { mtime: mtimes.get(p) ?? 0 },
+      stat: { mtime: mtimes.get(p) ?? 0, size: (files.get(p) ?? "").length },
     }) as unknown as TFile;
   const snapshot = new Map<string, Record<string, unknown>>();
   if (!options.cold) {
@@ -163,6 +169,7 @@ function makeVault(
       },
       cachedRead: async (f: TFile) => {
         calls.cachedRead++;
+        if (failOnce.delete(f.path)) throw new Error(`EIO: ${f.path}`);
         return files.get(f.path) ?? "";
       },
     },
@@ -194,6 +201,10 @@ function makeVault(
       files.set(p, text);
       mtimes.set(p, clock++);
     },
+    index: (p) => {
+      snapshot.set(p, parseCandidateFrontmatter(files.get(p) ?? ""));
+    },
+    failOnce,
     writer: {
       createFile: async (p, c) => {
         write(p, c);
@@ -318,21 +329,26 @@ describe("creation gate in the plugin (req f5b79260)", () => {
     expect(v.files.has(`inbox/${NEW_TASK}.md`)).toBe(true);
   });
 
-  it(`U6 ${REQ} a cold start reads the vault from disk ONCE, not once per command`, async () => {
+  it(`U6 ${REQ} a cold start reads the vault from disk ONCE — the gate's own writes do not start a new pass`, async () => {
     const v = makeVault({ cold: true, withoutRule: true });
-    const gate = createPluginCreationGate(v.app);
-    const writer = gate.engineWriter(v.writer);
+    const writer = createPluginCreationGate(v.app).engineWriter(v.writer);
     const before = v.files.size;
     await writer.createFile(`inbox/${NEW_TASK}.md`, task(NEW_TASK));
     expect(v.calls.cachedRead).toBe(before);
-    // Our own write changed the file list ⇒ the next command reads it again, once…
-    await gate.scope.assertAllowed(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ));
-    expect(v.calls.cachedRead).toBe(before + (before + 1));
-    // …and a command on an untouched vault reads nothing.
-    await gate.scope.assertAllowed(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ));
-    expect(v.calls.cachedRead).toBe(before + (before + 1));
+    await writer.createFile(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ));
+    await writer.createFile(`inbox/${NEW_TASK2}.md`, task(NEW_TASK2));
+    expect(v.calls.cachedRead).toBe(before);
+    expect(v.files.has(`inbox/${NEW_TASK2}.md`)).toBe(true);
     // No rule ⇒ no chain walk ⇒ no fresh read of anything.
     expect(v.calls.read).toBe(0);
+  });
+
+  it(`U6f ${REQ} cold: two judgements with nothing written in between read the disk once`, async () => {
+    const v = makeVault({ cold: true, withoutRule: true });
+    const gate = createPluginCreationGate(v.app);
+    await gate.scope.assertAllowed(`inbox/${NEW_TASK}.md`, task(NEW_TASK));
+    await gate.scope.assertAllowed(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ));
+    expect(v.calls.cachedRead).toBe(v.files.size);
   });
 
   it(`U6b ${REQ} the cold-start memo is dropped when a file arrives — a rule synced in acts at once`, async () => {
@@ -343,6 +359,40 @@ describe("creation gate in the plugin (req f5b79260)", () => {
     v.arrive(`exodev/${RULE}.md`, baseFiles().get(`exodev/${RULE}.md`) as string);
     await expect(writer.createFile(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ))).rejects.toThrow(/CREATION_GATE_REFUSED/);
     expect(v.files.has(`inbox/${NEW_PRJ}.md`)).toBe(false);
+  });
+
+  it(`U6c ${REQ} cold: a file edited IN PLACE into a rule (same count, newer mtime) acts at once`, async () => {
+    const v = makeVault({ cold: true, withoutRule: true });
+    const writer = createPluginCreationGate(v.app).engineWriter(v.writer);
+    await writer.createFile(`inbox/${NEW_TASK}.md`, task(NEW_TASK));
+    const host = `exodev/${PRJ_STALE}.md`; // an existing file becomes the rule
+    v.arrive(host, baseFiles().get(`exodev/${RULE}.md`) as string);
+    await expect(writer.createFile(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ))).rejects.toThrow(/CREATION_GATE_REFUSED/);
+  });
+
+  it(`U6d ${REQ} cold: a rule asset written THROUGH the gate is not taken for an own harmless write`, async () => {
+    const v = makeVault({ cold: true, withoutRule: true });
+    const writer = createPluginCreationGate(v.app).engineWriter(v.writer);
+    await writer.createFile(`inbox/${NEW_TASK}.md`, task(NEW_TASK));
+    await writer.createFile(`exodev/${RULE}.md`, baseFiles().get(`exodev/${RULE}.md`) as string);
+    await expect(writer.createFile(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ))).rejects.toThrow(/CREATION_GATE_REFUSED/);
+  });
+
+  it(`U6e ${REQ} cold: a pass in which a read failed is not kept — the rule is found on the next command`, async () => {
+    const v = makeVault({ cold: true });
+    v.failOnce.add(`exodev/${RULE}.md`);
+    const writer = createPluginCreationGate(v.app).engineWriter(v.writer);
+    await writer.createFile(`inbox/${NEW_TASK}.md`, task(NEW_TASK)); // the rule was unreadable: no rule seen
+    await expect(writer.createFile(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ))).rejects.toThrow(/CREATION_GATE_REFUSED/);
+  });
+
+  it(`U8 ${REQ} warm: a rule that reaches metadataCache between two commands acts at once`, async () => {
+    const v = makeVault({ withoutRule: true });
+    const writer = createPluginCreationGate(v.app).engineWriter(v.writer);
+    await writer.createFile(`inbox/${NEW_TASK}.md`, task(NEW_TASK));
+    v.arrive(`exodev/${RULE}.md`, baseFiles().get(`exodev/${RULE}.md`) as string);
+    v.index(`exodev/${RULE}.md`);
+    await expect(writer.createFile(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ))).rejects.toThrow(/CREATION_GATE_REFUSED/);
   });
 
   it(`U7 ${REQ} a warm vault without a rule: one in-memory pass, no name index, no disk read`, async () => {

@@ -3011,7 +3011,8 @@ export default class ExocortexPlugin extends Plugin {
             // Console only, as before the eslint-debt fix (#4508): this runs
             // after every save of the file, and Logger.error would add a
             // toast + a log-file line per save. `info` is the console-only
-            // level by default (DEFAULT_LOG_CHANNELS).
+            // level by default (DEFAULT_LOG_CHANNELS). Cost of the trade: the
+            // line is console.info now, so DevTools' "Errors" filter hides it.
             this.logger.info(
               "[Exocortex] SHACL engine error",
               err instanceof Error ? err : new Error(String(err)),

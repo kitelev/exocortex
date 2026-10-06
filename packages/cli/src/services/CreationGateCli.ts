@@ -41,33 +41,59 @@ export function createFsFrontmatterByRef(fs: NodeFsAdapter): FrontmatterByRef {
     uidNamed ??= (async () => {
       const byUid = new Map<string, string>();
       for (const rel of await fs.getMarkdownFiles()) {
+        // the directories `findFileByUidFilename` skips
+        const dirs = rel.split("/").slice(0, -1);
+        if (dirs.some((dir) => dir.startsWith(".") || dir === "node_modules")) continue;
         const base = rel.slice(rel.lastIndexOf("/") + 1).toLowerCase();
         const head = base.slice(0, 36);
-        // the shapes `findFileByUidFilename` accepts: `<uid>.md`, `<uid> …`, `<uid>-…`
-        if (isUuid(head) && [".", " ", "-"].includes(base.charAt(36)) && !byUid.has(head)) {
-          byUid.set(head, rel);
-        }
+        const rest = base.slice(36);
+        // the name shapes `findFileByUidFilename` accepts: `<uid>.md`, `<uid> …`, `<uid>-…`
+        const exact = rest === ".md";
+        if (!isUuid(head) || !(exact || rest.startsWith(" ") || rest.startsWith("-"))) continue;
+        // `<uid>.md` wins over `<uid> 2.md` / `<uid>-copy.md`, whatever the listing order
+        if (!byUid.has(head) || exact) byUid.set(head, rel);
       }
       return byUid;
     })();
+    // a failed listing is not kept: the next lookup tries again
+    uidNamed.catch(() => {
+      uidNamed = undefined;
+    });
     return uidNamed;
+  };
+  const readFrontmatter = async (path: string): Promise<Record<string, unknown> | null> => {
+    try {
+      return (await fs.getFileMetadata(path)) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
   };
   return async (ref: string) => {
     const wanted = ref.trim();
     if (wanted.length === 0) return null;
-    let path: string | null = null;
     try {
       if (isUuid(wanted)) {
-        path =
-          (await uidNamedFiles()).get(wanted.toLowerCase()) ??
+        let listed: string | undefined;
+        let listingFailed = false;
+        try {
+          listed = (await uidNamedFiles()).get(wanted.toLowerCase());
+        } catch {
+          listingFailed = true;
+        }
+        const fromListing = listed ? await readFrontmatter(listed) : null;
+        if (fromListing) return fromListing;
+        // not named after the UID, the listing failed, or the listed file could
+        // not be read: the adapter's own lookups (the name walk only when the
+        // listing itself failed — otherwise it would search the same names again)
+        const path =
+          (listingFailed ? await fs.findFileByUidFilename(wanted) : null) ??
           (await fs.findFileByUID(wanted));
-      } else {
-        path =
-          (await fs.findFilesByMetadata({ exo__Asset_label: wanted }))[0] ??
-          (await fs.findFileByLinkpath(wanted));
+        return path ? await readFrontmatter(path) : null;
       }
-      if (!path) return null;
-      return (await fs.getFileMetadata(path)) as Record<string, unknown>;
+      const path =
+        (await fs.findFilesByMetadata({ exo__Asset_label: wanted }))[0] ??
+        (await fs.findFileByLinkpath(wanted));
+      return path ? await readFrontmatter(path) : null;
     } catch {
       return null;
     }
