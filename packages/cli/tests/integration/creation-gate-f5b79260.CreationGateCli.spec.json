@@ -1,0 +1,32 @@
+{
+  "_doc": "Revert-verify mutants for the CLI rule sources (req f5b79260-f87c-4e73-8a34-19da341c7ec9): a rule is found where its class does not resolve, through every IRI form, and through the persistent cache without reading the ABox. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/services/CreationGateCli.ts",
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/creation-gate-f5b79260.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "M35_rules_found_only_where_the_class_resolves": {
+      "from": "      let paths: string[] | null = null;\n",
+      "to": "      if (!(await fs.findFileByUidFilename(CREATION_GATE_CLASS_UID))) return [];\n      let paths: string[] | null = null;\n",
+      "expect": ["S6"]
+    },
+    "M38_the_symbolic_class_form_is_not_recognised": {
+      "from": "  return value.toLowerCase().includes(CREATION_GATE_CLASS_UID) || value.endsWith(symbolicTail);",
+      "to": "  return value.toLowerCase().includes(CREATION_GATE_CLASS_UID) || value.endsWith(symbolicTail + \"-\");",
+      "expect": ["S10", "S12", "S7", "S8", "S8b", "S9"]
+    },
+    "M47_the_cache_narrowing_is_ignored": {
+      "from": "          if (narrowed && narrowed.unknownPaths.length <= MAX_UNKNOWN_PATHS) {",
+      "to": "          if (narrowed && narrowed.unknownPaths.length < 0) {",
+      "expect": ["S12"]
+    }
+  }
+}

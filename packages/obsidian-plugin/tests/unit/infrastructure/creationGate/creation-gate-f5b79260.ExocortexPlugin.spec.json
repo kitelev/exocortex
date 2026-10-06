@@ -1,0 +1,32 @@
+{
+  "_doc": "Revert-verify mutants for the plugin COMPOSITION (req f5b79260-f87c-4e73-8a34-19da341c7ec9). ExocortexPlugin.onload cannot be driven by a unit test, so the composition is pinned by static axes on its source (U0a–U0c); each mutant unwires one gated writer. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/ExocortexPlugin.ts",
+  "harness": "cd \"$(dirname {subject})/..\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/infrastructure/creationGate/PluginCreationGate.test.ts --verbose 2>&1",
+  "mutants": {
+    "M50_the_engine_gets_the_raw_writer": {
+      "from": "        creationGate.engineWriter(obsidianFs),",
+      "to": "        obsidianFs,",
+      "expect": ["U0a"]
+    },
+    "M51_the_service_registry_gets_the_raw_adapter": {
+      "from": "        fileSystemAdapter: creationGate.serviceAdapter(obsidianFs),",
+      "to": "        fileSystemAdapter: obsidianFs,",
+      "expect": ["U0b"]
+    },
+    "M55_executions_are_not_scoped": {
+      "from": "      creationGate.scopeExecutions(this.groundingExecutor);",
+      "to": "      void creationGate.scopeExecutions;",
+      "expect": ["U0c"]
+    }
+  }
+}

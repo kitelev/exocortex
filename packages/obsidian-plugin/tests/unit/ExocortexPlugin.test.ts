@@ -2440,7 +2440,11 @@ describe("ExocortexPlugin", () => {
       expect(statusBarEl?.textContent ?? "").toBe("");
     });
 
-    it("AC2: logs sh:Info to console.debug without notifier.warn", async () => {
+    // sh:Info and the engine error go through the plugin Logger (debug /
+    // info), not straight to `console`: `no-console` is an error-level rule
+    // and its inline disable is restricted (eslint debt, #4508). Both levels
+    // are console-only by default, as the direct calls were.
+    it("AC2: logs sh:Info via logger.debug without notifier.warn", async () => {
       shaclValidateSpy.mockReturnValue(
         makeReport([{ severity: "sh:Info", message: "informational hint" }]) as any,
       );
@@ -2454,7 +2458,7 @@ describe("ExocortexPlugin", () => {
       );
       await new Promise((r) => setTimeout(r, 50));
 
-      expect(consoleDebugSpy).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.stringContaining("informational hint"),
       );
       expect(notifierWarnSpy).not.toHaveBeenCalled();
@@ -2474,7 +2478,12 @@ describe("ExocortexPlugin", () => {
       );
       await new Promise((r) => setTimeout(r, 50));
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
+      // console-only level: no toast / log-file line per save
+      expect(mockLogger.error).not.toHaveBeenCalledWith(
+        expect.stringContaining("SHACL engine error"),
+        expect.anything(),
+      );
+      expect(mockLogger.info).toHaveBeenCalledWith(
         expect.stringContaining("SHACL engine error"),
         expect.any(Error),
       );

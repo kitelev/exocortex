@@ -38,6 +38,20 @@ declare global {
 
 // Setup DOM extensions
 if (typeof document !== "undefined") {
+  // Obsidian also defines the DOM helpers as GLOBAL functions — `createDiv()`
+  // returns a new DETACHED div. The plugin's lint rule
+  // `obsidianmd/prefer-create-el` autofixes `document.createElement("div")`
+  // into exactly that call, so the mock models it too (req f5b79260 touched
+  // ExocortexPlugin.ts, and lint-staged's `--fix` rewrote two such sites).
+  const globalScope = globalThis as any;
+  if (typeof globalScope.createDiv !== "function") {
+    globalScope.createDiv = function (options?: any) {
+      const el = document.createElement("div");
+      if (options?.cls) el.className = options.cls;
+      if (options?.text) el.textContent = options.text;
+      return el;
+    };
+  }
   const proto = HTMLElement.prototype as any;
   if (!proto.createEl) {
     proto.createEl = function (tag: string, options?: any) {

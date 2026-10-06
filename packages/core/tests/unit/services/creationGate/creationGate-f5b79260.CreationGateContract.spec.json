@@ -1,0 +1,19 @@
+{
+  "_doc": "Revert-verify mutant for AC7 of onto-RFC 4a8d887a (req f5b79260-f87c-4e73-8a34-19da341c7ec9): the gate's code holds no value of a rule — the axis G28 derives its probe list from the rule asset and greps the module, the CLI and the plugin glue. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/creationGate/CreationGateContract.ts",
+  "harness": "cd \"$(dirname {subject})/../../../\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/services/creationGate/evaluateCreationGate.test.ts --verbose 2>&1",
+  "mutants": {
+    "M27_a_rule_value_is_written_into_the_contract": {
+      "from": "export const CREATION_GATE_MAX_DEPTH = 12;",
+      "to": "export const CREATION_GATE_MAX_DEPTH = 12; // guards ems__Task",
+      "expect": ["G28"]
+    }
+  }
+}

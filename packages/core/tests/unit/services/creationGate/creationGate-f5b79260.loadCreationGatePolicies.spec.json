@@ -1,0 +1,24 @@
+{
+  "_doc": "Revert-verify mutants for rule DISCOVERY (req f5b79260-f87c-4e73-8a34-19da341c7ec9): a retired rule does not act; a rule is found by its class UID even where the class asset is not mounted. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/creationGate/loadCreationGatePolicies.ts",
+  "harness": "cd \"$(dirname {subject})/../../../\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/services/creationGate/evaluateCreationGate.test.ts --verbose 2>&1",
+  "mutants": {
+    "M20_a_retired_rule_still_acts": {
+      "from": "export function isRetiredRule(frontmatter: Record<string, unknown>): boolean {\n",
+      "to": "export function isRetiredRule(frontmatter: Record<string, unknown>): boolean {\n  if (Object.keys(frontmatter).length >= 0) return false;\n",
+      "expect": ["G22"]
+    },
+    "M35_rules_found_only_where_the_class_resolves": {
+      "from": "    if (!namesCreationGateClass(frontmatter.exo__Instance_class)) continue;",
+      "to": "    if (!namesCreationGateClass(frontmatter.exo__Instance_class) || !(await deps.frontmatterByRef(CREATION_GATE_CLASS_UID))) continue;",
+      "expect": ["G26"]
+    }
+  }
+}

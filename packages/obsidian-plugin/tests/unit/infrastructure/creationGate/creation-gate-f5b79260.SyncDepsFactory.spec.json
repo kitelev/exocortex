@@ -1,0 +1,22 @@
+{
+  "_doc": "Revert-verify mutant for the static axis U0d (req f5b79260-f87c-4e73-8a34-19da341c7ec9): the plugin's sync delivers files, it does not create them, so it must stay ungated. A behavioural mutant is impossible by construction (the sync writes through adapter.write, not through a wrapped writer); this mutant wires the gate in. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/infrastructure/adapters/SyncDepsFactory.ts",
+  "harness": "cd \"$(dirname {subject})/../../..\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/infrastructure/creationGate/PluginCreationGate.test.ts --verbose 2>&1",
+  "mutants": {
+    "M59_the_sync_composition_is_gated": {
+      "from": "import type { App, DataAdapter } from \"obsidian\";\n",
+      "to": "import type { App, DataAdapter } from \"obsidian\";\n// creationGate\n",
+      "expect": ["U0d"]
+    }
+  }
+}

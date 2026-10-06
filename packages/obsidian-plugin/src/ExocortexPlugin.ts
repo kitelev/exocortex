@@ -249,6 +249,7 @@ import {
   coreSchemaYamlCodec,
 } from "./infrastructure/adapters/SyncDepsFactory";
 import { RegisterForSyncCommand } from "./infrastructure/adapters/RegisterForSyncCommand";
+import { createPluginCreationGate } from "./infrastructure/creationGate/PluginCreationGate";
 import {
   CommandExecutionFlow,
   createTripleStoreRequiredPropertyResolver,
@@ -714,9 +715,19 @@ export default class ExocortexPlugin extends Plugin {
         queryBodyResolver,
         tripleStore,
       );
+      // req f5b79260 (ticket 316dd2be) — the creation gate: a vault-declared
+      // `exocmd__CreationGate` rule judges every file the grounding engine
+      // and the service registry are about to CREATE (same rule, same verdict
+      // as `cli create` / `cli apply` — UI/CLI parity, #3417). One session per
+      // command execution (rules loaded once, an execution journal so a parent
+      // created by an earlier step is found although metadataCache has not
+      // indexed it yet). No rule asset in the vault ⇒ every wrapper is a
+      // pass-through. The sync (SyncDepsFactory) is deliberately NOT gated: it
+      // delivers files, it does not create them.
+      const creationGate = createPluginCreationGate(this.app);
       this.groundingExecutor = new GroundingExecutor(
         obsidianFs,
-        obsidianFs,
+        creationGate.engineWriter(obsidianFs),
         this.serviceRegistry,
         // Issue #3220: execution-time label→UID class resolution via the
         // always-warm Obsidian metadata cache. Closes the cold-start gap where
@@ -765,11 +776,15 @@ export default class ExocortexPlugin extends Plugin {
         },
       );
 
+      creationGate.scopeExecutions(this.groundingExecutor);
+
       populateServiceRegistry(this.serviceRegistry, {
         app: this.app,
-        fileSystemAdapter: obsidianFs,
+        fileSystemAdapter: creationGate.serviceAdapter(obsidianFs),
         sparqlApi: this.sparql,
-        vaultAdapter: this.vaultAdapter,
+        vaultAdapter: this.vaultAdapter
+          ? creationGate.serviceAdapter(this.vaultAdapter)
+          : undefined,
         // RFC 36347daf Phase 2 — pass production workflow resolver so
         // EffortStatusWorkflow can later migrate from sync hardcoded
         // fallback to async vault-backed resolution without a wiring change.
@@ -1196,8 +1211,13 @@ export default class ExocortexPlugin extends Plugin {
       // so the canonical form is `<manifest.id>:create-fleeting-note`.
       this.addRibbonIcon("inbox", "Capture to inbox (fleeting note)", () => {
         const commandId = `${this.manifest.id}:create-fleeting-note`;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const commands = (this.app as any).commands;
+        // `app.commands` is runtime API absent from obsidian.d.ts — typed to
+        // exactly what is used here instead of `any` (eslint debt, #4508).
+        const commands = (
+          this.app as unknown as {
+            commands?: { executeCommandById?: (id: string) => unknown };
+          }
+        ).commands;
         if (typeof commands?.executeCommandById === "function") {
           commands.executeCommandById(commandId);
         } else {
@@ -1680,7 +1700,7 @@ export default class ExocortexPlugin extends Plugin {
           //                        completion + post-init re-render.
           performance.mark("exocmd-fastpath-start");
           performance.mark("exocmd-fullpath-start");
-          setTimeout(() => {
+          window.setTimeout(() => {
             // Issue #3472 — see the stale-stats guard note at the
             // post-resolve callsite; the ASK below lazily triggers
             // `VaultRDFIndexer.initialize()` (the walk being reported).
@@ -2525,7 +2545,7 @@ export default class ExocortexPlugin extends Plugin {
     }
 
     // Create layout container
-    const layoutContainer = document.createElement("div");
+    const layoutContainer = createDiv();
     layoutContainer.className = "exocortex-auto-layout";
     layoutContainer.style.cssText = `
       margin-top: 16px;
@@ -2574,7 +2594,7 @@ export default class ExocortexPlugin extends Plugin {
     // Track if we're currently re-rendering to prevent infinite loops
     let isReRendering = false;
     // Debounce timeout for re-render
-    let debounceTimeout: NodeJS.Timeout | null = null;
+    let debounceTimeout: number | null = null;
 
     this.layoutPersistenceObserver = new MutationObserver((_mutations) => {
       // Skip if we're already re-rendering or layout is hidden
@@ -2611,11 +2631,11 @@ export default class ExocortexPlugin extends Plugin {
 
       // Clear existing debounce
       if (debounceTimeout) {
-        clearTimeout(debounceTimeout);
+        window.clearTimeout(debounceTimeout);
       }
 
       // Debounce the re-render to avoid rapid multiple renders
-      debounceTimeout = setTimeout(() => {
+      debounceTimeout = window.setTimeout(() => {
         // Double-check conditions before re-rendering
         if (isReRendering || !this.settings.layoutVisible) {
           return;
@@ -2632,7 +2652,7 @@ export default class ExocortexPlugin extends Plugin {
           isReRendering = true;
 
           // Create new layout container
-          const newLayoutContainer = document.createElement("div");
+          const newLayoutContainer = createDiv();
           newLayoutContainer.className = "exocortex-auto-layout";
           newLayoutContainer.style.cssText = `
             margin-top: 16px;
@@ -2916,8 +2936,7 @@ export default class ExocortexPlugin extends Plugin {
             if (shapeRegistry.size === 0) return;
 
             const domainTriples = await store.match();
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const algebraTriples: any[] = [];
+            const algebraTriples: Parameters<typeof shaclValidate>[0] = [];
             for (const t of domainTriples) {
               const subj = t.subject;
               const pred = t.predicate;
@@ -2984,12 +3003,20 @@ export default class ExocortexPlugin extends Plugin {
             }
 
             for (const v of infos) {
-              console.debug(
+              this.logger.debug(
                 `[Exocortex SHACL] Info in ${file.path}: ${v.message}`,
               );
             }
           } catch (err) {
-            console.error("[Exocortex] SHACL engine error", err);
+            // Console only, as before the eslint-debt fix (#4508): this runs
+            // after every save of the file, and Logger.error would add a
+            // toast + a log-file line per save. `info` is the console-only
+            // level by default (DEFAULT_LOG_CHANNELS). Cost of the trade: the
+            // line is console.info now, so DevTools' "Errors" filter hides it.
+            this.logger.info(
+              "[Exocortex] SHACL engine error",
+              err instanceof Error ? err : new Error(String(err)),
+            );
           }
         })();
       },

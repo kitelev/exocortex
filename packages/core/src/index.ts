@@ -148,6 +148,9 @@ export {
 export { createVaultFrontmatterClassLabelResolver } from "./services/VaultFrontmatterClassLabelResolver";
 export { createVaultFrontmatterRefToFolderResolver } from "./services/VaultFrontmatterRefToFolderResolver";
 export { createVaultFrontmatterRefToFrontmatterResolver } from "./services/VaultFrontmatterRefToFrontmatterResolver";
+// req f5b79260 (ticket 316dd2be, onto-RFC 4a8d887a) — the creation gate: a
+// vault-declared exocmd__CreationGate rule judged at every new-file write point.
+export * from "./services/creationGate";
 export {
   NamedQueryRunner,
   type NamedQueryRunnerPort,

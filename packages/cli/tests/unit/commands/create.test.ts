@@ -112,6 +112,16 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   // shape-stub satisfies the ESM named-import binding.
   liveClock: jest.fn(() => ({ now: () => new Date(0) })),
   liveUidGenerator: jest.fn(() => ({ next: () => "00000000-0000-0000-0000-000000000000" })),
+  // req f5b79260 — create.ts → services/CreationGateCli.ts (the creation gate)
+  // imports these from the barrel. Never invoked here (option registration
+  // only) → shape-stubs satisfy the ESM named-import bindings.
+  CREATION_GATE_CLASS_UID: "d4cde00a-c211-437b-9ba1-71223a15551b",
+  CREATION_GATE_CLASS_LABEL: "exocmd__CreationGate",
+  CreationGateRefusedError: class CreationGateRefusedError extends Error {},
+  CreationGateSession: class CreationGateSession {},
+  IRI: class IRI {},
+  iriToVaultPath: jest.fn(() => null),
+  isUuid: jest.fn(() => false),
 }));
 
 // Mock fs-extra (NodeFsAdapter dependency)

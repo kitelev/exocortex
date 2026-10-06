@@ -42,6 +42,8 @@ import {
   frozenClock,
   liveUidGenerator,
   seededUidGenerator,
+  isCreationGateRefusal,
+  withCreationGate,
   type EvalContext,
   type IClock,
   type IFile,
@@ -58,6 +60,10 @@ import { TripleStoreIndexedFsAdapter } from "../adapters/TripleStoreIndexedFsAda
 import { createIsInWrongFolderHostFunction } from "../precondition/createIsInWrongFolderHostFunction.js";
 import { createHasEmptyPropertiesHostFunction } from "../precondition/createHasEmptyPropertiesHostFunction.js";
 import { populateCliServiceRegistry } from "../services/CliServiceRegistryPopulator.js";
+import {
+  createCliCreationGateSession,
+  createTripleStorePolicySource,
+} from "../services/CreationGateCli.js";
 import { FsQueryBodyResolver } from "../services/FsQueryBodyResolver.js";
 import { registerOrderSpecFromVault } from "../services/registerOrderSpec.js";
 import { StderrLogger } from "../infrastructure/StderrLogger";
@@ -126,6 +132,12 @@ interface TargetResult {
    * may have touched the vault, whatever `ok` says.
    */
   executed: boolean;
+  /**
+   * req f5b79260 — the grounding failed because a vault-declared creation rule
+   * (`exocmd__CreationGate`) refused a file it was about to create. The run
+   * then exits PERMISSION_DENIED (4) instead of OPERATION_FAILED (5).
+   */
+  gateRefused?: boolean;
 }
 
 /**
@@ -580,9 +592,26 @@ async function executeOnTarget(
   }
 
   // Execute grounding
+  //
+  // req f5b79260 (ticket 316dd2be) — the creation gate wraps EVERY writer of
+  // this composition that can create a file: the grounding engine's writer
+  // (create_instance), GenericAssetCreationService (createRelatedTask &c.) and
+  // the service factories' adapters (createAsset, instantiatePrototypeSubtree).
+  // The rule assets come from the triple store this function already holds — no
+  // extra walk of the vault. Readers stay on the plain adapters. A file a
+  // composite step created earlier in the same run is found by later steps
+  // through the session's execution journal (e.g. a prototype subtree's
+  // children find their just-created root). No rule asset ⇒ every wrapper is a
+  // pass-through.
+  const creationGate = createCliCreationGateSession(
+    nodeFsAdapter,
+    createTripleStorePolicySource(tripleStore, nodeFsAdapter),
+  );
+  const gatedVaultAdapter = withCreationGate(vaultAdapter, creationGate);
+  const gatedFsAdapter = withCreationGate(nodeFsAdapter, creationGate);
   const serviceRegistry = new ServiceRegistry();
   const genericAssetCreationService = new GenericAssetCreationService(
-    vaultAdapter,
+    gatedVaultAdapter,
   ).withDeterminism({ clock, uidGenerator: uidGen });
   const archiveAssetService = new ArchiveAssetService(vaultAdapter);
   const propertyCleanupService = new PropertyCleanupService(vaultAdapter);
@@ -602,8 +631,8 @@ async function executeOnTarget(
   // adapter answers those lookups from an index over the loader's EXPLICIT
   // triples and reads only the files it resolves to.
   populateCliServiceRegistry(serviceRegistry, {
-    vaultAdapter,
-    fsAdapter: nodeFsAdapter,
+    vaultAdapter: gatedVaultAdapter,
+    fsAdapter: gatedFsAdapter,
     genericAssetCreationService,
     archiveAssetService,
     taskStatusService,
@@ -641,7 +670,7 @@ async function executeOnTarget(
   );
   const groundingExecutor = new GroundingExecutor(
     nodeFsAdapter,
-    nodeFsAdapter,
+    gatedFsAdapter,
     serviceRegistry,
     createVaultFrontmatterClassLabelResolver(nodeFsAdapter),
     {
@@ -719,7 +748,12 @@ async function executeOnTarget(
     console.error(
       `❌ "${command.name}" failed on "${vaultRelative}": ${result.error}`,
     );
-    return { ok: false, created: [], executed: true };
+    return {
+      ok: false,
+      created: [],
+      executed: true,
+      gateRefused: isCreationGateRefusal(result.error),
+    };
   }
 }
 
@@ -874,6 +908,8 @@ export function applyCommand(): Command {
           // #4264 — did ANY target reach grounding execution (and so possibly
           // write)? Drives the write-through below.
           let anyExecuted = false;
+          // req f5b79260 — did a creation rule refuse any target?
+          let anyGateRefused = false;
           // Issue #3906 — aggregate the assets created across all targets for
           // the `--json` envelope.
           const allCreated: CreatedAsset[] = [];
@@ -901,6 +937,7 @@ export function applyCommand(): Command {
             if (targetResult.ok) successCount++;
             else failCount++;
             if (targetResult.executed) anyExecuted = true;
+            if (targetResult.gateRefused) anyGateRefused = true;
             allCreated.push(...targetResult.created);
           }
 
@@ -952,7 +989,15 @@ export function applyCommand(): Command {
           }
 
           if (failCount > 0) {
-            process.exit(ExitCodes.OPERATION_FAILED);
+            // req f5b79260 — a creation-rule refusal is a PERMISSION outcome
+            // (4), the same code `create` exits with; it wins over the generic
+            // OPERATION_FAILED so a caller can tell "the rule said no" from
+            // "the command broke".
+            process.exit(
+              anyGateRefused
+                ? ExitCodes.PERMISSION_DENIED
+                : ExitCodes.OPERATION_FAILED,
+            );
           }
         } catch (error) {
           ErrorHandler.handle(error as Error);

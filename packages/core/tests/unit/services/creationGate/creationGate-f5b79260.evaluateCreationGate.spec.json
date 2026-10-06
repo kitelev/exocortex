@@ -1,0 +1,171 @@
+{
+  "_doc": "Revert-verify mutants for the creation gate's EVALUATOR (req f5b79260-f87c-4e73-8a34-19da341c7ec9, ticket 316dd2be). Each mutant removes one semantic of onto-RFC 4a8d887a §Семантика and must red exactly the axes that pin it. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/creationGate/evaluateCreationGate.ts",
+  "harness": "cd \"$(dirname {subject})/../../../\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/services/creationGate/evaluateCreationGate.test.ts --verbose 2>&1",
+  "mutants": {
+    "M0_every_candidate_is_refused_control_of_delivery": {
+      "from": "  const candidateName = nameOf(candidate.frontmatter, candidate.path);\n",
+      "to": "  const candidateName = nameOf(candidate.frontmatter, candidate.path);\n  if (candidateName.length >= 0) return refuse(\"mutant M0\");\n",
+      "expect": [
+        "G1",
+        "G10",
+        "G11",
+        "G12",
+        "G13",
+        "G14",
+        "G15",
+        "G16",
+        "G18",
+        "G19",
+        "G2",
+        "G20",
+        "G21",
+        "G23",
+        "G24",
+        "G25",
+        "G26",
+        "G27",
+        "G27a",
+        "G27b",
+        "G3",
+        "G4b",
+        "G5",
+        "G6",
+        "G7",
+        "G8",
+        "G8i",
+        "G9"
+      ],
+      "_note": "G27a/G27b (depth boundary, added after review): G27a expects a pass, G27b expects the reason «глубже 12» — the delivery control refuses everything with its own reason."
+    },
+    "M1_a_broken_chain_is_let_through": {
+      "from": "    if (!parent) {\n",
+      "to": "    if (!parent) {\n      if (hops >= 0) return { allowed: true };\n",
+      "expect": [
+        "G1",
+        "G14",
+        "G17",
+        "G21",
+        "G23",
+        "G24",
+        "G25",
+        "G26",
+        "G29",
+        "G3",
+        "G4",
+        "G6",
+        "G9"
+      ],
+      "_note": "G29 judges a task WITHOUT a parent through writeFile — with the broken chain let through it is written."
+    },
+    "M2_classes_compared_without_superclass_closure": {
+      "from": "    for (const key of await this.closureOf(classRef)) {",
+      "to": "    for (const key of await this.keysOf(classRef)) {",
+      "expect": ["G24", "G6", "G9"]
+    },
+    "M3_excluded_classes_are_not_excluded": {
+      "from": "      !(await reasoner.within(ref, excludedKeys))",
+      "to": "      !(await reasoner.within(ref, new Set<string>()))",
+      "expect": ["G7"]
+    },
+    "M4_no_node_is_recognised_as_an_anchor": {
+      "from": "  const isAnchor = async (node: Record<string, unknown>): Promise<boolean> => {\n",
+      "to": "  const isAnchor = async (node: Record<string, unknown>): Promise<boolean> => {\n    if (Object.keys(node).length >= 0) return false;\n",
+      "expect": ["G10", "G13", "G15", "G2", "G23", "G24", "G27a", "G4b", "G5"],
+      "_note": "G27a ends its 12-hop chain on an approved project — no anchor recognised ⇒ the chain breaks and the task is refused."
+    },
+    "M5_only_the_first_allowed_status_counts": {
+      "from": "  const allowedKeys = await reasoner.keysOfAll(policy.allowedStatus);",
+      "to": "  const allowedKeys = await reasoner.keysOfAll(policy.allowedStatus.slice(0, 1));",
+      "expect": ["G4b"]
+    },
+    "M6_the_direction_status_is_not_checked": {
+      "from": "      if (!direction) continue;\n",
+      "to": "      if (!direction) continue;\n      if (Object.keys(direction).length >= 0) return true;\n",
+      "expect": ["G23", "G3", "G4"]
+    },
+    "M7_evidence_is_ignored": {
+      "from": "      if (policy.exemptEvidence.regex.test(candidate.content)) {",
+      "to": "      if (policy.exemptEvidence.regex.test(candidate.content) && candidate.content.length < 0) {",
+      "expect": ["G11", "G8", "G8i"]
+    },
+    "M10_an_exempt_class_without_evidence_is_refused_outright": {
+      "from": "        return { allowed: true };\n      }\n    } else {",
+      "to": "        return { allowed: true };\n      }\n      return refuse(\"mutant M10\");\n    } else {",
+      "expect": ["G10", "G9"]
+    },
+    "M11_evidence_is_searched_in_the_body_only": {
+      "from": "      if (policy.exemptEvidence.regex.test(candidate.content)) {",
+      "to": "      if (policy.exemptEvidence.regex.test(candidate.content.replace(/^---[\\s\\S]*?\\n---/, \"\"))) {",
+      "expect": ["G11"]
+    },
+    "M12_an_unresolvable_parent_is_let_through": {
+      "from": "    if (!parentFrontmatter) {\n",
+      "to": "    if (!parentFrontmatter) {\n      if (hops >= 0) return { allowed: true };\n",
+      "expect": ["G12"]
+    },
+    "M14_only_the_first_direction_value_counts": {
+      "from": "    for (const directionRef of refsOf(node[directionKey])) {",
+      "to": "    for (const directionRef of refsOf(node[directionKey]).slice(0, 1)) {",
+      "expect": ["G15"]
+    },
+    "M15_no_cycle_detection": {
+      "from": "    if (visited.has(identity)) {",
+      "to": "    if (visited.has(identity) && hops < 0) {",
+      "expect": ["G16"]
+    },
+    "M16_exclusion_judged_by_any_class": {
+      "from": "  if (guarded.length === 0) return { allowed: true };",
+      "to": "  if (guarded.length === 0 || guarded.length < classes.length) return { allowed: true };",
+      "expect": ["G17"]
+    },
+    "M17_an_incomplete_rule_is_inert": {
+      "from": "  if (missing.length > 0) {\n",
+      "to": "  if (missing.length > 0) {\n    if (missing.length > 0) return { allowed: true };\n",
+      "expect": ["G19"]
+    },
+    "M18_a_rule_without_guardedClass_is_inert": {
+      "from": "    if (await isRuleAsset(classes, reasoner)) return { allowed: true };",
+      "to": "    if (classes.length >= 0) return { allowed: true };",
+      "expect": ["G20"]
+    },
+    "M21_the_first_rule_decides": {
+      "from": "    if (!verdict.allowed) return verdict;",
+      "to": "    return verdict;",
+      "expect": ["G23"]
+    },
+    "M23_classes_matched_by_raw_target_only": {
+      "from": "    const keys = new Set<string>([ref.target.toLowerCase()]);\n",
+      "to": "    const keys = new Set<string>([ref.target.toLowerCase()]);\n    if (keys.size > 0) return keys;\n",
+      "expect": ["G25"]
+    },
+    "M24_an_exempt_class_passes_without_evidence": {
+      "from": "  if (allExempt && policy.exemptEvidence) {",
+      "to": "  if (allExempt) return { allowed: true };\n  if (allExempt && policy.exemptEvidence) {",
+      "expect": ["G24", "G9"]
+    },
+    "M26_no_depth_limit": {
+      "from": "    if (hops + 1 > CREATION_GATE_MAX_DEPTH) {",
+      "to": "    if (hops + 1 > CREATION_GATE_MAX_DEPTH * 100) {",
+      "expect": ["G27", "G27b"],
+      "_note": "G27b is the 13-hop chain: without a limit it reaches the approved project and passes, so the expected «глубже 12» refusal is gone."
+    },
+    "M63_the_depth_limit_is_one_hop_too_loose": {
+      "from": "    if (hops + 1 > CREATION_GATE_MAX_DEPTH) {",
+      "to": "    if (hops + 1 > CREATION_GATE_MAX_DEPTH + 1) {",
+      "expect": ["G27b"]
+    },
+    "M64_the_depth_limit_is_one_hop_too_tight": {
+      "from": "    if (hops + 1 > CREATION_GATE_MAX_DEPTH) {",
+      "to": "    if (hops + 1 > CREATION_GATE_MAX_DEPTH - 1) {",
+      "expect": ["G27a"]
+    }
+  }
+}

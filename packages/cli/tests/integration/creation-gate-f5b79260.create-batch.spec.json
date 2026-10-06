@@ -1,0 +1,27 @@
+{
+  "_doc": "Revert-verify mutants for the creation gate at `cli create-batch` (req f5b79260-f87c-4e73-8a34-19da341c7ec9): every item is judged before the first write, with the whole batch in the execution journal. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/create-batch.ts",
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/creation-gate-f5b79260.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "M33_the_batch_is_not_put_into_the_journal": {
+      "from": "          for (const item of planned) gate.remember(item.path, item.content);",
+      "to": "          for (const item of planned.slice(0, 0)) gate.remember(item.path, item.content);",
+      "expect": ["S5"]
+    },
+    "M34_a_batch_refusal_does_not_stop_the_writes": {
+      "from": "            if (!verdict.allowed) {",
+      "to": "            if (!verdict.allowed && planned.length < 0) {",
+      "expect": ["S5b"]
+    }
+  }
+}

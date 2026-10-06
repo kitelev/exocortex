@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutant for the SESSION (req f5b79260-f87c-4e73-8a34-19da341c7ec9): a vault without a rule asset is untouched. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/creationGate/withCreationGate.ts",
+  "harness": "cd \"$(dirname {subject})/../../../\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/services/creationGate/evaluateCreationGate.test.ts --verbose 2>&1",
+  "mutants": {
+    "M25_no_rules_refuses_everything": {
+      "from": "    if (policies.length === 0) return { allowed: true };",
+      "to": "    if (policies.length === 0) return { allowed: false, policyUid: \"\", policyLabel: \"\", reason: \"mutant M25\", hint: null };",
+      "expect": ["G0", "G22"]
+    },
+    "M65_writeFile_judges_an_overwrite_too": {
+      "from": "          const creating = !(await fileAlreadyThere(target, path));",
+      "to": "          const creating = path.length >= 0;",
+      "expect": ["G29b"]
+    },
+    "M66_writeFile_never_judges": {
+      "from": "          if (creating) await session.assertAllowed(path, content);",
+      "to": "          if (creating && path.length < 0) await session.assertAllowed(path, content);",
+      "expect": ["G29"]
+    }
+  }
+}

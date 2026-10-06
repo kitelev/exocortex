@@ -1,0 +1,22 @@
+{
+  "_doc": "Revert-verify mutant for the core SESSION, driven through the CLI (req f5b79260-f87c-4e73-8a34-19da341c7ec9): a vault without a rule asset creates as before. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/creationGate/withCreationGate.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../cli\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/creation-gate-f5b79260.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "M32_no_rules_refuses_everything": {
+      "from": "    if (policies.length === 0) return { allowed: true };",
+      "to": "    if (policies.length === 0) return { allowed: false, policyUid: \"\", policyLabel: \"\", reason: \"mutant M32\", hint: null };",
+      "expect": ["S3"]
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "_doc": "Revert-verify mutant for reference parsing (req f5b79260-f87c-4e73-8a34-19da341c7ec9): the [[uid|label]] form must resolve by its target. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/creationGate/refs.ts",
+  "harness": "cd \"$(dirname {subject})/../../../\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/services/creationGate/evaluateCreationGate.test.ts --verbose 2>&1",
+  "mutants": {
+    "M13_alias_not_stripped_from_a_reference": {
+      "from": "  if (pipe >= 0) {",
+      "to": "  if (pipe >= 0 && pipe < 0) {",
+      "expect": ["G14"]
+    }
+  }
+}

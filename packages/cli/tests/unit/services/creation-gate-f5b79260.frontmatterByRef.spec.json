@@ -1,0 +1,57 @@
+{
+  "_doc": "Revert-verify mutants for the CLI creation gate's UID lookup (req f5b79260-f87c-4e73-8a34-19da341c7ec9): one name listing per session, exactly the shapes findFileByUidFilename accepts, first exact name wins, dot / node_modules dirs skipped, fallbacks when the listing fails or a listed file is unreadable. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/services/CreationGateCli.ts",
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/services/creation-gate-f5b79260.frontmatterByRef.test.ts --verbose 2>&1",
+  "mutants": {
+    "M73_any_name_starting_with_the_uid_is_taken": {
+      "from": "        if (!isUuid(head) || !(exact || rest.startsWith(\" \") || rest.startsWith(\"-\"))) continue;",
+      "to": "        if (!isUuid(head)) continue;",
+      "expect": ["R1"]
+    },
+    "M74_a_later_exact_name_replaces_the_first": {
+      "from": "        if (exactHeads.has(head)) continue;",
+      "to": "        if (exactHeads.has(head) && rel.length < 0) continue;",
+      "expect": ["R2b"]
+    },
+    "M75_an_exact_name_does_not_replace_an_earlier_copy": {
+      "from": "        if (exact || !byUid.has(head)) byUid.set(head, rel);",
+      "to": "        if (!byUid.has(head)) byUid.set(head, rel);",
+      "expect": ["R2a"]
+    },
+    "M76_node_modules_and_dot_dirs_are_listed": {
+      "from": "        if (dirs.some((dir) => dir.startsWith(\".\") || dir === \"node_modules\")) continue;",
+      "to": "        if (dirs.length < 0) continue;",
+      "expect": ["R3"]
+    },
+    "M77_a_failed_listing_is_kept": {
+      "from": "      if (uidNamed === listing) uidNamed = undefined;",
+      "to": "      void listing;",
+      "expect": ["R4b"]
+    },
+    "M78_no_name_walk_when_the_listing_failed": {
+      "from": "          (listingFailed ? await fs.findFileByUidFilename(wanted) : null) ??",
+      "to": "          (listingFailed && wanted.length < 0 ? await fs.findFileByUidFilename(wanted) : null) ??",
+      "expect": ["R4a"]
+    },
+    "M79_an_unreadable_listed_file_is_final": {
+      "from": "        if (fromListing) return fromListing;",
+      "to": "        if (listed) return fromListing;",
+      "expect": ["R5"]
+    },
+    "M80_the_listing_is_taken_per_lookup": {
+      "from": "    uidNamed ??= (async () => {",
+      "to": "    uidNamed = (async () => {",
+      "expect": ["R6"]
+    }
+  }
+}
