@@ -36,5 +36,6 @@ export {
   withCreationGate,
   parseCandidateFrontmatter,
   type CreationGateSessionOptions,
+  type CreationGateWriterSession,
 } from "./withCreationGate";
 export { parseRef, refsOf, isUuid, type ParsedRef } from "./refs";

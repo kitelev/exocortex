@@ -97,6 +97,17 @@ export class CreationGateSession {
   }
 }
 
+/**
+ * What a gated writer needs from a session: judge-and-throw BEFORE the write,
+ * journal AFTER it. {@link CreationGateSession} is one; a surface that builds
+ * its writers once (the plugin) passes a scope that opens a session per
+ * command execution.
+ */
+export interface CreationGateWriterSession {
+  assertAllowed(path: string, content: string): Promise<void>;
+  remember(path: string, content: string): void;
+}
+
 type WriterMethod = (path: string, content: string) => Promise<unknown>;
 
 async function fileAlreadyThere(target: object, path: string): Promise<boolean> {
@@ -123,7 +134,7 @@ async function fileAlreadyThere(target: object, path: string): Promise<boolean> 
  */
 export function withCreationGate<T extends object>(
   writer: T,
-  session: CreationGateSession,
+  session: CreationGateWriterSession,
 ): T {
   return new Proxy(writer, {
     get(target, property) {

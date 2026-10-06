@@ -12,7 +12,8 @@
   "mutants": {
     "M25_no_rules_refuses_everything": {
       "from": "    if (policies.length === 0) return { allowed: true };",
-      "to": "    if (policies.length === 0) return { allowed: false, policyUid: \"\", policyLabel: \"\", reason: \"mutant M25\", hint: null };"
+      "to": "    if (policies.length === 0) return { allowed: false, policyUid: \"\", policyLabel: \"\", reason: \"mutant M25\", hint: null };",
+      "expect": ["G0", "G22"]
     }
   }
 }

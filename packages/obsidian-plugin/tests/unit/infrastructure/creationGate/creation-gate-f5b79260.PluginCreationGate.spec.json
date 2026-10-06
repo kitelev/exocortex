@@ -1,0 +1,42 @@
+{
+  "_doc": "Revert-verify mutants for the plugin side of the creation gate (req f5b79260-f87c-4e73-8a34-19da341c7ec9): gated engine writer and service adapters, one session per execution, frontmatter read fresh from disk, rules read from disk on a cold start. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/infrastructure/creationGate/PluginCreationGate.ts",
+  "harness": "cd \"$(dirname {subject})/../../..\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/infrastructure/creationGate/PluginCreationGate.test.ts --verbose 2>&1",
+  "mutants": {
+    "M56_the_engine_writer_is_not_gated": {
+      "from": "    engineWriter: (writer) => withCreationGate(writer, scope),",
+      "to": "    engineWriter: (writer) => writer,",
+      "expect": ["U1", "U5"]
+    },
+    "M57_the_service_adapter_is_not_gated": {
+      "from": "    serviceAdapter: (adapter) => withCreationGate(adapter, scope),",
+      "to": "    serviceAdapter: (adapter) => adapter,",
+      "expect": ["U2"]
+    },
+    "M58_executions_are_not_scoped_to_one_session": {
+      "from": "      ) => scope.run(() => execute(...args));",
+      "to": "      ) => execute(...args);",
+      "expect": ["U3"]
+    },
+    "M52_frontmatter_comes_from_metadataCache_not_disk": {
+      "from": "      return parseCandidateFrontmatter(await this.app.vault.read(file));",
+      "to": "      return ((this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined) ?? null) ?? parseCandidateFrontmatter(await this.app.vault.read(file));",
+      "expect": ["U4"]
+    },
+    "M53_a_cold_start_reads_no_rule_from_disk": {
+      "from": "    try {\n      return parseCandidateFrontmatter(await this.app.vault.cachedRead(file));",
+      "to": "    try {\n      if (file.path.length >= 0) return null;\n      return parseCandidateFrontmatter(await this.app.vault.cachedRead(file));",
+      "expect": ["U5"]
+    }
+  }
+}

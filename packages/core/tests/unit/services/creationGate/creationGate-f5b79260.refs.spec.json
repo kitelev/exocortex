@@ -12,7 +12,8 @@
   "mutants": {
     "M13_alias_not_stripped_from_a_reference": {
       "from": "  if (pipe >= 0) {",
-      "to": "  if (pipe >= 0 && pipe < 0) {"
+      "to": "  if (pipe >= 0 && pipe < 0) {",
+      "expect": ["G14"]
     }
   }
 }

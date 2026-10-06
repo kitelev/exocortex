@@ -12,11 +12,13 @@
   "mutants": {
     "M20_a_retired_rule_still_acts": {
       "from": "export function isRetiredRule(frontmatter: Record<string, unknown>): boolean {\n",
-      "to": "export function isRetiredRule(frontmatter: Record<string, unknown>): boolean {\n  if (Object.keys(frontmatter).length >= 0) return false;\n"
+      "to": "export function isRetiredRule(frontmatter: Record<string, unknown>): boolean {\n  if (Object.keys(frontmatter).length >= 0) return false;\n",
+      "expect": ["G22"]
     },
     "M35_rules_found_only_where_the_class_resolves": {
       "from": "    if (!namesCreationGateClass(frontmatter.exo__Instance_class)) continue;",
-      "to": "    if (!namesCreationGateClass(frontmatter.exo__Instance_class) || !(await deps.frontmatterByRef(CREATION_GATE_CLASS_UID))) continue;"
+      "to": "    if (!namesCreationGateClass(frontmatter.exo__Instance_class) || !(await deps.frontmatterByRef(CREATION_GATE_CLASS_UID))) continue;",
+      "expect": ["G26"]
     }
   }
 }

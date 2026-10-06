@@ -98,21 +98,6 @@
       "count": 1
     },
     {
-      "file": "packages/obsidian-plugin/src/ExocortexPlugin.ts",
-      "rule": "eslint-comments/no-restricted-disable",
-      "count": 2
-    },
-    {
-      "file": "packages/obsidian-plugin/src/ExocortexPlugin.ts",
-      "rule": "eslint-comments/require-description",
-      "count": 2
-    },
-    {
-      "file": "packages/obsidian-plugin/src/ExocortexPlugin.ts",
-      "rule": "no-console",
-      "count": 2
-    },
-    {
       "file": "packages/obsidian-plugin/src/infrastructure/adapters/ApplyDepsFactory.ts",
       "rule": "no-console",
       "count": 1

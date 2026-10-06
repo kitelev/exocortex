@@ -9,6 +9,8 @@
  * Every axis name (G<n>) is the first token of its title — the machine key the
  * mutant driver reads (`creationGate.*.spec.json`).
  */
+import * as fs from "fs";
+import * as path from "path";
 import {
   CreationGateSession,
   parseCandidateFrontmatter,
@@ -450,6 +452,41 @@ describe("creation gate — semantics over a vault-shaped fixture", () => {
   it(`G26 ${REQ} a rule is found even where its class asset is not mounted`, async () => {
     const v = baseVault().remove(`exocmd/${C.gate}.md`);
     expectRefused(await v.judge(task()), /оборвалась/);
+  });
+
+  it(`G28 ${REQ} AC7 — no value of the rule is written in the gate's code (core module, CLI and plugin glue)`, () => {
+    // The probe list is DERIVED from the rule asset (Appendix B shape): every
+    // UID and label its values name, plus the evidence pattern — not authored
+    // by hand beside it. The real rule's own UID is added on top.
+    const rule = parseCandidateFrontmatter(md(ruleAsset()));
+    const v = baseVault();
+    const probes = new Set<string>(["06e6f840-0be3-4f34-9764-a268d8e900a0", EVIDENCE, "(?:pull|issues|releases)"]);
+    for (const [key, value] of Object.entries(rule)) {
+      if (!key.startsWith("exocmd__CreationGate_") && key !== "exo__Asset_isDefinedBy") continue;
+      for (const item of Array.isArray(value) ? value : [value]) {
+        const uid = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/.exec(String(item))?.[1];
+        if (!uid) continue;
+        probes.add(uid);
+        const labelLine = [...v.files.values()].find((text) => text.includes(`exo__Asset_uid: ${uid}`));
+        const label = labelLine ? parseCandidateFrontmatter(labelLine).exo__Asset_label : undefined;
+        if (typeof label === "string") probes.add(label);
+      }
+    }
+    expect(probes.size).toBeGreaterThan(10);
+    const root = path.resolve(__dirname, "../../../../..");
+    const sources = [
+      ...fs
+        .readdirSync(path.join(root, "core/src/services/creationGate"))
+        .map((f) => path.join(root, "core/src/services/creationGate", f)),
+      path.join(root, "cli/src/services/CreationGateCli.ts"),
+      path.join(root, "obsidian-plugin/src/infrastructure/creationGate/PluginCreationGate.ts"),
+    ];
+    const hits: string[] = [];
+    for (const file of sources) {
+      const text = fs.readFileSync(file, "utf-8");
+      for (const probe of probes) if (text.includes(probe)) hits.push(`${path.basename(file)}: ${probe}`);
+    }
+    expect(hits).toEqual([]);
   });
 
   it(`G27 ${REQ} a chain deeper than 12 hops is refused as too deep`, async () => {

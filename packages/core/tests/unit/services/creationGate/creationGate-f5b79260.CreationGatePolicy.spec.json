@@ -12,15 +12,18 @@
   "mutants": {
     "M9_evidence_matched_case_sensitively": {
       "from": "return { source, regex: new RegExp(source, \"i\"), error: null };",
-      "to": "return { source, regex: new RegExp(source, \"\"), error: null };"
+      "to": "return { source, regex: new RegExp(source, \"\"), error: null };",
+      "expect": ["G8i"]
     },
     "M19_fields_recognised_by_key_spelling_not_by_property_uid": {
       "from": "    const property = await deps.frontmatterByRef(key);\n    const propertyUid = property ? textOf(property.exo__Asset_uid) : null;",
-      "to": "    const property = null as Record<string, unknown> | null;\n    const propertyUid = property ? textOf(property.exo__Asset_uid) : ((CREATION_GATE_FIELD_UIDS as Record<string, string>)[key.replace(/^.*_/, \"\")] ?? null);"
+      "to": "    const property = null as Record<string, unknown> | null;\n    const propertyUid = property ? textOf(property.exo__Asset_uid) : ((CREATION_GATE_FIELD_UIDS as Record<string, string>)[key.replace(/^.*_/, \"\")] ?? null);",
+      "expect": ["G21"]
     },
     "M22_a_non_compiling_pattern_throws": {
       "from": "  } catch (error) {\n    return {",
-      "to": "  } catch (error) {\n    if (error) throw error;\n    return {"
+      "to": "  } catch (error) {\n    if (error) throw error;\n    return {",
+      "expect": ["G24"]
     }
   }
 }

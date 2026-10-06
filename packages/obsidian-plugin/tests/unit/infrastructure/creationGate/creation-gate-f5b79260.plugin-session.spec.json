@@ -1,0 +1,22 @@
+{
+  "_doc": "Revert-verify mutant for the core wrapper's EXECUTION JOURNAL, driven through the plugin (req f5b79260-f87c-4e73-8a34-19da341c7ec9): a file written by an earlier step must be findable by a later one although metadataCache has not indexed it yet. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/creationGate/withCreationGate.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../obsidian-plugin\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/infrastructure/creationGate/PluginCreationGate.test.ts --verbose 2>&1",
+  "mutants": {
+    "M43_an_allowed_write_is_not_journalled": {
+      "from": "          const result = await method.call(target, path, content);\n          session.remember(path, content);\n",
+      "to": "          const result = await method.call(target, path, content);\n",
+      "expect": ["U3", "U3j"]
+    }
+  }
+}
