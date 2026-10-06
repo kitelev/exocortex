@@ -19,6 +19,7 @@ export { OperationFailedError } from "./OperationFailedError.js";
 export { PermissionDeniedError } from "./PermissionDeniedError.js";
 export { QueryTimeoutError } from "./QueryTimeoutError.js";
 export { UnknownPropertyError } from "./UnknownPropertyError.js";
+export { CreationGateRefusedCliError } from "./CreationGateRefusedCliError.js";
 export {
   ShaclConformanceError,
   type ShaclConformanceViolation,

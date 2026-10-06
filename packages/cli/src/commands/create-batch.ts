@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { resolve } from "path";
 import { existsSync, readFileSync } from "fs";
 import {
+  CreationGateRefusedError,
   extractAssetReference,
   GenericAssetCreationService,
   liveClock,
@@ -14,6 +15,11 @@ import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { registerOrderSpecFromVault } from "../services/registerOrderSpec.js";
+import {
+  createCliCreationGateSession,
+  createFsPolicySource,
+  isCreationGateClassObject,
+} from "../services/CreationGateCli.js";
 import {
   CreateContext,
   planCreate,
@@ -676,6 +682,34 @@ export function createBatchCommand(): Command {
           process.stderr.write(
             `  … the diagnostic above (${text.split("\n")[0].slice(0, 60)}…) also applies to ${others.length} more item(s): ${shown}${more}\n`,
           );
+        }
+
+        // req f5b79260 (ticket 316dd2be) — the creation gate over every
+        // planned item, BEFORE the first write (all-or-nothing, like every
+        // other planning refusal). The whole batch goes into the execution
+        // journal first, so an item whose parent is created by another item
+        // of the same batch — in either order — finds it. No rule asset ⇒ a
+        // no-op (and no item is even parsed).
+        const gate = createCliCreationGateSession(
+          fsAdapter,
+          createFsPolicySource(fsAdapter, async () =>
+            (await ctx.cacheManager()).instanceClassPaths(
+              isCreationGateClassObject,
+            ),
+          ),
+        );
+        if ((await gate.policies()).length > 0) {
+          for (const item of planned) gate.remember(item.path, item.content);
+          for (const item of planned) {
+            const verdict = await gate.judge(item.path, item.content);
+            if (!verdict.allowed) {
+              failures.push({
+                index: item.index,
+                label: item.label,
+                message: new CreationGateRefusedError(verdict, item.path).message,
+              });
+            }
+          }
         }
 
         if (failures.length > 0) {

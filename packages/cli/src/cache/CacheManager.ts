@@ -592,6 +592,47 @@ export class CacheManager {
   }
 
   /**
+   * req f5b79260 (ticket 316dd2be) — the vault-relative paths whose OWN
+   * `exo__Instance_class` object satisfies `test` (the object's value in
+   * whatever IRI form the converter emitted), plus the entries the cache holds
+   * NO triples for. `null` when the cache cannot answer (absent / legacy /
+   * stale) — the caller then walks the vault as before.
+   *
+   * Why it exists: the creation gate has to FIND its rule assets, and on
+   * `create`'s narrowed path (#4291) reading every file to find a handful of
+   * rules would undo the narrowing. ⛔ `unknownPaths` is the honest half, as in
+   * {@link assetLookupIndex}: the cache recorded nothing about those files, so
+   * the caller must keep them as candidates.
+   */
+  async instanceClassPaths(
+    test: (objectValue: string) => boolean,
+  ): Promise<{ paths: string[]; unknownPaths: string[] } | null> {
+    const data = await this.verifiedSnapshot();
+    if (!data) {
+      return null;
+    }
+    const paths: string[] = [];
+    const unknownPaths: string[] = [];
+    for (const entry of data.files) {
+      if (entry.triples.length === 0) {
+        unknownPaths.push(entry.path);
+        continue;
+      }
+      const ownSubject = vaultPathToIRI(entry.path);
+      const matches = entry.triples.some(
+        (t) =>
+          t.subject.type === "IRI" &&
+          t.subject.value === ownSubject &&
+          t.predicate.type === "IRI" &&
+          t.predicate.value.endsWith(INSTANCE_CLASS_IRI_SUFFIX) &&
+          test(String(t.object.value)),
+      );
+      if (matches) paths.push(entry.path);
+    }
+    return { paths, unknownPaths };
+  }
+
+  /**
    * #4263 — the added / modified / removed vault-relative paths between the
    * persisted manifest and the vault's current state, or `null` when the
    * cache is absent / corrupt / legacy or the vault cannot be walked (the

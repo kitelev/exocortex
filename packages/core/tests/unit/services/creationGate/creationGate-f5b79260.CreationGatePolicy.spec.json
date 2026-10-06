@@ -1,0 +1,26 @@
+{
+  "_doc": "Revert-verify mutants for the rule PARSER (req f5b79260-f87c-4e73-8a34-19da341c7ec9): fields by property UID, case-insensitive evidence, a non-compiling pattern closing only the evidence path. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/creationGate/CreationGatePolicy.ts",
+  "harness": "cd \"$(dirname {subject})/../../../\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/services/creationGate/evaluateCreationGate.test.ts --verbose 2>&1",
+  "mutants": {
+    "M9_evidence_matched_case_sensitively": {
+      "from": "return { source, regex: new RegExp(source, \"i\"), error: null };",
+      "to": "return { source, regex: new RegExp(source, \"\"), error: null };"
+    },
+    "M19_fields_recognised_by_key_spelling_not_by_property_uid": {
+      "from": "    const property = await deps.frontmatterByRef(key);\n    const propertyUid = property ? textOf(property.exo__Asset_uid) : null;",
+      "to": "    const property = null as Record<string, unknown> | null;\n    const propertyUid = property ? textOf(property.exo__Asset_uid) : ((CREATION_GATE_FIELD_UIDS as Record<string, string>)[key.replace(/^.*_/, \"\")] ?? null);"
+    },
+    "M22_a_non_compiling_pattern_throws": {
+      "from": "  } catch (error) {\n    return {",
+      "to": "  } catch (error) {\n    if (error) throw error;\n    return {"
+    }
+  }
+}

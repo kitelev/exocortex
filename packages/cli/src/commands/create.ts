@@ -41,6 +41,12 @@ import {
 import type { AssetLookupIndex, CacheManager } from "../cache/CacheManager.js";
 import { assertNoFrontmatterCopy } from "./bodyFrontmatterGuard.js";
 import { assertIsDefinedByIsOntology } from "./isDefinedByRangeGuard.js";
+import {
+  createCliCreationGateSession,
+  createFsPolicySource,
+  isCreationGateClassObject,
+  toCliCreationGateError,
+} from "../services/CreationGateCli.js";
 
 /**
  * Fallback folder for new assets whose `exo__Asset_isDefinedBy` cannot be
@@ -1101,6 +1107,30 @@ export function createCommand(): Command {
         // The write half: build, optionally validate, then preview or write.
         const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
         const creationService = new GenericAssetCreationService(vaultAdapter);
+
+        // req f5b79260 (ticket 316dd2be) — the creation gate. A vault-declared
+        // `exocmd__CreationGate` rule judges the ASSEMBLED file — every class
+        // and property the build writes, label and body included — not a
+        // reconstruction from the flags (a second class passed through
+        // `--property exo__Instance_class` would be invisible to one). Placed
+        // before `--validate`, `--dry-run` and the write so the refusal is the
+        // same on every path. No rule asset in the vault ⇒ a no-op.
+        const gateCandidate = creationService.buildAsset(config);
+        try {
+          await createCliCreationGateSession(
+            ctx.fsAdapter,
+            createFsPolicySource(ctx.fsAdapter, async () =>
+              (await ctx.cacheManager()).instanceClassPaths(
+                isCreationGateClassObject,
+              ),
+            ),
+          ).assertAllowed(
+            gateCandidate.path,
+            gateCandidate.content,
+          );
+        } catch (error) {
+          throw toCliCreationGateError(error);
+        }
 
         // #4264 — one CacheManager for the whole invocation when --use-cache:
         // `--validate` loads through it (so the loaded state stays in memory)

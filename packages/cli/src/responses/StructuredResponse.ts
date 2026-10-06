@@ -51,6 +51,12 @@ export enum ErrorCode {
   // Permission errors (2xx)
   PERMISSION_DENIED = "PERMISSION_DENIED",
   PERMISSION_READ_ONLY = "PERMISSION_READ_ONLY",
+  /**
+   * A vault-declared creation rule (exocmd__CreationGate, req f5b79260) refused
+   * to let a new asset be written. Unprefixed on purpose — it is the same token
+   * the refusal message starts with; classified as a PERMISSION error below.
+   */
+  CREATION_GATE_REFUSED = "CREATION_GATE_REFUSED",
 
   // State errors (3xx)
   STATE_INVALID_TRANSITION = "STATE_INVALID_TRANSITION",
@@ -70,7 +76,9 @@ export enum ErrorCode {
  */
 export function getErrorCategory(code: ErrorCode): ErrorCategory {
   if (code.startsWith("VALIDATION_")) return ErrorCategory.VALIDATION;
-  if (code.startsWith("PERMISSION_")) return ErrorCategory.PERMISSION;
+  if (code.startsWith("PERMISSION_") || code === ErrorCode.CREATION_GATE_REFUSED) {
+    return ErrorCategory.PERMISSION;
+  }
   if (code.startsWith("STATE_")) return ErrorCategory.STATE;
   return ErrorCategory.INTERNAL;
 }
