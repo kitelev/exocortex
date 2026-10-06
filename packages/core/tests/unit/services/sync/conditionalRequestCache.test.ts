@@ -474,4 +474,65 @@ describe("the ETag store costs one read per run and keeps no large bodies @req:0
     // behind the other — at most one write per drain pass.
     expect(io.writes()).toBeLessThanOrEqual(2);
   });
+
+  it("R6 a mutation that lands in the same tick a write completes is still written", async () => {
+    // The window this pins: the drain has checked «nothing left to write» but
+    // has not yet cleared `draining`. A mutation landing there would mark the
+    // copy dirty, see a drain «running», start none — and never reach disk.
+    let content: string | null = null;
+    let release!: () => void;
+    let gated = true;
+    const io: ConditionalStoreIO = {
+      async read() {
+        return null;
+      },
+      writeAtomic(next) {
+        content = next;
+        if (!gated) return Promise.resolve();
+        gated = false;
+        return new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      },
+    };
+    const cache = makeCache(io);
+    await cache.remember("k1", '"1"', { a: 1 }); // write #1 is now held by the gate
+    release(); // …it completes…
+    const late = cache.remember("k2", '"2"', { a: 2 }); // …and a mutation lands in the same tick
+    await late;
+    await cache.flush();
+    const written = JSON.parse(content ?? "{}") as {
+      entries: Record<string, unknown>;
+    };
+    expect(Object.keys(written.entries).sort()).toEqual(["k1", "k2"]);
+  });
+
+  it("R7 flush() does not resolve while a write is still in flight", async () => {
+    let release!: () => void;
+    let onDisk = false;
+    const io: ConditionalStoreIO = {
+      async read() {
+        return null;
+      },
+      writeAtomic() {
+        return new Promise<void>((resolve) => {
+          release = () => {
+            onDisk = true;
+            resolve();
+          };
+        });
+      },
+    };
+    const cache = makeCache(io);
+    await cache.remember("k", '"e"', { a: 1 });
+    let settled = false;
+    const flushed = cache.flush().then(() => {
+      settled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(settled).toBe(false);
+    release();
+    await flushed;
+    expect(onDisk).toBe(true);
+  });
 });

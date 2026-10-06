@@ -83,6 +83,7 @@ import {
 import {
   nodeConditionalStoreIO,
   wireConditionalRequests,
+  withSettledConditionalStores,
 } from "../services/conditionalRequestTransport.js";
 import { wireObjectCache } from "../services/objectCacheTransport.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
@@ -459,7 +460,21 @@ function isFailureStatus(status: RepoSyncResult["status"]): boolean {
  * 0 = all repos clean; 1 = at least one repo unresolved/errored;
  * 2 = VACUOUS (no materialized sync units found — a green 0 here would be a
  * false certificate). */
+/**
+ * Public entry: settles the ETag store this run wired before returning or
+ * re-throwing (req 0700c0e0 — see `withSettledConditionalStores`).
+ */
 export async function runExosyncSync(
+  direction: SyncDirection,
+  opts: ExosyncSyncOptions,
+  deps: ExosyncSyncDeps = {},
+): Promise<number> {
+  return withSettledConditionalStores(() =>
+    runExosyncSyncUnsettled(direction, opts, deps),
+  );
+}
+
+async function runExosyncSyncUnsettled(
   direction: SyncDirection,
   opts: ExosyncSyncOptions,
   deps: ExosyncSyncDeps = {},

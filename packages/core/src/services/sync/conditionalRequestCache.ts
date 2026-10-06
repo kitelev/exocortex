@@ -78,7 +78,11 @@ export interface ConditionalRequestCacheOptions {
   maxEntries?: number;
   /**
    * Bodies larger than this are validated but not remembered, and entries
-   * above it found in a loaded store are dropped. Default 64 KiB.
+   * above it found in a loaded store are dropped. Measured as the length of
+   * the serialised body in UTF-16 code units (`string.length`), not bytes on
+   * disk: a body with non-ASCII text (Cyrillic paths in a tree, a commit
+   * message) takes more bytes than this length — two per Cyrillic character
+   * in UTF-8. Default 64 Ki.
    */
   maxBodyBytes?: number;
   /** Injected clock (tests). */
@@ -260,10 +264,12 @@ export class ConditionalRequestCache {
   }
 
   /**
-   * Resolves once every mutation made so far is on disk (or its write failed —
-   * the store is fail-open). Callers do not need it for correctness: a run's
-   * own lookups are served from memory. Exposed for tests and for a caller
-   * that wants the store settled before it reports.
+   * Resolves once every mutation whose promise has RESOLVED is on disk (or its
+   * write failed — the store is fail-open). A mutation still waiting on the
+   * initial load is not covered; through the transport there is none, since it
+   * awaits `remember` / `touch`. The run's own lookups never need it — they are
+   * served from memory; the CLI settles every wired cache before a command
+   * returns or exits (`withSettledConditionalStores`), axis R7.
    */
   async flush(): Promise<void> {
     while (this.draining) {
@@ -326,6 +332,9 @@ export class ConditionalRequestCache {
         } catch {
           // Fail-open: an unwritable store only means the next RUN starts
           // without validators; this run keeps them in memory.
+          // ⛔ LOAD-BEARING: the drain's promise is detached from every caller
+          // (a mutation does not await it), so an error escaping here is an
+          // unhandled rejection — a process crash, not a degraded cache.
         }
       }
     } finally {
