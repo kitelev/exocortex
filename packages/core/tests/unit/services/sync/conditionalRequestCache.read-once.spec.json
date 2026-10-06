@@ -1,0 +1,40 @@
+{
+  "_doc": "Revert-verify for req 0700c0e0-3dfb-4d45-bcaa-d93792b73905 — the ETag store is read once per cache instance, mutated in memory and written behind, and keeps no bodies above the cap (default 64 KiB). Axes R1-R5 in packages/core/tests/unit/services/sync/conditionalRequestCache.test.ts. Own spec because the driver applies mutants to the spec's single `subject`, and the C-axes of req af002ec4 keep their own spec on the same file.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/conditionalRequestCache.ts",
+  "symlink_node_modules": ["node_modules", "packages/core/node_modules"],
+  "harness": "cd \"$(dirname {subject})/../../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/services/sync/conditionalRequestCache.test.ts 2>&1",
+  "red_re": "› ([CR]\\d+\\w*) ",
+  "mutants": {
+    "N1_store_reread_per_lookup": {
+      "_note": "Загрузка store снова на КАЖДЫЙ lookup — ровно прежнее поведение, ради снятия которого req 0700c0e0. Форма сохранена (тот же if), меняется только истинность. ⛤ Три красные — предсказаны ДО прогона и совпали: R1 (чтений больше одного), R2 (перечитанный с диска store не видит валидатор, чья запись не завершилась), R5 (каждая мутация правит СВОЮ свежую копию, и дренаж пишет копию первой — правки остальных теряются).",
+      "from": "    if (this.loaded === null) {\n",
+      "to": "    if (this.loaded === null || true) {\n",
+      "expect": ["R1", "R2", "R5"]
+    },
+    "N2_oversize_kept_on_load": {
+      "_note": "Раздутый store больше не ужимается при загрузке: записи с телами больше порога переживают каждую перезапись.",
+      "from": "          if (isEntry(entry) && entry.body.length > this.maxBodyBytes) {\n",
+      "to": "          if (isEntry(entry) && entry.body.length > Number.MAX_SAFE_INTEGER) {\n",
+      "expect": ["R4"]
+    },
+    "N3_default_cap_back_to_1mib": {
+      "_note": "Порог по умолчанию возвращён к 1 MiB — тот, при котором store бота вырос до 181 МБ. ⛤ R4 краснеет вместе с R3 законно: её дерево 200 KiB лежит между двумя порогами, и при 1 MiB оно переживает перезапись.",
+      "from": "const DEFAULT_MAX_BODY_BYTES = 64 * 1024;\n",
+      "to": "const DEFAULT_MAX_BODY_BYTES = 1024 * 1024;\n",
+      "expect": ["R3", "R4"]
+    },
+    "N4_mutation_waits_for_disk": {
+      "_note": "Мутация снова ждёт записи на диск: при записи, которая не завершается, синк виснет.",
+      "from": "      this.drained = this.drain(entries);\n    }\n  }\n",
+      "to": "      this.drained = this.drain(entries);\n    }\n    await this.drained;\n  }\n",
+      "expect": ["R2"]
+    },
+    "N5_no_coalescing": {
+      "_note": "Каждая мутация запускает свою запись вместо того, чтобы пометить копию грязной для уже идущей.",
+      "from": "    if (!this.draining) {\n",
+      "to": "    if (!this.draining || true) {\n",
+      "expect": ["R5"]
+    }
+  }
+}
