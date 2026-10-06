@@ -3008,7 +3008,11 @@ export default class ExocortexPlugin extends Plugin {
               );
             }
           } catch (err) {
-            this.logger.error(
+            // Console only, as before the eslint-debt fix (#4508): this runs
+            // after every save of the file, and Logger.error would add a
+            // toast + a log-file line per save. `info` is the console-only
+            // level by default (DEFAULT_LOG_CHANNELS).
+            this.logger.info(
               "[Exocortex] SHACL engine error",
               err instanceof Error ? err : new Error(String(err)),
             );

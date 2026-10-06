@@ -256,7 +256,7 @@ export class PlanningFsAdapter extends NodeFsAdapter {
    * against. 200 is ~50× that with no evidence the real distribution approaches
    * it; it exists to bound the worst case, not to describe the observed one.
    */
-  private static readonly MAX_UNKNOWN_PATHS = 200;
+  static readonly MAX_UNKNOWN_PATHS = 200;
 
   /**
    * The single-key query shapes narrowing applies to. Anything else (a

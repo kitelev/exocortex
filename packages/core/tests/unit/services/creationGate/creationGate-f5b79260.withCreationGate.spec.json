@@ -14,6 +14,16 @@
       "from": "    if (policies.length === 0) return { allowed: true };",
       "to": "    if (policies.length === 0) return { allowed: false, policyUid: \"\", policyLabel: \"\", reason: \"mutant M25\", hint: null };",
       "expect": ["G0", "G22"]
+    },
+    "M65_writeFile_judges_an_overwrite_too": {
+      "from": "          const creating = !(await fileAlreadyThere(target, path));",
+      "to": "          const creating = path.length >= 0;",
+      "expect": ["G29b"]
+    },
+    "M66_writeFile_never_judges": {
+      "from": "          if (creating) await session.assertAllowed(path, content);",
+      "to": "          if (creating && path.length < 0) await session.assertAllowed(path, content);",
+      "expect": ["G29"]
     }
   }
 }

@@ -117,6 +117,10 @@ function baseFiles(): Map<string, string> {
 interface FakeVault {
   app: App;
   files: Map<string, string>;
+  /** How often the gate touched each source: disk (`read` / `cachedRead`) and the frontmatter index. */
+  calls: { read: number; cachedRead: number; getFileCache: number };
+  /** Put a file on "disk" as another writer would (the sync): new mtime, invisible to metadataCache. */
+  arrive(p: string, text: string): void;
   /** IFileSystemWriter-shaped (the grounding engine's writer). */
   writer: { createFile(p: string, c: string): Promise<string>; fileExists(p: string): Promise<boolean> };
   /** IVaultAdapter-shaped (`create`, as the duplicate service uses it). */
@@ -128,10 +132,21 @@ interface FakeVault {
  * per-path overrides (a stale index entry); `initialized: false` + no cache
  * entries models the cold start.
  */
-function makeVault(options: { cold?: boolean; staleCache?: Record<string, Fm> } = {}): FakeVault {
+function makeVault(
+  options: { cold?: boolean; staleCache?: Record<string, Fm>; withoutRule?: boolean } = {},
+): FakeVault {
   const files = baseFiles();
+  if (options.withoutRule) files.delete(`exodev/${RULE}.md`);
+  const mtimes = new Map<string, number>([...files.keys()].map((p) => [p, 1_000]));
+  let clock = 2_000;
+  const calls = { read: 0, cachedRead: 0, getFileCache: 0 };
   const tfile = (p: string): TFile =>
-    ({ path: p, basename: p.replace(/^.*\//, "").replace(/\.md$/, ""), extension: "md" }) as unknown as TFile;
+    ({
+      path: p,
+      basename: p.replace(/^.*\//, "").replace(/\.md$/, ""),
+      extension: "md",
+      stat: { mtime: mtimes.get(p) ?? 0 },
+    }) as unknown as TFile;
   const snapshot = new Map<string, Record<string, unknown>>();
   if (!options.cold) {
     for (const [p, text] of files) snapshot.set(p, parseCandidateFrontmatter(text));
@@ -142,12 +157,19 @@ function makeVault(options: { cold?: boolean; staleCache?: Record<string, Fm> } 
   const app = {
     vault: {
       getMarkdownFiles: () => [...files.keys()].map(tfile),
-      read: async (f: TFile) => files.get(f.path) ?? "",
-      cachedRead: async (f: TFile) => files.get(f.path) ?? "",
+      read: async (f: TFile) => {
+        calls.read++;
+        return files.get(f.path) ?? "";
+      },
+      cachedRead: async (f: TFile) => {
+        calls.cachedRead++;
+        return files.get(f.path) ?? "";
+      },
     },
     metadataCache: {
       initialized: !options.cold,
       getFileCache: (f: TFile) => {
+        calls.getFileCache++;
         const fm = snapshot.get(f.path);
         return fm ? { frontmatter: fm } : null;
       },
@@ -162,10 +184,16 @@ function makeVault(options: { cold?: boolean; staleCache?: Record<string, Fm> } 
   const write = (p: string, c: string): void => {
     if (files.has(p)) throw new Error(`File already exists: ${p}`);
     files.set(p, c);
+    mtimes.set(p, clock++);
   };
   return {
     app,
     files,
+    calls,
+    arrive: (p, text) => {
+      files.set(p, text);
+      mtimes.set(p, clock++);
+    },
     writer: {
       createFile: async (p, c) => {
         write(p, c);
@@ -289,4 +317,42 @@ describe("creation gate in the plugin (req f5b79260)", () => {
     await writer.createFile(`inbox/${NEW_TASK}.md`, task(NEW_TASK, { ems__Effort_parent: link(PRJ_OK) }));
     expect(v.files.has(`inbox/${NEW_TASK}.md`)).toBe(true);
   });
+
+  it(`U6 ${REQ} a cold start reads the vault from disk ONCE, not once per command`, async () => {
+    const v = makeVault({ cold: true, withoutRule: true });
+    const gate = createPluginCreationGate(v.app);
+    const writer = gate.engineWriter(v.writer);
+    const before = v.files.size;
+    await writer.createFile(`inbox/${NEW_TASK}.md`, task(NEW_TASK));
+    expect(v.calls.cachedRead).toBe(before);
+    // Our own write changed the file list ⇒ the next command reads it again, once…
+    await gate.scope.assertAllowed(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ));
+    expect(v.calls.cachedRead).toBe(before + (before + 1));
+    // …and a command on an untouched vault reads nothing.
+    await gate.scope.assertAllowed(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ));
+    expect(v.calls.cachedRead).toBe(before + (before + 1));
+    // No rule ⇒ no chain walk ⇒ no fresh read of anything.
+    expect(v.calls.read).toBe(0);
+  });
+
+  it(`U6b ${REQ} the cold-start memo is dropped when a file arrives — a rule synced in acts at once`, async () => {
+    const v = makeVault({ cold: true, withoutRule: true });
+    const gate = createPluginCreationGate(v.app);
+    const writer = gate.engineWriter(v.writer);
+    await writer.createFile(`inbox/${NEW_TASK}.md`, task(NEW_TASK));
+    v.arrive(`exodev/${RULE}.md`, baseFiles().get(`exodev/${RULE}.md`) as string);
+    await expect(writer.createFile(`inbox/${NEW_PRJ}.md`, project(NEW_PRJ))).rejects.toThrow(/CREATION_GATE_REFUSED/);
+    expect(v.files.has(`inbox/${NEW_PRJ}.md`)).toBe(false);
+  });
+
+  it(`U7 ${REQ} a warm vault without a rule: one in-memory pass, no name index, no disk read`, async () => {
+    const v = makeVault({ withoutRule: true });
+    const writer = createPluginCreationGate(v.app).engineWriter(v.writer);
+    const files = v.files.size;
+    await writer.createFile(`inbox/${NEW_TASK}.md`, task(NEW_TASK));
+    expect(v.files.has(`inbox/${NEW_TASK}.md`)).toBe(true);
+    expect(v.calls.getFileCache).toBe(files);
+    expect(v.calls.read + v.calls.cachedRead).toBe(0);
+  });
 });
+

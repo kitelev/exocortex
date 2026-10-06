@@ -14,6 +14,7 @@ import * as path from "path";
 import {
   CreationGateSession,
   parseCandidateFrontmatter,
+  withCreationGate,
   type CreationGatePolicySource,
   type CreationGateVerdict,
 } from "../../../../src/services/creationGate";
@@ -498,5 +499,57 @@ describe("creation gate — semantics over a vault-shaped fixture", () => {
       parent = uid;
     }
     expectRefused(await v.judge(task({ ems__Effort_parent: link(parent) })), /глубже 12/);
+  });
+
+  // The BOUNDARY of the depth limit, from both sides: G27 alone survives a
+  // limit moved to 13 or 14 (its chain is 15 hops long).
+  const chainTo = (v: FixtureVault, anchor: string, links: number): string => {
+    let parent = anchor;
+    for (let i = 0; i < links; i++) {
+      const uid = `dddd0000-0000-4000-8000-${String(i).padStart(12, "0")}`;
+      v.put(`exodev/${uid}.md`, effort(uid, `"Звено ${i}"`, [C.task], { ems__Effort_parent: link(parent) }));
+      parent = uid;
+    }
+    return parent;
+  };
+
+  it(`G27a ${REQ} an approved anchor exactly 12 hops up passes`, async () => {
+    const v = baseVault();
+    const top = chainTo(v, PRJ_OK, 11); // candidate → 11 links → project = 12 hops
+    expect((await v.judge(task({ ems__Effort_parent: link(top) }))).allowed).toBe(true);
+  });
+
+  it(`G27b ${REQ} the same anchor 13 hops up is refused as too deep`, async () => {
+    const v = baseVault();
+    const top = chainTo(v, PRJ_OK, 12); // 13 hops
+    expectRefused(await v.judge(task({ ems__Effort_parent: link(top) })), /глубже 12/);
+  });
+
+  const gatedWriteFile = (v: FixtureVault, disk: Map<string, string>) =>
+    withCreationGate(
+      {
+        async writeFile(p: string, c: string): Promise<void> {
+          disk.set(p, c);
+        },
+        async fileExists(p: string): Promise<boolean> {
+          return disk.has(p);
+        },
+      },
+      new CreationGateSession({ source: v.source, frontmatterByRef: v.frontmatterByRef }),
+    );
+
+  it(`G29 ${REQ} writeFile judges a NEW file — an illegal one is refused and not written`, async () => {
+    const disk = new Map<string, string>();
+    const writer = gatedWriteFile(baseVault(), disk);
+    await expect(writer.writeFile(`inbox/${NEW}.md`, md(task()))).rejects.toThrow(/^CREATION_GATE_REFUSED:/);
+    expect(disk.has(`inbox/${NEW}.md`)).toBe(false);
+  });
+
+  it(`G29b ${REQ} writeFile over an EXISTING file is not a creation — it is not judged`, async () => {
+    const disk = new Map<string, string>([[`inbox/old.md`, "old"]]);
+    const writer = gatedWriteFile(baseVault(), disk);
+    const illegal = md(task());
+    await writer.writeFile(`inbox/old.md`, illegal);
+    expect(disk.get(`inbox/old.md`)).toBe(illegal);
   });
 });

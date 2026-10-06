@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for the plugin side of the creation gate (req f5b79260-f87c-4e73-8a34-19da341c7ec9): gated engine writer and service adapters, one session per execution, frontmatter read fresh from disk, rules read from disk on a cold start. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute).",
+  "_doc": "Revert-verify mutants for the plugin side of the creation gate (req f5b79260-f87c-4e73-8a34-19da341c7ec9): gated engine writer and service adapters, one session per execution, frontmatter read fresh from disk, rules read from disk on a cold start, and the cost guards — a cold start reads the vault once (memo dropped when the file list changes), a vault without a rule builds no name index. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -16,7 +16,8 @@
     "M56_the_engine_writer_is_not_gated": {
       "from": "    engineWriter: (writer) => withCreationGate(writer, scope),",
       "to": "    engineWriter: (writer) => writer,",
-      "expect": ["U1", "U5"]
+      "expect": ["U1", "U5", "U6", "U6b", "U7"],
+      "_note": "U6, U6b and U7 measure the gate's cost THROUGH the engine writer: with the writer ungated the gate is never consulted, so the disk / frontmatter-index counters stay at zero (U6, U7) and the synced-in rule refuses nothing (U6b)."
     },
     "M57_the_service_adapter_is_not_gated": {
       "from": "    serviceAdapter: (adapter) => withCreationGate(adapter, scope),",
@@ -34,9 +35,24 @@
       "expect": ["U4"]
     },
     "M53_a_cold_start_reads_no_rule_from_disk": {
-      "from": "    try {\n      return parseCandidateFrontmatter(await this.app.vault.cachedRead(file));",
-      "to": "    try {\n      if (file.path.length >= 0) return null;\n      return parseCandidateFrontmatter(await this.app.vault.cachedRead(file));",
-      "expect": ["U5"]
+      "from": "    try {\n      return await this.app.vault.cachedRead(file);",
+      "to": "    try {\n      if (file.path.length >= 0) return null;\n      return await this.app.vault.cachedRead(file);",
+      "expect": ["U5", "U6", "U6b"]
+    },
+    "M60_the_cold_scan_is_not_kept_across_commands": {
+      "from": "    if (this.cold?.stamp !== stamp) this.cold = { stamp };",
+      "to": "    this.cold = { stamp };",
+      "expect": ["U6"]
+    },
+    "M61_the_cold_memo_ignores_a_changed_vault": {
+      "from": "    const stamp = `${files.length}:${newest}`;",
+      "to": "    const stamp = `frozen:${files.length >= 0}`;",
+      "expect": ["U6", "U6b"]
+    },
+    "M62_the_name_index_is_built_without_a_rule": {
+      "from": "    async candidates() {\n      const out",
+      "to": "    async candidates() {\n      names ??= view.names();\n      const out",
+      "expect": ["U6", "U7"]
     }
   }
 }

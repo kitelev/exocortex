@@ -11,6 +11,7 @@ import {
   type InMemoryTripleStore,
 } from "@kitelev/exocortex-core";
 import type { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
+import { PlanningFsAdapter } from "../adapters/PlanningFsAdapter.js";
 import { CreationGateRefusedCliError } from "../utils/errors/index.js";
 
 /**
@@ -21,13 +22,36 @@ import { CreationGateRefusedCliError } from "../utils/errors/index.js";
 
 /**
  * A reference (UID, label, alias or basename) → the frontmatter of the asset it
- * names, through the command's own adapter — so the lookups ride the same
- * memo / cache-narrowed / triple-indexed paths the command already pays for.
- * A UID is tried by filename first (UID-canon vaults: no file read), then by
+ * names, through the command's own adapter. A UID is looked up in ONE listing
+ * of the vault's file names, taken lazily once per session (UID-canon vaults:
+ * the file is named after its UID — no file read) and only then by
  * frontmatter; anything else by label, then by linkpath (basename, label or
- * alias — the adapter's one-pass fallback).
+ * alias — the adapter's one-pass fallback). Label lookups ride whatever the
+ * adapter narrows: `create`'s planning adapter answers them from the triple
+ * cache (#4291).
+ *
+ * ⛔ Only the name listing is kept, never frontmatter: a composite command may
+ * rewrite an asset between two judgements, and a kept frontmatter would judge
+ * the earlier state (plugin-getfrontmatter-stale-in-composite). A file created
+ * in the same session is found through the session's journal, not here.
  */
 export function createFsFrontmatterByRef(fs: NodeFsAdapter): FrontmatterByRef {
+  let uidNamed: Promise<Map<string, string>> | undefined;
+  const uidNamedFiles = (): Promise<Map<string, string>> => {
+    uidNamed ??= (async () => {
+      const byUid = new Map<string, string>();
+      for (const rel of await fs.getMarkdownFiles()) {
+        const base = rel.slice(rel.lastIndexOf("/") + 1).toLowerCase();
+        const head = base.slice(0, 36);
+        // the shapes `findFileByUidFilename` accepts: `<uid>.md`, `<uid> …`, `<uid>-…`
+        if (isUuid(head) && [".", " ", "-"].includes(base.charAt(36)) && !byUid.has(head)) {
+          byUid.set(head, rel);
+        }
+      }
+      return byUid;
+    })();
+    return uidNamed;
+  };
   return async (ref: string) => {
     const wanted = ref.trim();
     if (wanted.length === 0) return null;
@@ -35,7 +59,7 @@ export function createFsFrontmatterByRef(fs: NodeFsAdapter): FrontmatterByRef {
     try {
       if (isUuid(wanted)) {
         path =
-          (await fs.findFileByUidFilename(wanted)) ??
+          (await uidNamedFiles()).get(wanted.toLowerCase()) ??
           (await fs.findFileByUID(wanted));
       } else {
         path =
@@ -68,9 +92,10 @@ export type CreationGateCacheNarrowing = () => Promise<
 
 /**
  * Above this many cache-unjudgeable files the narrowing is declined (they are
- * candidates for every lookup) — the same conservative bound #4291 uses.
+ * candidates for every lookup) — the bound #4291's lookup narrowing uses, read
+ * from there so the two cannot drift apart.
  */
-const MAX_UNKNOWN_PATHS = 200;
+const MAX_UNKNOWN_PATHS = PlanningFsAdapter.MAX_UNKNOWN_PATHS;
 
 /**
  * Rule candidates for `create` / `create-batch`: every markdown file whose
@@ -109,9 +134,11 @@ export function createFsPolicySource(
         } catch {
           continue;
         }
+        // case-insensitive, as `namesCreationGateClass` judges the class
+        const lower = text.toLowerCase();
         if (
-          !text.includes(CREATION_GATE_CLASS_UID) &&
-          !text.includes(CREATION_GATE_CLASS_LABEL)
+          !lower.includes(CREATION_GATE_CLASS_UID) &&
+          !lower.includes(CREATION_GATE_CLASS_LABEL.toLowerCase())
         ) {
           continue;
         }

@@ -32,6 +32,8 @@
         "G25",
         "G26",
         "G27",
+        "G27a",
+        "G27b",
         "G3",
         "G4b",
         "G5",
@@ -40,7 +42,8 @@
         "G8",
         "G8i",
         "G9"
-      ]
+      ],
+      "_note": "G27a/G27b (depth boundary, added after review): G27a expects a pass, G27b expects the reason «глубже 12» — the delivery control refuses everything with its own reason."
     },
     "M1_a_broken_chain_is_let_through": {
       "from": "    if (!parent) {\n",
@@ -54,11 +57,13 @@
         "G24",
         "G25",
         "G26",
+        "G29",
         "G3",
         "G4",
         "G6",
         "G9"
-      ]
+      ],
+      "_note": "G29 judges a task WITHOUT a parent through writeFile — with the broken chain let through it is written."
     },
     "M2_classes_compared_without_superclass_closure": {
       "from": "    for (const key of await this.closureOf(classRef)) {",
@@ -73,7 +78,8 @@
     "M4_no_node_is_recognised_as_an_anchor": {
       "from": "  const isAnchor = async (node: Record<string, unknown>): Promise<boolean> => {\n",
       "to": "  const isAnchor = async (node: Record<string, unknown>): Promise<boolean> => {\n    if (Object.keys(node).length >= 0) return false;\n",
-      "expect": ["G10", "G13", "G15", "G2", "G23", "G24", "G4b", "G5"]
+      "expect": ["G10", "G13", "G15", "G2", "G23", "G24", "G27a", "G4b", "G5"],
+      "_note": "G27a ends its 12-hop chain on an approved project — no anchor recognised ⇒ the chain breaks and the task is refused."
     },
     "M5_only_the_first_allowed_status_counts": {
       "from": "  const allowedKeys = await reasoner.keysOfAll(policy.allowedStatus);",
@@ -148,7 +154,18 @@
     "M26_no_depth_limit": {
       "from": "    if (hops + 1 > CREATION_GATE_MAX_DEPTH) {",
       "to": "    if (hops + 1 > CREATION_GATE_MAX_DEPTH * 100) {",
-      "expect": ["G27"]
+      "expect": ["G27", "G27b"],
+      "_note": "G27b is the 13-hop chain: without a limit it reaches the approved project and passes, so the expected «глубже 12» refusal is gone."
+    },
+    "M63_the_depth_limit_is_one_hop_too_loose": {
+      "from": "    if (hops + 1 > CREATION_GATE_MAX_DEPTH) {",
+      "to": "    if (hops + 1 > CREATION_GATE_MAX_DEPTH + 1) {",
+      "expect": ["G27b"]
+    },
+    "M64_the_depth_limit_is_one_hop_too_tight": {
+      "from": "    if (hops + 1 > CREATION_GATE_MAX_DEPTH) {",
+      "to": "    if (hops + 1 > CREATION_GATE_MAX_DEPTH - 1) {",
+      "expect": ["G27a"]
     }
   }
 }

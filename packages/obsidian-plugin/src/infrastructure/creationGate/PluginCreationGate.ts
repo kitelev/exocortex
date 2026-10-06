@@ -1,5 +1,7 @@
 import type { App, TFile } from "obsidian";
 import {
+  CREATION_GATE_CLASS_LABEL,
+  CREATION_GATE_CLASS_UID,
   CreationGateSession,
   isUuid,
   namesCreationGateClass,
@@ -19,50 +21,104 @@ import {
  */
 
 /**
- * One execution's view of the vault: every asset name — UID, label, alias,
- * basename — mapped to its file. Built from `metadataCache` when it is warm;
- * on a cold start (the cache not yet `initialized`) from the files on disk,
- * so a rule is never missed because Obsidian is still indexing.
+ * What the gate needs from the vault, split by cost so that a vault WITHOUT a
+ * rule asset — every vault today — pays almost nothing per command:
  *
- * The index only LOCATES files; frontmatter is always read fresh from disk
- * (`vault.read`), because `metadataCache` lags a write made a moment earlier
- * by the same composite command (plugin-getfrontmatter-stale-in-composite).
+ * - **rules** — on a warm `metadataCache` an in-memory pass over the
+ *   frontmatter Obsidian already holds (no disk read); on a cold start (the
+ *   cache not yet `initialized`) the files are read from disk, a text
+ *   pre-filter decides which are parsed, and the result is KEPT across
+ *   executions until the vault's file list changes (count of markdown files +
+ *   newest mtime, both from Obsidian's in-memory list) — a cold start pays one
+ *   pass, not one per command. A warm result is not kept: the cache may still
+ *   be indexing a file that just arrived, and a kept miss would outlive it.
+ * - **names** (UID / label / alias / basename → file) — built only when a
+ *   rule applies and a chain has to be walked, once per execution.
+ *
+ * Frontmatter of a located file is always read fresh from disk (`vault.read`),
+ * because `metadataCache` lags a write made a moment earlier by the same
+ * composite command (plugin-getfrontmatter-stale-in-composite).
  */
-class PluginVaultIndex {
-  private load?: Promise<{ byName: Map<string, TFile>; rules: TFile[] }>;
+export class PluginVaultView {
+  private cold?: {
+    stamp: string;
+    rules?: Promise<TFile[]>;
+    names?: Promise<Map<string, TFile>>;
+  };
 
   constructor(private readonly app: App) {}
 
-  private isWarm(): boolean {
+  isWarm(): boolean {
     return (
       (this.app.metadataCache as unknown as { initialized?: boolean })
         .initialized === true
     );
   }
 
-  private async frontmatterOf(
-    file: TFile,
-    warm: boolean,
-  ): Promise<Record<string, unknown> | null> {
-    if (warm) {
-      return (
-        (this.app.metadataCache.getFileCache(file)?.frontmatter as
-          | Record<string, unknown>
-          | undefined) ?? null
-      );
+  /** The cold-start memo for the vault's current file list. */
+  private coldMemo(): NonNullable<PluginVaultView["cold"]> {
+    const files = this.app.vault.getMarkdownFiles();
+    let newest = 0;
+    for (const file of files) {
+      const mtime = (file as { stat?: { mtime?: number } }).stat?.mtime ?? 0;
+      if (mtime > newest) newest = mtime;
     }
+    const stamp = `${files.length}:${newest}`;
+    if (this.cold?.stamp !== stamp) this.cold = { stamp };
+    return this.cold;
+  }
+
+  private async diskText(file: TFile): Promise<string | null> {
     try {
-      return parseCandidateFrontmatter(await this.app.vault.cachedRead(file));
+      return await this.app.vault.cachedRead(file);
     } catch {
       return null;
     }
   }
 
-  index(): Promise<{ byName: Map<string, TFile>; rules: TFile[] }> {
-    this.load ??= (async () => {
-      const byName = new Map<string, TFile>();
+  rules(): Promise<TFile[]> {
+    if (this.isWarm()) {
+      this.cold = undefined;
+      return Promise.resolve(
+        this.app.vault.getMarkdownFiles().filter((file) =>
+          namesCreationGateClass(
+            (
+              this.app.metadataCache.getFileCache(file)?.frontmatter as
+                | Record<string, unknown>
+                | undefined
+            )?.exo__Instance_class,
+          ),
+        ),
+      );
+    }
+    const memo = this.coldMemo();
+    memo.rules ??= (async () => {
+      const uid = CREATION_GATE_CLASS_UID.toLowerCase();
+      const label = CREATION_GATE_CLASS_LABEL.toLowerCase();
       const rules: TFile[] = [];
-      const warm = this.isWarm();
+      for (const file of this.app.vault.getMarkdownFiles()) {
+        const text = await this.diskText(file);
+        if (text === null) continue;
+        const lower = text.toLowerCase();
+        if (!lower.includes(uid) && !lower.includes(label)) continue;
+        try {
+          if (namesCreationGateClass(parseCandidateFrontmatter(text).exo__Instance_class)) {
+            rules.push(file);
+          }
+        } catch {
+          continue;
+        }
+      }
+      return rules;
+    })();
+    return memo.rules;
+  }
+
+  /** UID / label / alias / basename → file. Warm: from `metadataCache`; cold: from disk, kept like {@link rules}. */
+  names(): Promise<Map<string, TFile>> {
+    const warm = this.isWarm();
+    const build = async (): Promise<Map<string, TFile>> => {
+      const byName = new Map<string, TFile>();
       const add = (name: unknown, file: TFile): void => {
         if (typeof name !== "string") return;
         const key = name.trim().toLowerCase();
@@ -70,7 +126,20 @@ class PluginVaultIndex {
       };
       for (const file of this.app.vault.getMarkdownFiles()) {
         add(file.basename, file);
-        const fm = await this.frontmatterOf(file, warm);
+        let fm: Record<string, unknown> | null;
+        if (warm) {
+          fm =
+            (this.app.metadataCache.getFileCache(file)?.frontmatter as
+              | Record<string, unknown>
+              | undefined) ?? null;
+        } else {
+          const text = await this.diskText(file);
+          try {
+            fm = text === null ? null : parseCandidateFrontmatter(text);
+          } catch {
+            fm = null;
+          }
+        }
         if (!fm) continue;
         add(fm.exo__Asset_uid, file);
         add(fm.exo__Asset_label, file);
@@ -78,11 +147,13 @@ class PluginVaultIndex {
         for (const alias of Array.isArray(aliases) ? aliases : [aliases]) {
           add(alias, file);
         }
-        if (namesCreationGateClass(fm.exo__Instance_class)) rules.push(file);
       }
-      return { byName, rules };
-    })();
-    return this.load;
+      return byName;
+    };
+    if (warm) return build();
+    const memo = this.coldMemo();
+    memo.names ??= build();
+    return memo.names;
   }
 
   async fresh(file: TFile): Promise<Record<string, unknown> | null> {
@@ -95,25 +166,27 @@ class PluginVaultIndex {
 }
 
 /** A gate session over one execution's view of the vault. */
-export function createPluginCreationGateSession(app: App): CreationGateSession {
-  const index = new PluginVaultIndex(app);
+export function createPluginCreationGateSession(
+  app: App,
+  view: PluginVaultView = new PluginVaultView(app),
+): CreationGateSession {
+  let names: Promise<Map<string, TFile>> | undefined;
   const frontmatterByRef: FrontmatterByRef = async (ref) => {
     const wanted = ref.trim();
     if (wanted.length === 0) return null;
-    const { byName } = await index.index();
-    let file = byName.get(wanted.toLowerCase()) ?? null;
+    names ??= view.names();
+    let file = (await names).get(wanted.toLowerCase()) ?? null;
     if (!file && isUuid(wanted)) {
       const dest = app.metadataCache.getFirstLinkpathDest(wanted, "");
       file = dest ?? null;
     }
-    return file ? index.fresh(file) : null;
+    return file ? view.fresh(file) : null;
   };
   const source: CreationGatePolicySource = {
     async candidates() {
-      const { rules } = await index.index();
       const out: { path: string; frontmatter: Record<string, unknown> }[] = [];
-      for (const file of rules) {
-        const fm = await index.fresh(file);
+      for (const file of await view.rules()) {
+        const fm = await view.fresh(file);
         if (fm) out.push({ path: file.path, frontmatter: fm });
       }
       return out;
@@ -174,7 +247,8 @@ export interface PluginCreationGate {
 }
 
 export function createPluginCreationGate(app: App): PluginCreationGate {
-  const scope = new CreationGateScope(() => createPluginCreationGateSession(app));
+  const view = new PluginVaultView(app);
+  const scope = new CreationGateScope(() => createPluginCreationGateSession(app, view));
   return {
     scope,
     engineWriter: (writer) => withCreationGate(writer, scope),
