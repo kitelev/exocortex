@@ -57,9 +57,15 @@ export interface ConditionalEntry {
 
 /**
  * Storage port — platform-free, same shape as the other ExoSync stores. A
- * single serialised map is enough: the population is one entry per endpoint
- * per repo (41 refs + 21 commits + 21 trees for a 21-repo device), and every
- * body here is small.
+ * single serialised map, read ONCE per cache instance and kept in memory
+ * (req `0700c0e0-3dfb-4d45-bcaa-d93792b73905`).
+ *
+ * ⛔ The original note here said «every body here is small». Measured
+ * 2026-10-06 it was not: a bot vault's store had grown to 181 MB, 173.6 MB of
+ * it recursive `git/trees` bodies (166 of them > 512 KB), because every tree
+ * the object cache missed was ALSO remembered here. Re-reading and re-writing
+ * that file on every request cost ~2 s of client work per REST call. Hence the
+ * byte cap below and the single read.
  */
 export interface ConditionalStoreIO {
   read(): Promise<string | null>;
@@ -70,7 +76,14 @@ export interface ConditionalRequestCacheOptions {
   io: ConditionalStoreIO;
   /** Entry ceiling; the least-recently-used entries are dropped past it. */
   maxEntries?: number;
-  /** Bodies larger than this are validated but not remembered. Default 1 MiB. */
+  /**
+   * Bodies larger than this are validated but not remembered, and entries
+   * above it found in a loaded store are dropped. Measured as the length of
+   * the serialised body in UTF-16 code units (`string.length`), not bytes on
+   * disk: a body with non-ASCII text (Cyrillic paths in a tree, a commit
+   * message) takes more bytes than this length — two per Cyrillic character
+   * in UTF-8. Default 64 Ki.
+   */
   maxBodyBytes?: number;
   /** Injected clock (tests). */
   now?: () => number;
@@ -97,7 +110,16 @@ export interface ConditionalRequestStats {
 export const CONDITIONAL_STORE_FILENAME = "exosync-etags.local.json";
 
 const DEFAULT_MAX_ENTRIES = 4000;
-const DEFAULT_MAX_BODY_BYTES = 1024 * 1024;
+/**
+ * ⛤ 64 KiB keeps every `git/refs` and `git/commits` answer (measured maxima
+ * over four device stores 2026-10-06: refs 368 B, commits 3.6 KB) and drops
+ * large recursive trees (up to 1 MB each). Those are
+ * immutable by SHA and already held by the object cache, which sits OUTSIDE
+ * this layer and answers them before a conditional request is built — so a
+ * stored tree body is only ever replayed when the object cache is switched
+ * off. Measured on the 181 MB store: entries ≤ 64 KiB total 1.0 MB.
+ */
+const DEFAULT_MAX_BODY_BYTES = 64 * 1024;
 
 interface StoreShape {
   version: 1;
@@ -150,7 +172,16 @@ export class ConditionalRequestCache {
   private readonly maxEntries: number;
   private readonly maxBodyBytes: number;
   private readonly now: () => number;
-  private writeChain: Promise<void> = Promise.resolve();
+  /**
+   * The store, loaded ONCE per instance (req 0700c0e0). One instance lives for
+   * one CLI run, so this is the run's working copy: every lookup and mutation
+   * touches memory, and the disk is only written behind it.
+   */
+  private loaded: Promise<Record<string, ConditionalEntry>> | null = null;
+  /** A persist is pending or running; further mutations just mark it dirty. */
+  private draining = false;
+  private dirty = false;
+  private drained: Promise<void> = Promise.resolve();
   private readonly counters: ConditionalRequestStats = {
     conditional: 0,
     notModified: 0,
@@ -170,14 +201,14 @@ export class ConditionalRequestCache {
 
   /** The stored validator for a key, or null. Never throws. */
   async etagFor(key: string): Promise<string | null> {
-    const entries = await this.readEntries();
+    const entries = await this.load();
     const entry = entries[key];
     return isEntry(entry) ? entry.etag : null;
   }
 
   /** The body a 304 stands for, or null when it is no longer remembered. */
   async bodyFor(key: string): Promise<unknown | null> {
-    const entries = await this.readEntries();
+    const entries = await this.load();
     const entry = entries[key];
     if (!isEntry(entry)) return null;
     try {
@@ -232,22 +263,85 @@ export class ConditionalRequestCache {
       .forEach((k) => delete entries[k]);
   }
 
-  /** Serialised read-modify-write, so concurrent stores cannot clobber. */
+  /**
+   * Resolves once every mutation whose promise has RESOLVED is on disk (or its
+   * write failed — the store is fail-open). A mutation still waiting on the
+   * initial load is not covered; through the transport there is none, since it
+   * awaits `remember` / `touch`. The run's own lookups never need it — they are
+   * served from memory; the CLI settles every wired cache before a command
+   * returns or exits (`withSettledConditionalStores`), axis R7.
+   */
+  async flush(): Promise<void> {
+    while (this.draining) {
+      await this.drained;
+    }
+  }
+
+  /**
+   * The run's working copy, read from disk at most once (req 0700c0e0).
+   *
+   * Entries whose body is above the byte cap are dropped here, so a store that
+   * grew under the old 1 MiB cap shrinks on its next write instead of being
+   * re-read and re-written in full forever.
+   */
+  private load(): Promise<Record<string, ConditionalEntry>> {
+    if (this.loaded === null) {
+      this.loaded = this.readEntries().then((entries) => {
+        for (const key of Object.keys(entries)) {
+          const entry = entries[key];
+          if (isEntry(entry) && entry.body.length > this.maxBodyBytes) {
+            delete entries[key];
+          }
+        }
+        return entries;
+      });
+    }
+    return this.loaded;
+  }
+
+  /**
+   * Mutate the working copy, then persist it BEHIND the caller.
+   *
+   * ⛔ Before req 0700c0e0 this re-read the whole store, applied `fn` and
+   * rewrote it — for every 304 (`touch`) and every fresh 200 (`remember`).
+   * The mutation is now synchronous on memory, so the next lookup in this run
+   * sees it at once; the disk write is coalesced: while one write is running,
+   * further mutations only mark the copy dirty, and the running drain writes
+   * the latest state once more. The process stays alive until the pending
+   * write settles (the CLI ends via `process.exitCode`, not `process.exit`).
+   */
   private async mutate(
     fn: (entries: Record<string, ConditionalEntry>) => void,
   ): Promise<void> {
-    const task = this.writeChain.then(async () => {
-      const entries = await this.readEntries();
-      fn(entries);
-      const store: StoreShape = { version: 1, entries };
-      try {
-        await this.io.writeAtomic(JSON.stringify(store));
-      } catch {
-        // Fail-open: an unwritable store only means the next read is unconditional.
+    const entries = await this.load();
+    fn(entries);
+    this.dirty = true;
+    if (!this.draining) {
+      this.draining = true;
+      this.drained = this.drain(entries);
+    }
+  }
+
+  private async drain(entries: Record<string, ConditionalEntry>): Promise<void> {
+    try {
+      while (this.dirty) {
+        this.dirty = false;
+        const store: StoreShape = { version: 1, entries };
+        try {
+          await this.io.writeAtomic(JSON.stringify(store));
+        } catch {
+          // Fail-open: an unwritable store only means the next RUN starts
+          // without validators; this run keeps them in memory.
+          // ⛔ LOAD-BEARING: the drain's promise is detached from every caller
+          // (a mutation does not await it), so an error escaping here is an
+          // unhandled rejection — a process crash, not a degraded cache.
+        }
       }
-    });
-    this.writeChain = task.catch(() => undefined);
-    return task;
+    } finally {
+      // Same synchronous segment as the last `dirty` check — a mutation can
+      // never land between "nothing left to write" and "not draining".
+      this.draining = false;
+    }
   }
 
   /** Tolerant read: absent or corrupt store → no validators at all. */
@@ -337,11 +431,17 @@ async function storeFresh(
 }
 
 /**
- * ⛔ AWAITED on purpose, not fire-and-forget. Two Git Data reads of the same
- * endpoint can follow each other with no intervening yield (a retry, a
- * second repo in the same loop, a test), and a pending write would leave the
- * SECOND read unconditional — the validator exists but nobody can see it yet.
- * The cost is one serialised small-file write per fresh 200.
+ * Awaited, but since req 0700c0e0 this awaits only the in-memory update: the
+ * disk write runs behind it (see `ConditionalRequestCache.mutate`).
+ *
+ * ⛔ The previous note justified the await by «a pending write would leave the
+ * SECOND read unconditional». That was true while every lookup re-read the
+ * file; with the working copy in memory a validator is visible to the next
+ * read of the same endpoint the moment `remember` updates it, write pending or
+ * not (axis R2 pins that with a write that never finishes). The await is kept
+ * but no longer load-bearing: dropping it (mutant M3) changes no axis, because
+ * the update is queued ahead of the next lookup's own wait on the same loaded
+ * store — M3 is therefore a declared zero in `conditionalRequestCache.spec.json`.
  */
 async function rememberFrom(
   cache: ConditionalRequestCache,

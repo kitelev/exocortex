@@ -55,6 +55,7 @@ import {
 import {
   nodeConditionalStoreIO,
   wireConditionalRequests,
+  withSettledConditionalStores,
 } from "../services/conditionalRequestTransport.js";
 import { wireObjectCache } from "../services/objectCacheTransport.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
@@ -294,8 +295,22 @@ function printParkedSection(
   }
 }
 
-/** Core flow, exported for tests. Returns the intended exit code. */
+/**
+ * Core flow, exported for tests. Returns the intended exit code.
+ *
+ * Settles the ETag store this run wired before returning or re-throwing
+ * (req 0700c0e0 — see `withSettledConditionalStores`).
+ */
 export async function runExosyncParity(
+  opts: ExosyncParityOptions,
+  deps: ExosyncParityDeps = {},
+): Promise<number> {
+  return withSettledConditionalStores(() =>
+    runExosyncParityUnsettled(opts, deps),
+  );
+}
+
+async function runExosyncParityUnsettled(
   opts: ExosyncParityOptions,
   deps: ExosyncParityDeps = {},
 ): Promise<number> {

@@ -21,6 +21,12 @@
       "from": "      ...(opts.conditionalRequests !== undefined\n        ? { enabled: opts.conditionalRequests }\n        : {}),\n",
       "to": "",
       "expect": ["D5"]
+    },
+    "M3_parity_unsettled": {
+      "_note": "req 0700c0e0: точка входа зовёт тело мимо withSettledConditionalStores — кэш остаётся в модульном наборе неосевшим ⇒ ровно ось этой точки входа. `void withSettledConditionalStores;` держит импорт использованным на случай строгого tsconfig (noUnusedLocals); в текущем jest-конфиге мутант компилируется и без него (ревью раунд 3).",
+      "from": "  return withSettledConditionalStores(() =>\n    runExosyncParityUnsettled(opts, deps),\n  );\n",
+      "to": "  void withSettledConditionalStores;\n  return runExosyncParityUnsettled(opts, deps);\n",
+      "expect": ["D13"]
     }
   }
 }

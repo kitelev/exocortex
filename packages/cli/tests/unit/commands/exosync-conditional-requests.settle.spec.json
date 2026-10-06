@@ -1,0 +1,26 @@
+{
+  "_doc": "Revert-verify for req 0700c0e0 at the CLI settle helper: a run re-throws only after its ETag store write landed (axis D12). Wiring of each command entry point through the helper is pinned in the per-command specs (D13-D16): an axis on the helper alone stays green if a command calls its body directly.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/services/conditionalRequestTransport.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../..\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-conditional-requests.test.ts 2>&1",
+  "red_re": "› (D\\d+\\w*) ",
+  "mutants": {
+    "Y1_settle_not_awaited": {
+      "_note": "Мутант ревьюера раунда 2 (PR #4540): обёртка перестаёт ждать запись хранилища. Набор неосевших кэшей очищается синхронно в начале settle, поэтому D13-D16 остаются зелёными — краснеет только D12, где запись удержана и отклонение обязано её дождаться.",
+      "from": "    await settleConditionalStores();\n",
+      "to": "    void settleConditionalStores();\n",
+      "expect": ["D12"]
+    },
+    "Z5_counter_always_zero": {
+      "_note": "Ревью раунд 3: счётчик, всегда равный 0, делал бы D13-D16 тождественно зелёными (положительного контроля не было). Теперь каждая из этих осей сэмплирует счётчик ВО ВРЕМЯ запроса к remote и требует ≥1 ⇒ краснеют все четыре оси точек входа; D12 (хелпер) счётчик не читает.",
+      "from": "  return unsettled.size;\n",
+      "to": "  return 0;\n",
+      "expect": ["D13", "D14", "D15", "D16"]
+    }
+  }
+}
