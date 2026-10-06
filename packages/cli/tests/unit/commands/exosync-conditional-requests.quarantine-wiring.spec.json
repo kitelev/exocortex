@@ -23,13 +23,13 @@
       "expect": ["D10"]
     },
     "M3_list_unsettled": {
-      "_note": "req 0700c0e0: точка входа зовёт тело мимо withSettledConditionalStores — кэш остаётся в модульном наборе неосевшим ⇒ ровно ось этой точки входа. ⛤ `void withSettledConditionalStores;` держит импорт живым, чтобы мутант не упал на неиспользуемом импорте (§A36: менять поведение, не компиляцию).",
+      "_note": "req 0700c0e0: точка входа зовёт тело мимо withSettledConditionalStores — кэш остаётся в модульном наборе неосевшим ⇒ ровно ось этой точки входа. `void withSettledConditionalStores;` держит импорт использованным на случай строгого tsconfig (noUnusedLocals); в текущем jest-конфиге мутант компилируется и без него (ревью раунд 3).",
       "from": "  return withSettledConditionalStores(() =>\n    runQuarantineListUnsettled(opts, deps),\n  );\n",
       "to": "  void withSettledConditionalStores;\n  return runQuarantineListUnsettled(opts, deps);\n",
       "expect": ["D15"]
     },
     "M4_resolve_unsettled": {
-      "_note": "req 0700c0e0: точка входа зовёт тело мимо withSettledConditionalStores — кэш остаётся в модульном наборе неосевшим ⇒ ровно ось этой точки входа. ⛤ `void withSettledConditionalStores;` держит импорт живым, чтобы мутант не упал на неиспользуемом импорте (§A36: менять поведение, не компиляцию).",
+      "_note": "req 0700c0e0: точка входа зовёт тело мимо withSettledConditionalStores — кэш остаётся в модульном наборе неосевшим ⇒ ровно ось этой точки входа. `void withSettledConditionalStores;` держит импорт использованным на случай строгого tsconfig (noUnusedLocals); в текущем jest-конфиге мутант компилируется и без него (ревью раунд 3).",
       "from": "  return withSettledConditionalStores(() =>\n    runQuarantineResolveUnsettled(conflictPath, opts, deps),\n  );\n",
       "to": "  void withSettledConditionalStores;\n  return runQuarantineResolveUnsettled(conflictPath, opts, deps);\n",
       "expect": ["D16"]

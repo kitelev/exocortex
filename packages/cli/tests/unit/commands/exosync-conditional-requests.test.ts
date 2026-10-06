@@ -450,9 +450,14 @@ describe("a run ends with its ETag store on disk @req:0700c0e0-3dfb-4d45-bcaa-d9
     }).catch(() => {
       rejected = true;
     });
-    await new Promise((r) => setTimeout(r, 30));
-    expect(rejected).toBe(false); // the write is held, so the run has not ended
-    io.release();
+    try {
+      await new Promise((r) => setTimeout(r, 30));
+      expect(rejected).toBe(false); // the write is held, so the run has not ended
+    } finally {
+      // Release even when the assertion above fails: a held write left in the
+      // module set would hang the next axis's `beforeEach` settle.
+      io.release();
+    }
     await run;
     expect(rejected).toBe(true);
     const disk = JSON.parse(io.disk() ?? "{}") as {
@@ -461,10 +466,21 @@ describe("a run ends with its ETag store on disk @req:0700c0e0-3dfb-4d45-bcaa-d9
     expect(disk.entries?.[url]?.etag).toBeDefined();
   });
 
+  // Positive control inside each axis: the count is sampled while the command
+  // talks to the remote, i.e. after it wired its cache. «≥1 during, 0 after»
+  // proves the counter saw THIS command's cache — a counter that always says 0
+  // (or a cache that never reaches the set) cannot pass.
+  let seenUnsettled = 0;
   const deps = (remote: RestCommitTransport) => ({
-    transportFactory: () => remote,
+    transportFactory: (): RestCommitTransport => async (req) => {
+      seenUnsettled = Math.max(seenUnsettled, unsettledConditionalStoreCount());
+      return remote(req);
+    },
     out: () => undefined,
     env: {},
+  });
+  beforeEach(() => {
+    seenUnsettled = 0;
   });
 
   it("D13 `exosync-parity` settles what it wired", async () => {
@@ -474,6 +490,7 @@ describe("a run ends with its ETag store on disk @req:0700c0e0-3dfb-4d45-bcaa-d9
       deps(remote),
     );
     expect(remote.seen.length).toBeGreaterThan(0); // the run reached the wiring
+    expect(seenUnsettled).toBeGreaterThanOrEqual(1);
     expect(unsettledConditionalStoreCount()).toBe(0);
   });
 
@@ -485,6 +502,7 @@ describe("a run ends with its ETag store on disk @req:0700c0e0-3dfb-4d45-bcaa-d9
       deps(remote),
     );
     expect(remote.seen.length).toBeGreaterThan(0);
+    expect(seenUnsettled).toBeGreaterThanOrEqual(1);
     expect(unsettledConditionalStoreCount()).toBe(0);
   });
 
@@ -495,19 +513,23 @@ describe("a run ends with its ETag store on disk @req:0700c0e0-3dfb-4d45-bcaa-d9
       deps(remote),
     );
     expect(remote.seen.length).toBeGreaterThan(0);
+    expect(seenUnsettled).toBeGreaterThanOrEqual(1);
     expect(unsettledConditionalStoreCount()).toBe(0);
   });
 
-  it("D16 `exosync quarantine resolve` settles what it wired, error path included", async () => {
-    // FILE_A is pinned but not in conflict, so resolve ends in an error after
-    // building its resolver (and wiring the cache). The verdict is not the
-    // subject here — the store is.
+  it("D16 `exosync quarantine resolve` settles what it wired (run returns rc=1)", async () => {
+    // FILE_A is pinned but not in conflict: resolve builds its resolver (and
+    // wires the cache), queries the remote, finds no open conflict and returns
+    // 1. The verdict is not the subject here — the store is. The THROW path is
+    // pinned at the helper by D12, not per command.
     const remote = conditionalRemote({ [FILE_A]: CONTENT_A });
     await runQuarantineResolve(
       FILE_A,
       { vault: fixture.vault, token: FAKE_PAT, take: "local" },
       deps(remote),
-    ).catch(() => undefined);
+    );
+    expect(remote.seen.length).toBeGreaterThan(0);
+    expect(seenUnsettled).toBeGreaterThanOrEqual(1);
     expect(unsettledConditionalStoreCount()).toBe(0);
   });
 });
