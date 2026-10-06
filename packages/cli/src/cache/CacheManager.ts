@@ -614,7 +614,9 @@ export class CacheManager {
     const paths: string[] = [];
     const unknownPaths: string[] = [];
     for (const entry of data.files) {
-      if (entry.triples.length === 0) {
+      // A converter-SKIPPED file carries no triples: it cannot be judged, so
+      // it is handed back as unknown (the caller reads it), never as "no class".
+      if (!entry.triples.length) {
         unknownPaths.push(entry.path);
         continue;
       }
