@@ -48,7 +48,10 @@ const UTC_LOCAL: LocalTimeToEpoch = (y, mo, d, h, mi, s, ms) =>
 
 const almatyMerger = new StructuredMerger(codec, { localTimeToEpoch: ALMATY });
 
-function asset(fields: Record<string, string | undefined>, body = "body text"): string {
+function asset(
+  fields: Record<string, string | undefined>,
+  body = "body text",
+): string {
   const lines = ["---", "exo__Asset_uid: u1"];
   for (const [k, v] of Object.entries(fields)) {
     if (v !== undefined) lines.push(`${k}: ${v}`);
@@ -128,7 +131,9 @@ describe("StructuredMerger — exo__Asset_updatedAt changed on both sides (ems__
     if (out.status !== "merged") return;
     expect(fmOf(out.content)[UPD]).toBe("2026-09-12T04:30:00Z");
     // Same pair, local time = UTC: naive 09:00 is now the later one.
-    const utcMerger = new StructuredMerger(codec, { localTimeToEpoch: UTC_LOCAL });
+    const utcMerger = new StructuredMerger(codec, {
+      localTimeToEpoch: UTC_LOCAL,
+    });
     const out2 = utcMerger.mergeAsset(
       diverging("2026-09-12T09:00:00", "2026-09-12T04:30:00Z"),
     );
@@ -143,9 +148,18 @@ describe("StructuredMerger — exo__Asset_updatedAt changed on both sides (ems__
     const START = "ems__Effort_startTimestamp";
     const out = almatyMerger.mergeAsset({
       path: "a.md",
-      base: asset({ [UPD]: "2026-09-01T10:00:00", [START]: "2026-09-01T09:00:00" }),
-      local: asset({ [UPD]: "2026-09-12T10:00:00", [START]: "2026-09-12T08:00:00" }),
-      remote: asset({ [UPD]: "2026-09-12T11:00:00", [START]: "2026-09-12T09:30:00" }),
+      base: asset({
+        [UPD]: "2026-09-01T10:00:00",
+        [START]: "2026-09-01T09:00:00",
+      }),
+      local: asset({
+        [UPD]: "2026-09-12T10:00:00",
+        [START]: "2026-09-12T08:00:00",
+      }),
+      remote: asset({
+        [UPD]: "2026-09-12T11:00:00",
+        [START]: "2026-09-12T09:30:00",
+      }),
     });
     expect(out.status).toBe("conflict");
     if (out.status !== "conflict") return;
@@ -163,7 +177,9 @@ describe("StructuredMerger — exo__Asset_updatedAt changed on both sides (ems__
     });
     expect(out.status).toBe("conflict");
     if (out.status !== "conflict") return;
-    expect(out.reason).toMatch(/frontmatter key "keyA" changed differently on both sides/);
+    expect(out.reason).toMatch(
+      /frontmatter key "keyA" changed differently on both sides/,
+    );
   });
 
   it("U7 an unparseable stamp on one side still conflicts on the stamp", () => {
@@ -185,14 +201,28 @@ describe("StructuredMerger — exo__Asset_updatedAt changed on both sides (ems__
     expect(out.status).toBe("conflict");
   });
 
-  it("U9 without the stamp in the base (add/add) the rule does not apply — conflict as before", () => {
+  it("U9 without a base VERSION of the file (no-base add/add) the rule does not apply — conflict as before", () => {
     const out = almatyMerger.mergeAsset({
       path: "a.md",
-      base: asset({ keyA: "a0" }),
       local: asset({ keyA: "a0", [UPD]: "2026-09-12T10:00:00" }),
       remote: asset({ keyA: "a0", [UPD]: "2026-09-12T11:00:00" }),
     });
     expect(out.status).toBe("conflict");
+  });
+
+  it("U9b a base version exists but carried no stamp yet (or an empty one) → both added stamps merge to the later", () => {
+    for (const baseStamp of [undefined, ""]) {
+      const out = almatyMerger.mergeAsset({
+        path: "a.md",
+        base: asset({ keyA: "a0", [UPD]: baseStamp }),
+        local: asset({ keyA: "a1", [UPD]: "2026-09-12T10:00:00" }),
+        remote: asset({ keyA: "a0", [UPD]: "2026-09-12T11:00:00" }),
+      });
+      expect(out.status).toBe("merged");
+      if (out.status !== "merged") return;
+      expect(fmOf(out.content)[UPD]).toBe("2026-09-12T11:00:00");
+      expect(fmOf(out.content).keyA).toBe("a1");
+    }
   });
 
   it("U10 equal instants written differently → the remote value (devices converge)", () => {
@@ -206,7 +236,10 @@ describe("StructuredMerger — exo__Asset_updatedAt changed on both sides (ems__
   });
 
   it("U12 identical but for the stamp → merged, the later stamp kept", () => {
-    const base = asset({ keyA: "a0", [UPD]: "2026-09-01T10:00:00" }, "same body");
+    const base = asset(
+      { keyA: "a0", [UPD]: "2026-09-01T10:00:00" },
+      "same body",
+    );
     const out = almatyMerger.mergeAsset({
       path: "a.md",
       base,
@@ -220,25 +253,79 @@ describe("StructuredMerger — exo__Asset_updatedAt changed on both sides (ems__
   });
 });
 
+describe("StructuredMerger — production default time mapping", () => {
+  it("U13 the default reads a naive stamp in the runner's LOCAL time (both directions)", () => {
+    const def = new StructuredMerger(codec);
+    const naive = "2026-09-12T09:00:00";
+    const naiveEpoch = new Date(2026, 8, 12, 9, 0, 0).getTime();
+    const later = new Date(naiveEpoch + 30 * 60_000).toISOString();
+    const earlier = new Date(naiveEpoch - 30 * 60_000).toISOString();
+    const a = def.mergeAsset(diverging(naive, later));
+    expect(a.status).toBe("merged");
+    if (a.status !== "merged") return;
+    expect(fmOf(a.content)[UPD]).toBe(later);
+    const b = def.mergeAsset(diverging(naive, earlier));
+    expect(b.status).toBe("merged");
+    if (b.status !== "merged") return;
+    expect(fmOf(b.content)[UPD]).toBe(naive);
+  });
+});
+
 describe("timestampToEpoch", () => {
+  const at5 = Date.UTC(2026, 8, 12, 5, 0, 0);
+
   it("T1 reads every measured form; date-only and garbage are rejected", () => {
-    const at5 = Date.UTC(2026, 8, 12, 5, 0, 0);
     expect(timestampToEpoch("2026-09-12T10:00:00+05:00", ALMATY)).toBe(at5);
     expect(timestampToEpoch("2026-09-12T10:00:00+0500", ALMATY)).toBe(at5);
     expect(timestampToEpoch("2026-09-12T05:00:00Z", ALMATY)).toBe(at5);
     expect(timestampToEpoch("2026-09-12T10:00:00", ALMATY)).toBe(at5);
     expect(timestampToEpoch("2026-09-12T01:00:00-04:00", ALMATY)).toBe(at5);
-    expect(timestampToEpoch("2026-09-12T05:00:00.250Z", ALMATY)).toBe(at5 + 250);
+    expect(timestampToEpoch("2026-09-12T10:30:00+05:30", ALMATY)).toBe(at5);
     expect(timestampToEpoch("2026-09-20", ALMATY)).toBeUndefined();
-    expect(timestampToEpoch("2026-13-12T10:00:00", ALMATY)).toBeUndefined();
     expect(timestampToEpoch("not a date", ALMATY)).toBeUndefined();
+  });
+
+  it("T2 out-of-range fields and calendar dates that do not exist are rejected, never rolled over", () => {
+    for (const bad of [
+      "2026-13-12T10:00:00",
+      "2026-00-12T10:00:00",
+      "2026-09-32T10:00:00",
+      "2026-09-00T10:00:00",
+      "2026-02-30T10:00:00Z",
+      "2026-04-31T10:00:00Z",
+      "2026-09-12T24:00:00",
+      "2026-09-12T10:60:00",
+      "2026-09-12T10:00:60",
+    ]) {
+      expect([bad, timestampToEpoch(bad, ALMATY)]).toEqual([bad, undefined]);
+    }
+  });
+
+  it("T3 an offset beyond ±14:59 is rejected", () => {
+    for (const bad of [
+      "2026-09-12T10:00:00+15:00",
+      "2026-09-12T10:00:00+05:60",
+    ]) {
+      expect([bad, timestampToEpoch(bad, ALMATY)]).toEqual([bad, undefined]);
+    }
+  });
+
+  it("T4 fractional seconds are milliseconds (`.5` = 500 ms)", () => {
+    expect(timestampToEpoch("2026-09-12T05:00:00.250Z", ALMATY)).toBe(
+      at5 + 250,
+    );
+    expect(timestampToEpoch("2026-09-12T05:00:00.5Z", ALMATY)).toBe(at5 + 500);
   });
 });
 
 describe("SyncEngine — two devices edit different keys of one asset (ems__Bug 413f80b9)", () => {
   it("U11 through the real sync() with the PRODUCTION default merger: merged, nothing quarantined, the later stamp kept", async () => {
     const PATH = "assets/a.md";
-    const base = asset({ keyA: "a0", keyB: "b0", [UPD]: "2026-09-01T10:00:00" });
+    const base = asset({
+      keyA: "a0",
+      keyB: "b0",
+      [UPD]: "2026-09-01T10:00:00",
+    });
     const gh = new FakeGitHubRepo({ [PATH]: base });
     const local = new FakeLocalFiles({ [PATH]: base });
     const store = new InMemoryQuarantineStore();
@@ -258,7 +345,9 @@ describe("SyncEngine — two devices edit different keys of one asset (ems__Bug 
     // (naive vs naive — the order holds in any time zone).
     gh.commitDirect(
       gh.branch,
-      { [PATH]: asset({ keyA: "a0", keyB: "b1", [UPD]: "2026-09-12T11:00:00" }) },
+      {
+        [PATH]: asset({ keyA: "a0", keyB: "b1", [UPD]: "2026-09-12T11:00:00" }),
+      },
       "device B",
     );
     local.files.set(
@@ -272,7 +361,10 @@ describe("SyncEngine — two devices edit different keys of one asset (ems__Bug 
     expect(result.quarantinedCount).toBe(0);
     expect(store.entries).toHaveLength(0);
     expect(result.mergedCount).toBe(1);
-    for (const content of [local.files.get(PATH) as string, gh.headFiles().get(PATH)!]) {
+    for (const content of [
+      local.files.get(PATH) as string,
+      gh.headFiles().get(PATH)!,
+    ]) {
       const fm = fmOf(content);
       expect(fm.keyA).toBe("a1");
       expect(fm.keyB).toBe("b1");

@@ -79,8 +79,12 @@ export type LocalTimeToEpoch = (
   millisecond: number,
 ) => number;
 
-const DEVICE_LOCAL_TIME: LocalTimeToEpoch = (y, mo, d, h, mi, s, ms) =>
-  new Date(y, mo, d, h, mi, s, ms).getTime();
+const DEVICE_LOCAL_TIME: LocalTimeToEpoch = (y, mo, d, h, mi, s, ms) => {
+  const t = new Date(0);
+  t.setFullYear(y, mo, d);
+  t.setHours(h, mi, s, ms);
+  return t.getTime();
+};
 
 export interface StructuredMergerOptions {
   /** How a naive (zone-less) timestamp maps to an instant. Default: device local time. */
@@ -90,11 +94,29 @@ export interface StructuredMergerOptions {
 const TIMESTAMP_RE =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:?\d{2})?$/;
 
+/** UTC epoch of calendar fields, with the year taken literally (no 0-99 → 19xx). */
+function utcEpoch(
+  y: number,
+  mo: number,
+  d: number,
+  h: number,
+  mi: number,
+  s: number,
+  ms: number,
+): number {
+  const t = new Date(0);
+  t.setUTCFullYear(y, mo, d);
+  t.setUTCHours(h, mi, s, ms);
+  return t.getTime();
+}
+
 /**
  * Instant of an `exo__Asset_updatedAt` value, or `undefined` when it is not a
- * full date-time. Forms measured in the vaults (2026-10-10, 49 612 stamps):
- * `…+05:00`, naive local, `…+0500`, quoted variants, `…Z` (true UTC — every
- * one of them precedes its first push by minutes), date-only (2 — rejected).
+ * full, real date-time (a calendar date that does not exist — 02-30, 04-31 —
+ * is rejected, never rolled over; an offset beyond ±14:59 likewise). Forms
+ * measured in the vaults (2026-10-10, 49 612 stamps): `…+05:00`, naive local,
+ * `…+0500`, quoted variants, `…Z` (true UTC — every one of them precedes its
+ * first push by minutes), date-only (2 — rejected).
  */
 export function timestampToEpoch(
   value: string,
@@ -103,19 +125,22 @@ export function timestampToEpoch(
   const m = TIMESTAMP_RE.exec(value.trim());
   if (m === null) return undefined;
   const [y, mo, d, h, mi, s] = [m[1], m[2], m[3], m[4], m[5], m[6]].map(Number);
-  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || s > 59) {
-    return undefined;
-  }
+  if (h > 23 || mi > 59 || s > 59) return undefined;
+  const day = new Date(utcEpoch(y, mo - 1, d, 0, 0, 0, 0));
+  if (day.getUTCMonth() !== mo - 1 || day.getUTCDate() !== d) return undefined;
   const ms = m[7] === undefined ? 0 : Number(m[7].slice(0, 3).padEnd(3, "0"));
   const zone = m[8];
   if (zone === undefined) {
     const epoch = localTimeToEpoch(y, mo - 1, d, h, mi, s, ms);
     return Number.isFinite(epoch) ? epoch : undefined;
   }
-  const utc = Date.UTC(y, mo - 1, d, h, mi, s, ms);
+  const utc = utcEpoch(y, mo - 1, d, h, mi, s, ms);
   if (zone === "Z") return utc;
   const digits = zone.replace(":", "");
-  const offsetMinutes = Number(digits.slice(1, 3)) * 60 + Number(digits.slice(3, 5));
+  const offsetHours = Number(digits.slice(1, 3));
+  const offsetMins = Number(digits.slice(3, 5));
+  if (offsetHours > 14 || offsetMins > 59) return undefined;
+  const offsetMinutes = offsetHours * 60 + offsetMins;
   return utc - (digits[0] === "-" ? -1 : 1) * offsetMinutes * 60_000;
 }
 
@@ -210,6 +235,8 @@ function mergeFrontmatter(
   local: Record<string, unknown>,
   remote: Record<string, unknown>,
   localTimeToEpoch: LocalTimeToEpoch,
+  /** A base VERSION of the file exists (the key itself may be absent there). */
+  hasBase: boolean,
 ): FmMergeResult {
   const warnings: string[] = [];
   const orderedKeys: string[] = [];
@@ -268,15 +295,16 @@ function mergeFrontmatter(
       continue; // local-only change (or local delete)
     }
     // The modification stamp changed on both sides: keep the LATER instant
-    // (verbatim, never reformatted). Only when the key existed in the base
-    // (an add/add without a base stays a conflict) and both values parse as
-    // date-times — a deleted or unparseable stamp still conflicts. Equal
-    // instants written differently take the remote side (devices converge).
-    // Other keys are unaffected: the loop goes on, and any of them diverging
-    // on both sides still returns a conflict below.
+    // (the value itself, never rewritten). Only when a base version of the
+    // file exists — whether or not it carried the stamp yet; a no-base
+    // add/add stays a conflict — and both values parse as date-times: a
+    // deleted or unparseable stamp still conflicts. Equal instants written
+    // differently take the remote side (devices converge). Other keys are
+    // unaffected: the loop goes on, and any of them diverging on both sides
+    // still returns a conflict below.
     if (
       key === UPDATED_AT_KEY &&
-      b !== undefined &&
+      hasBase &&
       typeof l === "string" &&
       typeof r === "string"
     ) {
@@ -593,6 +621,7 @@ export class StructuredMerger {
       localDoc.frontmatter,
       remoteDoc.frontmatter,
       this.localTimeToEpoch,
+      base !== undefined,
     );
     if (!fm.ok) {
       return { status: "conflict", reason: `${path}: ${fm.reason}` };
