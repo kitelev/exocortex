@@ -229,6 +229,56 @@ export class FakeGitHubRepo {
         };
       }
 
+      // History of ONE path (base recovery, historyBase.ts): commits on the
+      // first-parent chain from `sha` whose blob at `path` differs from their
+      // parent's (added, changed or deleted there), newest first — GitHub's
+      // `commits?sha=&path=` shape (an array of `{ sha, … }`).
+      if (method === "GET" && (match = m(/^\/repos\/[^/]+\/[^/]+\/commits\?(.*)$/))) {
+        const params = new URLSearchParams(match[1]);
+        const filePath = params.get("path") ?? "";
+        const perPage = Number(params.get("per_page") ?? "30");
+        let cur: string | undefined = params.get("sha") ?? this.refs.get(this.branch);
+        if (cur === undefined || !this.commits.has(cur)) {
+          throw httpError(method, url, 404, "No commit found for SHA");
+        }
+        const blobAt = (sha: string | undefined): string | undefined =>
+          sha === undefined
+            ? undefined
+            : this.trees.get(this.commits.get(sha)!.treeSha)!.get(filePath);
+        const touched: string[] = [];
+        while (cur !== undefined && touched.length < perPage) {
+          const commit: FakeCommit = this.commits.get(cur)!;
+          if (blobAt(commit.sha) !== blobAt(commit.parents[0])) {
+            touched.push(commit.sha);
+          }
+          cur = commit.parents[0];
+        }
+        return {
+          status: 200,
+          json: touched.map((sha) => ({ sha, commit: { message: this.commits.get(sha)!.message } })),
+        };
+      }
+
+      // Contents of ONE path at a ref: `sha` is the blob SHA (as GitHub).
+      if (method === "GET" && (match = m(/^\/repos\/[^/]+\/[^/]+\/contents\/([^?]+)\?ref=(.+)$/))) {
+        const filePath = match[1].split("/").map(decodeURIComponent).join("/");
+        const ref = decodeURIComponent(match[2]);
+        const commit = this.commits.get(ref) ?? this.commits.get(this.refs.get(ref) ?? "");
+        if (commit === undefined) throw httpError(method, url, 404, "No commit found for the ref");
+        const blobSha = this.trees.get(commit.treeSha)!.get(filePath);
+        if (blobSha === undefined) throw httpError(method, url, 404, "Not Found");
+        return {
+          status: 200,
+          json: {
+            type: "file",
+            path: filePath,
+            sha: blobSha,
+            content: chunkBase64(this.blobs.get(blobSha)!),
+            encoding: "base64",
+          },
+        };
+      }
+
       if (method === "POST" && m(/^\/repos\/[^/]+\/[^/]+\/git\/blobs$/)) {
         // Binary upload path (Phase C): base64 in, REAL git blob SHA out —
         // computed over the decoded bytes, exactly as GitHub does.

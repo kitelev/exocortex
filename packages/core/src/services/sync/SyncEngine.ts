@@ -82,6 +82,11 @@ import { detectChanges, extractAssetUid } from "./ChangeDetector";
 import { bytesToBase64 } from "../../utilities/base64";
 import { gitBlobSha } from "./gitBlobSha";
 import {
+  HISTORY_BASE_REQUEST_BUDGET,
+  recoverBaseFromHistory,
+  type HistoryBaseBudget,
+} from "./historyBase";
+import {
   OUTBOX_REMOTE_ABSENT,
   type OutboxStorePort,
 } from "./LocalOutboxStore";
@@ -232,6 +237,14 @@ export interface SyncEngineDeps {
    * pushed, nothing written.
    */
   mergeLayer?: MergeLayerPort;
+  /**
+   * REST request budget for recovering a missing 3-way base from the remote
+   * history of the path, per conflict-resolution pass. Default
+   * {@link HISTORY_BASE_REQUEST_BUDGET}; `0` disables the recovery (every
+   * no-base conflict goes to the merge layer with `base: undefined`, the
+   * pre-recovery behaviour). See `historyBase.ts`.
+   */
+  historyBaseRequestBudget?: number;
   /**
    * Quarantine sink for unresolvable / SHACL-invalid merges (D17) and for
    * D16 terminal-quarantine (contended files after retry exhaustion).
@@ -2817,6 +2830,7 @@ export class SyncEngine {
               watermark,
               verdict.conflicts,
               disk,
+              examinedHead,
             );
           }
           // Cross-path remote changes consumed by a conflict group were
@@ -3112,14 +3126,17 @@ export class SyncEngine {
    * what must be WRITTEN to disk (≠ local copy); `quarantine` collects a
    * both-versions entry (D17) — the engine never writes a quarantined path.
    * The 3-way base is the BASE-tree blob recorded in the watermark, fetched
-   * on demand; a path absent from the base (both sides added) merges with
-   * `base: undefined`.
+   * on demand. A path absent from the base is first looked up in the remote
+   * history of the path (`historyBase.ts`): a local copy byte-identical to a
+   * past remote version is merely behind, and that version is the true base.
+   * Otherwise it merges with `base: undefined`.
    */
   private async resolveMergeConflicts(
     spec: SyncRepoSpec,
     watermark: WatermarkRecord,
     conflicts: ConflictGroup[],
     disk: ReadonlyMap<string, SyncContent>,
+    head: string,
   ): Promise<MergeResolution> {
     const mergeLayer = this.deps.mergeLayer;
     if (mergeLayer === undefined) return EMPTY_MERGE;
@@ -3155,6 +3172,12 @@ export class SyncEngine {
       };
     };
 
+    const historyBudget: HistoryBaseBudget = {
+      remaining:
+        this.deps.historyBaseRequestBudget ?? HISTORY_BASE_REQUEST_BUDGET,
+    };
+    let historyBudgetWarned = false;
+
     for (const group of conflicts) {
       const baseEntry =
         baseByPath.get(group.local.basePath ?? group.local.path) ??
@@ -3168,6 +3191,48 @@ export class SyncEngine {
           baseEntry.blobSha,
           this.deps.baseURL,
         );
+      } else {
+        // No recorded base: recover it from the remote history of the path
+        // when the local copy is just an older remote version (behind, not
+        // edited). Same-path single remote change only — a rename or an
+        // ambiguous group keeps the conservative no-base merge.
+        const onlyRemote = group.remotes.length === 1 ? group.remotes[0] : undefined;
+        const localForHistory = asText(disk.get(group.local.path));
+        if (
+          onlyRemote !== undefined &&
+          onlyRemote.kind === "change" &&
+          typeof onlyRemote.content === "string" &&
+          onlyRemote.path === group.local.path &&
+          group.local.basePath === undefined &&
+          localForHistory !== undefined &&
+          historyBudget.remaining > 0
+        ) {
+          const recovered = await recoverBaseFromHistory({
+            transport: this.transport,
+            owner: spec.owner,
+            repo: spec.repo,
+            baseURL: this.deps.baseURL,
+            sha1: this.sha1,
+            path: group.local.path,
+            head,
+            local: localForHistory,
+            budget: historyBudget,
+          });
+          if (recovered.kind === "recovered") {
+            base = recovered.base;
+            warnings.push(
+              `merge(${group.local.path}): no 3-way base recorded — the local copy equals the remote version at ${recovered.commitSha.slice(0, 7)}, recovered as the base (local was behind, not edited)`,
+            );
+          } else if (
+            recovered.kind === "budget-exhausted" &&
+            !historyBudgetWarned
+          ) {
+            historyBudgetWarned = true;
+            warnings.push(
+              `history base recovery budget exhausted — the remaining no-base conflicts merge without a base this pass and re-derive on the next sync`,
+            );
+          }
+        }
       }
 
       if (group.remotes.length > 1) {

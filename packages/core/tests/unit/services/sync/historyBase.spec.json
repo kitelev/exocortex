@@ -1,0 +1,50 @@
+{
+  "_doc": "Revert-verify for ems__Bug 1e2f9630 (ExoSync phantom no-base conflict: base recovered from the remote history of the path), subject = historyBase.ts. Axes H* in packages/core/tests/unit/services/sync/SyncEngine.history-base.test.ts (the wiring in SyncEngine.ts is pinned by SyncEngine.history-base.spec.json). Run: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/historyBase.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../..\" && node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/services/sync/SyncEngine.history-base.test.ts 2>&1",
+  "red_re": "› (H\\d+\\w*) ",
+  "mutants": {
+    "M2_blob_existence_taken_as_evidence": {
+      "_note": "Accepts a recovery whenever the path has ANY history once the local blob exists on the remote: the orphaned-blob case (a rejected push uploaded the local edit) would then overwrite a real local edit. Only H4 builds that input.",
+      "from": "    if (blobSha === localSha) {\n",
+      "to": "    if (blobSha === localSha || commits.length > 0) {\n",
+      "expect": ["H4"]
+    },
+    "M3_no_existence_precheck": {
+      "_note": "Without the git/blobs pre-check a real local edit walks the whole path history on every sync (cost, not correctness): H3 asserts no commit-list / contents request for a local edit.",
+      "from": "    await getBlobText(q.transport, q.owner, q.repo, localSha, q.baseURL);\n",
+      "to": "    void getBlobText;\n",
+      "expect": ["H3"]
+    },
+    "M4_budget_not_spent": {
+      "from": "    q.budget.remaining -= 1;\n",
+      "to": "    q.budget.remaining -= 0;\n",
+      "expect": ["H5"]
+    },
+    "M5_list_failure_propagates": {
+      "_note": "A failing commit-list request must leave the conflict to the merge layer, never fail the sync (H6).",
+      "from": "  } catch {\n    return { kind: \"not-found\" };\n  }\n\n  for (const commitSha",
+      "to": "  } catch (e) {\n    throw e;\n  }\n\n  for (const commitSha",
+      "expect": ["H6"]
+    },
+    "M6_compared_against_content": {
+      "from": "    if (blobSha === localSha) {\n",
+      "to": "    if (blobSha === q.local) {\n",
+      "expect": ["H1", "H2", "H7"]
+    },
+    "M7_walk_capped_at_two_versions": {
+      "_note": "H7 is the only axis whose matching version sits at index 2 of the path history.",
+      "from": "  for (const commitSha of commits.slice(0, HISTORY_BASE_MAX_VERSIONS)) {\n",
+      "to": "  for (const commitSha of commits.slice(0, 2)) {\n",
+      "expect": ["H7"]
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "_doc": "Revert-verify for ems__Bug 1e2f9630 (ExoSync phantom no-base conflict), subject = SyncEngine.ts — the wiring of historyBase.ts into resolveMergeConflicts. Axes H* in packages/core/tests/unit/services/sync/SyncEngine.history-base.test.ts. Run: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/SyncEngine.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../..\" && node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/services/sync/SyncEngine.history-base.test.ts 2>&1",
+  "red_re": "› (H\\d+\\w*) ",
+  "mutants": {
+    "M1_recovery_never_attempted": {
+      "_note": "The pre-fix behaviour: a no-base conflict goes to the merge layer with base undefined.",
+      "from": "          historyBudget.remaining > 0\n",
+      "to": "          historyBudget.remaining > Number.MAX_SAFE_INTEGER\n",
+      "expect": ["H1", "H2", "H5", "H7"]
+    },
+    "M8_recovered_base_dropped": {
+      "_note": "The recovery runs but its base never reaches the merge — the warning would claim a recovery that did not happen.",
+      "from": "            base = recovered.base;\n",
+      "to": "            void recovered.base;\n",
+      "expect": ["H1", "H2", "H7"]
+    }
+  }
+}
