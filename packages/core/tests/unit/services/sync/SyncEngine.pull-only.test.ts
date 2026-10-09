@@ -216,4 +216,62 @@ describe(`SyncEngine pull-only repos (req ${REQ})`, () => {
     expect(r.mirrored).toEqual({ restored: ["img/small.bin"], added: [], removed: [] });
     expect(r.warnings.some((w) => w.startsWith("pull-only mirror skipped oversized remote file img/big.bin (6 bytes > 4 cap)"))).toBe(true);
   });
+
+  // Review N1 of PR #4544: Obsidian's adapter lists a POSIX name `x\..\..\evil.md`
+  // as `x/../../evil.md` and its `remove` resolves the `..` — the traversal guard
+  // is what keeps the mirror from deleting outside the vault.
+  it(`E7 @req:c0810b83-8554-403e-bff0-d341c7d90926 a listed local path with .. segments is never deleted by the mirror (warned instead)`, async () => {
+    const gh = new FakeGitHubRepo({ [FILE]: BASE });
+    const disk = new FakeLocalFiles({ [FILE]: BASE, "agent/../../evil.md": "outside" });
+    const engine = new SyncEngine({
+      transport: gh.transport(),
+      watermarkStore: new FakeWatermarkStore(),
+      materializationCheck: alwaysMaterialized(),
+      localFilesFor: () => disk,
+      sha1: sha1Hex,
+    });
+    const r = await engine.sync({ ...gh.spec(), pullOnly: true }, "pull");
+    expect(r.status).toBe("synced");
+    expect(disk.files.get("agent/../../evil.md")).toBe("outside");
+    expect(r.mirrored?.removed).toEqual([]);
+    expect(r.warnings).toContain(
+      "unsafe local path left untouched by the pull-only mirror: agent/../../evil.md",
+    );
+  });
+
+  // Review N2 of PR #4544: the plugin port lists NFC while a remote path may be
+  // NFD; on APFS both name ONE file. The mirror must neither re-add it every run
+  // nor delete the NFC-listed copy as an extra.
+  // и + combining breve, built from code points so no editor can pre-normalise it
+  const NFD = `notes/${String.fromCharCode(0x438, 0x306)}.md`;
+  const NFC_NAME = NFD.normalize("NFC"); // й
+  function nfcSetup() {
+    const gh = new FakeGitHubRepo({ [NFD]: BASE });
+    const disk = new FakeLocalFiles({ [NFC_NAME]: BASE });
+    const engine = new SyncEngine({
+      transport: gh.transport(),
+      watermarkStore: new FakeWatermarkStore(),
+      materializationCheck: alwaysMaterialized(),
+      localFilesFor: () => disk,
+      sha1: sha1Hex,
+    });
+    return { gh, disk, engine };
+  }
+
+  it(`E8 @req:c0810b83-8554-403e-bff0-d341c7d90926 an NFD remote path whose NFC-listed local copy is identical is not re-written`, async () => {
+    const s = nfcSetup();
+    expect(NFD).not.toBe(NFC_NAME);
+    const r = await s.engine.sync({ ...s.gh.spec(), pullOnly: true }, "pull");
+    expect(r.status).toBe("synced");
+    expect(r.mirrored?.added).toEqual([]);
+    expect(r.mirrored?.restored).toEqual([]);
+    expect(s.disk.files.has(NFD)).toBe(false);
+  });
+
+  it(`E9 @req:c0810b83-8554-403e-bff0-d341c7d90926 the NFC-listed copy of an NFD remote path is not deleted as an extra`, async () => {
+    const s = nfcSetup();
+    const r = await s.engine.sync({ ...s.gh.spec(), pullOnly: true }, "pull");
+    expect(r.mirrored?.removed).toEqual([]);
+    expect(s.disk.files.get(NFC_NAME)).toBe(BASE);
+  });
 });

@@ -26,6 +26,9 @@
         "E4",
         "E5",
         "E6",
+        "E7",
+        "E8",
+        "E9",
         "P1",
         "P2",
         "P4",
@@ -81,6 +84,23 @@
       "from": "      if (mode.fileMode && entry.size !== undefined && entry.size > maxBytes) {\n        warnings.push(\n          `pull-only mirror skipped oversized",
       "to": "      if (mode.fileMode && entry.size !== undefined && entry.size > maxBytes * 1000) {\n        warnings.push(\n          `pull-only mirror skipped oversized",
       "expect": ["E6"]
+    },
+    "M12_traversal_guard_off": {
+      "from": "      if (!isTraversalFreeLocalPath(path)) {\n",
+      "to": "      if (!isTraversalFreeLocalPath(path) && path === \"\") {\n",
+      "expect": ["E7"],
+      "_note": "Review N1 of PR #4544: the traversal half of the guard — load-bearing for the plugin port, whose adapter lists a POSIX `x\\\\..\\\\y.md` as `x/../y.md`. Same anchor as M9 (the driver mutates a pristine copy per mutant)."
+    },
+    "M13_nfc_lookup_off": {
+      "from": "        : localByNfc.get(nfc(entry.path));\n",
+      "to": "        : undefined;\n",
+      "expect": ["E8", "E9"],
+      "_note": "Review N2 of PR #4544: without the NFC bridge an NFD remote path is re-added every run and its NFC-listed copy deleted as an extra."
+    },
+    "M14_claimed_local_deleted": {
+      "from": "      if (remotePaths.has(path) || claimedLocal.has(path)) continue;\n",
+      "to": "      if (remotePaths.has(path)) continue;\n",
+      "expect": ["E9"]
     }
   }
 }

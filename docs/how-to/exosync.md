@@ -117,16 +117,24 @@ exactly as before. The plugin's Sync / Pull / Push commands read the same file.
 Trust boundary and limits:
 
 - The protection covers every writer whose change would leave the device
-  through ExoSync (CLI `exosync push` / `sync`, the plugin commands, queued
-  conflict resolutions). The list itself and the rest of the device-local state
-  (`.exocortex/`, the plugin's `.local.` stores) are trusted configuration: a
-  process with arbitrary file access on the device can remove the line, forge
-  cached refs or plant symlinks. The asset-mutating CLI commands address
-  assets, not these files (`set-body` refuses a non-asset path).
+  through ExoSync's sync cycle (CLI `exosync push` / `sync`, the plugin's Sync /
+  Pull / Push commands, queued conflict resolutions). The plugin's «Push current
+  knowledge pack» command does not read the list (its dirty-set is never filled
+  today, so it pushes nothing). The list itself and the rest of the
+  device-local state (`.exocortex/`, the plugin's `.local.` stores) are trusted
+  configuration: a process with arbitrary file access on the device can remove
+  the line, forge cached refs or plant symlinks. The asset-mutating CLI
+  commands address assets, not these files (`set-body` / `set-property` /
+  `remove-property` refuse a non-asset path).
 - A mount folder emptied of every file reads as not materialized and is not
   refilled by `pull`.
 - In a FileSpace, a remote file above the size cap is not fetched, so its local
   copy is left as is (warned).
+- Plugin only: Obsidian's adapter lists paths normalised (`\` → `/`, NFC). A
+  NFC/NFD difference is bridged, but a local file whose name contains `\` cannot
+  be addressed through the adapter — on desktop the run fails loudly, on mobile
+  the file may be reported removed while it stays. The CLI (the bot path) lists
+  names as stored and removes such a file.
 
 ## Sync model
 

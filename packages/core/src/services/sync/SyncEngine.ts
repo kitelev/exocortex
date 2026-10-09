@@ -449,7 +449,9 @@ function isSafeRepoRelativePath(path: string): boolean {
  * req c0810b83 — the pull-only mirror's guard for LOCAL extras it deletes:
  * refuses only what could address a file outside the mount folder (absolute,
  * empty, `.` or `..` segments). Unlike {@link isSafeRepoRelativePath} it
- * admits `\` — a legal POSIX file-name character a local port can list.
+ * admits `\` — a legal POSIX file-name character the node port lists as is.
+ * Load-bearing for the plugin port, whose adapter turns `\` into `/` and so
+ * can list real `..` segments (see the call site).
  */
 function isTraversalFreeLocalPath(path: string): boolean {
   if (path.length === 0 || path.startsWith("/")) return false;
@@ -1937,6 +1939,19 @@ export class SyncEngine {
     const remotePaths = new Set(remote.map((e) => e.path));
     const localPaths = (await localFiles.list()).filter(mode.syncable);
     const localSet = new Set(localPaths);
+    // Unicode-normalisation bridge (review N2 of PR #4544). The plugin port
+    // lists paths through Obsidian's adapter, which returns them NFC, while a
+    // remote path may be stored NFD; on a normalisation-insensitive FS (APFS)
+    // both name the SAME file. Without this bridge the mirror wrote the NFD
+    // path as `added` and, next run, deleted the NFC-listed copy as an extra —
+    // the file vanished every other run. An exact match always wins; the
+    // NFC key is only a fallback, and a local path it claims is never deleted.
+    const nfc = (p: string): string => p.normalize("NFC");
+    const localByNfc = new Map<string, string>();
+    for (const p of localPaths) {
+      if (!localByNfc.has(nfc(p))) localByNfc.set(nfc(p), p);
+    }
+    const claimedLocal = new Set<string>();
 
     const restored: string[] = [];
     const added: string[] = [];
@@ -1963,10 +1978,14 @@ export class SyncEngine {
         continue;
       }
       let local: SyncContent | undefined;
-      if (localSet.has(entry.path)) {
+      const localPath = localSet.has(entry.path)
+        ? entry.path
+        : localByNfc.get(nfc(entry.path));
+      if (localPath !== undefined) {
+        claimedLocal.add(localPath);
         local = mode.fileMode
-          ? await readBinaryStrict(localFiles, entry.path)
-          : await localFiles.read(entry.path);
+          ? await readBinaryStrict(localFiles, localPath)
+          : await localFiles.read(localPath);
         if ((await gitBlobSha(local, this.sha1)) === entry.blobSha) {
           pushEntry(entry.path, entry.blobSha, local);
           continue;
@@ -1997,16 +2016,18 @@ export class SyncEngine {
     }
 
     for (const path of localPaths) {
-      if (remotePaths.has(path)) continue;
+      if (remotePaths.has(path) || claimedLocal.has(path)) continue;
       // Traversal-only guard, NOT `isSafeRepoRelativePath`: that one also
       // refuses `\`, a legal file-name character on POSIX, so an injected
-      // `agent/x\y.md` would survive every mirror (review H1). A path from
-      // `list()` is the port's own walk of the mount folder; refusing only a
-      // shape that could leave it keeps every listed extra deletable. Defensive:
-  // the node and vault.adapter walks never list such a path (no mutant — no
-  // production input distinguishes it).
+      // `agent/x\y.md` would survive every mirror (review H1). ⛔ LOAD-BEARING
+      // (review N1): Obsidian's `vault.adapter.list()` rewrites `\` to `/`, so
+      // a POSIX file named `x\..\..\evil.md` reaches this loop as
+      // `x/../../evil.md`, and the adapter's `remove` resolves the `..` —
+      // without this guard the mirror would delete a file OUTSIDE the vault.
       if (!isTraversalFreeLocalPath(path)) {
-        warnings.push(`unsafe local path left untouched by the pull-only mirror: ${path}`);
+        warnings.push(
+          `unsafe local path left untouched by the pull-only mirror: ${path}`,
+        );
         continue;
       }
       await localFiles.delete(path);
