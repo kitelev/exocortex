@@ -21,7 +21,8 @@
  * remote but NOT in this path's history (e.g. orphaned by a rejected push of
  * a local edit) is not evidence; any request failure, an exhausted budget or
  * a walk past the version cap leaves the base undefined — the conflict
- * quarantines exactly as before.
+ * quarantines exactly as before. Only a definite 404 lets the probe go on; a
+ * rate limit, a 5xx or a timeout aborts it (and the caller's pass).
  *
  * Cost is paid only on the no-base conflict path: one `git/blobs` existence
  * check (a real local edit was usually never pushed → stops here), then one
@@ -77,12 +78,29 @@ export interface HistoryBaseQuery {
 export type HistoryBaseResult =
   /** Local = the path's version at `commitSha` → `base` (= local) recovered. */
   | { kind: "recovered"; base: string; commitSha: string }
-  /** No evidence (local edit, foreign blob, request failure) — base stays undefined. */
+  /** A definite miss (local edit never pushed, foreign blob, no such version). */
   | { kind: "not-found" }
   /** The budget ran out before a verdict — base stays undefined. */
   | { kind: "budget-exhausted" }
-  /** GitHub rate-limited a probe — base stays undefined, the caller stops probing. */
-  | { kind: "rate-limited" };
+  /**
+   * A probe failed with anything but a definite 404 — a rate limit, a 5xx, a
+   * timeout. Base stays undefined and the caller stops probing for the pass:
+   * a hung or throttled API must not cost one timeout per remaining version.
+   */
+  | { kind: "aborted"; reason: "rate-limit" | "request-failure" };
+
+/** Transport error contract: `GitHub request {METHOD} {url} → HTTP {status}: {body}`. */
+function isNotFoundError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /→ HTTP 404\b/.test(msg);
+}
+
+/** `undefined` for a definite 404 (an answer); an abort for anything else. */
+function abortUnlessNotFound(err: unknown): HistoryBaseResult | undefined {
+  if (isRateLimitError(err)) return { kind: "aborted", reason: "rate-limit" };
+  if (isNotFoundError(err)) return undefined;
+  return { kind: "aborted", reason: "request-failure" };
+}
 
 export async function recoverBaseFromHistory(
   q: HistoryBaseQuery,
@@ -98,9 +116,8 @@ export async function recoverBaseFromHistory(
   try {
     await getBlobText(q.transport, q.owner, q.repo, localSha, q.baseURL);
   } catch (err) {
-    if (isRateLimitError(err)) return { kind: "rate-limited" };
-    // Never on the remote (the usual real local edit) or unreadable.
-    return { kind: "not-found" };
+    // 404: never on the remote — the usual real local edit.
+    return abortUnlessNotFound(err) ?? { kind: "not-found" };
   }
 
   if (!spend()) return { kind: "budget-exhausted" };
@@ -116,8 +133,7 @@ export async function recoverBaseFromHistory(
       q.baseURL,
     );
   } catch (err) {
-    if (isRateLimitError(err)) return { kind: "rate-limited" };
-    return { kind: "not-found" };
+    return abortUnlessNotFound(err) ?? { kind: "not-found" };
   }
 
   for (const commitSha of commits.slice(0, HISTORY_BASE_MAX_VERSIONS)) {
@@ -133,8 +149,9 @@ export async function recoverBaseFromHistory(
         q.baseURL,
       );
     } catch (err) {
-      if (isRateLimitError(err)) return { kind: "rate-limited" };
-      continue; // e.g. the commit that deleted the path — no version there
+      const aborted = abortUnlessNotFound(err);
+      if (aborted !== undefined) return aborted;
+      continue; // 404: the commit that deleted the path — no version there
     }
     if (blobSha === localSha) {
       return { kind: "recovered", base: q.local, commitSha };

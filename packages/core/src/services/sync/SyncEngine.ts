@@ -3206,7 +3206,7 @@ export class SyncEngine {
       (g) => baseEntryOf(g) === undefined && historyLocal(g) !== undefined,
     ).length;
     let historyUnchecked = 0;
-    let historyRateLimited = false;
+    let historyAbort: "rate-limit" | "request-failure" | undefined;
 
     for (const group of conflicts) {
       const baseEntry = baseEntryOf(group);
@@ -3252,11 +3252,12 @@ export class SyncEngine {
               );
             } else if (recovered.kind === "budget-exhausted") {
               historyUnchecked++;
-            } else if (recovered.kind === "rate-limited") {
-              // Stop probing for the rest of the pass — never wait for
-              // optional work.
+            } else if (recovered.kind === "aborted") {
+              // Rate limit, 5xx or timeout: stop probing for the rest of the
+              // pass — optional work never waits, nor pays a timeout per
+              // remaining version.
               historyRemaining = 0;
-              historyRateLimited = true;
+              historyAbort = recovered.reason;
               historyUnchecked++;
             }
           }
@@ -3320,7 +3321,7 @@ export class SyncEngine {
 
     if (historyUnchecked > 0) {
       warnings.push(
-        `history base recovery: ${historyUnchecked} no-base conflict(s) not fully checked this pass (${historyRateLimited ? "GitHub rate limit" : "request budget"}) — merged without a base; they re-derive on the next sync`,
+        `history base recovery: ${historyUnchecked} no-base conflict(s) not fully checked this pass (${historyAbort === "rate-limit" ? "GitHub rate limit" : historyAbort === "request-failure" ? "a probe request failed" : "request budget"}) — merged without a base; they re-derive on the next sync`,
       );
     }
 

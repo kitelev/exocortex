@@ -262,6 +262,9 @@ describe("SyncEngine — no-base conflict: base recovered from the remote histor
     expect(result.quarantinedCount).toBe(1);
     expect(store.entries).toHaveLength(1);
     expect(local.files.get(DESC)).toBe(V1);
+    expect(result.warnings.join("\n")).toMatch(
+      /history base recovery: 1 no-base conflict\(s\) not fully checked this pass \(a probe request failed\)/,
+    );
   });
 
   it("H7 the matching version may be DEEPER in the history (behind by several remote edits) → still recovered", async () => {
@@ -319,56 +322,92 @@ describe("SyncEngine — no-base conflict: base recovered from the remote histor
     expect(local.files.get(DESC)).toBe(V3);
   });
 
-  it("H10 a RATE-LIMITED probe gives up at once: no backoff wait, no further probes this pass, the push still lands", async () => {
-    const P1 = "assets/p1.md";
-    const P2 = "assets/p2.md";
-    const NEW = "assets/new.md";
-    const gh = new FakeGitHubRepo({
-      [P1]: labelled("u1", "v1"),
-      [P2]: labelled("u2", "v1"),
-    });
-    gh.commitDirect(
-      gh.branch,
-      { [P1]: labelled("u1", "v2"), [P2]: labelled("u2", "v2") },
-      "edit both",
+  // Only a definite 404 lets a probe go on. A rate limit, a 5xx or a timeout
+  // on ANY of the three probe requests aborts the probe AND the rest of the
+  // pass at once: no backoff wait, no further probes, the push still lands.
+  const P1 = "assets/p1.md";
+  const P2 = "assets/p2.md";
+  const v1Shas = [labelled("u1", "v1"), labelled("u2", "v1")].map(blobShaOf);
+  const RATE_LIMIT = (url: string): Error =>
+    new Error(
+      `GitHub request GET ${url} → HTTP 429: You have exceeded a secondary rate limit`,
     );
-    const local = new FakeLocalFiles({
-      [P1]: labelled("u1", "v1"),
-      [P2]: labelled("u2", "v1"),
-      [NEW]: labelled("u3", "local only"),
-    });
-    const inner = gh.transport();
-    let commitLists = 0;
-    const limited: RestCommitTransport = async (req) => {
-      if (req.url.includes("/commits?")) {
-        commitLists++;
-        throw new Error(
-          `GitHub request GET ${req.url} → HTTP 429: You have exceeded a secondary rate limit`,
-        );
-      }
-      return inner(req);
-    };
-    const sleeps: number[] = [];
-    const { engine, store } = makeEngine(limited, local, {
-      backoff: {
-        sleep: async (ms) => {
-          sleeps.push(ms);
+  const TIMEOUT = (url: string): Error =>
+    new Error(`GitHub request GET ${url} timed out after 120000ms`);
+  it.each([
+    [
+      "H10a rate limit on the commit list",
+      (u: string) => u.includes("/commits?"),
+      RATE_LIMIT,
+      "GitHub rate limit",
+    ],
+    [
+      "H10b rate limit on the blob existence check",
+      (u: string) => v1Shas.some((sha) => u.endsWith(`/git/blobs/${sha}`)),
+      RATE_LIMIT,
+      "GitHub rate limit",
+    ],
+    [
+      "H10c rate limit on a version lookup",
+      (u: string) => u.includes("/contents/"),
+      RATE_LIMIT,
+      "GitHub rate limit",
+    ],
+    [
+      "H13 a TIMEOUT on a version lookup",
+      (u: string) => u.includes("/contents/"),
+      TIMEOUT,
+      "a probe request failed",
+    ],
+  ] as const)(
+    "%s — the probe gives up at once: no wait, no further probe this pass, the push still lands",
+    async (_title, hits, failure, reason) => {
+      const NEW = "assets/new.md";
+      const gh = new FakeGitHubRepo({
+        [P1]: labelled("u1", "v1"),
+        [P2]: labelled("u2", "v1"),
+      });
+      gh.commitDirect(
+        gh.branch,
+        { [P1]: labelled("u1", "v2"), [P2]: labelled("u2", "v2") },
+        "edit both",
+      );
+      const local = new FakeLocalFiles({
+        [P1]: labelled("u1", "v1"),
+        [P2]: labelled("u2", "v1"),
+        [NEW]: labelled("u3", "local only"),
+      });
+      const inner = gh.transport();
+      let failed = 0;
+      const flaky: RestCommitTransport = async (req) => {
+        if (hits(req.url)) {
+          failed++;
+          throw failure(req.url);
+        }
+        return inner(req);
+      };
+      const sleeps: number[] = [];
+      const { engine, store } = makeEngine(flaky, local, {
+        backoff: {
+          sleep: async (ms) => {
+            sleeps.push(ms);
+          },
         },
-      },
-    });
+      });
 
-    const result = await engine.sync(gh.spec());
+      const result = await engine.sync(gh.spec());
 
-    expect(result.status).toBe("synced");
-    expect(sleeps).toEqual([]); // the optional probe never waited
-    expect(commitLists).toBe(1); // the second conflict was not probed
-    expect(result.quarantinedCount).toBe(2);
-    expect(store.entries).toHaveLength(2);
-    expect(gh.headFiles().get(NEW)).toBe(labelled("u3", "local only"));
-    expect(result.warnings.join("\n")).toMatch(
-      /history base recovery: 2 no-base conflict\(s\) not fully checked this pass \(GitHub rate limit\)/,
-    );
-  });
+      expect(result.status).toBe("synced");
+      expect(sleeps).toEqual([]); // the optional probe never waited
+      expect(failed).toBe(1); // the second conflict was not probed
+      expect(result.quarantinedCount).toBe(2);
+      expect(store.entries).toHaveLength(2);
+      expect(gh.headFiles().get(NEW)).toBe(labelled("u3", "local only"));
+      expect(result.warnings.join("\n")).toContain(
+        `history base recovery: 2 no-base conflict(s) not fully checked this pass (${reason})`,
+      );
+    },
+  );
 
   it("H11 FAIR SHARES: two expensive unrecoverable conflicts first do not starve the cheap phantoms after them", async () => {
     const files: Record<string, string> = {};
@@ -456,11 +495,15 @@ function labelled(uid: string, label: string): string {
   return `---\nexo__Asset_uid: ${uid}\nexo__Asset_label: "${label}"\n---\n\nbody\n`;
 }
 
-/** Upload `content` as a blob that no commit references (a rejected push). */
-function addOrphanBlob(gh: FakeGitHubRepo, content: string): void {
+/** git blob SHA of a text, as GitHub computes it. */
+function blobShaOf(content: string): string {
   const body = Buffer.from(content, "utf-8");
-  const sha = createHash("sha1")
+  return createHash("sha1")
     .update(Buffer.concat([Buffer.from(`blob ${body.byteLength}\0`), body]))
     .digest("hex");
-  gh.blobs.set(sha, body);
+}
+
+/** Upload `content` as a blob that no commit references (a rejected push). */
+function addOrphanBlob(gh: FakeGitHubRepo, content: string): void {
+  gh.blobs.set(blobShaOf(content), Buffer.from(content, "utf-8"));
 }
