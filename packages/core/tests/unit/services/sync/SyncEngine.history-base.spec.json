@@ -1,0 +1,70 @@
+{
+  "_doc": "Revert-verify for ems__Bug 1e2f9630 (ExoSync phantom no-base conflict), subject = SyncEngine.ts — the wiring of historyBase.ts into resolveMergeConflicts. Axes H* in packages/core/tests/unit/services/sync/SyncEngine.history-base.test.ts. Run: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/SyncEngine.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../..\" && node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/services/sync/SyncEngine.history-base.test.ts 2>&1",
+  "red_re": "› (H\\d+\\w*) ",
+  "mutants": {
+    "M1_recovery_never_attempted": {
+      "_note": "The pre-fix behaviour: a no-base conflict goes to the merge layer with base undefined. The failure axes (H6, H10a-c, H13) redden because no probe — hence no failure and no warning — ever happens.",
+      "from": "        if (localForHistory !== undefined) {\n",
+      "to": "        if (localForHistory === \"\\u0000never\") {\n",
+      "expect": [
+        "H1",
+        "H10a",
+        "H10b",
+        "H10c",
+        "H11",
+        "H12",
+        "H13",
+        "H2",
+        "H5",
+        "H6",
+        "H7",
+        "H9"
+      ]
+    },
+    "M8_recovered_base_dropped": {
+      "_note": "The recovery runs but its base never reaches the merge — the warning would claim a recovery that did not happen.",
+      "from": "              base = recovered.base;\n",
+      "to": "              void recovered.base;\n",
+      "expect": ["H1", "H11", "H12", "H2", "H7", "H9"]
+    },
+    "M9_rename_recovered_at_old_path": {
+      "_note": "Without the same-path guard a remote rename (same uid, other path) recovers a base at the OLD path and writes the renamed content there (reviewer probe PA).",
+      "from": "      if (only.path !== group.local.path) return undefined;\n",
+      "to": "      void only.path;\n",
+      "expect": ["H8"]
+    },
+    "M10_no_fair_share": {
+      "_note": "Each conflict may spend the whole remaining pass budget: two expensive unrecoverable conflicts first starve the cheap phantoms after them (reviewer probe PG).",
+      "from": "                Math.floor(historyRemaining / historyPending),\n",
+      "to": "                historyRemaining,\n",
+      "expect": ["H11"]
+    },
+    "M11_skipped_conflict_not_reported": {
+      "_note": "A conflict skipped because the pass budget is already spent stays silent (reviewer LOW: boundary case). The abort axes redden too: after an abort the second conflict is skipped by this same branch, so the warning counts one conflict instead of two.",
+      "from": "            if (historyTotal > 0) historyUnchecked++;\n",
+      "to": "            void historyTotal;\n",
+      "expect": ["H10a", "H10b", "H10c", "H12", "H13"]
+    },
+    "M12_probe_through_backoff": {
+      "_note": "Probes through the backoff transport wait out the rate limit and spend the per-sync wait budget the push needs (reviewer probe PH).",
+      "from": "              transport: this.probeTransport,\n",
+      "to": "              transport: this.transport,\n",
+      "expect": ["H10a", "H10b", "H10c"]
+    },
+    "M13_rate_limit_does_not_stop_pass": {
+      "from": "              historyRemaining = 0;\n",
+      "to": "              void 0;\n",
+      "expect": ["H10a", "H10b", "H10c", "H13"]
+    }
+  }
+}

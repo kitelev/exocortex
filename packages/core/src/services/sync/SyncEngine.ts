@@ -82,6 +82,12 @@ import { detectChanges, extractAssetUid } from "./ChangeDetector";
 import { bytesToBase64 } from "../../utilities/base64";
 import { gitBlobSha } from "./gitBlobSha";
 import {
+  HISTORY_BASE_MIN_SHARE,
+  HISTORY_BASE_REQUEST_BUDGET,
+  recoverBaseFromHistory,
+  type HistoryBaseBudget,
+} from "./historyBase";
+import {
   OUTBOX_REMOTE_ABSENT,
   type OutboxStorePort,
 } from "./LocalOutboxStore";
@@ -232,6 +238,14 @@ export interface SyncEngineDeps {
    * pushed, nothing written.
    */
   mergeLayer?: MergeLayerPort;
+  /**
+   * REST request budget for recovering a missing 3-way base from the remote
+   * history of the path, per conflict-resolution pass. Default
+   * {@link HISTORY_BASE_REQUEST_BUDGET}; `0` disables the recovery (every
+   * no-base conflict goes to the merge layer with `base: undefined`, the
+   * pre-recovery behaviour). See `historyBase.ts`.
+   */
+  historyBaseRequestBudget?: number;
   /**
    * Quarantine sink for unresolvable / SHACL-invalid merges (D17) and for
    * D16 terminal-quarantine (contended files after retry exhaustion).
@@ -739,6 +753,13 @@ export class SyncEngine {
    */
   private readonly transport: RestCommitTransport;
   /**
+   * The ONE exception to the above: the optional history-base probes
+   * (historyBase.ts) skip the rate-limit backoff — a rate-limited probe gives
+   * up at once instead of spending the per-sync wait budget the push needs.
+   * Timing instrumentation still applies.
+   */
+  private readonly probeTransport: RestCommitTransport;
+  /**
    * Phase 0: timing-wrapped `sha1`. ALL hashing goes through `gitBlobSha(_,
    * this.sha1)` so the `hash` bucket captures the hypothesised hot path.
    */
@@ -788,6 +809,7 @@ export class SyncEngine {
         now: this.now,
       }),
     );
+    this.probeTransport = this.instrumentTransport(deps.transport);
     this.sha1 = this.instrumentSha1(deps.sha1);
   }
 
@@ -2817,6 +2839,7 @@ export class SyncEngine {
               watermark,
               verdict.conflicts,
               disk,
+              examinedHead,
             );
           }
           // Cross-path remote changes consumed by a conflict group were
@@ -3112,14 +3135,17 @@ export class SyncEngine {
    * what must be WRITTEN to disk (≠ local copy); `quarantine` collects a
    * both-versions entry (D17) — the engine never writes a quarantined path.
    * The 3-way base is the BASE-tree blob recorded in the watermark, fetched
-   * on demand; a path absent from the base (both sides added) merges with
-   * `base: undefined`.
+   * on demand. A path absent from the base is first looked up in the remote
+   * history of the path (`historyBase.ts`): a local copy byte-identical to a
+   * past remote version is merely behind, and that version is the true base.
+   * Otherwise it merges with `base: undefined`.
    */
   private async resolveMergeConflicts(
     spec: SyncRepoSpec,
     watermark: WatermarkRecord,
     conflicts: ConflictGroup[],
     disk: ReadonlyMap<string, SyncContent>,
+    head: string,
   ): Promise<MergeResolution> {
     const mergeLayer = this.deps.mergeLayer;
     if (mergeLayer === undefined) return EMPTY_MERGE;
@@ -3155,10 +3181,35 @@ export class SyncEngine {
       };
     };
 
+    const baseEntryOf = (group: ConflictGroup): WatermarkFileEntry | undefined =>
+      baseByPath.get(group.local.basePath ?? group.local.path) ??
+      baseByPath.get(group.remotes[0]?.path ?? "");
+    // A no-base conflict may recover its base from the remote history of the
+    // path (historyBase.ts) only when it is ONE same-path text change: a
+    // rename (remote at another path) or an ambiguous group keeps the
+    // conservative no-base merge — recovering at the old path would write the
+    // renamed remote content there and leave the new path pinned.
+    const historyLocal = (group: ConflictGroup): string | undefined => {
+      const only = group.remotes.length === 1 ? group.remotes[0] : undefined;
+      if (only === undefined || only.kind !== "change") return undefined;
+      if (typeof only.content !== "string") return undefined;
+      if (only.path !== group.local.path) return undefined;
+      return asText(disk.get(group.local.path));
+    };
+    // Per-pass request budget, handed out in FAIR SHARES: a conflict whose
+    // local blob sits deep in (or outside) the path history must not starve
+    // the cheap "one edit behind" ones after it.
+    const historyTotal =
+      this.deps.historyBaseRequestBudget ?? HISTORY_BASE_REQUEST_BUDGET;
+    let historyRemaining = historyTotal;
+    let historyPending = conflicts.filter(
+      (g) => baseEntryOf(g) === undefined && historyLocal(g) !== undefined,
+    ).length;
+    let historyUnchecked = 0;
+    let historyAbort: "rate-limit" | "request-failure" | undefined;
+
     for (const group of conflicts) {
-      const baseEntry =
-        baseByPath.get(group.local.basePath ?? group.local.path) ??
-        baseByPath.get(group.remotes[0]?.path ?? "");
+      const baseEntry = baseEntryOf(group);
       let base: string | undefined;
       if (baseEntry !== undefined) {
         base = await getBlobText(
@@ -3168,6 +3219,50 @@ export class SyncEngine {
           baseEntry.blobSha,
           this.deps.baseURL,
         );
+      } else {
+        const localForHistory = historyLocal(group);
+        if (localForHistory !== undefined) {
+          if (historyRemaining <= 0) {
+            if (historyTotal > 0) historyUnchecked++;
+          } else {
+            const share = Math.min(
+              historyRemaining,
+              Math.max(
+                HISTORY_BASE_MIN_SHARE,
+                Math.floor(historyRemaining / historyPending),
+              ),
+            );
+            const callBudget: HistoryBaseBudget = { remaining: share };
+            const recovered = await recoverBaseFromHistory({
+              transport: this.probeTransport,
+              owner: spec.owner,
+              repo: spec.repo,
+              baseURL: this.deps.baseURL,
+              sha1: this.sha1,
+              path: group.local.path,
+              head,
+              local: localForHistory,
+              budget: callBudget,
+            });
+            historyRemaining -= share - callBudget.remaining;
+            if (recovered.kind === "recovered") {
+              base = recovered.base;
+              warnings.push(
+                `merge(${group.local.path}): no 3-way base recorded — the local copy matches the remote version at ${recovered.commitSha.slice(0, 7)}, treated as behind and used as the base`,
+              );
+            } else if (recovered.kind === "budget-exhausted") {
+              historyUnchecked++;
+            } else if (recovered.kind === "aborted") {
+              // Rate limit, 5xx or timeout: stop probing for the rest of the
+              // pass — optional work never waits, nor pays a timeout per
+              // remaining version.
+              historyRemaining = 0;
+              historyAbort = recovered.reason;
+              historyUnchecked++;
+            }
+          }
+          historyPending--;
+        }
       }
 
       if (group.remotes.length > 1) {
@@ -3222,6 +3317,12 @@ export class SyncEngine {
           ...(uid !== undefined ? { uid } : {}),
         });
       }
+    }
+
+    if (historyUnchecked > 0) {
+      warnings.push(
+        `history base recovery: ${historyUnchecked} no-base conflict(s) not fully checked this pass (${historyAbort === "rate-limit" ? "GitHub rate limit" : historyAbort === "request-failure" ? "a probe request failed" : "request budget"}) — merged without a base; they re-derive on the next sync`,
+      );
     }
 
     return {
