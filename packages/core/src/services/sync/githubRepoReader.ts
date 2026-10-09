@@ -146,6 +146,63 @@ export async function getTree(
   return entries;
 }
 
+/** `a/b c.md` → `a/b%20c.md`: every segment encoded, separators kept. */
+function encodePath(path: string): string {
+  return path.split("/").map(encodeURIComponent).join("/");
+}
+
+/**
+ * GET commits?sha={head}&path={path}&per_page={limit} → SHAs of the commits
+ * on `head`'s history that touched `path`, newest first (GitHub's history
+ * simplification by path). Only the first page is read — callers bound the
+ * walk by `limit` (max 100 per GitHub).
+ */
+export async function listPathCommitShas(
+  transport: RestCommitTransport,
+  owner: string,
+  repo: string,
+  path: string,
+  head: string,
+  limit: number,
+  baseURL?: string,
+): Promise<string[]> {
+  const resp = await transport({
+    method: "GET",
+    url: `${api(baseURL)}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits?sha=${encodeURIComponent(head)}&path=${encodeURIComponent(path)}&per_page=${limit}`,
+  });
+  const list = resp?.json;
+  if (!Array.isArray(list)) {
+    throw new Error(`ExoSync: malformed commit list for ${path}`);
+  }
+  return list
+    .map((c) => readString(c, "sha"))
+    .filter((s): s is string => typeof s === "string" && s.length > 0);
+}
+
+/**
+ * GET contents/{path}?ref={ref} → the blob SHA of `path` at `ref`. Throws
+ * (transport non-2xx) when the path does not exist at that ref — e.g. the
+ * commit that deleted it.
+ */
+export async function getPathBlobShaAt(
+  transport: RestCommitTransport,
+  owner: string,
+  repo: string,
+  path: string,
+  ref: string,
+  baseURL?: string,
+): Promise<string> {
+  const resp = await transport({
+    method: "GET",
+    url: `${api(baseURL)}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodePath(path)}?ref=${encodeURIComponent(ref)}`,
+  });
+  const sha = readString(resp?.json, "sha");
+  if (typeof sha !== "string" || sha.length === 0) {
+    throw new Error(`ExoSync: malformed contents response for ${path}@${ref}`);
+  }
+  return sha;
+}
+
 /** GET git/blobs/{sha} → UTF-8 text content (base64-decoded). */
 export async function getBlobText(
   transport: RestCommitTransport,
