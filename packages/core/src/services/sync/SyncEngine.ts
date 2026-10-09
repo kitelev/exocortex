@@ -82,6 +82,7 @@ import { detectChanges, extractAssetUid } from "./ChangeDetector";
 import { bytesToBase64 } from "../../utilities/base64";
 import { gitBlobSha } from "./gitBlobSha";
 import {
+  HISTORY_BASE_MIN_SHARE,
   HISTORY_BASE_REQUEST_BUDGET,
   recoverBaseFromHistory,
   type HistoryBaseBudget,
@@ -752,6 +753,13 @@ export class SyncEngine {
    */
   private readonly transport: RestCommitTransport;
   /**
+   * The ONE exception to the above: the optional history-base probes
+   * (historyBase.ts) skip the rate-limit backoff — a rate-limited probe gives
+   * up at once instead of spending the per-sync wait budget the push needs.
+   * Timing instrumentation still applies.
+   */
+  private readonly probeTransport: RestCommitTransport;
+  /**
    * Phase 0: timing-wrapped `sha1`. ALL hashing goes through `gitBlobSha(_,
    * this.sha1)` so the `hash` bucket captures the hypothesised hot path.
    */
@@ -801,6 +809,7 @@ export class SyncEngine {
         now: this.now,
       }),
     );
+    this.probeTransport = this.instrumentTransport(deps.transport);
     this.sha1 = this.instrumentSha1(deps.sha1);
   }
 
@@ -3172,16 +3181,35 @@ export class SyncEngine {
       };
     };
 
-    const historyBudget: HistoryBaseBudget = {
-      remaining:
-        this.deps.historyBaseRequestBudget ?? HISTORY_BASE_REQUEST_BUDGET,
+    const baseEntryOf = (group: ConflictGroup): WatermarkFileEntry | undefined =>
+      baseByPath.get(group.local.basePath ?? group.local.path) ??
+      baseByPath.get(group.remotes[0]?.path ?? "");
+    // A no-base conflict may recover its base from the remote history of the
+    // path (historyBase.ts) only when it is ONE same-path text change: a
+    // rename (remote at another path) or an ambiguous group keeps the
+    // conservative no-base merge — recovering at the old path would write the
+    // renamed remote content there and leave the new path pinned.
+    const historyLocal = (group: ConflictGroup): string | undefined => {
+      const only = group.remotes.length === 1 ? group.remotes[0] : undefined;
+      if (only === undefined || only.kind !== "change") return undefined;
+      if (typeof only.content !== "string") return undefined;
+      if (only.path !== group.local.path) return undefined;
+      return asText(disk.get(group.local.path));
     };
-    let historyBudgetWarned = false;
+    // Per-pass request budget, handed out in FAIR SHARES: a conflict whose
+    // local blob sits deep in (or outside) the path history must not starve
+    // the cheap "one edit behind" ones after it.
+    const historyTotal =
+      this.deps.historyBaseRequestBudget ?? HISTORY_BASE_REQUEST_BUDGET;
+    let historyRemaining = historyTotal;
+    let historyPending = conflicts.filter(
+      (g) => baseEntryOf(g) === undefined && historyLocal(g) !== undefined,
+    ).length;
+    let historyUnchecked = 0;
+    let historyRateLimited = false;
 
     for (const group of conflicts) {
-      const baseEntry =
-        baseByPath.get(group.local.basePath ?? group.local.path) ??
-        baseByPath.get(group.remotes[0]?.path ?? "");
+      const baseEntry = baseEntryOf(group);
       let base: string | undefined;
       if (baseEntry !== undefined) {
         base = await getBlobText(
@@ -3192,46 +3220,47 @@ export class SyncEngine {
           this.deps.baseURL,
         );
       } else {
-        // No recorded base: recover it from the remote history of the path
-        // when the local copy is just an older remote version (behind, not
-        // edited). Same-path single remote change only — a rename or an
-        // ambiguous group keeps the conservative no-base merge.
-        const onlyRemote = group.remotes.length === 1 ? group.remotes[0] : undefined;
-        const localForHistory = asText(disk.get(group.local.path));
-        if (
-          onlyRemote !== undefined &&
-          onlyRemote.kind === "change" &&
-          typeof onlyRemote.content === "string" &&
-          onlyRemote.path === group.local.path &&
-          group.local.basePath === undefined &&
-          localForHistory !== undefined &&
-          historyBudget.remaining > 0
-        ) {
-          const recovered = await recoverBaseFromHistory({
-            transport: this.transport,
-            owner: spec.owner,
-            repo: spec.repo,
-            baseURL: this.deps.baseURL,
-            sha1: this.sha1,
-            path: group.local.path,
-            head,
-            local: localForHistory,
-            budget: historyBudget,
-          });
-          if (recovered.kind === "recovered") {
-            base = recovered.base;
-            warnings.push(
-              `merge(${group.local.path}): no 3-way base recorded — the local copy equals the remote version at ${recovered.commitSha.slice(0, 7)}, recovered as the base (local was behind, not edited)`,
+        const localForHistory = historyLocal(group);
+        if (localForHistory !== undefined) {
+          if (historyRemaining <= 0) {
+            if (historyTotal > 0) historyUnchecked++;
+          } else {
+            const share = Math.min(
+              historyRemaining,
+              Math.max(
+                HISTORY_BASE_MIN_SHARE,
+                Math.floor(historyRemaining / historyPending),
+              ),
             );
-          } else if (
-            recovered.kind === "budget-exhausted" &&
-            !historyBudgetWarned
-          ) {
-            historyBudgetWarned = true;
-            warnings.push(
-              `history base recovery budget exhausted — the remaining no-base conflicts merge without a base this pass and re-derive on the next sync`,
-            );
+            const callBudget: HistoryBaseBudget = { remaining: share };
+            const recovered = await recoverBaseFromHistory({
+              transport: this.probeTransport,
+              owner: spec.owner,
+              repo: spec.repo,
+              baseURL: this.deps.baseURL,
+              sha1: this.sha1,
+              path: group.local.path,
+              head,
+              local: localForHistory,
+              budget: callBudget,
+            });
+            historyRemaining -= share - callBudget.remaining;
+            if (recovered.kind === "recovered") {
+              base = recovered.base;
+              warnings.push(
+                `merge(${group.local.path}): no 3-way base recorded — the local copy matches the remote version at ${recovered.commitSha.slice(0, 7)}, treated as behind and used as the base`,
+              );
+            } else if (recovered.kind === "budget-exhausted") {
+              historyUnchecked++;
+            } else if (recovered.kind === "rate-limited") {
+              // Stop probing for the rest of the pass — never wait for
+              // optional work.
+              historyRemaining = 0;
+              historyRateLimited = true;
+              historyUnchecked++;
+            }
           }
+          historyPending--;
         }
       }
 
@@ -3287,6 +3316,12 @@ export class SyncEngine {
           ...(uid !== undefined ? { uid } : {}),
         });
       }
+    }
+
+    if (historyUnchecked > 0) {
+      warnings.push(
+        `history base recovery: ${historyUnchecked} no-base conflict(s) not fully checked this pass (${historyRateLimited ? "GitHub rate limit" : "request budget"}) — merged without a base; they re-derive on the next sync`,
+      );
     }
 
     return {

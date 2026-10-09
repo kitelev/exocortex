@@ -36,6 +36,7 @@ import {
   getPathBlobShaAt,
   listPathCommitShas,
 } from "./githubRepoReader";
+import { isRateLimitError } from "./transportBackoff";
 
 /** Versions of one path inspected at most (one commit-list page). */
 export const HISTORY_BASE_MAX_VERSIONS = 30;
@@ -43,12 +44,22 @@ export const HISTORY_BASE_MAX_VERSIONS = 30;
 /** REST requests base recovery may spend per conflict-resolution pass. */
 export const HISTORY_BASE_REQUEST_BUDGET = 60;
 
-/** Mutable per-pass request budget, shared by every conflict of the pass. */
+/**
+ * Smallest per-conflict share of the pass budget: existence check + commit
+ * list + the two newest versions — the common "one remote edit behind" case.
+ */
+export const HISTORY_BASE_MIN_SHARE = 4;
+
+/** Mutable request budget (per conflict, carved from the per-pass total). */
 export interface HistoryBaseBudget {
   remaining: number;
 }
 
 export interface HistoryBaseQuery {
+  /**
+   * Transport WITHOUT rate-limit backoff: the probe is optional work and must
+   * never spend the sync's shared rate-limit wait budget that the push needs.
+   */
   transport: RestCommitTransport;
   owner: string;
   repo: string;
@@ -68,8 +79,10 @@ export type HistoryBaseResult =
   | { kind: "recovered"; base: string; commitSha: string }
   /** No evidence (local edit, foreign blob, request failure) — base stays undefined. */
   | { kind: "not-found" }
-  /** The pass budget ran out before a verdict — base stays undefined. */
-  | { kind: "budget-exhausted" };
+  /** The budget ran out before a verdict — base stays undefined. */
+  | { kind: "budget-exhausted" }
+  /** GitHub rate-limited a probe — base stays undefined, the caller stops probing. */
+  | { kind: "rate-limited" };
 
 export async function recoverBaseFromHistory(
   q: HistoryBaseQuery,
@@ -84,7 +97,8 @@ export async function recoverBaseFromHistory(
   if (!spend()) return { kind: "budget-exhausted" };
   try {
     await getBlobText(q.transport, q.owner, q.repo, localSha, q.baseURL);
-  } catch {
+  } catch (err) {
+    if (isRateLimitError(err)) return { kind: "rate-limited" };
     // Never on the remote (the usual real local edit) or unreadable.
     return { kind: "not-found" };
   }
@@ -101,7 +115,8 @@ export async function recoverBaseFromHistory(
       HISTORY_BASE_MAX_VERSIONS,
       q.baseURL,
     );
-  } catch {
+  } catch (err) {
+    if (isRateLimitError(err)) return { kind: "rate-limited" };
     return { kind: "not-found" };
   }
 
@@ -117,7 +132,8 @@ export async function recoverBaseFromHistory(
         commitSha,
         q.baseURL,
       );
-    } catch {
+    } catch (err) {
+      if (isRateLimitError(err)) return { kind: "rate-limited" };
       continue; // e.g. the commit that deleted the path — no version there
     }
     if (blobSha === localSha) {
