@@ -9,7 +9,9 @@
  *    as **set-union with base-tombstones (D20)**: an element present in base
  *    but removed on one side stays removed (never resurrected by the other
  *    side); elements added on either side survive. Scalar keys follow the
- *    classic 3-way rule; both-changed-differently is a CONFLICT.
+ *    classic 3-way rule; both-changed-differently is a CONFLICT — except
+ *    `exo__Asset_updatedAt`, the stamp every edit rewrites: changed on both
+ *    sides, it takes the later instant (ems__Bug 413f80b9).
  *  - **Body** — structured section merge (D21, explicitly NOT last-write-
  *    wins). Sections split at ATX headings (fence-aware); per-section 3-way;
  *    a section modified on both sides falls back to paragraph-level diff3;
@@ -53,6 +55,94 @@ import { diff3 } from "./diff3";
 const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
 const INSTANCE_CLASS_KEY = "exo__Instance_class";
+
+/**
+ * The modification stamp every edit rewrites. Two edits of DIFFERENT keys on
+ * two devices always change it on both sides, so the classic scalar rule
+ * turned every such pair into a conflict (ems__Bug 413f80b9).
+ */
+const UPDATED_AT_KEY = "exo__Asset_updatedAt";
+
+/**
+ * Epoch milliseconds of a wall-clock time WITHOUT a zone (month 0-based, as
+ * `Date`). Naive stamps are written in the writing device's local time, so
+ * the default reads them in this device's local zone; tests inject a fixed
+ * offset.
+ */
+export type LocalTimeToEpoch = (
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+  millisecond: number,
+) => number;
+
+const DEVICE_LOCAL_TIME: LocalTimeToEpoch = (y, mo, d, h, mi, s, ms) => {
+  const t = new Date(0);
+  t.setFullYear(y, mo, d);
+  t.setHours(h, mi, s, ms);
+  return t.getTime();
+};
+
+export interface StructuredMergerOptions {
+  /** How a naive (zone-less) timestamp maps to an instant. Default: device local time. */
+  localTimeToEpoch?: LocalTimeToEpoch;
+}
+
+const TIMESTAMP_RE =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:?\d{2})?$/;
+
+/** UTC epoch of calendar fields, with the year taken literally (no 0-99 → 19xx). */
+function utcEpoch(
+  y: number,
+  mo: number,
+  d: number,
+  h: number,
+  mi: number,
+  s: number,
+  ms: number,
+): number {
+  const t = new Date(0);
+  t.setUTCFullYear(y, mo, d);
+  t.setUTCHours(h, mi, s, ms);
+  return t.getTime();
+}
+
+/**
+ * Instant of an `exo__Asset_updatedAt` value, or `undefined` when it is not a
+ * full, real date-time (a calendar date that does not exist — 02-30, 04-31 —
+ * is rejected, never rolled over; an offset beyond ±14:59 likewise). Forms
+ * measured in the vaults (2026-10-10, 49 612 stamps): `…+05:00`, naive local,
+ * `…+0500`, quoted variants, `…Z` (true UTC — every one of them precedes its
+ * first push by minutes), date-only (2 — rejected).
+ */
+export function timestampToEpoch(
+  value: string,
+  localTimeToEpoch: LocalTimeToEpoch,
+): number | undefined {
+  const m = TIMESTAMP_RE.exec(value.trim());
+  if (m === null) return undefined;
+  const [y, mo, d, h, mi, s] = [m[1], m[2], m[3], m[4], m[5], m[6]].map(Number);
+  if (h > 23 || mi > 59 || s > 59) return undefined;
+  const day = new Date(utcEpoch(y, mo - 1, d, 0, 0, 0, 0));
+  if (day.getUTCMonth() !== mo - 1 || day.getUTCDate() !== d) return undefined;
+  const ms = m[7] === undefined ? 0 : Number(m[7].slice(0, 3).padEnd(3, "0"));
+  const zone = m[8];
+  if (zone === undefined) {
+    const epoch = localTimeToEpoch(y, mo - 1, d, h, mi, s, ms);
+    return Number.isFinite(epoch) ? epoch : undefined;
+  }
+  const utc = utcEpoch(y, mo - 1, d, h, mi, s, ms);
+  if (zone === "Z") return utc;
+  const digits = zone.replace(":", "");
+  const offsetHours = Number(digits.slice(1, 3));
+  const offsetMins = Number(digits.slice(3, 5));
+  if (offsetHours > 14 || offsetMins > 59) return undefined;
+  const offsetMinutes = offsetHours * 60 + offsetMins;
+  return utc - (digits[0] === "-" ? -1 : 1) * offsetMinutes * 60_000;
+}
 
 /**
  * Plain-data guard (A2 deferred finding): the YAML codec contract requires
@@ -144,6 +234,9 @@ function mergeFrontmatter(
   base: Record<string, unknown>,
   local: Record<string, unknown>,
   remote: Record<string, unknown>,
+  localTimeToEpoch: LocalTimeToEpoch,
+  /** A base VERSION of the file exists (the key itself may be absent there). */
+  hasBase: boolean,
 ): FmMergeResult {
   const warnings: string[] = [];
   const orderedKeys: string[] = [];
@@ -200,6 +293,30 @@ function mergeFrontmatter(
     if (deepEqual(r, b)) {
       if (l !== undefined) out[key] = l;
       continue; // local-only change (or local delete)
+    }
+    // The modification stamp changed on both sides: keep the LATER instant
+    // (the value itself, never rewritten). Only when a base version of the
+    // file exists — whether or not it carried the stamp yet; a no-base
+    // add/add stays a conflict — and both values parse as date-times: a
+    // deleted or unparseable stamp still conflicts. Equal instants written
+    // differently take the remote side (devices converge). Other keys are
+    // unaffected: the loop goes on, and any of them diverging on both sides
+    // still returns a conflict below.
+    if (
+      key === UPDATED_AT_KEY &&
+      hasBase &&
+      typeof l === "string" &&
+      typeof r === "string"
+    ) {
+      const le = timestampToEpoch(l, localTimeToEpoch);
+      const re = timestampToEpoch(r, localTimeToEpoch);
+      if (le !== undefined && re !== undefined) {
+        out[key] = le > re ? l : r;
+        warnings.push(
+          `"${key}" changed on both sides — the later stamp kept (${le > re ? "local" : "remote"})`,
+        );
+        continue;
+      }
     }
     return {
       ok: false,
@@ -455,7 +572,14 @@ function mergeBody(base: string, local: string, remote: string): BodyMergeResult
 }
 
 export class StructuredMerger {
-  constructor(private readonly codec: YamlCodec) {}
+  private readonly localTimeToEpoch: LocalTimeToEpoch;
+
+  constructor(
+    private readonly codec: YamlCodec,
+    options: StructuredMergerOptions = {},
+  ) {
+    this.localTimeToEpoch = options.localTimeToEpoch ?? DEVICE_LOCAL_TIME;
+  }
 
   /** 3-way merge one asset. CONFLICT outcomes go to quarantine (D17). */
   mergeAsset(input: AssetMergeInput): AssetMergeOutcome {
@@ -496,6 +620,8 @@ export class StructuredMerger {
       baseDoc.frontmatter,
       localDoc.frontmatter,
       remoteDoc.frontmatter,
+      this.localTimeToEpoch,
+      base !== undefined,
     );
     if (!fm.ok) {
       return { status: "conflict", reason: `${path}: ${fm.reason}` };

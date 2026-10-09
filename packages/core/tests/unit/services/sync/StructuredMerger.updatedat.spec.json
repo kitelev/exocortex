@@ -1,0 +1,106 @@
+{
+  "_doc": "Revert-verify for ems__Bug 413f80b9 (ExoSync: exo__Asset_updatedAt changed on both sides keeps the later stamp), subject = StructuredMerger.ts. Axes U*/T* in packages/core/tests/unit/services/sync/StructuredMerger.updatedat.test.ts. The harness runs under TZ=Asia/Almaty so that U13 can tell the production default (device local time) from UTC (M13); the axes themselves are zone-independent. Run: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/StructuredMerger.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../..\" && TZ=Asia/Almaty node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/services/sync/StructuredMerger.updatedat.test.ts 2>&1",
+  "red_re": "› ([UT]\\d+\\w*) ",
+  "mutants": {
+    "M1_rule_never_applies": {
+      "_note": "The pre-fix behaviour: the stamp is an ordinary scalar. U6 reddens too, and that is expected: its asset lists the stamp BEFORE ems__Effort_startTimestamp, so without the rule the merge stops at the stamp and the conflict reason names exo__Asset_updatedAt instead of the key U6 asserts.",
+      "from": "      key === UPDATED_AT_KEY &&\n",
+      "to": "      key === \"\" &&\n",
+      "expect": [
+        "U1",
+        "U10",
+        "U11",
+        "U12",
+        "U13",
+        "U2",
+        "U3",
+        "U4",
+        "U5",
+        "U6",
+        "U9b"
+      ]
+    },
+    "M2_always_remote": {
+      "from": "        out[key] = le > re ? l : r;\n",
+      "to": "        out[key] = r;\n",
+      "expect": ["U12", "U13", "U2", "U4", "U5"]
+    },
+    "M3_compared_as_text": {
+      "_note": "Lexical order disagrees with time order in U3/U5/U10/U13 (offset/Z/naive mixes); in U4 they happen to agree.",
+      "from": "        out[key] = le > re ? l : r;\n",
+      "to": "        out[key] = l > r ? l : r;\n",
+      "expect": ["U10", "U13", "U3", "U5"]
+    },
+    "M4_no_base_also_merges": {
+      "from": "      hasBase &&\n",
+      "to": "      (hasBase || !hasBase) &&\n",
+      "expect": ["U9"]
+    },
+    "M5_unparseable_treated_as_zero": {
+      "_note": "An unparseable stamp read as epoch 0 silently loses to any real stamp instead of conflicting.",
+      "from": "  if (m === null) return undefined;\n",
+      "to": "  if (m === null) return 0;\n",
+      "expect": ["T1", "U7"]
+    },
+    "M6_offset_sign_ignored": {
+      "_note": "Only T1 carries a negative offset.",
+      "from": "  return utc - (digits[0] === \"-\" ? -1 : 1) * offsetMinutes * 60_000;\n",
+      "to": "  return utc - offsetMinutes * 60_000;\n",
+      "expect": ["T1"]
+    },
+    "M7_injected_local_time_ignored": {
+      "from": "    this.localTimeToEpoch = options.localTimeToEpoch ?? DEVICE_LOCAL_TIME;\n",
+      "to": "    this.localTimeToEpoch = DEVICE_LOCAL_TIME;\n",
+      "expect": ["U5"]
+    },
+    "M8_compact_offset_rejected": {
+      "from": "(Z|[+-]\\d{2}:?\\d{2})?$/;\n",
+      "to": "(Z|[+-]\\d{2}:\\d{2})?$/;\n",
+      "expect": ["T1", "U4"]
+    },
+    "M9_other_key_conflict_hidden": {
+      "_note": "Drops the key-name check: a both-sides change of ANOTHER timestamp-valued key (U6) would be resolved by max instead of conflicting.",
+      "from": "      key === UPDATED_AT_KEY &&\n",
+      "to": "      true &&\n",
+      "expect": ["U6"]
+    },
+    "M10_calendar_rollover_accepted": {
+      "_note": "Without the round-trip check 02-30 rolls over to 03-02, day 32 to the next month, month 13 to next January.",
+      "from": "  if (day.getUTCMonth() !== mo - 1 || day.getUTCDate() !== d) return undefined;\n",
+      "to": "  void day;\n",
+      "expect": ["T2"]
+    },
+    "M11_offset_range_unchecked": {
+      "from": "  if (offsetHours > 14 || offsetMins > 59) return undefined;\n",
+      "to": "  void offsetMins;\n",
+      "expect": ["T3"]
+    },
+    "M12_fraction_not_padded": {
+      "from": "  const ms = m[7] === undefined ? 0 : Number(m[7].slice(0, 3).padEnd(3, \"0\"));\n",
+      "to": "  const ms = m[7] === undefined ? 0 : Number(m[7].slice(0, 3));\n",
+      "expect": ["T4"]
+    },
+    "M13_default_mapping_is_utc": {
+      "_note": "Red only because the harness runs under TZ=Asia/Almaty: in a UTC runner device-local time IS UTC.",
+      "from": "  t.setFullYear(y, mo, d);\n  t.setHours(h, mi, s, ms);\n",
+      "to": "  t.setUTCFullYear(y, mo, d);\n  t.setUTCHours(h, mi, s, ms);\n",
+      "expect": ["U13"]
+    },
+    "M14_base_judged_by_key_presence": {
+      "_note": "Judging 'has a base' by the stamp KEY in the base (review round 1 LOW-3) leaves a base without a stamp conflicting.",
+      "from": "      base !== undefined,\n    );\n",
+      "to": "      baseDoc.frontmatter[UPDATED_AT_KEY] !== undefined,\n    );\n",
+      "expect": ["U9b"]
+    }
+  }
+}
