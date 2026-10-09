@@ -28,7 +28,10 @@
         "P12",
         "P13",
         "P14",
-        "P15"
+        "P15",
+        "P16",
+        "P18",
+        "P19"
       ]
     },
     "MC2_refusal_not_on_stderr": {
@@ -45,6 +48,18 @@
       "from": "    const pullOnly = repo.pullOnly === true ? \" [pull-only]\" : \"\";\n",
       "to": "    const pullOnly = repo.pullOnly === true ? \"\" : \"\";\n",
       "expect": ["P9"]
+    },
+    "MC5_list_warning_not_on_stderr": {
+      "from": "  for (const w of collected.pullOnlyWarnings) err(`warn: ${w}`);\n",
+      "to": "  for (const w of collected.pullOnlyWarnings.slice(0, 0)) err(`warn: ${w}`);\n",
+      "expect": ["P18"],
+      "_note": "Review M4(b) of PR #4544: a typo in the list leaves the intended repo two-way; the warning must reach a caller that discards stdout."
+    },
+    "MC6_parity_line_shape_changed": {
+      "from": "${pullOnly}: ${repo.status} — ${repo.inParity}",
+      "to": "${pullOnly}: ${repo.status} —${repo.inParity}",
+      "expect": ["P17"],
+      "_note": "Review M3 of PR #4544: the first revision of this PR lost exactly this space for every repo; no axis saw it."
     }
   }
 }

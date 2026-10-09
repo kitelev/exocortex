@@ -180,6 +180,13 @@ interface CollectedSpecs {
    */
   parked: SyncRepoSpec[];
   warnings: string[];
+  /**
+   * req c0810b83 — the subset of `warnings` about the pull-only list (an entry
+   * naming no materialized repo). Also part of `warnings`; kept apart so the
+   * commands can repeat it on stderr — a typo there leaves the intended repo
+   * two-way, and a caller discarding stdout must still see that.
+   */
+  pullOnlyWarnings: string[];
 }
 
 /**
@@ -250,6 +257,7 @@ export function collectVaultSpecs(vaultPath: string): CollectedSpecs {
     specs: acc.specs,
     parked,
     warnings: [...acc.warnings, ...pullOnlyWarnings],
+    pullOnlyWarnings,
   };
 }
 
@@ -273,15 +281,17 @@ export function readPullOnlyListText(vaultPath: string): string | null {
  * Collect the sync units for a command, turning a malformed pull-only list
  * into a printed refusal (req c0810b83). Returns `null` after printing the
  * refusal to stdout AND stderr — the caller exits 2 before any REST request.
- * Any other collection error propagates unchanged.
+ * Any other collection error propagates unchanged. On success the pull-only
+ * list warnings are repeated on stderr as `warn: …` lines.
  */
 export function collectVaultSpecsOrRefuse(
   vaultPath: string,
   out: (line: string) => void,
   err: (line: string) => void,
 ): CollectedSpecs | null {
+  let collected: CollectedSpecs;
   try {
-    return collectVaultSpecs(vaultPath);
+    collected = collectVaultSpecs(vaultPath);
   } catch (e) {
     if (!(e instanceof PullOnlyListError)) throw e;
     const line = `❌ ${e.message} — refusing to run: a broken pull-only list must not silently unprotect a repo`;
@@ -289,6 +299,9 @@ export function collectVaultSpecsOrRefuse(
     err(line);
     return null;
   }
+  // stdout gets these through `warnings` (the caller prints `warn:` lines).
+  for (const w of collected.pullOnlyWarnings) err(`warn: ${w}`);
+  return collected;
 }
 
 function printHumanReport(
@@ -300,7 +313,7 @@ function printHumanReport(
     // req c0810b83 — mark a pull-only repo in the human report too.
     const pullOnly = repo.pullOnly === true ? " [pull-only]" : "";
     out(
-      `${repo.repoKey}${head}${pullOnly}: ${repo.status} —${repo.inParity}/${repo.filesChecked} in parity, M2 diffs ${repo.m2SemanticDiffs}, accounted ${repo.accountedCount}, M1 violations ${repo.m1Violations.length}${repo.attachmentHashSetIdentical !== undefined ? `, attachment hash-set ${repo.attachmentHashSetIdentical ? "identical" : "DIFFERS"}` : ""}`,
+      `${repo.repoKey}${head}${pullOnly}: ${repo.status} — ${repo.inParity}/${repo.filesChecked} in parity, M2 diffs ${repo.m2SemanticDiffs}, accounted ${repo.accountedCount}, M1 violations ${repo.m1Violations.length}${repo.attachmentHashSetIdentical !== undefined ? `, attachment hash-set ${repo.attachmentHashSetIdentical ? "identical" : "DIFFERS"}` : ""}`,
     );
     if (repo.detail !== undefined) out(`  ${repo.detail}`);
     for (const w of repo.warnings) out(`  warn: ${w}`);

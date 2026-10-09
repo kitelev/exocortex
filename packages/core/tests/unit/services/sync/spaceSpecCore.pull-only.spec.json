@@ -15,7 +15,7 @@
     "MS1_malformed_line_skipped": {
       "from": "      throw new PullOnlyListError(i + 1, raw);\n",
       "to": "      continue;\n",
-      "expect": ["P6", "P14", "G2"]
+      "expect": ["G2", "P6", "P14"]
     },
     "MS2_case_sensitive": {
       "from": "    entries.push({ key: `${m[1]}/${repo}`.toLowerCase(), line: i + 1 });\n",
@@ -30,17 +30,18 @@
     "MS4_unmatched_not_warned": {
       "from": "    if (matched === undefined) {\n      warnings.push(\n",
       "to": "    if (matched === undefined) {\n      warnings.slice().push(\n",
-      "expect": ["P10"]
+      "expect": ["P10", "P18"]
     },
     "MS5_comments_not_ignored": {
       "from": "    if (line.length === 0 || line.startsWith(\"#\")) continue;\n",
       "to": "    if (line.length === 0) continue;\n",
-      "expect": ["P6", "P11", "P14", "G1"]
+      "expect": ["G1", "P6", "P11", "P14"]
     },
     "MS6_list_not_applied": {
       "from": "    for (const spec of matched) spec.pullOnly = true;\n",
       "to": "    for (const spec of matched) spec.pullOnly = false;\n",
       "expect": [
+        "G1",
         "P1",
         "P2",
         "P3",
@@ -51,13 +52,14 @@
         "P12",
         "P13",
         "P15",
-        "G1"
+        "P16",
+        "P19"
       ]
     },
     "MS7_absent_list_marks_all": {
       "from": "  if (text === null) return [];\n",
       "to": "  if (text === null) return applyPullOnlyListText(specs, specs.map((s) => `${s.owner}/${s.repo}`).join(\"\\n\"));\n",
-      "expect": ["P7", "G3"]
+      "expect": ["G3", "P7", "P17", "P19"]
     }
   }
 }

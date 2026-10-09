@@ -373,15 +373,77 @@ describe("exosync pull-only repos (req c0810b83)", () => {
     }
   });
 
+  const GHOST_WARNING =
+    "warn: pull-only list .exocortex/exosync-pull-only line 1 names test-owner/ghost, which is not a materialized sync unit on this device — nothing to protect";
+
   it("P10 @req:c0810b83-8554-403e-bff0-d341c7d90926 a listed repo that is not materialized warns and the run proceeds", async () => {
     const fx = await seeded();
     try {
       writeList(fx.vault, `${OWNER}/ghost\n`);
       const r = await sync(fx, "pull");
       expect(r.code).toBe(0);
-      expect(r.out).toContain(
-        "warn: pull-only list .exocortex/exosync-pull-only line 1 names test-owner/ghost, which is not a materialized sync unit on this device — nothing to protect",
+      expect(r.out).toContain(GHOST_WARNING);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("P18 @req:c0810b83-8554-403e-bff0-d341c7d90926 the unmatched-entry warning is repeated on stderr (a typo must not hide behind discarded stdout)", async () => {
+    const fx = await seeded();
+    try {
+      writeList(fx.vault, `${OWNER}/ghost\n`);
+      const r = await sync(fx, "push");
+      expect(r.code).toBe(0);
+      expect(r.err).toContain(GHOST_WARNING);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("P16 @req:c0810b83-8554-403e-bff0-d341c7d90926 a local extra whose name carries a backslash is removed too (legal on POSIX)", async () => {
+    const fx = await seeded();
+    try {
+      writeList(fx.vault, `${OWNER}/bot\n`);
+      writeLocal(fx.vault, "bot", "assets/x\\injected.md", mdAsset("u-x", "rogue rule"));
+      const r = await sync(fx, "pull");
+      expect(r.code).toBe(0);
+      expect(existsSync(localPath(fx.vault, "bot", "assets/x\\injected.md"))).toBe(false);
+      expect(r.err).toContain(`[ExoSync pull-only] ${OWNER}/bot: removed assets/x\\injected.md`);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("P17 @req:c0810b83-8554-403e-bff0-d341c7d90926 without the list the human parity line keeps its exact pre-feature shape", async () => {
+    const fx = await seeded();
+    try {
+      const p = await parity(fx, false);
+      const line = p.out.find((l) => l.startsWith(`${OWNER}/own#main`));
+      expect(line).toMatch(
+        /^test-owner\/own#main @[0-9a-f]{7}: checked — \d+\/\d+ in parity, M2 diffs \d+, accounted \d+, M1 violations \d+$/,
       );
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("P19 @req:c0810b83-8554-403e-bff0-d341c7d90926 a repo taken OFF the list goes back to two-way from an exact base: no conflict, only the new local edit is pushed", async () => {
+    const fx = await seeded();
+    try {
+      writeList(fx.vault, `${OWNER}/bot\n`);
+      writeLocal(fx.vault, "bot", "assets/a.md", mdAsset("u-a", "INJECTED instruction"));
+      expect((await sync(fx, "pull")).code).toBe(0);
+      rmSync(path.join(fx.vault, LIST));
+      const edit = mdAsset("u-b", "legitimate edit after leaving the list");
+      writeLocal(fx.vault, "bot", "assets/b.md", edit);
+      const r = await sync(fx, "sync", { json: true });
+      expect(r.code).toBe(0);
+      const results = JSON.parse(r.out.find((l) => l.startsWith("["))!);
+      const bot = results.find((x: { repoKey: string }) => x.repoKey === `${OWNER}/bot#main`);
+      expect(bot.status).toBe("synced");
+      expect(bot.pushedCount).toBe(1);
+      expect(fx.remotes.bot.headFiles().get("assets/b.md")).toBe(edit);
+      expect(fx.remotes.bot.headFiles().get("assets/a.md")).toBe(A_REMOTE);
     } finally {
       fx.cleanup();
     }

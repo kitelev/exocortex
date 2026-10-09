@@ -15,22 +15,36 @@
     "M1_push_not_skipped": {
       "from": "      if (spec.pullOnly === true && direction === \"push\") {\n",
       "to": "      if (spec.pullOnly === true && direction === (\"none\" as SyncDirection)) {\n",
-      "expect": ["P3", "P12", "E1"]
+      "expect": ["E1", "P3", "P12"]
     },
     "M2_no_mirror_branch": {
       "from": "      if (spec.pullOnly === true) {\n        return await this.mirrorPullOnly(\n",
       "to": "      if (spec.pullOnly === false) {\n        return await this.mirrorPullOnly(\n",
-      "expect": ["P1", "P2", "P4", "P11", "P13", "P15", "E2", "E3", "E4"]
+      "expect": [
+        "E2",
+        "E3",
+        "E4",
+        "E5",
+        "E6",
+        "P1",
+        "P2",
+        "P4",
+        "P11",
+        "P13",
+        "P15",
+        "P16",
+        "P19"
+      ]
     },
     "M3_differing_local_kept": {
       "from": "        if ((await gitBlobSha(local, this.sha1)) === entry.blobSha) {\n",
       "to": "        if ((await gitBlobSha(local, this.sha1)) !== \"\") {\n",
-      "expect": ["P1", "P4", "P11", "P13", "P15", "E2", "E3", "E4"]
+      "expect": ["E2", "E3", "E4", "E6", "P1", "P4", "P11", "P13", "P15", "P19"]
     },
     "M4_extras_not_deleted": {
       "from": "      await localFiles.delete(path);\n      removed.push(path);\n",
       "to": "      removed.push(path);\n",
-      "expect": ["P2", "E4"]
+      "expect": ["E4", "P2", "P16"]
     },
     "M5_former_pins_not_closed": {
       "from": "    if (previous !== null) {\n      await this.resolveClearedPins(spec, previous, new Set(), warnings);\n",
@@ -45,12 +59,28 @@
     "M7_result_not_marked": {
       "from": "      ...(spec.pullOnly === true ? { pullOnly: true as const } : {}),\n      ...extra,\n",
       "to": "      ...(spec.pullOnly === false ? { pullOnly: true as const } : {}),\n      ...extra,\n",
-      "expect": ["P12", "E1"]
+      "expect": ["E1", "P12"]
     },
     "M8_watermark_not_at_head": {
       "from": "      lastSyncedSha: head,\n      rootTreeSha: headCommit.treeSha,\n      files: watermarkFiles,\n",
       "to": "      lastSyncedSha: head.slice(0, 0),\n      rootTreeSha: headCommit.treeSha,\n      files: watermarkFiles,\n",
-      "expect": ["P4", "E2"]
+      "expect": ["E2", "P4", "P19"]
+    },
+    "M9_local_guard_refuses_backslash": {
+      "from": "      if (!isTraversalFreeLocalPath(path)) {\n",
+      "to": "      if (!isTraversalFreeLocalPath(path) || path.includes(\"\\\\\")) {\n",
+      "expect": ["P16"],
+      "_note": "Review H1 of PR #4544: the earlier guard (isSafeRepoRelativePath) refused a POSIX-legal backslash name, so an injected agent/x\\\\y.md survived every mirror."
+    },
+    "M10_unsafe_remote_path_written": {
+      "from": "      if (!isSafeRepoRelativePath(entry.path)) {\n",
+      "to": "      if (!isSafeRepoRelativePath(entry.path) && entry.path === \"\") {\n",
+      "expect": ["E5"]
+    },
+    "M11_size_cap_ignored": {
+      "from": "      if (mode.fileMode && entry.size !== undefined && entry.size > maxBytes) {\n        warnings.push(\n          `pull-only mirror skipped oversized",
+      "to": "      if (mode.fileMode && entry.size !== undefined && entry.size > maxBytes * 1000) {\n        warnings.push(\n          `pull-only mirror skipped oversized",
+      "expect": ["E6"]
     }
   }
 }

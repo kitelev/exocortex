@@ -173,4 +173,47 @@ describe(`SyncEngine pull-only repos (req ${REQ})`, () => {
     });
     expect(watermarks.records.get(spec.repoKey)?.spaceKind).toBe("file");
   });
+
+  it(`E5 @req:c0810b83-8554-403e-bff0-d341c7d90926 an unsafe remote path is never written by the mirror (warned instead)`, async () => {
+    const gh = new FakeGitHubRepo({ [FILE]: BASE, "../evil.md": mdAsset("u-evil") });
+    const disk = new FakeLocalFiles({ [FILE]: BASE });
+    const engine = new SyncEngine({
+      transport: gh.transport(),
+      watermarkStore: new FakeWatermarkStore(),
+      materializationCheck: alwaysMaterialized(),
+      localFilesFor: () => disk,
+      sha1: sha1Hex,
+    });
+    const r = await engine.sync({ ...gh.spec(), pullOnly: true }, "pull");
+    expect(r.status).toBe("synced");
+    expect(disk.files.has("../evil.md")).toBe(false);
+    expect(r.warnings).toContain(
+      "unsafe remote path skipped by the pull-only mirror: ../evil.md",
+    );
+  });
+
+  it(`E6 @req:c0810b83-8554-403e-bff0-d341c7d90926 a file-mode remote blob above the size cap is not fetched or written; the local copy is left as is (named limit)`, async () => {
+    const gh = new FakeGitHubRepo({
+      "img/big.bin": new Uint8Array([1, 2, 3, 4, 5, 6]),
+      "img/small.bin": new Uint8Array([1]),
+    });
+    const disk = new FakeLocalFiles({
+      "img/big.bin": new Uint8Array([9, 9]),
+      "img/small.bin": new Uint8Array([8]),
+    });
+    const engine = new SyncEngine({
+      transport: gh.transport(),
+      watermarkStore: new FakeWatermarkStore(),
+      materializationCheck: alwaysMaterialized(),
+      localFilesFor: () => disk,
+      sha1: sha1Hex,
+      maxFileBytes: 4,
+    });
+    const r = await engine.sync({ ...gh.spec("file"), pullOnly: true }, "pull");
+    expect(r.status).toBe("synced");
+    expect(Array.from(disk.files.get("img/big.bin") as Uint8Array)).toEqual([9, 9]);
+    expect(Array.from(disk.files.get("img/small.bin") as Uint8Array)).toEqual([1]);
+    expect(r.mirrored).toEqual({ restored: ["img/small.bin"], added: [], removed: [] });
+    expect(r.warnings.some((w) => w.startsWith("pull-only mirror skipped oversized remote file img/big.bin (6 bytes > 4 cap)"))).toBe(true);
+  });
 });

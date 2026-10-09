@@ -111,9 +111,22 @@ restored …; added …; removed …`) and, one per line, on stderr
 A line that is not of the form `owner/repo` refuses the whole run with exit
 `2` before any request, naming the line number and its content — a broken list
 must never silently unprotect a repo. A listed repo that is not materialized on
-the device only produces a warning. No file ⇒ behaviour exactly as before. The
-plugin's Sync / Pull / Push commands read the same file. Limit: a mount folder
-emptied of every file reads as not materialized and is not refilled by `pull`.
+the device only produces a warning (on stdout and stderr). No file ⇒ behaviour
+exactly as before. The plugin's Sync / Pull / Push commands read the same file.
+
+Trust boundary and limits:
+
+- The protection covers every writer whose change would leave the device
+  through ExoSync (CLI `exosync push` / `sync`, the plugin commands, queued
+  conflict resolutions). The list itself and the rest of the device-local state
+  (`.exocortex/`, the plugin's `.local.` stores) are trusted configuration: a
+  process with arbitrary file access on the device can remove the line, forge
+  cached refs or plant symlinks. The asset-mutating CLI commands address
+  assets, not these files (`set-body` refuses a non-asset path).
+- A mount folder emptied of every file reads as not materialized and is not
+  refilled by `pull`.
+- In a FileSpace, a remote file above the size cap is not fetched, so its local
+  copy is left as is (warned).
 
 ## Sync model
 

@@ -161,9 +161,12 @@ export interface RepoParityReport {
   headSha?: string;
   /**
    * Pull-only repo (req c0810b83): listed in the device-local
-   * `.exocortex/exosync-pull-only` — never pushed, mirrored on pull. Its local
-   * divergence is not pending work: the next pull overwrites it. Present ONLY
-   * on such repos (absent ⇒ ordinary two-way repo).
+   * `.exocortex/exosync-pull-only` — never pushed, mirrored on pull. Present
+   * ONLY on such repos (absent ⇒ ordinary two-way repo). ⚠ The discrepancy
+   * classifier is unchanged, so a local edit here still reads as
+   * `pending-local-*` — but it is NOT work a push will deliver (push skips the
+   * repo; the next pull overwrites the edit). A consumer that keys on pending
+   * classes to decide "push needed" must check this flag first.
    */
   pullOnly?: true;
   warnings: string[];

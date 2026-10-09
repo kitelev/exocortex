@@ -446,6 +446,17 @@ function isSafeRepoRelativePath(path: string): boolean {
 }
 
 /**
+ * req c0810b83 — the pull-only mirror's guard for LOCAL extras it deletes:
+ * refuses only what could address a file outside the mount folder (absolute,
+ * empty, `.` or `..` segments). Unlike {@link isSafeRepoRelativePath} it
+ * admits `\` — a legal POSIX file-name character a local port can list.
+ */
+function isTraversalFreeLocalPath(path: string): boolean {
+  if (path.length === 0 || path.startsWith("/")) return false;
+  return path.split("/").every((s) => s.length > 0 && s !== "." && s !== "..");
+}
+
+/**
  * Non-fast-forward detection. Both production transports (plugin
  * `GitHubRestClient`, CLI `RestPushService`) throw HTTP errors with the
  * message shape `GitHub request {METHOD} {url} → HTTP {status}: {body}` —
@@ -1987,7 +1998,14 @@ export class SyncEngine {
 
     for (const path of localPaths) {
       if (remotePaths.has(path)) continue;
-      if (!isSafeRepoRelativePath(path)) {
+      // Traversal-only guard, NOT `isSafeRepoRelativePath`: that one also
+      // refuses `\`, a legal file-name character on POSIX, so an injected
+      // `agent/x\y.md` would survive every mirror (review H1). A path from
+      // `list()` is the port's own walk of the mount folder; refusing only a
+      // shape that could leave it keeps every listed extra deletable. Defensive:
+  // the node and vault.adapter walks never list such a path (no mutant — no
+  // production input distinguishes it).
+      if (!isTraversalFreeLocalPath(path)) {
         warnings.push(`unsafe local path left untouched by the pull-only mirror: ${path}`);
         continue;
       }

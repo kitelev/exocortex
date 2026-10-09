@@ -15,7 +15,7 @@
     "MD1_stderr_paths_dropped": {
       "from": "  reportMirroredPaths(results, errOut);\n",
       "to": "  reportMirroredPaths([], errOut);\n",
-      "expect": ["P15"]
+      "expect": ["P15", "P16"]
     },
     "MD2_stdout_mirror_line_dropped": {
       "from": "  if (mirrorLine !== null) out(`  ${mirrorLine}`);\n",
