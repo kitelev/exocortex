@@ -1,0 +1,50 @@
+{
+  "_doc": "Revert-verify for req c0810b83, subject = packages/cli/src/commands/exosync-parity.ts (list read + refusal + human mark). Axes P* in exosync-sync.pull-only.test.ts. M_list_not_read is the «список не читается» mutant of the ticket.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-parity.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-sync.pull-only.test.ts 2>&1",
+  "red_re": "› ([PEGV]\\d+\\w*) ",
+  "mutants": {
+    "MC1_list_not_read": {
+      "from": "    return readFileSync(path.join(vaultPath, PULL_ONLY_LIST_PATH), \"utf-8\");\n",
+      "to": "    return readFileSync(path.join(vaultPath, PULL_ONLY_LIST_PATH + \".absent\"), \"utf-8\");\n",
+      "expect": [
+        "P1",
+        "P2",
+        "P3",
+        "P4",
+        "P6",
+        "P8",
+        "P9",
+        "P10",
+        "P11",
+        "P12",
+        "P13",
+        "P14",
+        "P15"
+      ]
+    },
+    "MC2_refusal_not_on_stderr": {
+      "from": "    err(line);\n",
+      "to": "    void line;\n",
+      "expect": ["P14"]
+    },
+    "MC3_refusal_propagates": {
+      "from": "    if (!(e instanceof PullOnlyListError)) throw e;\n",
+      "to": "    if (e instanceof PullOnlyListError) throw e;\n",
+      "expect": ["P6", "P14"]
+    },
+    "MC4_human_mark_dropped": {
+      "from": "    const pullOnly = repo.pullOnly === true ? \" [pull-only]\" : \"\";\n",
+      "to": "    const pullOnly = repo.pullOnly === true ? \"\" : \"\";\n",
+      "expect": ["P9"]
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "_doc": "Revert-verify for req c0810b83, subject = packages/cli/src/commands/exosync-sync.ts (output layer + exit codes). Axes P* in exosync-sync.pull-only.test.ts.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-sync.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-sync.pull-only.test.ts 2>&1",
+  "red_re": "› ([PEGV]\\d+\\w*) ",
+  "mutants": {
+    "MD1_stderr_paths_dropped": {
+      "from": "  reportMirroredPaths(results, errOut);\n",
+      "to": "  reportMirroredPaths([], errOut);\n",
+      "expect": ["P15"]
+    },
+    "MD2_stdout_mirror_line_dropped": {
+      "from": "  if (mirrorLine !== null) out(`  ${mirrorLine}`);\n",
+      "to": "  if (mirrorLine === null) out(`  ${mirrorLine}`);\n",
+      "expect": ["P1", "P2"]
+    },
+    "MD3_skip_counts_as_failure": {
+      "from": "    status === \"busy\" ||\n",
+      "to": "    status === \"busy\" || status === \"skipped-pull-only\" ||\n",
+      "expect": ["P3", "P5", "P12"]
+    },
+    "MD4_refusal_exit_zero": {
+      "from": "    return 2;\n  }\n  const { specs: allSpecs, warnings } = collected;\n",
+      "to": "    return 0;\n  }\n  const { specs: allSpecs, warnings } = collected;\n",
+      "expect": ["P6"]
+    }
+  }
+}

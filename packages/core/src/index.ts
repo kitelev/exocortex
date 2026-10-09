@@ -849,6 +849,7 @@ export {
   type MergeDecision,
   type MergeLayerPort,
   type MountBaseStorePort,
+  type PullOnlyMirrorReport,
   type QuarantineEntry,
   type QuarantinePort,
   type RepoSyncResult,
@@ -960,13 +961,18 @@ export {
 // (RFC 4e4dc453 Phase E — parallel-run validation).
 export {
   ASSET_SPACE_CLASS_UID,
+  PULL_ONLY_LIST_PATH,
+  PullOnlyListError,
   SYNC_BRANCH,
   SpaceSpecAccumulator,
+  applyPullOnlyListText,
   classifySpaceDeclaration,
   isAssetSpaceFrontmatter,
   isFileSpaceFrontmatter,
+  parsePullOnlyList,
   parseStrictGitHubRepoURL,
   readSpaceSource,
+  type PullOnlyListEntry,
   type SpaceClassification,
   type SpaceSpecCandidate,
 } from "./services/sync/spaceSpecCore";

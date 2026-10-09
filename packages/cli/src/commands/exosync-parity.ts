@@ -21,18 +21,21 @@
  */
 
 import { Command } from "commander";
-import { promises as fsp, existsSync } from "node:fs";
+import { promises as fsp, existsSync, readFileSync } from "node:fs";
 import { webcrypto } from "node:crypto";
 import * as path from "node:path";
 import * as yaml from "js-yaml";
 import {
   FileWatermarkStore,
+  PULL_ONLY_LIST_PATH,
   ParityValidator,
+  PullOnlyListError,
   SpaceSpecAccumulator,
   SyncPhaseTimer,
   formatQuota,
   CONDITIONAL_STORE_FILENAME,
   WATERMARK_STORE_FILENAME,
+  applyPullOnlyListText,
   checkParkedStaleness,
   classifySpaceDeclaration,
   parkedPathFor,
@@ -80,6 +83,8 @@ export interface ExosyncParityDeps {
   ghTokenRunner?: () => string;
   env?: NodeJS.ProcessEnv;
   out?: (line: string) => void;
+  /** stderr sink (req c0810b83 — refusals are mirrored there). */
+  err?: (line: string) => void;
 }
 
 /**
@@ -233,7 +238,57 @@ export function collectVaultSpecs(vaultPath: string): CollectedSpecs {
     }
     acc.commit(verdict.candidate);
   }
-  return { specs: acc.specs, parked, warnings: acc.warnings };
+  // req c0810b83 — mark pull-only sync units from the device-local list. The
+  // SAME core helper the plugin collector calls, so the list means one thing
+  // on both surfaces. Throws `PullOnlyListError` on a malformed line — the
+  // commands refuse the whole run rather than silently unprotect a repo.
+  const pullOnlyWarnings = applyPullOnlyListText(
+    acc.specs,
+    readPullOnlyListText(vaultPath),
+  );
+  return {
+    specs: acc.specs,
+    parked,
+    warnings: [...acc.warnings, ...pullOnlyWarnings],
+  };
+}
+
+/**
+ * Read `<vault>/.exocortex/exosync-pull-only` (req c0810b83). Absent ⇒ `null`
+ * (no list ⇒ byte-identical pre-feature behaviour). Any other read failure
+ * (a directory in its place, no permission) propagates: an unreadable
+ * protection list must fail the run, never silently drop the protection.
+ * Read-then-catch — no exists()/read() window.
+ */
+export function readPullOnlyListText(vaultPath: string): string | null {
+  try {
+    return readFileSync(path.join(vaultPath, PULL_ONLY_LIST_PATH), "utf-8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+}
+
+/**
+ * Collect the sync units for a command, turning a malformed pull-only list
+ * into a printed refusal (req c0810b83). Returns `null` after printing the
+ * refusal to stdout AND stderr — the caller exits 2 before any REST request.
+ * Any other collection error propagates unchanged.
+ */
+export function collectVaultSpecsOrRefuse(
+  vaultPath: string,
+  out: (line: string) => void,
+  err: (line: string) => void,
+): CollectedSpecs | null {
+  try {
+    return collectVaultSpecs(vaultPath);
+  } catch (e) {
+    if (!(e instanceof PullOnlyListError)) throw e;
+    const line = `❌ ${e.message} — refusing to run: a broken pull-only list must not silently unprotect a repo`;
+    out(line);
+    err(line);
+    return null;
+  }
 }
 
 function printHumanReport(
@@ -242,8 +297,10 @@ function printHumanReport(
 ): void {
   for (const repo of record.repos) {
     const head = repo.headSha !== undefined ? ` @${repo.headSha.slice(0, 7)}` : "";
+    // req c0810b83 — mark a pull-only repo in the human report too.
+    const pullOnly = repo.pullOnly === true ? " [pull-only]" : "";
     out(
-      `${repo.repoKey}${head}: ${repo.status} — ${repo.inParity}/${repo.filesChecked} in parity, M2 diffs ${repo.m2SemanticDiffs}, accounted ${repo.accountedCount}, M1 violations ${repo.m1Violations.length}${repo.attachmentHashSetIdentical !== undefined ? `, attachment hash-set ${repo.attachmentHashSetIdentical ? "identical" : "DIFFERS"}` : ""}`,
+      `${repo.repoKey}${head}${pullOnly}: ${repo.status} —${repo.inParity}/${repo.filesChecked} in parity, M2 diffs ${repo.m2SemanticDiffs}, accounted ${repo.accountedCount}, M1 violations ${repo.m1Violations.length}${repo.attachmentHashSetIdentical !== undefined ? `, attachment hash-set ${repo.attachmentHashSetIdentical ? "identical" : "DIFFERS"}` : ""}`,
     );
     if (repo.detail !== undefined) out(`  ${repo.detail}`);
     for (const w of repo.warnings) out(`  warn: ${w}`);
@@ -315,6 +372,7 @@ async function runExosyncParityUnsettled(
   deps: ExosyncParityDeps = {},
 ): Promise<number> {
   const out = deps.out ?? ((line: string): void => console.log(line));
+  const errOut = deps.err ?? ((line: string): void => console.error(line));
   const vaultPath = path.resolve(opts.vault);
   if (!existsSync(vaultPath)) {
     throw new Error(`Vault path does not exist: ${vaultPath}`);
@@ -328,10 +386,26 @@ async function runExosyncParityUnsettled(
   const rawTransport =
     deps.transportFactory?.(token, opts.apiBase) ?? pushService.transport();
 
-  const { specs, parked, warnings } = collectVaultSpecs(vaultPath);
+  const configDir = opts.configDir ?? ".obsidian";
+  // req c0810b83 — a malformed pull-only list refuses the run (exit 2) before
+  // any REST request; the refusal names the line and its content.
+  const collected = collectVaultSpecsOrRefuse(vaultPath, out, errOut);
+  if (collected === null) {
+    await appendSyncRunLog(
+      runLogPathFor(vaultPath, configDir),
+      runLogEntry({
+        command: "parity",
+        vault: vaultPath,
+        restCalls: 0,
+        quota: undefined,
+        exitCode: 2,
+      }),
+    );
+    return 2;
+  }
+  const { specs, parked, warnings } = collected;
   for (const w of warnings) out(`warn: ${w}`);
 
-  const configDir = opts.configDir ?? ".obsidian";
   const watermarkPath = path.join(
     vaultPath,
     configDir,

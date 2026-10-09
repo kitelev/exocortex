@@ -1,0 +1,56 @@
+{
+  "_doc": "Revert-verify for req c0810b83 (ExoSync pull-only repos), subject = SyncEngine.ts. Axes: P* in packages/cli/tests/unit/commands/exosync-sync.pull-only.test.ts, E* in packages/core/tests/unit/services/sync/SyncEngine.pull-only.test.ts. Run: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/SyncEngine.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-sync.pull-only.test.ts 2>&1; cd \"$(dirname {subject})/../../../../..\" && node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/services/sync/SyncEngine.pull-only.test.ts 2>&1",
+  "red_re": "› ([PEGV]\\d+\\w*) ",
+  "mutants": {
+    "M1_push_not_skipped": {
+      "from": "      if (spec.pullOnly === true && direction === \"push\") {\n",
+      "to": "      if (spec.pullOnly === true && direction === (\"none\" as SyncDirection)) {\n",
+      "expect": ["P3", "P12", "E1"]
+    },
+    "M2_no_mirror_branch": {
+      "from": "      if (spec.pullOnly === true) {\n        return await this.mirrorPullOnly(\n",
+      "to": "      if (spec.pullOnly === false) {\n        return await this.mirrorPullOnly(\n",
+      "expect": ["P1", "P2", "P4", "P11", "P13", "P15", "E2", "E3", "E4"]
+    },
+    "M3_differing_local_kept": {
+      "from": "        if ((await gitBlobSha(local, this.sha1)) === entry.blobSha) {\n",
+      "to": "        if ((await gitBlobSha(local, this.sha1)) !== \"\") {\n",
+      "expect": ["P1", "P4", "P11", "P13", "P15", "E2", "E3", "E4"]
+    },
+    "M4_extras_not_deleted": {
+      "from": "      await localFiles.delete(path);\n      removed.push(path);\n",
+      "to": "      removed.push(path);\n",
+      "expect": ["P2", "E4"]
+    },
+    "M5_former_pins_not_closed": {
+      "from": "    if (previous !== null) {\n      await this.resolveClearedPins(spec, previous, new Set(), warnings);\n",
+      "to": "    if (previous !== null && previous.lastSyncedSha === \"\") {\n      await this.resolveClearedPins(spec, previous, new Set(), warnings);\n",
+      "expect": ["E2"]
+    },
+    "M6_outbox_not_dropped": {
+      "from": "      for (const entry of queued) {\n        await this.deps.outbox.remove(spec.repoKey, entry.path);\n",
+      "to": "      for (const entry of queued.slice(queued.length)) {\n        await this.deps.outbox.remove(spec.repoKey, entry.path);\n",
+      "expect": ["E3"]
+    },
+    "M7_result_not_marked": {
+      "from": "      ...(spec.pullOnly === true ? { pullOnly: true as const } : {}),\n      ...extra,\n",
+      "to": "      ...(spec.pullOnly === false ? { pullOnly: true as const } : {}),\n      ...extra,\n",
+      "expect": ["P12", "E1"]
+    },
+    "M8_watermark_not_at_head": {
+      "from": "      lastSyncedSha: head,\n      rootTreeSha: headCommit.treeSha,\n      files: watermarkFiles,\n",
+      "to": "      lastSyncedSha: head.slice(0, 0),\n      rootTreeSha: headCommit.treeSha,\n      files: watermarkFiles,\n",
+      "expect": ["P4", "E2"]
+    }
+  }
+}

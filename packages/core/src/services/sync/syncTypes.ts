@@ -37,6 +37,28 @@ export interface SyncRepoSpec {
   localPath: string;
   /** Space subtype (Phase C). Absent ⇒ `"asset"` (backward compatible). */
   spaceKind?: SpaceKind;
+  /**
+   * Pull-only repo (req c0810b83): listed in the device-local
+   * `.exocortex/exosync-pull-only` (see `applyPullOnlyListText`). The engine
+   * NEVER pushes it (`push` ⇒ `skipped-pull-only`, the push phase of `sync`
+   * is skipped) and `pull` / the pull phase of `sync` turn its mount folder
+   * into a MIRROR of the remote head — local edits are overwritten, local
+   * extras removed, missing files restored. Absent ⇒ ordinary two-way sync.
+   */
+  pullOnly?: boolean;
+}
+
+/**
+ * What a pull-only mirror run changed on disk (req c0810b83). Repo-relative
+ * forward-slash paths, sorted. `restored` — a local file whose content
+ * differed from the remote head and was overwritten; `added` — a remote file
+ * that was missing locally; `removed` — a local file absent from the remote
+ * head that was deleted.
+ */
+export interface PullOnlyMirrorReport {
+  restored: string[];
+  added: string[];
+  removed: string[];
 }
 
 /**
@@ -336,7 +358,24 @@ export interface RepoSyncResult {
      * "update your PAT" prompt (R8) and never treat this as success.
      */
     | "auth-required"
+    /**
+     * Push run over a pull-only repo (req c0810b83): nothing was examined or
+     * sent — the repo is read-only on this device by declaration. A clean
+     * outcome, never a failure (a bot pushing its whole vault stays green).
+     */
+    | "skipped-pull-only"
     | "error";
+  /**
+   * Set on every result of a pull-only repo (req c0810b83), whatever the
+   * direction — consumers render the push-phase skip from it.
+   */
+  pullOnly?: true;
+  /**
+   * Pull-only mirror outcome (req c0810b83): present on a pull / sync run of
+   * a pull-only repo once the mirror completed (empty lists = already
+   * identical to the remote head).
+   */
+  mirrored?: PullOnlyMirrorReport;
   /** New commit SHA when a push happened. */
   pushedSha?: string;
   /** Remote changes applied to local disk (pull phase). */

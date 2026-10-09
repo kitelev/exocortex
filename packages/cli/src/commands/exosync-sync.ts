@@ -72,7 +72,7 @@ import {
   type WatermarkFileIO,
   type YamlCodec,
 } from "@kitelev/exocortex-core";
-import { collectVaultSpecs } from "./exosync-parity.js";
+import { collectVaultSpecsOrRefuse } from "./exosync-parity.js";
 import { registerQuarantineCommands } from "./exosync-quarantine.js";
 import { RestPushService } from "../services/RestPushService.js";
 import {
@@ -138,6 +138,12 @@ export interface ExosyncSyncDeps {
   ghTokenRunner?: () => string;
   env?: NodeJS.ProcessEnv;
   out?: (line: string) => void;
+  /**
+   * stderr sink (req c0810b83): the paths a pull-only mirror overwrote /
+   * added / removed, and a pull-only-list refusal, are mirrored here so a
+   * caller that discards stdout still sees what was erased.
+   */
+  err?: (line: string) => void;
 }
 
 /**
@@ -404,6 +410,43 @@ export function nodeMaterializationCheck(
   };
 }
 
+/**
+ * req c0810b83 — one stdout line naming every path a pull-only mirror
+ * touched, grouped by action: `pull-only mirror (local changes overwritten by
+ * the remote head): restored a.md, b.md; added c.md; removed d.md`. `null`
+ * when the repo is not pull-only or the mirror changed nothing.
+ */
+export function formatMirrorLine(r: RepoSyncResult): string | null {
+  const m = r.mirrored;
+  if (m === undefined) return null;
+  const groups: string[] = [];
+  if (m.restored.length > 0) groups.push(`restored ${m.restored.join(", ")}`);
+  if (m.added.length > 0) groups.push(`added ${m.added.join(", ")}`);
+  if (m.removed.length > 0) groups.push(`removed ${m.removed.join(", ")}`);
+  if (groups.length === 0) return null;
+  return `pull-only mirror (local changes overwritten by the remote head): ${groups.join("; ")}`;
+}
+
+/**
+ * req c0810b83 — the same paths on stderr, ONE line per path
+ * (`[ExoSync pull-only] <owner/repo>: <restored|added|removed> <path>`), so a
+ * caller that discards stdout (or reads `--json`) still sees what the mirror
+ * erased. Printed in BOTH output modes — stderr never corrupts the JSON blob.
+ */
+export function reportMirroredPaths(
+  results: readonly RepoSyncResult[],
+  err: (line: string) => void,
+): void {
+  for (const r of results) {
+    const m = r.mirrored;
+    if (m === undefined) continue;
+    const repo = r.repoKey.split("#")[0];
+    for (const p of m.restored) err(`[ExoSync pull-only] ${repo}: restored ${p}`);
+    for (const p of m.added) err(`[ExoSync pull-only] ${repo}: added ${p}`);
+    for (const p of m.removed) err(`[ExoSync pull-only] ${repo}: removed ${p}`);
+  }
+}
+
 function printRepoResult(
   r: RepoSyncResult,
   out: (line: string) => void,
@@ -421,6 +464,10 @@ function printRepoResult(
     `${r.repoKey}${head}: ${r.status} — pulled ${r.pulledCount}, pushed ${r.pushedCount}, merged ${r.mergedCount}, quarantined ${r.quarantinedCount}${(r.pushedDeletes?.length ?? 0) > 0 ? `, deleted ${r.pushedDeletes!.length}` : ""}${resolvedSuffix}${reconflictSuffix}`,
   );
   if (r.detail !== undefined) out(`  ${r.detail}`);
+  // req c0810b83 — what the pull-only mirror erased/restored, by path (the
+  // per-path stderr lines are printed by `reportMirroredPaths`).
+  const mirrorLine = formatMirrorLine(r);
+  if (mirrorLine !== null) out(`  ${mirrorLine}`);
   for (const w of r.warnings) out(`  warn: ${w}`);
   // Surface the actual quarantined PATHS, not just the count — without this the
   // user only sees "quarantined N" and has no idea WHICH files need resolving
@@ -443,8 +490,9 @@ function printRepoResult(
 }
 
 /** A repo result is a FAILURE (non-zero exit) when it left unresolved
- * divergence or could not run. `synced` and `skipped-not-materialized` are
- * clean. */
+ * divergence or could not run. `synced`, `skipped-not-materialized` and
+ * `skipped-pull-only` (req c0810b83 — a bot pushing its whole vault must stay
+ * green) are clean. */
 function isFailureStatus(status: RepoSyncResult["status"]): boolean {
   return (
     status === "conflict" ||
@@ -481,6 +529,7 @@ async function runExosyncSyncUnsettled(
   deps: ExosyncSyncDeps = {},
 ): Promise<number> {
   const out = deps.out ?? ((line: string): void => console.log(line));
+  const errOut = deps.err ?? ((line: string): void => console.error(line));
   const vaultPath = path.resolve(opts.vault);
   if (!existsSync(vaultPath)) {
     throw new Error(`Vault path does not exist: ${vaultPath}`);
@@ -494,7 +543,28 @@ async function runExosyncSyncUnsettled(
   const rawTransport =
     deps.transportFactory?.(token, opts.apiBase) ?? pushService.transport();
 
-  const { specs: allSpecs, warnings } = collectVaultSpecs(vaultPath);
+  // req c0810b83 — a malformed pull-only list refuses the run (exit 2) before
+  // any REST request: a line meant to protect a repo that does not parse must
+  // never leave that repo silently two-way (its local edits would be pushed).
+  const collected = collectVaultSpecsOrRefuse(vaultPath, out, errOut);
+  if (collected === null) {
+    // A distinct local on purpose: the vacuous-exit journal block below is a
+    // mutant anchor of exosync-sync.quota-journal.spec.json and must stay
+    // the ONLY occurrence of its text.
+    const refusalConfigDir = opts.configDir ?? ".obsidian";
+    await appendSyncRunLog(
+      runLogPathFor(vaultPath, refusalConfigDir),
+      runLogEntry({
+        command: "sync",
+        vault: vaultPath,
+        restCalls: 0,
+        quota: undefined,
+        exitCode: 2,
+      }),
+    );
+    return 2;
+  }
+  const { specs: allSpecs, warnings } = collected;
   for (const w of warnings) out(`warn: ${w}`);
   if (allSpecs.length === 0) {
     out(
@@ -679,6 +749,9 @@ async function runExosyncSyncUnsettled(
   // (req e5e45283) — the journal must record the same numbers the user saw,
   // and recomputing them invites the two to drift.
   const aggTimings = aggregateTimings(results);
+  // req c0810b83 — per-path stderr list of what pull-only mirrors changed,
+  // in both output modes.
+  reportMirroredPaths(results, errOut);
 
   if (opts.json === true) {
     out(JSON.stringify(results, null, 2));

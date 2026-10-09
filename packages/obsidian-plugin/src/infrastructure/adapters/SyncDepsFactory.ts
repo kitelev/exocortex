@@ -11,11 +11,13 @@ import {
   LocalOutboxStore,
   MOUNT_BASE_STORE_FILENAME,
   OUTBOX_STORE_FILENAME,
+  PULL_ONLY_LIST_PATH,
   QuarantineResolver,
   SpaceSpecAccumulator,
   StructuredMerger,
   SyncEngine,
   WATERMARK_STORE_FILENAME,
+  applyPullOnlyListText,
   classifySpaceDeclaration,
   type LocalFilesPort,
   type MaterializationCheckPort,
@@ -138,6 +140,18 @@ export async function collectSyncRepoSpecs(
     acc.commit(verdict.candidate);
   }
 
+  // req c0810b83 — mark pull-only sync units from the device-local list
+  // `.exocortex/exosync-pull-only` through the SAME core helper the CLI
+  // collector calls (one meaning on every surface). A malformed line throws
+  // `PullOnlyListError` — the sync command surfaces it as a failed run rather
+  // than silently pushing a repo the list meant to protect.
+  const pullOnlyWarnings = applyPullOnlyListText(
+    acc.specs,
+    (await app.vault.adapter.exists(PULL_ONLY_LIST_PATH))
+      ? await app.vault.adapter.read(PULL_ONLY_LIST_PATH)
+      : null,
+  );
+
   // FINDING-3 — detect mounted-but-undeclared packs: enumerate physical mount
   // folders and subtract the declared+materialized set. A folder present on
   // disk with no descriptor is an ad-hoc add (pulled by URL, never registered)
@@ -150,7 +164,7 @@ export async function collectSyncRepoSpecs(
   return {
     specs: acc.specs,
     asUidByRepoKey: acc.asUidByRepoKey,
-    warnings: acc.warnings,
+    warnings: [...acc.warnings, ...pullOnlyWarnings],
     mountedNotDeclared,
   };
 }

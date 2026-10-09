@@ -1,0 +1,63 @@
+{
+  "_doc": "Revert-verify for req c0810b83, subject = spaceSpecCore.ts (pull-only list parse/apply). Axes: P* (CLI exosync-sync.pull-only.test.ts) and G* (plugin SyncDepsFactory.pull-only.test.ts).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/spaceSpecCore.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-sync.pull-only.test.ts 2>&1; cd \"$(dirname {subject})/../../../../..\" && node node_modules/jest/bin/jest.js --config packages/obsidian-plugin/jest.config.js packages/obsidian-plugin/tests/unit/sync/SyncDepsFactory.pull-only.test.ts 2>&1",
+  "red_re": "› ([PEGV]\\d+\\w*) ",
+  "mutants": {
+    "MS1_malformed_line_skipped": {
+      "from": "      throw new PullOnlyListError(i + 1, raw);\n",
+      "to": "      continue;\n",
+      "expect": ["P6", "P14", "G2"]
+    },
+    "MS2_case_sensitive": {
+      "from": "    entries.push({ key: `${m[1]}/${repo}`.toLowerCase(), line: i + 1 });\n",
+      "to": "    entries.push({ key: `${m[1]}/${repo}`, line: i + 1 });\n",
+      "expect": ["P11"]
+    },
+    "MS3_git_suffix_kept": {
+      "from": "    const repo = m === null ? \"\" : m[2].replace(/\\.git$/i, \"\");\n",
+      "to": "    const repo = m === null ? \"\" : m[2];\n",
+      "expect": ["P13"]
+    },
+    "MS4_unmatched_not_warned": {
+      "from": "    if (matched === undefined) {\n      warnings.push(\n",
+      "to": "    if (matched === undefined) {\n      warnings.slice().push(\n",
+      "expect": ["P10"]
+    },
+    "MS5_comments_not_ignored": {
+      "from": "    if (line.length === 0 || line.startsWith(\"#\")) continue;\n",
+      "to": "    if (line.length === 0) continue;\n",
+      "expect": ["P6", "P11", "P14", "G1"]
+    },
+    "MS6_list_not_applied": {
+      "from": "    for (const spec of matched) spec.pullOnly = true;\n",
+      "to": "    for (const spec of matched) spec.pullOnly = false;\n",
+      "expect": [
+        "P1",
+        "P2",
+        "P3",
+        "P4",
+        "P8",
+        "P9",
+        "P11",
+        "P12",
+        "P13",
+        "P15",
+        "G1"
+      ]
+    },
+    "MS7_absent_list_marks_all": {
+      "from": "  if (text === null) return [];\n",
+      "to": "  if (text === null) return applyPullOnlyListText(specs, specs.map((s) => `${s.owner}/${s.repo}`).join(\"\\n\"));\n",
+      "expect": ["P7", "G3"]
+    }
+  }
+}

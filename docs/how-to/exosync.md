@@ -81,6 +81,40 @@ local snapshot, remote diff, pull-apply and delete-inference — so excluded
 paths can never corrupt or be corrupted. FileSpaces sync **every** file
 byte-exact instead (see below).
 
+### Pull-only repos (read-only on this device)
+
+A device can declare some repos **read-only** (req c0810b83) — for example a
+bot vault whose instructions repo must never be changed by the bot. List them
+in the device-local file `<vault>/.exocortex/exosync-pull-only`, one
+`owner/repo` per line (`#` comment lines and blank lines are ignored; matching
+is case-insensitive and a trailing `.git` is dropped):
+
+```text
+# instructions are authored elsewhere — this device only mirrors them
+kitelev/exoas-bot-instructions
+```
+
+For every listed repo:
+
+- `exosync push` and the push phase of `exosync sync` never send it — the
+  repo's outcome is `skipped-pull-only` and the exit code stays `0`;
+- `exosync pull` and the pull phase of `exosync sync` make the mount folder a
+  **mirror of the remote head**: locally edited files are overwritten, local
+  extra files are deleted, missing files are written back. Nothing is merged,
+  quarantined, pinned or queued for push. The affected paths are listed on
+  stdout (`pull-only mirror (local changes overwritten by the remote head):
+restored …; added …; removed …`) and, one per line, on stderr
+  (`[ExoSync pull-only] <owner/repo>: restored <path>`);
+- `exosync-parity --json` marks the repo `"pullOnly": true` (the human report
+  tags its line `[pull-only]`).
+
+A line that is not of the form `owner/repo` refuses the whole run with exit
+`2` before any request, naming the line number and its content — a broken list
+must never silently unprotect a repo. A listed repo that is not materialized on
+the device only produces a warning. No file ⇒ behaviour exactly as before. The
+plugin's Sync / Pull / Push commands read the same file. Limit: a mount folder
+emptied of every file reads as not materialized and is not refilled by `pull`.
+
 ## Sync model
 
 Per repo, one cycle is **pull → conflict check → merge → push**, orchestrated
