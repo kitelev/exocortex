@@ -228,6 +228,112 @@ export function classifySpaceDeclaration(
   };
 }
 
+// ── Pull-only repos (req c0810b83) ────────────────────────────────────────
+
+/**
+ * Vault-relative path of the DEVICE-LOCAL pull-only list (req c0810b83). One
+ * `owner/repo` per line; blank lines and lines whose first non-blank
+ * character is `#` are ignored. Lives under `.exocortex/` (device state, not
+ * a synced asset) so a pushed vault can never carry it to another device.
+ */
+export const PULL_ONLY_LIST_PATH = ".exocortex/exosync-pull-only";
+
+/** The `owner/repo` shape a list line must have — the sync-unit charset. */
+const PULL_ONLY_LINE_RE = /^([A-Za-z0-9_-]+)\/([A-Za-z0-9_.-]+)$/;
+
+/**
+ * A malformed line in the pull-only list. Fail-LOUD on purpose: a line that
+ * was meant to name a protected repo but does not parse would otherwise leave
+ * that repo silently two-way (its local edits would be pushed). The message
+ * names the file, the 1-based line number and the line's content.
+ */
+export class PullOnlyListError extends Error {
+  readonly lineNumber: number;
+  readonly lineContent: string;
+  constructor(lineNumber: number, lineContent: string) {
+    super(
+      `invalid pull-only list ${PULL_ONLY_LIST_PATH} line ${lineNumber}: expected "owner/repo" (blank lines and # comments are ignored), got ${JSON.stringify(lineContent)}`,
+    );
+    this.name = "PullOnlyListError";
+    this.lineNumber = lineNumber;
+    this.lineContent = lineContent;
+  }
+}
+
+/** One accepted line of the pull-only list. */
+export interface PullOnlyListEntry {
+  /** Canonical match key: lower-cased `owner/repo`, `.git` suffix removed. */
+  key: string;
+  /** 1-based line number in the file (for diagnostics). */
+  line: number;
+}
+
+/**
+ * Parse the pull-only list text. Throws {@link PullOnlyListError} on the
+ * FIRST malformed line — never a silent skip. Matching is case-insensitive
+ * (GitHub owner/repo names are) and a trailing `.git` is dropped, the same
+ * normalisation the declaration parser applies to `_source`.
+ */
+export function parsePullOnlyList(text: string): PullOnlyListEntry[] {
+  const entries: PullOnlyListEntry[] = [];
+  // No separate BOM strip: `trim()` below removes U+FEFF (ECMAScript
+  // whitespace), so a leading byte-order mark never reaches the matcher.
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i].replace(/\r$/, "");
+    const line = raw.trim();
+    if (line.length === 0 || line.startsWith("#")) continue;
+    const m = PULL_ONLY_LINE_RE.exec(line);
+    const repo = m === null ? "" : m[2].replace(/\.git$/i, "");
+    // `repo.startsWith(".")` also refuses `..` and a bare `.git` (the owner
+    // charset admits no dot at all) — the same traversal guard as
+    // `parseStrictGitHubRepoURL`.
+    if (m === null || repo.length === 0 || repo.startsWith(".")) {
+      throw new PullOnlyListError(i + 1, raw);
+    }
+    entries.push({ key: `${m[1]}/${repo}`.toLowerCase(), line: i + 1 });
+  }
+  return entries;
+}
+
+/**
+ * Apply the pull-only list to the collected sync units (req c0810b83) — the
+ * ONE place both collectors (plugin `collectSyncRepoSpecs`, CLI
+ * `collectVaultSpecs`) delegate to, so a list means the same thing on every
+ * surface. `text === null` ⇒ no list file ⇒ nothing is marked (behaviour
+ * byte-identical to the pre-feature engine). Marks every listed spec with
+ * `pullOnly: true` (in place) and returns warnings for entries that name no
+ * materialized sync unit (a typo, or a repo not mounted on this device —
+ * visible, never a refusal). Throws {@link PullOnlyListError} on a malformed
+ * line.
+ */
+export function applyPullOnlyListText(
+  specs: SyncRepoSpec[],
+  text: string | null,
+): string[] {
+  if (text === null) return [];
+  const entries = parsePullOnlyList(text);
+  const warnings: string[] = [];
+  const byKey = new Map<string, SyncRepoSpec[]>();
+  for (const spec of specs) {
+    const key = `${spec.owner}/${spec.repo}`.toLowerCase();
+    const bucket = byKey.get(key);
+    if (bucket === undefined) byKey.set(key, [spec]);
+    else bucket.push(spec);
+  }
+  for (const entry of entries) {
+    const matched = byKey.get(entry.key);
+    if (matched === undefined) {
+      warnings.push(
+        `pull-only list ${PULL_ONLY_LIST_PATH} line ${entry.line} names ${entry.key}, which is not a materialized sync unit on this device — nothing to protect`,
+      );
+      continue;
+    }
+    for (const spec of matched) spec.pullOnly = true;
+  }
+  return warnings;
+}
+
 /**
  * Order-explicit accumulator for sync-unit candidates: dedupe by repoKey +
  * deterministic disjoint-kind conflict resolution (`asset` always wins —

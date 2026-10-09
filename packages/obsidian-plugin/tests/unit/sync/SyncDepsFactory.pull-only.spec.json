@@ -1,0 +1,22 @@
+{
+  "_doc": "Revert-verify for req c0810b83, subject = the plugin collector (SyncDepsFactory.ts). Axes G* in SyncDepsFactory.pull-only.test.ts. Run: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/infrastructure/adapters/SyncDepsFactory.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../..\" && node node_modules/jest/bin/jest.js --config packages/obsidian-plugin/jest.config.js packages/obsidian-plugin/tests/unit/sync/SyncDepsFactory.pull-only.test.ts 2>&1",
+  "red_re": "› ([PEGV]\\d+\\w*) ",
+  "mutants": {
+    "MG1_list_not_read": {
+      "from": "      ? await app.vault.adapter.read(PULL_ONLY_LIST_PATH)\n",
+      "to": "      ? null\n",
+      "expect": ["G1", "G2"],
+      "_note": "Review L2 of PR #4544: the plugin collector's own «list is not read» mutant."
+    }
+  }
+}

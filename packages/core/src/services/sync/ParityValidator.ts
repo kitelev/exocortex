@@ -159,6 +159,16 @@ export interface RepoParityReport {
   /** File-mode repos: multiset equality of blob SHAs (attachment sub-check). */
   attachmentHashSetIdentical?: boolean;
   headSha?: string;
+  /**
+   * Pull-only repo (req c0810b83): listed in the device-local
+   * `.exocortex/exosync-pull-only` — never pushed, mirrored on pull. Present
+   * ONLY on such repos (absent ⇒ ordinary two-way repo). ⚠ The discrepancy
+   * classifier is unchanged, so a local edit here still reads as
+   * `pending-local-*` — but it is NOT work a push will deliver (push skips the
+   * repo; the next pull overwrites the edit). A consumer that keys on pending
+   * classes to decide "push needed" must check this flag first.
+   */
+  pullOnly?: true;
   warnings: string[];
   detail?: string;
 }
@@ -396,6 +406,9 @@ export class ParityValidator {
       m2SemanticDiffs: 0,
       accountedCount: 0,
       m1Violations: [],
+      // req c0810b83 — the mark rides EVERY status, so a pull-only repo is
+      // recognisable even when its check errored.
+      ...(spec.pullOnly === true ? { pullOnly: true as const } : {}),
       warnings,
       ...extra,
     });
@@ -827,6 +840,10 @@ export class ParityValidator {
     pinned: ReadonlySet<string>,
     syncResult: RepoSyncResult | undefined,
   ): ParityM1Violation[] {
+    // req c0810b83 — a pull-only repo's pull is a MIRROR: overwriting a local
+    // edit is the contract (substitution is erased), not a lost edit. There
+    // is nothing to conserve, so the detector does not apply.
+    if (spec.pullOnly === true) return [];
     const dirty = opts.snapshot?.dirtyByRepo.get(spec.repoKey);
     if (dirty === undefined || dirty.size === 0) return [];
 

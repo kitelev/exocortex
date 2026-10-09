@@ -128,11 +128,6 @@
       "count": 1
     },
     {
-      "file": "packages/obsidian-plugin/src/infrastructure/adapters/SyncCommands.ts",
-      "rule": "no-console",
-      "count": 3
-    },
-    {
       "file": "packages/obsidian-plugin/src/infrastructure/di/ObsidianLogger.ts",
       "rule": "no-console",
       "count": 4

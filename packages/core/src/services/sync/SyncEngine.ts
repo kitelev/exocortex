@@ -51,6 +51,12 @@
  * contract difference: a merge-layer-less full Sync aborts the whole repo on
  * the first overlap (`conflict` status), while a split run defers the
  * conflict and still processes the non-conflicting remainder.
+ *
+ * Pull-only repos (req c0810b83): a spec marked `pullOnly` (device-local list
+ * `.exocortex/exosync-pull-only`, applied by `applyPullOnlyListText`) is never
+ * pushed — `push` returns `skipped-pull-only` without a single REST call — and
+ * its pull phase (`pull`, and the pull half of `sync`) is a MIRROR of the
+ * remote head, not a 3-way merge: see {@link SyncEngine.mirrorPullOnly}.
  */
 
 import {
@@ -85,6 +91,7 @@ import {
   REF_NOT_FOUND_HINT,
 } from "./CredentialStore";
 import { redactSecrets, scanForSecrets } from "./secretScan";
+import { PULL_ONLY_LIST_PATH } from "./spaceSpecCore";
 import {
   withRateLimitBackoff,
   createRateLimitBudget,
@@ -435,6 +442,19 @@ function isSafeRepoRelativePath(path: string): boolean {
   if (path.length === 0 || path.startsWith("/") || path.includes("\\")) {
     return false;
   }
+  return path.split("/").every((s) => s.length > 0 && s !== "." && s !== "..");
+}
+
+/**
+ * req c0810b83 — the pull-only mirror's guard for LOCAL extras it deletes:
+ * refuses only what could address a file outside the mount folder (absolute,
+ * empty, `.` or `..` segments). Unlike {@link isSafeRepoRelativePath} it
+ * admits `\` — a legal POSIX file-name character the node port lists as is.
+ * Load-bearing for the plugin port, whose adapter turns `\` into `/` and so
+ * can list real `..` segments (see the call site).
+ */
+function isTraversalFreeLocalPath(path: string): boolean {
+  if (path.length === 0 || path.startsWith("/")) return false;
   return path.split("/").every((s) => s.length > 0 && s !== "." && s !== "..");
 }
 
@@ -1109,10 +1129,23 @@ export class SyncEngine {
       // Phase 0 — snapshot at the return point captures the full breakdown
       // for whatever phases ran (early skips snapshot ~zero, harmless).
       timings: timer.snapshot(),
+      // req c0810b83 — EVERY outcome of a pull-only repo says so (consumers
+      // render the push-phase skip from it, even on error/skip paths).
+      ...(spec.pullOnly === true ? { pullOnly: true as const } : {}),
       ...extra,
     });
 
     try {
+      // req c0810b83 — a pull-only repo is NEVER pushed. A push run examines
+      // nothing and sends nothing: no materialization check, no outbox flush,
+      // no REST call. A clean outcome, not a failure (a bot pushing its whole
+      // vault stays green).
+      if (spec.pullOnly === true && direction === "push") {
+        return result("skipped-pull-only", {
+          detail: `pull-only repo (${PULL_ONLY_LIST_PATH}): push skipped — local changes are never sent; pull mirrors the remote head`,
+        });
+      }
+
       // D19 — full-materialization gate. Skipped repo: no diff, no push, and
       // critically NO delete inference from local absence.
       const gate = await this.deps.materializationCheck.check(spec);
@@ -1141,6 +1174,22 @@ export class SyncEngine {
           detail:
             "file-mode repo requires a LocalFilesPort with readBinary/writeBinary — refusing to sync through the text-only port (binary would corrupt)",
         });
+      }
+      // req c0810b83 — pull / sync over a pull-only repo: the pull phase is a
+      // MIRROR of the remote head and the push phase does not exist. Branches
+      // off BEFORE the outbox flush (a queued resolution would otherwise be
+      // pushed) and before any 3-way machinery (no merge, no quarantine, no
+      // pin — a local edit here is substitution, not someone's work).
+      if (spec.pullOnly === true) {
+        return await this.mirrorPullOnly(
+          spec,
+          direction,
+          localFiles,
+          mode,
+          warnings,
+          result,
+          onProgress,
+        );
       }
       if (mode.fileMode && this.deps.quarantine === undefined) {
         // D18 remote-wins DESTROYS the local version on disk; the losing
@@ -1815,6 +1864,220 @@ export class SyncEngine {
       this.activeTimer = prevTimer;
       this.activeLocalIoProgress = prevLocalIoProgress;
     }
+  }
+
+  /**
+   * Pull-only mirror (req c0810b83) — the pull phase of a `pull` / `sync` run
+   * over a repo listed in `.exocortex/exosync-pull-only`. The mount folder
+   * becomes a byte-exact MIRROR of the remote head over the engine's sync
+   * universe (`mode.syncable` — the same predicate every other phase uses):
+   *
+   *  - a local file whose blob differs from the head blob is overwritten
+   *    (`restored`); a head file missing locally is written (`added`); a local
+   *    syncable file absent from the head is deleted (`removed`);
+   *  - EVERY local file is read and hashed — no mtime-manifest shortcut: the
+   *    guarantee «pull restores the remote text» must not depend on a cache an
+   *    mtime-preserving rewrite could fool;
+   *  - nothing is merged, quarantined, pinned or queued: a local edit in a
+   *    pull-only repo is substitution, not someone's work. Pins left by an
+   *    earlier two-way life are cleared (their quarantine entries marked
+   *    resolved) and outbox entries for the repo are dropped (they would be
+   *    pushes);
+   *  - the watermark is set to the head tree, so if the repo later leaves the
+   *    list its next two-way sync starts from an exact base (disk == head).
+   *
+   * Never pushes, whatever the direction (a `push` run returned earlier as
+   * `skipped-pull-only`). Network / IO failures propagate to `syncLocked`'s
+   * catch (classified `auth-required` / `error`); the watermark is written
+   * only after the whole mirror completed, so a half-done mirror re-runs.
+   *
+   * Known limit (named, not hidden): the D19 materialization gate still runs
+   * first, so a mount folder emptied of every file reads as «not
+   * materialized» and is not refilled by `pull` (the CLI gate refuses an empty
+   * asset folder). Substitution needs at least one file, which the mirror
+   * restores or removes.
+   */
+  private async mirrorPullOnly(
+    spec: SyncRepoSpec,
+    direction: SyncDirection,
+    localFiles: LocalFilesPort,
+    mode: ModeOps,
+    warnings: string[],
+    result: (
+      status: RepoSyncResult["status"],
+      extra?: Partial<RepoSyncResult>,
+    ) => RepoSyncResult,
+    onProgress: SyncProgressFn | undefined,
+  ): Promise<RepoSyncResult> {
+    const maxBytes = this.deps.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
+    this.emitProgress(onProgress, spec.repoKey, "pulling-remote");
+    const head = await getHeadSha(
+      this.transport,
+      spec.owner,
+      spec.repo,
+      spec.branch,
+      this.deps.baseURL,
+    );
+    const headCommit = await getCommitInfo(
+      this.transport,
+      spec.owner,
+      spec.repo,
+      head,
+      this.deps.baseURL,
+    );
+    // The sync universe on the remote side: the SAME predicate as the local
+    // side (symmetric — a path outside it is invisible in both directions).
+    const remote = (
+      await getTree(
+        this.transport,
+        spec.owner,
+        spec.repo,
+        headCommit.treeSha,
+        this.deps.baseURL,
+      )
+    ).filter((e) => mode.syncable(e.path));
+    const remotePaths = new Set(remote.map((e) => e.path));
+    const localPaths = (await localFiles.list()).filter(mode.syncable);
+    const localSet = new Set(localPaths);
+    // Unicode-normalisation bridge (review N2 of PR #4544). The plugin port
+    // lists paths through Obsidian's adapter, which returns them NFC, while a
+    // remote path may be stored NFD; on a normalisation-insensitive FS (APFS)
+    // both name the SAME file. Without this bridge the mirror wrote the NFD
+    // path as `added` and, next run, deleted the NFC-listed copy as an extra —
+    // the file vanished every other run. An exact match always wins; the
+    // NFC key is only a fallback, and a local path it claims is never deleted.
+    const nfc = (p: string): string => p.normalize("NFC");
+    const localByNfc = new Map<string, string>();
+    for (const p of localPaths) {
+      if (!localByNfc.has(nfc(p))) localByNfc.set(nfc(p), p);
+    }
+    const claimedLocal = new Set<string>();
+
+    const restored: string[] = [];
+    const added: string[] = [];
+    const removed: string[] = [];
+    const watermarkFiles: WatermarkFileEntry[] = [];
+    const uidOf = (content: SyncContent): string | undefined =>
+      typeof content === "string" ? extractAssetUid(content) : undefined;
+    const pushEntry = (path: string, blobSha: string, content: SyncContent) => {
+      const uid = uidOf(content);
+      watermarkFiles.push({ path, blobSha, ...(uid ? { uid } : {}) });
+    };
+
+    for (const entry of remote) {
+      if (!isSafeRepoRelativePath(entry.path)) {
+        warnings.push(
+          `unsafe remote path skipped by the pull-only mirror: ${entry.path}`,
+        );
+        continue;
+      }
+      if (mode.fileMode && entry.size !== undefined && entry.size > maxBytes) {
+        warnings.push(
+          `pull-only mirror skipped oversized remote file ${entry.path} (${entry.size} bytes > ${maxBytes} cap) — the local copy, if any, is left as is (Phase C size cap)`,
+        );
+        continue;
+      }
+      let local: SyncContent | undefined;
+      const localPath = localSet.has(entry.path)
+        ? entry.path
+        : localByNfc.get(nfc(entry.path));
+      if (localPath !== undefined) {
+        claimedLocal.add(localPath);
+        local = mode.fileMode
+          ? await readBinaryStrict(localFiles, localPath)
+          : await localFiles.read(localPath);
+        if ((await gitBlobSha(local, this.sha1)) === entry.blobSha) {
+          pushEntry(entry.path, entry.blobSha, local);
+          continue;
+        }
+      }
+      let content: SyncContent;
+      if (mode.fileMode) {
+        content = await getBlobBytes(
+          this.transport,
+          spec.owner,
+          spec.repo,
+          entry.blobSha,
+          this.deps.baseURL,
+        );
+        await writeBinaryStrict(localFiles, entry.path, content);
+      } else {
+        content = await getBlobText(
+          this.transport,
+          spec.owner,
+          spec.repo,
+          entry.blobSha,
+          this.deps.baseURL,
+        );
+        await localFiles.write(entry.path, content);
+      }
+      (local === undefined ? added : restored).push(entry.path);
+      pushEntry(entry.path, entry.blobSha, content);
+    }
+
+    for (const path of localPaths) {
+      if (remotePaths.has(path) || claimedLocal.has(path)) continue;
+      // Traversal-only guard, NOT `isSafeRepoRelativePath`: that one also
+      // refuses `\`, a legal file-name character on POSIX, so an injected
+      // `agent/x\y.md` would survive every mirror (review H1). ⛔ LOAD-BEARING
+      // (review N1): Obsidian's `vault.adapter.list()` rewrites `\` to `/`, so
+      // a POSIX file named `x\..\..\evil.md` reaches this loop as
+      // `x/../../evil.md`, and the adapter's `remove` resolves the `..` —
+      // without this guard the mirror would delete a file OUTSIDE the vault.
+      if (!isTraversalFreeLocalPath(path)) {
+        warnings.push(
+          `unsafe local path left untouched by the pull-only mirror: ${path}`,
+        );
+        continue;
+      }
+      await localFiles.delete(path);
+      removed.push(path);
+    }
+
+    const previous = await this.deps.watermarkStore.get(spec.repoKey);
+    await this.deps.watermarkStore.set(spec.repoKey, {
+      lastSyncedSha: head,
+      rootTreeSha: headCommit.treeSha,
+      files: watermarkFiles,
+      ...(mode.fileMode ? { spaceKind: "file" as const } : {}),
+    });
+    // Pins of an earlier two-way life are gone (the watermark above carries
+    // none) — close their quarantine records the same way a converged sync
+    // does (CQ4), so the resolver never offers a conflict that no longer
+    // exists.
+    if (previous !== null) {
+      await this.resolveClearedPins(spec, previous, new Set(), warnings);
+    }
+    // Queued offline resolutions for this repo are PUSHES — a pull-only repo
+    // never pushes, so they are dropped (the mirror has already put the
+    // remote text on disk).
+    if (this.deps.outbox !== undefined) {
+      const queued = await this.deps.outbox.listForRepo(spec.repoKey);
+      for (const entry of queued) {
+        await this.deps.outbox.remove(spec.repoKey, entry.path);
+      }
+      if (queued.length > 0) {
+        warnings.push(
+          `pull-only repo: dropped ${queued.length} queued conflict resolution(s) — a pull-only repo is never pushed`,
+        );
+      }
+    }
+
+    restored.sort();
+    added.sort();
+    removed.sort();
+    const pulledPaths = [...restored, ...added, ...removed];
+    return result("synced", {
+      pulledCount: pulledPaths.length,
+      // RFC 8f93ff95 — the plugin reindexes exactly the mutated paths.
+      ...(pulledPaths.length > 0 ? { pulledPaths } : {}),
+      mirrored: { restored, added, removed },
+      ...(direction === "sync"
+        ? {
+            detail: `pull-only repo (${PULL_ONLY_LIST_PATH}): push phase skipped-pull-only — mirrored to the remote head ${head.slice(0, 7)}`,
+          }
+        : {}),
+    });
   }
 
   /**

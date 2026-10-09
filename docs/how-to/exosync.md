@@ -81,6 +81,61 @@ local snapshot, remote diff, pull-apply and delete-inference — so excluded
 paths can never corrupt or be corrupted. FileSpaces sync **every** file
 byte-exact instead (see below).
 
+### Pull-only repos (read-only on this device)
+
+A device can declare some repos **read-only** (req c0810b83) — for example a
+bot vault whose instructions repo must never be changed by the bot. List them
+in the device-local file `<vault>/.exocortex/exosync-pull-only`, one
+`owner/repo` per line (`#` comment lines and blank lines are ignored; matching
+is case-insensitive and a trailing `.git` is dropped):
+
+```text
+# instructions are authored elsewhere — this device only mirrors them
+kitelev/exoas-bot-instructions
+```
+
+For every listed repo:
+
+- `exosync push` and the push phase of `exosync sync` never send it — the
+  repo's outcome is `skipped-pull-only` and the exit code stays `0`;
+- `exosync pull` and the pull phase of `exosync sync` make the mount folder a
+  **mirror of the remote head**: locally edited files are overwritten, local
+  extra files are deleted, missing files are written back. Nothing is merged,
+  quarantined, pinned or queued for push. The affected paths are listed on
+  stdout (`pull-only mirror (local changes overwritten by the remote head):
+restored …; added …; removed …`) and, one per line, on stderr
+  (`[ExoSync pull-only] <owner/repo>: restored <path>`);
+- `exosync-parity --json` marks the repo `"pullOnly": true` (the human report
+  tags its line `[pull-only]`).
+
+A line that is not of the form `owner/repo` refuses the whole run with exit
+`2` before any request, naming the line number and its content — a broken list
+must never silently unprotect a repo. A listed repo that is not materialized on
+the device only produces a warning (on stdout and stderr). No file ⇒ behaviour
+exactly as before. The plugin's Sync / Pull / Push commands read the same file.
+
+Trust boundary and limits:
+
+- The protection covers every writer whose change would leave the device
+  through ExoSync's sync cycle (CLI `exosync push` / `sync`, the plugin's Sync /
+  Pull / Push commands, queued conflict resolutions). The plugin's «Push current
+  knowledge pack» command does not read the list (its dirty-set is never filled
+  today, so it pushes nothing). The list itself and the rest of the
+  device-local state (`.exocortex/`, the plugin's `.local.` stores) are trusted
+  configuration: a process with arbitrary file access on the device can remove
+  the line, forge cached refs or plant symlinks. The asset-mutating CLI
+  commands address assets, not these files (`set-body` / `set-property` /
+  `remove-property` refuse a non-asset path).
+- A mount folder emptied of every file reads as not materialized and is not
+  refilled by `pull`.
+- In a FileSpace, a remote file above the size cap is not fetched, so its local
+  copy is left as is (warned).
+- Plugin only: Obsidian's adapter lists paths normalised (`\` → `/`, NFC). A
+  NFC/NFD difference is bridged, but a local file whose name contains `\` cannot
+  be addressed through the adapter — on desktop the run fails loudly, on mobile
+  the file may be reported removed while it stays. The CLI (the bot path) lists
+  names as stored and removes such a file.
+
 ## Sync model
 
 Per repo, one cycle is **pull → conflict check → merge → push**, orchestrated

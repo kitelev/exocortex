@@ -74,7 +74,11 @@ export interface SyncCommandsDeps {
   isResolverBusy?: () => boolean;
   /** User-facing Notice (route through ObsidianNotificationService). */
   notify: (message: string) => void;
-  /** Diagnostic sink for per-repo warnings/details (default console). */
+  /**
+   * Diagnostic sink for per-repo warnings/details. The plugin wires its
+   * logger (logChannels routing). Absent ⇒ no-op (engine-only / test
+   * compositions) — never the bare console, which would bypass that routing.
+   */
   log?: (message: string) => void;
   /**
    * Info-level sink for the success summary (#3489). Info channel default
@@ -204,7 +208,7 @@ export class SyncCommands {
         );
         return;
       }
-      const log = this.deps.log ?? ((m: string): void => console.warn(m));
+      const log = this.warnSink();
       const collection = await this.deps.collectSpecs();
       // Skipped-declaration diagnostics matter MOST in the on-demand
       // report — it is the command users debug "why is repo X missing"
@@ -283,7 +287,7 @@ export class SyncCommands {
         err instanceof Error ? err.message : String(err),
       );
       this.deps.notify(`${label} failed: ${msg}`);
-      (this.deps.log ?? ((m: string): void => console.warn(m)))(
+      this.warnSink()(
         `[ExoSync] ${label.toLowerCase()} run threw: ${msg}`,
       );
     } finally {
@@ -293,7 +297,7 @@ export class SyncCommands {
 
   private async runSync(direction: SyncDirection): Promise<void> {
     const label = this.label(direction);
-    const log = this.deps.log ?? ((m: string): void => console.warn(m));
+    const log = this.warnSink();
 
     if (this.deps.isSwitchInProgress()) {
       this.deps.notify(
@@ -533,8 +537,10 @@ export class SyncCommands {
           problems.push(`${r.repoKey}: PAT rejected`);
           break;
         case "skipped-not-materialized":
+        case "skipped-pull-only":
         case "busy":
-          // Skips are visible in the log; not a failure.
+          // Skips are visible in the log; not a failure. (req c0810b83 — a
+          // pull-only repo in a Push run is never sent, by declaration.)
           break;
         default:
           problems.push(`${r.repoKey}: ${r.status}`);
@@ -621,6 +627,11 @@ export class SyncCommands {
    * progress callback — deferred to a follow-up to keep the sync engine
    * untouched.
    */
+  /** The wired warn sink, or a no-op when the composition passes none. */
+  private warnSink(): (message: string) => void {
+    return this.deps.log ?? ((_m: string): void => undefined);
+  }
+
   private static repoStepLine(r: RepoSyncResult): string {
     const deletes = r.pushedDeletes?.length ?? 0;
     const deferred = r.deferredPaths?.length ?? 0;
@@ -632,7 +643,15 @@ export class SyncCommands {
     ];
     if (deletes > 0) parts.push(`deleted ${deletes}`);
     if (deferred > 0) parts.push(`deferred ${deferred}`);
-    return `[ExoSync] ${r.repoKey}: ${r.status} — ${parts.join(", ")}`;
+    // req c0810b83 — a pull-only repo's mirror counts (local changes the
+    // mirror overwrote / removed / restored from the remote head).
+    if (r.mirrored !== undefined) {
+      parts.push(
+        `pull-only mirror: restored ${r.mirrored.restored.length}, added ${r.mirrored.added.length}, removed ${r.mirrored.removed.length}`,
+      );
+    }
+    const pullOnly = r.pullOnly === true ? " [pull-only]" : "";
+    return `[ExoSync] ${r.repoKey}${pullOnly}: ${r.status} — ${parts.join(", ")}`;
   }
 
   /**

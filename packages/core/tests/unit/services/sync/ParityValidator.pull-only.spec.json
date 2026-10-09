@@ -1,0 +1,26 @@
+{
+  "_doc": "Revert-verify for req c0810b83, subject = ParityValidator.ts. Axes: P* (CLI exosync-sync.pull-only.test.ts) and V* (core ParityValidator.pull-only.test.ts).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/ParityValidator.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-sync.pull-only.test.ts 2>&1; cd \"$(dirname {subject})/../../../../..\" && node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/services/sync/ParityValidator.pull-only.test.ts 2>&1",
+  "red_re": "› ([PEGV]\\d+\\w*) ",
+  "mutants": {
+    "MV1_report_not_marked": {
+      "from": "      ...(spec.pullOnly === true ? { pullOnly: true as const } : {}),\n      warnings,\n",
+      "to": "      ...(spec.pullOnly === false ? { pullOnly: true as const } : {}),\n      warnings,\n",
+      "expect": ["P8", "P9", "V2"]
+    },
+    "MV2_conservation_not_exempt": {
+      "from": "    if (spec.pullOnly === true) return [];\n",
+      "to": "    if (spec.pullOnly === false) return [];\n",
+      "expect": ["V1"]
+    }
+  }
+}
