@@ -118,6 +118,7 @@ describe("query <file>: errors never echo the file content (ems__Bug bcc041d8)",
     expect(exitCodes[0]).toBe(2);
     expect(out).toContain(secretFile);
     expect(out).toContain("The file content is not shown");
+    expect(out).toContain("(syntax error)");
   }, 60000);
 
   it("F2 @req:1ed27571-bdb8-4c3f-88ed-886cbe9ed8e3 JSON mode: the error response carries no file content", async () => {
@@ -164,6 +165,49 @@ describe("query <file>: errors never echo the file content (ems__Bug bcc041d8)",
         expect(out).not.toContain(digits);
       }
     }
+  }, 60000);
+
+  it("F10 @req:1ed27571-bdb8-4c3f-88ed-886cbe9ed8e3 an exit that RETURNS (embedding host) still echoes nothing", async () => {
+    // The guard ends in `return reportFileQueryError(...)`; with a throwing
+    // exit stub that `return` is never reached, so this axis uses an exit that
+    // returns and asserts the old context branch stays unreachable.
+    (process.exit as unknown as jest.Mock).mockImplementation(((code?: number) => {
+      exitCodes.push(code);
+    }) as never);
+    for (const extra of [[], ["--dry-run"]]) {
+      output.length = 0;
+      exitCodes.length = 0;
+      const out = await run([secretFile, ...extra]);
+      expect(exitCodes[0]).toBe(2);
+      expectNoEcho(out);
+    }
+  }, 60000);
+
+  it("F12 @req:1ed27571-bdb8-4c3f-88ed-886cbe9ed8e3 an exit that RETURNS still echoes nothing under --dry-run --explain", async () => {
+    // The guard ends in `return reportFileQueryError(...)`; with a throwing
+    // exit stub that `return` is never reached, so this axis uses an exit that
+    // returns and asserts the old context branch stays unreachable.
+    (process.exit as unknown as jest.Mock).mockImplementation(((code?: number) => {
+      exitCodes.push(code);
+    }) as never);
+    for (const extra of [["--dry-run", "--explain"]]) {
+      output.length = 0;
+      exitCodes.length = 0;
+      const out = await run([secretFile, ...extra]);
+      expect(exitCodes[0]).toBe(2);
+      expectNoEcho(out);
+    }
+  }, 60000);
+
+  it("F11 @req:1ed27571-bdb8-4c3f-88ed-886cbe9ed8e3 file words never steer the reported type", async () => {
+    // classifyError reads the parser message (it quotes the file): "undefined"
+    // in the window used to flip the type to unknown_prefix — a 1-bit channel.
+    const worded = path.join(workDir, "worded.json");
+    fs.writeFileSync(worded, "undefined not defined zz\n");
+    const out = await run([worded]);
+    expect(exitCodes[0]).toBe(2);
+    expect(out).toContain("(syntax error)");
+    expect(out).not.toContain("unknown_prefix");
   }, 60000);
 
   it("F6 @req:1ed27571-bdb8-4c3f-88ed-886cbe9ed8e3 an INLINE invalid query keeps its parser context (unchanged)", async () => {

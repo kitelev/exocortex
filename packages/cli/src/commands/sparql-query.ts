@@ -771,8 +771,11 @@ function handleSparqlError(
   // the query text, and keep their own message.
   // `return` keeps the old (echoing) branch unreachable even if process.exit
   // ever returns (a stubbed exit in an embedding host or a test).
+  // The type comes from the exception CLASS, not from classifyError: that one
+  // reads the parser message, whose input window quotes the file (review #4550).
   if (sourceFile !== undefined && !(error instanceof CLIError)) {
-    return reportFileQueryError(errorType, sourceFile, outputFormat);
+    const fileErrorType = error instanceof SPARQLParseError ? "syntax" : "unknown";
+    return reportFileQueryError(fileErrorType, sourceFile, outputFormat);
   }
 
   // Only enhance SPARQL-related errors (syntax, prefix, timeout)

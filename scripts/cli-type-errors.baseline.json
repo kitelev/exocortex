@@ -43,7 +43,7 @@
     {
       "file": "packages/cli/src/commands/sparql-query.ts",
       "code": "TS6133",
-      "count": 3
+      "count": 2
     },
     {
       "file": "packages/cli/src/services/ClassResolverService.ts",
