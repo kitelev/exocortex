@@ -766,16 +766,13 @@ function handleSparqlError(
   const errorType = enhancer.classifyError(error);
 
   // A query read from a file: the message of any non-CLI error may quote the
-  // file (parser input), so report type + position only (ems__Bug bcc041d8).
+  // file (parser input), so report the error type only (ems__Bug bcc041d8).
   // CLI errors (vault not found, timeout, …) are built from options, not from
   // the query text, and keep their own message.
+  // `return` keeps the old (echoing) branch unreachable even if process.exit
+  // ever returns (a stubbed exit in an embedding host or a test).
   if (sourceFile !== undefined && !(error instanceof CLIError)) {
-    const position = enhancer.enhanceError(error, "");
-    reportFileQueryError(
-      { type: errorType, line: position.line, column: position.column },
-      sourceFile,
-      outputFormat
-    );
+    return reportFileQueryError(errorType, sourceFile, outputFormat);
   }
 
   // Only enhance SPARQL-related errors (syntax, prefix, timeout)
@@ -844,23 +841,21 @@ function loadQuery(queryArg: string): LoadedQuery {
  * so `query <any-file>` makes the CLI open a file the caller may not otherwise
  * be able to read (bot wrappers deny the Read tool on secrets). The parser's
  * message and the enhancer's context lines both quote the input, which turned a
- * syntax error into a file-content leak. Only the error type and position are
- * reported here; to see the parser context, pass the query text inline.
+ * syntax error into a file-content leak. Only the error TYPE is reported here;
+ * to see the parser context, pass the query text inline.
+ *
+ * ⛔ No position either: it is extracted by regex from the parser message, whose
+ * input window quotes the file, so a file holding `(4821, 9930)` would print
+ * those numbers as "line/column" (review of PR #4550). Without --dry-run it is
+ * also offset by the injected PREFIX lines, i.e. not a line of the file.
  */
 function reportFileQueryError(
-  info: { type: string; line?: number; column?: number },
+  type: string,
   sourceFile: string,
   outputFormat: OutputFormat
 ): never {
-  let where = "";
-  if (info.line !== undefined) {
-    where = ` at line ${info.line}`;
-    if (info.column !== undefined) {
-      where += `, column ${info.column}`;
-    }
-  }
   const message =
-    `Query read from file '${sourceFile}' failed (${info.type} error${where}). ` +
+    `Query read from file '${sourceFile}' failed (${type} error). ` +
     "The file content is not shown; pass the query text inline to see the parser context.";
 
   if (outputFormat === "json") {
@@ -869,7 +864,7 @@ function reportFileQueryError(
       message,
       ExitCodes.INVALID_ARGUMENTS,
       {
-        context: { errorType: info.type, line: info.line, column: info.column },
+        context: { errorType: type },
         recovery: { message: "Pass the query text inline to see the parser context" },
       }
     );
@@ -907,11 +902,7 @@ async function executeDryRun(
 
     // The analysis of an invalid file query quotes the parser input (ems__Bug bcc041d8).
     if (!result.valid && sourceFile !== undefined) {
-      reportFileQueryError(
-        { type: "syntax", line: result.error?.line, column: result.error?.column },
-        sourceFile,
-        outputFormat
-      );
+      return reportFileQueryError("syntax", sourceFile, outputFormat);
     }
 
     if (outputFormat === "json") {

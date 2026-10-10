@@ -87,7 +87,12 @@ describe("query <file>: errors never echo the file content (ems__Bug bcc041d8)",
     }
   });
 
-  /** Run the real command; an exit is captured, not propagated. */
+  /**
+   * Run the real command; an exit is captured, not propagated.
+   * ⚠ With the stubbed exit, an ExitSignal thrown inside executeDryRun is caught
+   * by the action's own catch and reported a second time (exitCodes [2, 2]); a
+   * real process.exit never returns, so axes assert exitCodes[0] only.
+   */
   async function run(args: string[]): Promise<string> {
     const cmd = sparqlQueryCommand();
     try {
@@ -142,6 +147,23 @@ describe("query <file>: errors never echo the file content (ems__Bug bcc041d8)",
     const out = await run([path.basename(secretFile), "--explain"]);
     expectNoEcho(out);
     expect(exitCodes[0]).toBe(2);
+  }, 60000);
+
+  it("F9 @req:1ed27571-bdb8-4c3f-88ed-886cbe9ed8e3 digits of the file never surface as a line/column", async () => {
+    // The parser message quotes a window of the input and the enhancer extracts
+    // "(N, M)" / "at N:M" from it — a numeric canary would come out as the
+    // reported position (PR #4550 review). File queries report no position.
+    const numeric = path.join(workDir, "numeric.json");
+    fs.writeFileSync(numeric, "pin (4821, 9930) zz\nx at 7351:6624 zz\n");
+    for (const extra of [[], ["--output", "json"], ["--dry-run"]]) {
+      output.length = 0;
+      exitCodes.length = 0;
+      const out = await run([numeric, ...extra]);
+      expect(exitCodes[0]).toBe(2);
+      for (const digits of ["4821", "9930", "7351", "6624"]) {
+        expect(out).not.toContain(digits);
+      }
+    }
   }, 60000);
 
   it("F6 @req:1ed27571-bdb8-4c3f-88ed-886cbe9ed8e3 an INLINE invalid query keeps its parser context (unchanged)", async () => {
