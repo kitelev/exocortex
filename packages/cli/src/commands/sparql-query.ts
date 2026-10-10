@@ -21,7 +21,7 @@ import { JsonFormatter } from "../formatters/JsonFormatter.js";
 import { CsvFormatter } from "../formatters/CsvFormatter.js";
 import { TriplesFormatter } from "../formatters/TriplesFormatter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
-import { VaultNotFoundError, InvalidArgumentsError, QueryTimeoutError } from "../utils/errors/index.js";
+import { VaultNotFoundError, InvalidArgumentsError, QueryTimeoutError, CLIError } from "../utils/errors/index.js";
 import { ResponseBuilder, ErrorCode, type QueryResult, type ConstructResult } from "../responses/index.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
 import { loadVaultTriples, skippedFilesNotice } from "../cache/loadVaultTriples.js";
@@ -269,6 +269,8 @@ export function sparqlQueryCommand(): Command {
 
       // Declared before try so it's accessible in the catch block for error reporting
       let queryString: string = "";
+      // Set when the query text was read from a file — errors then never echo it.
+      let querySourceFile: string | undefined;
 
       try {
         const startTime = Date.now();
@@ -296,7 +298,9 @@ export function sparqlQueryCommand(): Command {
             console.log();
           }
         } else if (queryArg) {
-          queryString = loadQuery(queryArg);
+          const loaded = loadQuery(queryArg);
+          queryString = loaded.text;
+          querySourceFile = loaded.sourceFile;
         } else {
           throw new InvalidArgumentsError(
             "Either a query argument or --template flag is required.",
@@ -317,7 +321,7 @@ export function sparqlQueryCommand(): Command {
 
         // Dry-run mode: validate syntax only, no vault loading
         if (options.dryRun) {
-          await executeDryRun(queryString, options, outputFormat);
+          await executeDryRun(queryString, options, outputFormat, querySourceFile);
           return;
         }
 
@@ -731,7 +735,7 @@ export function sparqlQueryCommand(): Command {
           }
         }
       } catch (error) {
-        handleSparqlError(error as Error, queryString, outputFormat);
+        handleSparqlError(error as Error, queryString, outputFormat, querySourceFile);
       } finally {
         // Issue #3282: restore EXOCORTEX_SPARQL_STRICT so embedded callers
         // (MCP host, programmatic invocation, test harness) do not inherit
@@ -755,10 +759,24 @@ export function sparqlQueryCommand(): Command {
 function handleSparqlError(
   error: Error,
   query: string,
-  outputFormat: OutputFormat
+  outputFormat: OutputFormat,
+  sourceFile?: string
 ): never {
   const enhancer = new SPARQLErrorEnhancer();
   const errorType = enhancer.classifyError(error);
+
+  // A query read from a file: the message of any non-CLI error may quote the
+  // file (parser input), so report type + position only (ems__Bug bcc041d8).
+  // CLI errors (vault not found, timeout, …) are built from options, not from
+  // the query text, and keep their own message.
+  if (sourceFile !== undefined && !(error instanceof CLIError)) {
+    const position = enhancer.enhanceError(error, "");
+    reportFileQueryError(
+      { type: errorType, line: position.line, column: position.column },
+      sourceFile,
+      outputFormat
+    );
+  }
 
   // Only enhance SPARQL-related errors (syntax, prefix, timeout)
   if (errorType !== "unknown") {
@@ -799,17 +817,67 @@ function handleSparqlError(
   ErrorHandler.handle(error);
 }
 
-function loadQuery(queryArg: string): string {
+interface LoadedQuery {
+  text: string;
+  /** Set when the text was READ FROM A FILE named by the positional argument. */
+  sourceFile?: string;
+}
+
+function loadQuery(queryArg: string): LoadedQuery {
   if (queryArg.includes("SELECT") || queryArg.includes("CONSTRUCT") || queryArg.includes("INSERT") || queryArg.includes("DELETE")) {
-    return queryArg;
+    return { text: queryArg };
   }
 
   const filePath = resolve(queryArg);
   if (existsSync(filePath)) {
-    return readFileSync(filePath, "utf-8");
+    return { text: readFileSync(filePath, "utf-8"), sourceFile: queryArg };
   }
 
-  return queryArg;
+  return { text: queryArg };
+}
+
+/**
+ * Report a failure of a query that was READ FROM A FILE without echoing any of
+ * the file's content (ems__Bug bcc041d8).
+ *
+ * The positional argument is read as a file whenever it names an existing path,
+ * so `query <any-file>` makes the CLI open a file the caller may not otherwise
+ * be able to read (bot wrappers deny the Read tool on secrets). The parser's
+ * message and the enhancer's context lines both quote the input, which turned a
+ * syntax error into a file-content leak. Only the error type and position are
+ * reported here; to see the parser context, pass the query text inline.
+ */
+function reportFileQueryError(
+  info: { type: string; line?: number; column?: number },
+  sourceFile: string,
+  outputFormat: OutputFormat
+): never {
+  let where = "";
+  if (info.line !== undefined) {
+    where = ` at line ${info.line}`;
+    if (info.column !== undefined) {
+      where += `, column ${info.column}`;
+    }
+  }
+  const message =
+    `Query read from file '${sourceFile}' failed (${info.type} error${where}). ` +
+    "The file content is not shown; pass the query text inline to see the parser context.";
+
+  if (outputFormat === "json") {
+    const response = ResponseBuilder.error(
+      ErrorCode.VALIDATION_INVALID_FORMAT,
+      message,
+      ExitCodes.INVALID_ARGUMENTS,
+      {
+        context: { errorType: info.type, line: info.line, column: info.column },
+        recovery: { message: "Pass the query text inline to see the parser context" },
+      }
+    );
+    console.log(JSON.stringify(response, null, 2));
+  } else {
+    console.error(`❌ ${message}`);
+  }
+  process.exit(ExitCodes.INVALID_ARGUMENTS);
 }
 
 /**
@@ -826,7 +894,8 @@ function loadQuery(queryArg: string): string {
 async function executeDryRun(
   queryString: string,
   options: SparqlQueryOptions,
-  outputFormat: OutputFormat
+  outputFormat: OutputFormat,
+  sourceFile?: string
 ): Promise<void> {
   // Use QueryAnalyzer for comprehensive analysis when --explain is set
   if (options.explain) {
@@ -835,6 +904,15 @@ async function executeDryRun(
       includeAlgebraPlan: true,
       optimize: !options.noOptimize,
     });
+
+    // The analysis of an invalid file query quotes the parser input (ems__Bug bcc041d8).
+    if (!result.valid && sourceFile !== undefined) {
+      reportFileQueryError(
+        { type: "syntax", line: result.error?.line, column: result.error?.column },
+        sourceFile,
+        outputFormat
+      );
+    }
 
     if (outputFormat === "json") {
       // JSON response for MCP tools with full analysis
@@ -894,7 +972,7 @@ async function executeDryRun(
       console.log(`   Query type: ${getQueryType(ast)}`);
     }
   } catch (error) {
-    handleSparqlError(error as Error, queryString, outputFormat);
+    handleSparqlError(error as Error, queryString, outputFormat, sourceFile);
   }
 }
 
