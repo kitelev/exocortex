@@ -1,6 +1,10 @@
 import "reflect-metadata";
 import { NoteToRDFConverter } from "../../../src/services/NoteToRDFConverter";
-import type { IVaultAdapter, IFile, IFrontmatter } from "../../../src/interfaces/IVaultAdapter";
+import type {
+  IVaultAdapter,
+  IFile,
+  IFrontmatter,
+} from "../../../src/interfaces/IVaultAdapter";
 import type { ILogger } from "../../../src/interfaces/ILogger";
 import { IRI } from "../../../src/domain/models/rdf/IRI";
 import { Triple } from "../../../src/domain/models/rdf/Triple";
@@ -63,8 +67,14 @@ function fixture(): Record<string, IFrontmatter> {
       aliases: ["skos__exactMatch"],
       exo__Instance_class: ["[[exo__ObjectProperty]]"],
     },
-    [TERM_UID]: { exo__Asset_uid: TERM_UID, exo__Asset_label: "Растворение «я»" },
-    [NEUTRAL_UID]: { exo__Asset_uid: NEUTRAL_UID, exo__Asset_label: "Растворение эго" },
+    [TERM_UID]: {
+      exo__Asset_uid: TERM_UID,
+      exo__Asset_label: "Растворение «я»",
+    },
+    [NEUTRAL_UID]: {
+      exo__Asset_uid: NEUTRAL_UID,
+      exo__Asset_label: "Растворение эго",
+    },
     [PMBOK_UID]: {
       exo__Asset_uid: PMBOK_UID,
       exo__Asset_label: "Риск",
@@ -81,7 +91,12 @@ function fixture(): Record<string, IFrontmatter> {
 }
 
 function fileOf(uid: string): IFile {
-  return { path: `assetspaces/t/${uid}.md`, basename: uid, name: `${uid}.md`, parent: null };
+  return {
+    path: `assetspaces/t/${uid}.md`,
+    basename: uid,
+    name: `${uid}.md`,
+    parent: null,
+  };
 }
 
 function makeVault(fm: Record<string, IFrontmatter>): IVaultAdapter {
@@ -102,20 +117,30 @@ function makeVault(fm: Record<string, IFrontmatter>): IVaultAdapter {
 }
 
 function makeLogger(): ILogger {
-  return { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() } as unknown as ILogger;
+  return {
+    debug: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  } as unknown as ILogger;
 }
 
 async function convertAll(): Promise<Triple[]> {
   const fm = fixture();
   const converter = new NoteToRDFConverter(makeVault(fm), makeLogger());
   const out: Triple[] = [];
-  for (const uid of Object.keys(fm)) out.push(...(await converter.convertNote(fileOf(uid))));
+  for (const uid of Object.keys(fm))
+    out.push(...(await converter.convertNote(fileOf(uid))));
   return out;
 }
 
 const iriOf = (uid: string) => `obsidian://vault/assetspaces/t/${uid}.md`;
 
-function objectsOf(triples: Triple[], subjectUid: string, predicate: string): string[] {
+function objectsOf(
+  triples: Triple[],
+  subjectUid: string,
+  predicate: string,
+): string[] {
   return triples
     .filter(
       (t) =>
@@ -129,7 +154,9 @@ function objectsOf(triples: Triple[], subjectUid: string, predicate: string): st
 async function select(triples: Triple[], query: string): Promise<string[][]> {
   const store = new InMemoryTripleStore();
   await store.addAll(triples);
-  const algebra = new ExoQLAlgebraTranslator().translate(new SPARQLParser().parse(query));
+  const algebra = new ExoQLAlgebraTranslator().translate(
+    new SPARQLParser().parse(query),
+  );
   const rows = await new ExoQLQueryExecutor(store).executeAll(algebra);
   return rows.map((r) => [
     (r.get("a") as IRI | undefined)?.value ?? "",
@@ -143,27 +170,35 @@ SELECT ?a ?n WHERE { ?a skos:exactMatch ?n }`;
 describe(`the skos prefix emits the W3C SKOS namespace (${REQ})`, () => {
   it(`S1 ${REQ} the label skos__exactMatch emits the W3C IRI, not the ad-hoc one`, async () => {
     const triples = await convertAll();
-    const label = objectsOf(triples, EXACT_UID, Namespace.EXO.term("Asset_label").value);
+    const label = objectsOf(
+      triples,
+      EXACT_UID,
+      Namespace.EXO.term("Asset_label").value,
+    );
     expect(label).toEqual([`${W3C_SKOS}exactMatch`]);
     expect(label.join()).not.toContain(ADHOC_SKOS);
   });
 
   it(`S2 ${REQ} an instance of the skos__Concept stub (bare-UID class link) carries the W3C class IRI`, async () => {
     const triples = await convertAll();
-    expect(objectsOf(triples, PMBOK_UID, Namespace.EXO.term("Instance_class").value)).toEqual([
-      `${W3C_SKOS}Concept`,
-    ]);
+    expect(
+      objectsOf(triples, PMBOK_UID, Namespace.EXO.term("Instance_class").value),
+    ).toEqual([`${W3C_SKOS}Concept`]);
   });
 
   it(`S3 ${REQ} a mapping statement materialises its edge under the W3C predicate`, async () => {
     const triples = await convertAll();
-    expect(objectsOf(triples, TERM_UID, `${W3C_SKOS}exactMatch`)).toEqual([iriOf(NEUTRAL_UID)]);
+    expect(objectsOf(triples, TERM_UID, `${W3C_SKOS}exactMatch`)).toEqual([
+      iriOf(NEUTRAL_UID),
+    ]);
     expect(objectsOf(triples, TERM_UID, `${ADHOC_SKOS}exactMatch`)).toEqual([]);
   });
 
   it(`S4 ${REQ} CQ1 with the W3C prefix finds the mapping; the same query with the exocortex.my prefix finds 0`, async () => {
     const triples = await convertAll();
-    expect(await select(triples, CQ1(W3C_SKOS))).toEqual([[iriOf(TERM_UID), iriOf(NEUTRAL_UID)]]);
+    expect(await select(triples, CQ1(W3C_SKOS))).toEqual([
+      [iriOf(TERM_UID), iriOf(NEUTRAL_UID)],
+    ]);
     // Address check (RFC AC8): the other form of the predicate returns nothing.
     expect(await select(triples, CQ1(ADHOC_SKOS))).toEqual([]);
   });
@@ -175,9 +210,18 @@ describe(`the skos prefix emits the W3C SKOS namespace (${REQ})`, () => {
   });
 
   it(`S6 ${REQ} the inverse reads the W3C SKOS IRIs back to frontmatter names`, () => {
-    for (const local of ["exactMatch", "closeMatch", "broadMatch", "narrowMatch", "relatedMatch", "Concept"]) {
+    for (const local of [
+      "exactMatch",
+      "closeMatch",
+      "broadMatch",
+      "narrowMatch",
+      "relatedMatch",
+      "Concept",
+    ]) {
       expect(iriToObsidianName(`${W3C_SKOS}${local}`)).toBe(`skos__${local}`);
-      expect(Namespace.fromTermIRI(`${W3C_SKOS}${local}`)!.namespace).toBe(Namespace.SKOS);
+      expect(Namespace.fromTermIRI(`${W3C_SKOS}${local}`)!.namespace).toBe(
+        Namespace.SKOS,
+      );
     }
   });
 });

@@ -272,7 +272,7 @@ describe("symbolicIriToPropertyKey (inverse of labelToSymbolicIRI)", () => {
     // not in KNOWN_NAMESPACES) — the exemption is per-registered-namespace, not
     // "anything on w3.org". ⛤ This control used SKOS until req
     // e750782f-907b-4573-99ce-f9a5e3150418 registered it; SKOS now round-trips
-    // (see the @req:e750782f case below). Geo keeps the same shape: a w3.org
+    // (see the SKOS round-trip case below). Geo keeps the same shape: a w3.org
     // base ending in '#'.
     expect(
       symbolicIriToPropertyKey("http://www.w3.org/2003/01/geo/wgs84_pos#lat"),

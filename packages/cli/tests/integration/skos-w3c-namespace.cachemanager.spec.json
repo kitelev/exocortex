@@ -1,0 +1,20 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "red_re": "› ([SK]\\d+) ",
+  "_doc": "Revert-verify mutants for req e750782f-907b-4573-99ce-f9a5e3150418, SUBJECT packages/cli/src/cache/CacheManager.ts: the v4 → v5 format bump that retires caches still carrying the ad-hoc skos IRI.",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/cache/CacheManager.ts",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/integration/rdf/skos-w3c-namespace-emission.test.ts 2>&1; CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/cli/jest.config.js packages/cli/tests/integration/skos-w3c-namespace.integration.test.ts 2>&1",
+  "mutants": {
+    "C1_cache_version_back_to_4": {
+      "_note": "Anchored on the DECLARATION FORM, not on today's literal `= 5;` (ITRV §A69): `= 4 as number || <current>` evaluates to 4 at any future version.",
+      "from": "export const CACHE_FORMAT_VERSION = ",
+      "to": "export const CACHE_FORMAT_VERSION = 4 as number || ",
+      "expect": ["K3"]
+    }
+  }
+}

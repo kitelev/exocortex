@@ -1,0 +1,19 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "red_re": "› ([SK]\\d+) ",
+  "_doc": "Revert-verify mutants for req e750782f-907b-4573-99ce-f9a5e3150418 (skos → W3C SKOS), SUBJECT packages/core/src/domain/models/rdf/Namespace.ts. One harness runs the core emission axes S1-S6 and the CLI axes K1-K5. K1/K4 are absence-of-false-violation axes: green both ways by construction (their filter keys on the W3C path, which the mutant no longer emits) — not a vacuity defect.",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/domain/models/rdf/Namespace.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/integration/rdf/skos-w3c-namespace-emission.test.ts 2>&1; CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/cli/jest.config.js packages/cli/tests/integration/skos-w3c-namespace.integration.test.ts 2>&1",
+  "mutants": {
+    "N1_skos_not_registered": {
+      "from": "    Namespace.SKOS,\n  ];",
+      "to": "  ];",
+      "expect": ["K2", "K3", "K5", "S1", "S2", "S3", "S4", "S5", "S6"]
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "red_re": "› ([SK]\\d+) ",
+  "_doc": "Revert-verify mutants for req e750782f-907b-4573-99ce-f9a5e3150418, SUBJECT packages/cli/src/commands/validate-schema.ts. The skos__ map entry is load-bearing ONLY where skos__Concept is the SUBJECT of a class edge (K5): in K1/K4 the converter already emits the edge's object as the W3C IRI and labelToOntologyIRI is never asked (measured).",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/validate-schema.ts",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/integration/rdf/skos-w3c-namespace-emission.test.ts 2>&1; CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/cli/jest.config.js packages/cli/tests/integration/skos-w3c-namespace.integration.test.ts 2>&1",
+  "mutants": {
+    "V1_skos_map_entry_dropped": {
+      "from": "  [\"skos__\", \"http://www.w3.org/2004/02/skos/core#\"],\n",
+      "to": "",
+      "expect": ["K5"]
+    }
+  }
+}
