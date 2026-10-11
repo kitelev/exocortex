@@ -14,22 +14,22 @@
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/algebra/AlgebraOptimizer.ts",
   "mutants": {
     "AO1_guard_off": {
-      "_note": "The reordering may swap a constrained later pattern to the left of a BIND.",
+      "_note": "The reordering may swap a constrained later pattern to the left of a BIND. B32 (review round 3): the reference of B32 is the PLAIN plan of a group with a mid BIND and a FILTER on ?s; with the guard off the VALUES operand is moved left of the BIND, the FILTER lands on the Extend side of the bind join, the IRI substituted into its expression drops every row (bug 4e3ce943) — the reference is 0 and B32's built-input check reddens.",
       "from": "    if (this.containsExtend(join.left)) {\n",
       "to": "    if (false && this.containsExtend(join.left)) {\n",
-      "expect": ["B7", "B16"]
+      "expect": ["B7", "B16", "B32"]
     },
     "AO2_guard_shallow": {
-      "_note": "containsExtend sees only an Extend at the top of the left operand, not deeper (e.g. under a LeftJoin).",
+      "_note": "containsExtend sees only an Extend at the top of the left operand, not deeper (e.g. under a LeftJoin). B32 (review round 3): the reference of B32 is the PLAIN plan of a group with a mid BIND and a FILTER on ?s; with the guard off the VALUES operand is moved left of the BIND, the FILTER lands on the Extend side of the bind join, the IRI substituted into its expression drops every row (bug 4e3ce943) — the reference is 0 and B32's built-input check reddens.",
       "from": "    return [op.input, op.left, op.right].some(\n",
       "to": "    return [op.input].filter(() => false).some(\n",
-      "expect": ["B16"]
+      "expect": ["B16", "B32"]
     },
     "AO3_extend_variables_hidden": {
-      "_note": "getOperationVariables reports no variables for a BIND (the pre-review behaviour): a group FILTER on a shared variable is pushed into the right operand alone and every row is dropped (review CRITICAL). B22 (review round 2): with the BIND's variables hidden, leftVars is empty, so the round-2 pushdown guard sees no left-bound filter variable and pushes `?s != ?o` right.",
+      "_note": "getOperationVariables reports no variables for a BIND (the pre-review behaviour): a group FILTER on a shared variable is pushed into the right operand alone and every row is dropped (review CRITICAL). B22 (review round 2): with the BIND's variables hidden, leftVars is empty, so the round-2 pushdown guard sees no left-bound filter variable and pushes `?s != ?o` right. B32 (review round 3): with the BIND's variables hidden the group FILTER on ?s is pushed into the UNION operand alone, the bind join substitutes ?s into its expression and every row is dropped (the B18 mechanism) — B32's reference is 0 and its built-input check reddens.",
       "from": "    } else if (operation.type === \"extend\") {\n      // A BIND keeps every variable of its input and adds its own (req 60ed88e7).\n",
       "to": "    } else if (operation.type === \"extend\" && operation.variable.length < 0) {\n      // A BIND keeps every variable of its input and adds its own (req 60ed88e7).\n",
-      "expect": ["B18", "B22"]
+      "expect": ["B18", "B22", "B32"]
     },
     "AO4_pushdown_reads_left": {
       "_note": "The round-2 pushdown guard is dropped: a FILTER reading a left-bound AND a right-only variable (`?s != ?o`) is pushed into the right operand, the bind join substitutes an IRI into the expression and every row is dropped (review round 2, HIGH).",

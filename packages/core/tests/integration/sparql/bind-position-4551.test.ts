@@ -435,12 +435,22 @@ describe("BIND extends the group prefix at its position (req 60ed88e7, #4551)", 
     const left = `?x exo:Asset_label ?l0`;
     // Input is built: the left side has far more rows than one.
     expect((await rows(`SELECT ?x WHERE { ${left} }`, ["x"])).length).toBeGreaterThan(40);
-    const expected = await rows(`SELECT ?x ?u WHERE { ${sub} ${left} }`, ["x", "u"]);
-    expect(expected).toHaveLength(5);
-    store.predicateCalls.length = 0;
-    expect(await rows(`SELECT ?x ?u WHERE { ${left} ${sub} }`, ["x", "u"])).toEqual(expected);
-    const uidLookups = store.predicateCalls.filter((p) => p === "https://exocortex.my/ontology/exo#Asset_uid").length;
-    expect(uidLookups).toBeLessThanOrEqual(2);
+    expect(await rows(`SELECT ?x ?u WHERE { ${sub} ${left} }`, ["x", "u"])).toHaveLength(5);
+    // Count the subquery's executions: the executor dispatches every operand through
+    // `this.execute`, so an instance wrapper sees the join's calls. (A count of store
+    // `match` calls cannot tell: the store decorators answer repeats from their index.)
+    // ⛔ The COUNT form on purpose: under a Group the join is not reordered, so the
+    // subquery stays on the RIGHT — the shape of the review's 1.1 s → 6.6 s probe.
+    const executor = new ExoQLQueryExecutor(store);
+    const execute = executor.execute.bind(executor);
+    let subqueryRuns = 0;
+    executor.execute = (op: AlgebraOperation) => {
+      if (op.type === "subquery") subqueryRuns += 1;
+      return execute(op);
+    };
+    const [solution] = await executor.executeAll(plan(`SELECT (COUNT(*) AS ?n) WHERE { ${left} ${sub} }`));
+    expect(Number(String(solution.get("n")).replace(/^"?(\d+)".*$/, "$1"))).toBe(5);
+    expect(subqueryRuns).toBe(1);
   });
 
   it("B28 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a FILTER reading a BIND variable inside arithmetic is not pushed away from it", async () => {

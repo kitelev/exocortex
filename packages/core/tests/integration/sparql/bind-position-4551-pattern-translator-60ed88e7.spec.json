@@ -14,13 +14,24 @@
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/algebra/PatternTranslator.ts",
   "mutants": {
     "PT1_later_bind_dropped": {
-      "_note": "A BIND after the first group element no longer extends the prefix (it vanishes). B24 (review round 2): the dropped BIND is the one that defines ?s, so the UUID rewrite injects into `?s ?p ?o` alone — a cross product with the label rows.",
+      "_note": "A BIND after the first group element no longer extends the prefix (it vanishes). B24 (review round 2): the dropped BIND is the one that defines ?s, so the UUID rewrite injects into `?s ?p ?o` alone — a cross product with the label rows. Review round 3: B25 — its `BIND(IF(EXISTS …) AS ?v)` follows a pattern and vanishes, ?v is unbound; B31 — both BINDs of ?n follow a pattern, the reference loses its rows; B32 — the BIND after the label pattern vanishes, the group has no Extend, so the UUID injection runs and leaves the subquery / UNION / VALUES operand unconstrained (the old injection defect).",
       "from": "          result = this.translateBind(rightPattern, result);\n",
       "to": "          void rightPattern;\n",
-      "expect": ["B2", "B3", "B4", "B12", "B13", "B17", "B24"]
+      "expect": [
+        "B2",
+        "B3",
+        "B4",
+        "B12",
+        "B13",
+        "B17",
+        "B24",
+        "B25",
+        "B31",
+        "B32"
+      ]
     },
     "PT2_first_bind_dropped": {
-      "_note": "A BIND as the FIRST group element is dropped (the empty group stands in).",
+      "_note": "A BIND as the FIRST group element is dropped (the empty group stands in). Review round 3: B28/B29/B30 open with the BIND of ?window / ?w; dropped, it leaves the variable unbound and the reference rows vanish.",
       "from": "        result = this.translateBind(first, { type: \"bgp\", triples: [] } as BGPOperation);\n",
       "to": "        result = { type: \"bgp\", triples: [] } as BGPOperation;\n",
       "expect": [
@@ -37,14 +48,17 @@
         "B15",
         "B17",
         "B19",
-        "B21"
+        "B21",
+        "B28",
+        "B29",
+        "B30"
       ]
     },
     "PT3_filters_positional": {
-      "_note": "FILTERs are translated in place (joined as Filter(∅)) instead of group-scoped at the end. B14 is NOT in the set, by mechanism: AlgebraOptimizer.eliminateEmptyBGPInFilterJoin rewrites `Join(X, Filter(∅, e))` back to the group-level `Filter(X, e)`, so a positional FILTER that FOLLOWS the prefix is repaired by the optimizer (a second barrier); only a FILTER first in the group escapes it (Join(Filter(∅), …) under an Extend is never recursed) — B4. B20 (added after review round 1): the mutant leaves each FILTER both in place AND at group level (filterPatterns is still applied at the end), so the filter runs twice; the UUID-index rewrite (optimizeWithSubjects) drops only the OUTER copy and replaces ?s with the IRI, and the inner copy then reads an unbound ?s — 0 rows with and without the BIND, which trips the axis's `input is built` guard. B24 (review round 2): run-verified that the axis trips its `input is built` guard (expected = 0). By reading: with the BIND defining ?s the UUID rewrite falls back to a VALUES join for the OUTER filter copy, and the bind join then substitutes ?s into the INNER copy's STR(?s) — a substituted IRI is not an evaluable expression node (bug 4e3ce943), so every row is dropped.",
+      "_note": "FILTERs are translated in place (joined as Filter(∅)) instead of group-scoped at the end. B14 is NOT in the set, by mechanism: AlgebraOptimizer.eliminateEmptyBGPInFilterJoin rewrites `Join(X, Filter(∅, e))` back to the group-level `Filter(X, e)`, so a positional FILTER that FOLLOWS the prefix is repaired by the optimizer (a second barrier); only a FILTER first in the group escapes it (Join(Filter(∅), …) under an Extend is never recursed) — B4. B20 (added after review round 1): the mutant leaves each FILTER both in place AND at group level (filterPatterns is still applied at the end), so the filter runs twice; the UUID-index rewrite (optimizeWithSubjects) drops only the OUTER copy and replaces ?s with the IRI, and the inner copy then reads an unbound ?s — 0 rows with and without the BIND, which trips the axis's `input is built` guard. B24 (review round 2): run-verified that the axis trips its `input is built` guard (expected = 0). By reading: with the BIND defining ?s the UUID rewrite falls back to a VALUES join for the OUTER filter copy, and the bind join then substitutes ?s into the INNER copy's STR(?s) — a substituted IRI is not an evaluable expression node (bug 4e3ce943), so every row is dropped. B32 (review round 3): the positional FILTER copy stays inside the join; the UUID rewrite replaces only the outer copy with a VALUES join, whose bind join then substitutes the IRI into the inner copy's expression and drops every row (bug 4e3ce943).",
       "from": "    const groupPatterns = patterns.filter((p) => p.type !== \"filter\");\n",
       "to": "    const groupPatterns = patterns;\n",
-      "expect": ["B4", "B20", "B24"]
+      "expect": ["B4", "B20", "B24", "B32"]
     },
     "PT4_iri_marker_dropped": {
       "_note": "BIND(<iri>) is no longer marked: it binds the IRI's string, which never joins with a stored IRI.",
