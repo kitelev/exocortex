@@ -467,6 +467,17 @@ export class OntologySchemaService {
       return PropertyFieldType.SizeSelect;
     }
 
+    // req e750782f-907b-4573-99ce-f9a5e3150418 (review round 2): a range in a
+    // registered DOMAIN vocabulary is a class reference too — `skos:Concept`, the
+    // desk's mapping range, arrives under the W3C base, which none of the
+    // substring tests below matches, so the field fell back to Text and its value
+    // was no longer written as a wikilink. Schema vocabularies (xsd/rdfs/owl/…)
+    // are not classes and keep falling through.
+    const term = Namespace.fromTermIRI(rangeType);
+    if (term && !Namespace.isSchemaVocabulary(term.namespace)) {
+      return PropertyFieldType.Wikilink;
+    }
+
     // Check if it's a reference to another class
     if (
       rangeType.includes("exocortex.my/ontology") ||

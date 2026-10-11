@@ -14,10 +14,16 @@
   "harness": "cd \"$(dirname {subject})/../../..\" && node ../../node_modules/jest/bin/jest.js tests/unit/skos-w3c-namespace.plugin.test.ts --verbose 2>&1",
   "mutants": {
     "L4_class_name_exocortex_only": {
-      "_note": "The pre-fix restriction (exocortex base), in one line.",
-      "from": "    if (term && !Namespace.isSchemaVocabulary(term.namespace)) {",
-      "to": "    if (term && term.namespace.iri.value.startsWith(Namespace.EXOCORTEX_ONTOLOGY_BASE)) {",
+      "_note": "The pre-fix restriction (exocortex base), in one line. Anchor carries the return line: since review round 2 the same guard line also sits in rangeToFieldType (mutant L7).",
+      "from": "    if (term && !Namespace.isSchemaVocabulary(term.namespace)) {\n      return `${term.namespace.prefix}__${term.localName}`;",
+      "to": "    if (term && term.namespace.iri.value.startsWith(Namespace.EXOCORTEX_ONTOLOGY_BASE)) {\n      return `${term.namespace.prefix}__${term.localName}`;",
       "expect": ["L4", "L5"]
+    },
+    "L7_field_type_exocortex_only": {
+      "_note": "Review round 2 (MEDIUM): rangeToFieldType decided 'reference' by substring (exocortex.my/ontology, Asset, Task…), so a W3C skos:Concept range fell back to Text. The mutant restores the exocortex-only reading for this guard.",
+      "from": "    if (term && !Namespace.isSchemaVocabulary(term.namespace)) {\n      return PropertyFieldType.Wikilink;",
+      "to": "    if (term && term.namespace.iri.value.startsWith(Namespace.EXOCORTEX_ONTOLOGY_BASE)) {\n      return PropertyFieldType.Wikilink;",
+      "expect": ["L7"]
     }
   }
 }

@@ -32,9 +32,9 @@
       "expect": ["A30", "A31", "A32", "A35"]
     },
     "M6_class_namespace_restriction_dropped": {
-      "_note": "The guard ADDED by this fix: without the exocortex-base restriction a registered W3C term (`xsd:string`) is returned as a CLASS, and the reference picker's class filter matches nothing. ⛤ Re-anchored for req e750782f-907b-4573-99ce-f9a5e3150418: the restriction now names the W3C SCHEMA vocabularies (`Namespace.isSchemaVocabulary`) instead of 'every base outside exocortex.my', because skos is registered and `skos__Concept` is a class. The mutation itself is unchanged.",
-      "from": "    if (term && !Namespace.isSchemaVocabulary(term.namespace)) {",
-      "to": "    if (term) {",
+      "_note": "The guard ADDED by this fix: without the exocortex-base restriction a registered W3C term (`xsd:string`) is returned as a CLASS, and the reference picker's class filter matches nothing. ⛤ Re-anchored for req e750782f-907b-4573-99ce-f9a5e3150418: the restriction now names the W3C SCHEMA vocabularies (`Namespace.isSchemaVocabulary`) instead of 'every base outside exocortex.my', because skos is registered and `skos__Concept` is a class. The mutation itself is unchanged. Anchor carries the return line since review round 2 of e750782f: the same guard line also sits in rangeToFieldType.",
+      "from": "    if (term && !Namespace.isSchemaVocabulary(term.namespace)) {\n      return `${term.namespace.prefix}__${term.localName}`;",
+      "to": "    if (term) {\n      return `${term.namespace.prefix}__${term.localName}`;",
       "expect": ["A35"]
     },
     "M4_to_property_name_narrow": {

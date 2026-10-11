@@ -19,6 +19,9 @@
  *       ancestor (and still drops `owl:Thing`).
  *   L6  `ReferencePropertyField` derives the class filter `["skos__Concept"]`
  *       from a W3C range (and still none for `rdfs:Class` — the #4353 A44 guard).
+ *   L7  (review round 2) `OntologySchemaService` gives a property whose range is
+ *       W3C `skos:Concept` the field type `wikilink`, not `text` — the creation
+ *       modal writes its value as a link (`xsd:string` stays `text`).
  *
  * Axis names are `[Ln]` FIRST in the title — the revert-verify driver reads them
  * from jest's `● <suite> › [Ln]` header (integration-test-revert-verify §A104).
@@ -198,6 +201,32 @@ describe("req e750782f — W3C SKOS in the plugin's IRI readers", () => {
       );
 
       expect(hierarchy).toEqual(["skos__Concept"]);
+    });
+
+    it(`[L7] ${REQ} gives a property with a W3C skos:Concept range the field type wikilink (xsd:string stays text)`, async () => {
+      const store = mockStore();
+      (store.query as jest.Mock).mockImplementation(async (q: string) =>
+        q.includes(`rdfs:domain <${BASE}desk#Mapping>`)
+          ? [
+              new Map([
+                ["property", `${W3C_SKOS}exactMatch`],
+                ["range", `${W3C_SKOS}Concept`],
+              ]),
+              new Map([
+                ["property", `${BASE}desk#Mapping_note`],
+                ["range", "http://www.w3.org/2001/XMLSchema#string"],
+              ]),
+            ]
+          : [],
+      );
+
+      const props = await new OntologySchemaService(store).getClassProperties(
+        "desk__Mapping",
+      );
+      const byUri = new Map(props.map((p) => [p.uri, p.fieldType]));
+
+      expect(byUri.get(EXACT_KEY)).toBe("wikilink");
+      expect(byUri.get("desk__Mapping_note")).toBe("text");
     });
   });
 
