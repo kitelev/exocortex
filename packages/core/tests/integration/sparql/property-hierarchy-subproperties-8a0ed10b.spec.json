@@ -1,0 +1,135 @@
+{
+  "_doc": "Revert-verify mutants for RFC 14217015 P1.4 (vault-exodev task db59bc95, req 8a0ed10b): PropertyHierarchyResolvingStore widens a constant exocortex-ontology predicate to its transitive exo__Property_superProperty sub-properties. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct sets). `red_re` anchors on the jest failure header `● <suite> › SPn @req` (ITRV §A44/§A104). `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Guards without a mutant: `if (!(term instanceof IRI)) return null;` and the `instanceof Literal/BlankNode` branches of termKey are type narrowing (a non-IRI declaration end cannot be a predicate; a blank or quoted object never occurs in these fixtures).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› (SP\\d+) @req",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/PropertyHierarchyResolvingStore.ts",
+  "harness": "cd \"$(dirname {subject})/../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/property-hierarchy-subproperties.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_no_widening": {
+      "_note": "The decorator finds the sub-properties but never widens: the pre-fix behaviour, CQ6 returns 1 of 4. Type-preserving form (`length < 0`, never true): `&& false` drops the narrowing of `subProperties` and breaks compilation (ITRV §A36).",
+      "from": "      if (subProperties) {\n",
+      "to": "      if (subProperties && subProperties.length < 0) {\n",
+      "expect": [
+        "SP1",
+        "SP2",
+        "SP4",
+        "SP5",
+        "SP6",
+        "SP8",
+        "SP9",
+        "SP10",
+        "SP12",
+        "SP14",
+        "SP16",
+        "SP17",
+        "SP19"
+      ]
+    },
+    "M2_closure_not_transitive": {
+      "_note": "Only DIRECT sub-properties are seen; a sub-sub-property (youtubeVideo ⊑ video ⊑ exoizable) is lost.",
+      "from": "          if (!visited.has(grandChild)) queue.push(grandChild);",
+      "to": "          if (!visited.has(grandChild)) queue.length;",
+      "expect": ["SP2"]
+    },
+    "M3_no_dedup": {
+      "_note": "A value reached through the property and a sub-property (or two sub-properties) comes back twice.",
+      "from": "    return PropertyHierarchyResolvingStore.dedupTriples(out);",
+      "to": "    return out;",
+      "expect": ["SP4"]
+    },
+    "M4_no_namespace_gate": {
+      "_note": "The W3C vocabulary is widened too: the live declaration exo__Statement_object ⊑ rdf__subject puts statement objects into rdf:subject.",
+      "from": "      predicate.value.startsWith(PropertyHierarchyResolvingStore.ONTOLOGY_BASE) &&\n",
+      "to": "",
+      "expect": ["SP7"]
+    },
+    "M5_instance_class_widened": {
+      "_note": "exo:Instance_class is widened by its declared sub-properties — class membership through an arbitrary property.",
+      "from": "    Namespace.EXO.term(\"Instance_class\").value,\n",
+      "to": "",
+      "expect": ["SP13"]
+    },
+    "M6_superclass_widened": {
+      "_note": "exo:Class_superClass is widened by its declared sub-properties — the class walk owned by ClassHierarchyResolvingStore changes.",
+      "from": "    Namespace.EXO.term(\"Class_superClass\").value,\n",
+      "to": "",
+      "expect": ["SP18"]
+    },
+    "M7_file_iri_end_unresolved": {
+      "_note": "A FILE-IRI declaration end is not turned into its predicate form: every frontmatter declaration is lost; only the reified-Statement one (both ends symbolic, SP14) survives.",
+      "from": "      if (label.object instanceof IRI) return label.object.value;",
+      "to": "      if (label.object instanceof IRI) return null;",
+      "expect": [
+        "SP1",
+        "SP2",
+        "SP4",
+        "SP5",
+        "SP6",
+        "SP8",
+        "SP9",
+        "SP10",
+        "SP12",
+        "SP16",
+        "SP17",
+        "SP19"
+      ]
+    },
+    "M8_symbolic_end_dropped": {
+      "_note": "A SYMBOLIC declaration end is dropped: every bare-UID declaration (symbolic parent) and the reified-Statement one (symbolic child) are lost; only the label-form one (both ends file IRIs, SP6) survives.",
+      "from": "    if (!term.value.startsWith(\"obsidian://\")) return term.value;",
+      "to": "    if (!term.value.startsWith(\"obsidian://\")) return null;",
+      "expect": [
+        "SP1",
+        "SP2",
+        "SP4",
+        "SP5",
+        "SP8",
+        "SP9",
+        "SP10",
+        "SP12",
+        "SP14",
+        "SP16",
+        "SP17",
+        "SP19"
+      ]
+    },
+    "M9_index_never_invalidated": {
+      "_note": "The index outlives a store change: a declaration added after the first query is never seen.",
+      "from": "    if (cached && cached.count === count) {",
+      "to": "    if (cached) {",
+      "expect": ["SP10"]
+    },
+    "M10_cached_array_mutated": {
+      "_note": "The rewritten sub-property triples are pushed into the in-memory store's CACHED result array, so a later raw match returns them as stored triples.",
+      "from": "    const out = [...(await this.real.match(subject, predicate, object))];",
+      "to": "    const out = await this.real.match(subject, predicate, object);",
+      "expect": ["SP12"]
+    },
+    "M11_property_in_own_closure": {
+      "_note": "A property becomes its own sub-property (self-declaration, cycle): the direct match runs twice; the dedup hides it in the rows, the match count does not.",
+      "from": "      const visited = new Set<string>([parent]);",
+      "to": "      const visited = new Set<string>();",
+      "expect": ["SP15"]
+    },
+    "M12_predicate_not_rewritten": {
+      "_note": "Sub-property triples come back with their stored predicate instead of the entailed one; invisible to SPARQL bindings (the dedup ignores the predicate), visible on the decorator contract.",
+      "from": "        out.push(new Triple(t.subject, predicate, t.object));",
+      "to": "        out.push(t);",
+      "expect": ["SP16"]
+    },
+    "M13_human_label_taken_as_predicate": {
+      "_note": "A human (literal) label is taken as a predicate IRI: the IRI constructor rejects it and the whole query fails.",
+      "from": "      if (label.object instanceof IRI) return label.object.value;",
+      "to": "      if (label.object instanceof IRI || label.object instanceof Literal) return label.object.value;",
+      "expect": ["SP17"]
+    }
+  }
+}

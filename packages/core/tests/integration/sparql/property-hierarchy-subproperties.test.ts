@@ -1,6 +1,6 @@
 /**
  * Production-shape integration test: a query by a property sees the values of its
- * SUB-PROPERTIES (req e036289d; RFC 14217015 decision №7, CQ6).
+ * SUB-PROPERTIES (req 8a0ed10b; RFC 14217015 decision №7, CQ6).
  *
  * ## The shape under test
  *
@@ -20,7 +20,7 @@
  * of a reified exo__Statement) are asserted on the raw store before they are
  * relied on.
  *
- * Revert-verify: the mutants in `property-hierarchy-subproperties-e036289d.spec.json`
+ * Revert-verify: the mutants in `property-hierarchy-subproperties-8a0ed10b.spec.json`
  * remove one guarantee each; `resolvePropertyHierarchy: false` (SP9) is the
  * pre-fix baseline — CQ6 returns 1 of 4.
  */
@@ -38,8 +38,6 @@ import type { AskOperation } from "../../../src/infrastructure/sparql/algebra/Al
 import { IRI } from "../../../src/domain/models/rdf/IRI";
 import type { Triple, Subject, Predicate, Object as RDFObject } from "../../../src/domain/models/rdf/Triple";
 import { Namespace } from "../../../src/domain/models/rdf/Namespace";
-
-const REQ = "@req:e036289d-166f-487d-aa96-08ab0ba9555c";
 
 const ei = (local: string) => Namespace.forPrefix("exoization-ideas")!.term(local).value;
 const t = (local: string) => Namespace.forPrefix("test")!.term(local).value;
@@ -210,12 +208,12 @@ const ALL_FOUR = [
 
 const BASE = [...IDEA_TBOX, ...SOURCES, ...IDEAS];
 
-describe("a query by a property sees its sub-properties (req e036289d, RFC 14217015 decision №7)", () => {
-  it(`SP1 ${REQ} CQ6 in the single-branch form finds the ideas recorded through every sub-property (4 of 4)`, async () => {
+describe("a query by a property sees its sub-properties (req 8a0ed10b, RFC 14217015 decision №7)", () => {
+  it(`SP1 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 CQ6 in the single-branch form finds the ideas recorded through every sub-property (4 of 4)`, async () => {
     expect(await rows(await buildStore(BASE), CQ6, ["idea", "src"])).toEqual(ALL_FOUR);
   });
 
-  it(`SP2 ${REQ} sub-properties are transitive: a sub-sub-property is seen by both ancestors`, async () => {
+  it(`SP2 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 sub-properties are transitive: a sub-sub-property is seen by both ancestors`, async () => {
     const store = await buildStore([
       ...BASE,
       prop(U.youtube, "exoization-ideas__ExoizationIdea_youtubeVideo", U.video),
@@ -227,7 +225,7 @@ describe("a query by a property sees its sub-properties (req e036289d, RFC 14217
     ).toEqual([pair(I.video, S.video), pair(I.youtube, S.youtube)].sort());
   });
 
-  it(`SP3 ${REQ} widening goes DOWN only: a sub-property query does not see its parent or its siblings`, async () => {
+  it(`SP3 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 widening goes DOWN only: a sub-property query does not see its parent or its siblings`, async () => {
     const store = await buildStore([
       ...BASE,
       prop(U.youtube, "exoization-ideas__ExoizationIdea_youtubeVideo", U.video),
@@ -241,7 +239,7 @@ describe("a query by a property sees its sub-properties (req e036289d, RFC 14217
     ).toEqual([pair(I.book, S.book)]);
   });
 
-  it(`SP4 ${REQ} a value reached through the property AND a sub-property, or two sub-properties, is returned once`, async () => {
+  it(`SP4 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 a value reached through the property AND a sub-property, or two sub-properties, is returned once`, async () => {
     const store = await buildStore([
       ...BASE,
       idea(I.dup, "Same source twice", {
@@ -258,7 +256,7 @@ describe("a query by a property sees its sub-properties (req e036289d, RFC 14217
     );
   });
 
-  it(`SP5 ${REQ} a cycle of declarations terminates and each member sees the other's values`, async () => {
+  it(`SP5 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 a cycle of declarations terminates and each member sees the other's values`, async () => {
     const cycA = uid();
     const cycB = uid();
     const x = uid();
@@ -275,7 +273,7 @@ describe("a query by a property sees its sub-properties (req e036289d, RFC 14217
     expect(await rows(store, `SELECT ?s ?o WHERE { ?s test:cycB ?o }`, ["s", "o"])).toEqual(both);
   });
 
-  it(`SP6 ${REQ} a declaration written as a LABEL-form wikilink (file-IRI object) is recognised`, async () => {
+  it(`SP6 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 a declaration written as a LABEL-form wikilink (file-IRI object) is recognised`, async () => {
     const parent = uid();
     const child = uid();
     const x = uid();
@@ -294,7 +292,7 @@ describe("a query by a property sees its sub-properties (req e036289d, RFC 14217
     ]);
   });
 
-  it(`SP14 ${REQ} a declaration made by a reified exo__Statement adapter (symbolic subject) is recognised`, async () => {
+  it(`SP14 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 a declaration made by a reified exo__Statement adapter (symbolic subject) is recognised`, async () => {
     const parent = uid();
     const child = uid();
     const stmt = uid();
@@ -322,7 +320,7 @@ describe("a query by a property sees its sub-properties (req e036289d, RFC 14217
     ]);
   });
 
-  it(`SP7 ${REQ} a predicate OUTSIDE the exocortex ontologies is not widened (the live Statement_object ⊑ rdf:subject shape)`, async () => {
+  it(`SP7 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 a predicate OUTSIDE the exocortex ontologies is not widened (the live Statement_object ⊑ rdf:subject shape)`, async () => {
     const child = uid();
     const x = uid();
     const store = await buildStore([
@@ -336,7 +334,7 @@ describe("a query by a property sees its sub-properties (req e036289d, RFC 14217
     expect(await rows(store, `SELECT ?s ?o WHERE { ?s rdf:subject ?o }`, ["s", "o"])).toEqual([]);
   });
 
-  it(`SP13 ${REQ} exo:Instance_class is not widened by its declared sub-properties (owned by the class bridge)`, async () => {
+  it(`SP13 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 exo:Instance_class is not widened by its declared sub-properties (owned by the class bridge)`, async () => {
     const child = uid();
     const klass = uid();
     const x = uid();
@@ -349,7 +347,7 @@ describe("a query by a property sees its sub-properties (req e036289d, RFC 14217
     expect(await rows(store, `SELECT ?s ?c WHERE { ?s exo:Instance_class ?c }`, ["s", "c"])).toEqual([]);
   });
 
-  it(`SP18 ${REQ} exo:Class_superClass is not widened by its declared sub-properties (owned by the class bridge)`, async () => {
+  it(`SP18 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 exo:Class_superClass is not widened by its declared sub-properties (owned by the class bridge)`, async () => {
     const child = uid();
     const d = uid();
     const e = uid();
@@ -362,7 +360,7 @@ describe("a query by a property sees its sub-properties (req e036289d, RFC 14217
     expect(await rows(store, `SELECT ?c ?p WHERE { ?c exo:Class_superClass ?p }`, ["c", "p"])).toEqual([]);
   });
 
-  it(`SP8 ${REQ} the ASK and property-path surfaces see sub-properties too`, async () => {
+  it(`SP8 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 the ASK and property-path surfaces see sub-properties too`, async () => {
     const store = await buildStore(BASE);
     expect(
       await ask(store, `ASK { <${fileIri(I.video)}> eideas:ExoizationIdea_exoizable <${fileIri(S.video)}> }`),
@@ -375,7 +373,7 @@ describe("a query by a property sees its sub-properties (req e036289d, RFC 14217
     ).toEqual([`"An article"`]);
   });
 
-  it(`SP9 ${REQ} resolvePropertyHierarchy:false restores the baseline; the class toggle is independent`, async () => {
+  it(`SP9 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 resolvePropertyHierarchy:false restores the baseline; the class toggle is independent`, async () => {
     const store = await buildStore(BASE);
     expect(await rows(store, CQ6, ["idea", "src"], { resolvePropertyHierarchy: false })).toEqual([
       pair(I.direct, S.generic),
@@ -383,7 +381,7 @@ describe("a query by a property sees its sub-properties (req e036289d, RFC 14217
     expect(await rows(store, CQ6, ["idea", "src"], { resolveClassHierarchy: false })).toEqual(ALL_FOUR);
   });
 
-  it(`SP10 ${REQ} the index follows the store: a declaration added after the first query is seen by the next`, async () => {
+  it(`SP10 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 the index follows the store: a declaration added after the first query is seen by the next`, async () => {
     const bookWithoutParent = [...BASE.filter((n) => n.uid !== U.book), prop(U.book, "exoization-ideas__ExoizationIdea_book")];
     const store = await buildStore(bookWithoutParent);
     expect(await rows(store, CQ6, ["idea", "src"])).toEqual(ALL_FOUR.filter((r) => r !== pair(I.book, S.book)));
@@ -397,14 +395,14 @@ describe("a query by a property sees its sub-properties (req e036289d, RFC 14217
     expect(await rows(store, CQ6, ["idea", "src"])).toEqual(ALL_FOUR);
   });
 
-  it(`SP11 ${REQ} a VARIABLE predicate returns the stored predicates only — no entailed triple is added`, async () => {
+  it(`SP11 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 a VARIABLE predicate returns the stored predicates only — no entailed triple is added`, async () => {
     const store = await buildStore(BASE);
     expect(await rows(store, `SELECT ?p WHERE { <${fileIri(I.video)}> ?p <${fileIri(S.video)}> }`, ["p"])).toEqual([
       `<${VIDEO}>`,
     ]);
   });
 
-  it(`SP12 ${REQ} widening does not leak into the raw store's cached match results`, async () => {
+  it(`SP12 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 widening does not leak into the raw store's cached match results`, async () => {
     const store = await buildStore(BASE);
     const q = `SELECT ?idea ?src WHERE { ?idea eideas:ExoizationIdea_exoizable ?src }`;
     expect(await rows(store, q, ["idea", "src"])).toEqual(ALL_FOUR);
@@ -412,7 +410,7 @@ describe("a query by a property sees its sub-properties (req e036289d, RFC 14217
     expect(await rows(store, q, ["idea", "src"])).toEqual(ALL_FOUR);
   });
 
-  it(`SP15 ${REQ} a self-declared property (P ⊑ P, the live exo:Instance_class shape) costs one direct match`, async () => {
+  it(`SP15 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 a self-declared property (P ⊑ P, the live exo:Instance_class shape) costs one direct match`, async () => {
     const self = uid();
     const x = uid();
     const store = await buildStore([
@@ -427,14 +425,22 @@ describe("a query by a property sees its sub-properties (req e036289d, RFC 14217
     expect(store.predicateCalls.filter((p) => p === t("selfP"))).toHaveLength(1);
   });
 
-  it(`SP16 ${REQ} the decorator returns ENTAILED triples: a sub-property triple carries the queried predicate`, async () => {
+  it(`SP16 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 the decorator returns ENTAILED triples: a sub-property triple carries the queried predicate`, async () => {
     const store = await buildStore(BASE);
     const triples = await new PropertyHierarchyResolvingStore(store).match(undefined, new IRI(EXOIZABLE), undefined);
     expect(triples).toHaveLength(4);
     expect(new Set(triples.map((x) => x.predicate.value))).toEqual(new Set([EXOIZABLE]));
   });
 
-  it(`SP17 ${REQ} a property file whose label is not a valid predicate is skipped, not fatal`, async () => {
+  it(`SP19 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 executors over the same store share ONE index build (keyed on the root store)`, async () => {
+    const store = await buildStore(BASE);
+    store.predicateCalls.length = 0;
+    expect(await rows(store, CQ6, ["idea", "src"])).toEqual(ALL_FOUR);
+    expect(await rows(store, CQ6, ["idea", "src"])).toEqual(ALL_FOUR);
+    expect(store.predicateCalls.filter((p) => p === SUPER_PROPERTY)).toHaveLength(1);
+  });
+
+  it(`SP17 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 a property file whose label is not a valid predicate is skipped, not fatal`, async () => {
     const odd = uid();
     const store = await buildStore([
       ...BASE,

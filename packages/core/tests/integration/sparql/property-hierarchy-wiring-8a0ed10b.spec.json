@@ -1,0 +1,42 @@
+{
+  "_doc": "Revert-verify mutants for the WIRING of req 8a0ed10b in ExoQLQueryExecutor (RFC 14217015 P1.4): the default-on toggle and the root-store cache key. Same harness as the decorator spec. `tree`/`subject` are placeholders (§A145).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› (SP\\d+) @req",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/executors/QueryExecutor.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/property-hierarchy-subproperties.test.ts --verbose 2>&1",
+  "mutants": {
+    "W1_resolution_off_by_default": {
+      "_note": "The executor no longer wraps the store by default (the WIRING half of the feature): every SPARQL axis reddens; SP16, which drives the decorator directly, stays green — the decorator is fine, nobody calls it.",
+      "from": "      config.resolvePropertyHierarchy === false\n",
+      "to": "      config.resolvePropertyHierarchy !== true\n",
+      "expect": [
+        "SP1",
+        "SP2",
+        "SP4",
+        "SP5",
+        "SP6",
+        "SP8",
+        "SP9",
+        "SP10",
+        "SP12",
+        "SP14",
+        "SP17",
+        "SP19"
+      ]
+    },
+    "W2_index_keyed_per_executor": {
+      "_note": "The property index is keyed on the per-executor class decorator instead of the root store, so every executor (PreconditionEvaluator makes one per evaluation) rebuilds it.",
+      "from": "        : new PropertyHierarchyResolvingStore(classResolved, tripleStore);",
+      "to": "        : new PropertyHierarchyResolvingStore(classResolved);",
+      "expect": ["SP19"]
+    }
+  }
+}

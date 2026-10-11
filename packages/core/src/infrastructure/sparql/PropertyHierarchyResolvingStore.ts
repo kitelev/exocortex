@@ -22,7 +22,7 @@ import { Namespace } from "../../domain/models/rdf/Namespace";
 const KEY_SEP = String.fromCharCode(0);
 
 /**
- * Query-time sub-property resolver (req `e036289d`, RFC 14217015 decision №7):
+ * Query-time sub-property resolver (req `8a0ed10b`, RFC 14217015 decision №7):
  * a triple pattern whose predicate is a property P also matches the triples whose
  * predicate is a SUB-PROPERTY of P — declared by `exo__Property_superProperty`,
  * transitively — exactly as a class query sees the instances of its subclasses

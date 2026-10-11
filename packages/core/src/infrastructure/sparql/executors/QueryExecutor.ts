@@ -97,7 +97,7 @@ export interface QueryExecutorConfig {
   resolveClassHierarchy?: boolean;
 
   /**
-   * Query-time sub-property resolution (req `e036289d`, RFC 14217015 decision №7).
+   * Query-time sub-property resolution (req `8a0ed10b`, RFC 14217015 decision №7).
    * When enabled (the default), a triple pattern with a constant exocortex-ontology
    * predicate P also matches the triples of P's sub-properties
    * (`exo__Property_superProperty`, transitive) — see
@@ -135,7 +135,7 @@ export class ExoQLQueryExecutor {
       config.resolveClassHierarchy === false
         ? tripleStore
         : new ClassHierarchyResolvingStore(tripleStore);
-    // Sub-property resolution (req e036289d) wraps OUTSIDE the class decorator, so
+    // Sub-property resolution (req 8a0ed10b) wraps OUTSIDE the class decorator, so
     // the class bridge keeps keying its index cache on the root store, and the
     // property index is keyed on the root store too (`cacheKey`) — every executor
     // over the same store shares one build of each.
