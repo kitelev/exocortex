@@ -1,0 +1,36 @@
+{
+  "_doc": "Revert-verify for req 088f94c6: the create_instance step a960eb76 that turns the trash reason into its own ems__EffortTrashNote asset. Subject: the SHIPPED step in the exoas-exocmd submodule. Run from the repo root after setting `tree` and `subject` to YOUR checkout (both absolute): python3 -I ~/.claude/bin/mutant-driver.py <copy of this spec>. Needs initialised submodules. Not pinned by a mutant here: the ontology — the step declares none of its own, the Universal Default Template 62907ff4 copies the effort's isDefinedBy into every created instance (measured: dropping a duplicate default from this step reddened nothing, so the duplicate was removed). The folder is the ontology's ($isDefinedByFolder), pinned by M7 through R10.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/exoas-exocmd/exocmd/a960eb76-c669-43af-80b4-94dac438dd70.md",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../cli\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/apply-trash-reason-088f94c6.integration.test.ts 2>&1",
+  "red_re": "› (R\\d+\\w*) ",
+  "mutants": {
+    "M4_link_to_effort_dropped": {
+      "from": "  - \"[[c296790a-7987-4acb-a43e-72cccb9242d9]]\"\n",
+      "to": "",
+      "expect": ["R3"]
+    },
+    "M5_wrong_reason_class": {
+      "from": "exocmd__Grounding_targetClass: \"[[32f0c68a-9951-46b2-9cdc-7e51a78c4ae1]]\"",
+      "to": "exocmd__Grounding_targetClass: \"[[1b20a8f0-d745-4e93-91db-4531b3df120e]]\"",
+      "expect": ["R1"]
+    },
+    "M6_parent_rule_dropped": {
+      "_note": "Without the grounding's own ems__Effort_parent rule the Universal Default Template rules 65acce2f (Task) and 01f570c9 (Project) fire and the reason becomes a child effort of the trashed asset.",
+      "from": "exocmd__Grounding_inheritanceRule:\n  - \"[[27f20496-cf20-49bf-a174-0582d33e16b0]]\"\n",
+      "to": "",
+      "expect": ["R9"]
+    },
+    "M7_reason_in_effort_folder": {
+      "_note": "$targetFolder is the effort's folder; R10 places the effort outside its ontology's folder, so only R10 can tell the two tokens apart.",
+      "from": "exocmd__Grounding_targetFolder: $isDefinedByFolder",
+      "to": "exocmd__Grounding_targetFolder: $targetFolder",
+      "expect": ["R10"]
+    }
+  }
+}
