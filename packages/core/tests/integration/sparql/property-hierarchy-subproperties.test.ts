@@ -554,6 +554,22 @@ describe("a query by a property sees its sub-properties (req 8a0ed10b, RFC 14217
     // By the parent: the sub-property value — own or inherited — is not reached at all.
     expect(await own(U.exoizable)).toEqual([pair(I.direct, S.generic)]);
   });
+
+  // ---- Review round 2 (PR #4556) ----
+
+  it(`SP29 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 with resolvePropertyHierarchy:false a join by a variable predicate still runs (a store without matchExactPredicate)`, async () => {
+    const store = await buildStore(BASE);
+    const bindFirst = `SELECT ?s ?o WHERE { <${fileIri(U.exoizable)}> exo:Asset_label ?p . ?s ?p ?o }`;
+    expect(await rows(store, bindFirst, ["s", "o"], { resolvePropertyHierarchy: false })).toEqual([pair(I.direct, S.generic)]);
+  });
+
+  it(`SP30 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 a path with a FREE subject yields each (start, end) pair once`, async () => {
+    const { store, N, iri } = await diamondStore();
+    const got = await rows(store, `SELECT ?s ?o WHERE { ?s test:rel+ ?o }`, ["s", "o"]);
+    const nodes = [N.n0, N.a, N.b, N.c].map(iri);
+    // The diamond is one cycle: every node reaches every node.
+    expect(got).toEqual(nodes.flatMap((x) => nodes.map((y) => `${x} | ${y}`)).sort());
+  });
 });
 
 // Keep the youtube constant referenced for readers of SP2/SP3.

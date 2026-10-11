@@ -35,7 +35,8 @@
         "SP23",
         "SP24",
         "SP26",
-        "SP27"
+        "SP27",
+        "SP30"
       ]
     },
     "M2_closure_not_transitive": {
@@ -89,7 +90,8 @@
         "SP23",
         "SP24",
         "SP26",
-        "SP27"
+        "SP27",
+        "SP30"
       ]
     },
     "M8_symbolic_end_dropped": {
@@ -113,7 +115,8 @@
         "SP23",
         "SP24",
         "SP26",
-        "SP27"
+        "SP27",
+        "SP30"
       ]
     },
     "M9_index_never_invalidated": {
@@ -186,7 +189,8 @@
         "SP23",
         "SP24",
         "SP26",
-        "SP27"
+        "SP27",
+        "SP30"
       ]
     },
     "MX2_unbound_variable_predicate_widened": {

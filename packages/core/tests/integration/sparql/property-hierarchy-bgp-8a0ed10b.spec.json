@@ -18,6 +18,12 @@
       "from": "    const predicateFromBinding =\n      !this.isPropertyPath(pattern.predicate) && this.isVariable(pattern.predicate);",
       "to": "    const predicateFromBinding =\n      !this.isPropertyPath(pattern.predicate) && this.isVariable(pattern.predicate) && pattern.subject.type.length < 0;",
       "expect": ["SP20", "SP28"]
+    },
+    "B2_exact_match_assumed_present": {
+      "_note": "The join assumes every store implements the optional matchExactPredicate: with resolvePropertyHierarchy:false (a store without it) a join by a variable predicate throws (review round 2 LOW).",
+      "from": "      predicateFromBinding && this.tripleStore.matchExactPredicate\n        ? await this.tripleStore.matchExactPredicate(subject, predicate, object)",
+      "to": "      predicateFromBinding\n        ? await this.tripleStore.matchExactPredicate!(subject, predicate, object)",
+      "expect": ["SP29"]
     }
   }
 }

@@ -329,16 +329,23 @@ export class PropertyPathExecutor {
     targetNodes: Set<Subject | RDFObject> | null
   ): Promise<Set<Subject | RDFObject>> {
     const result = new Set<Subject | RDFObject>();
+    // Keyed by value in O(1) — a linear nodeInSet per node made a wide `?` hop quadratic.
+    const optionalKeys = new Set<string>();
 
     // Zero steps - include start
     if (targetNodes === null || this.nodeInSet(start, targetNodes)) {
       result.add(start);
+      optionalKeys.add(this.nodeToKey(start));
     }
 
     // One step — once per value (a ZeroOrOne path is a set too)
     const oneStep = await this.evaluatePathItem(start, item, targetNodes);
     for (const node of oneStep) {
-      if (!this.nodeInSet(node, result)) result.add(node);
+      const key = this.nodeToKey(node);
+      if (!optionalKeys.has(key)) {
+        optionalKeys.add(key);
+        result.add(node);
+      }
     }
 
     return result;
@@ -419,11 +426,20 @@ export class PropertyPathExecutor {
     if (this.isVariable(element)) {
       // For unbound variables, we need to get all possible values
       // This is done by the caller who iterates all subjects/objects
+      // Each start node ONCE (by value): a node occurring in N triples is N term
+      // objects, and a reference-keyed Set kept them all — every free-subject path
+      // then ran N times and returned N copies of its rows (req 8a0ed10b review r2).
       const allNodes = new Set<Subject | RDFObject>();
+      const startKeys = new Set<string>();
       const allTriples = await this.tripleStore.match(undefined, undefined, undefined);
       for (const triple of allTriples) {
-        allNodes.add(triple.subject);
-        allNodes.add(triple.object);
+        for (const node of [triple.subject, triple.object]) {
+          const key = this.nodeToKey(node);
+          if (!startKeys.has(key)) {
+            startKeys.add(key);
+            allNodes.add(node);
+          }
+        }
       }
       return allNodes;
     }

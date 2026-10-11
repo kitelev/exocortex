@@ -208,7 +208,9 @@ returns the ideas recorded through `_video` too. Nothing is written to the store
   the stored predicates only — unbound, or bound by an earlier pattern
   (`<p> exo:Asset_label ?p . ?s ?p ?o`): the result does not depend on the order
   of the patterns. `GRAPH { … }` patterns are not widened.
-- A `+` / `*` / `?` path over a widened predicate yields each node once.
+- Every `+` / `*` / `?` path yields each node once, and a path with a free
+  subject each (start, end) pair once (SPARQL 1.1 semantics — before, a node
+  reached from two predecessors came back twice, which widening multiplied).
 - `ExoQLQueryExecutor` config `resolvePropertyHierarchy: false` turns it off.
 
 ---
