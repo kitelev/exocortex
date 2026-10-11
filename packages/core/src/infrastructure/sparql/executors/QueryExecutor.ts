@@ -35,6 +35,7 @@ import { ConstructExecutor } from "./ConstructExecutor";
 import { ServiceExecutor, ServiceExecutorConfig } from "./ServiceExecutor";
 import { GraphExecutor } from "./GraphExecutor";
 import { ClassHierarchyResolvingStore } from "../ClassHierarchyResolvingStore";
+import { PropertyHierarchyResolvingStore } from "../PropertyHierarchyResolvingStore";
 import { SPARQLGenerator } from "../algebra/SPARQLGenerator";
 import { IRI } from "../../../domain/models/rdf/IRI";
 import { Literal } from "../../../domain/models/rdf/Literal";
@@ -94,6 +95,16 @@ export interface QueryExecutorConfig {
    * behaviour (the reversibility / revert-verify axis).
    */
   resolveClassHierarchy?: boolean;
+
+  /**
+   * Query-time sub-property resolution (req `8a0ed10b`, RFC 14217015 decision №7).
+   * When enabled (the default), a triple pattern with a constant exocortex-ontology
+   * predicate P also matches the triples of P's sub-properties
+   * (`exo__Property_superProperty`, transitive) — see
+   * {@link PropertyHierarchyResolvingStore}. Set to `false` to restore the
+   * baseline (direct matches only).
+   */
+  resolvePropertyHierarchy?: boolean;
 }
 
 export class ExoQLQueryExecutor {
@@ -120,10 +131,18 @@ export class ExoQLQueryExecutor {
     // both the ASK-precondition and SELECT surfaces are fixed by one mechanism.
     // Predicate-scoped pass-through → byte-identical for every non-hierarchy query.
     // Disabled via `resolveClassHierarchy: false` (baseline / revert-verify axis).
-    const store =
+    const classResolved =
       config.resolveClassHierarchy === false
         ? tripleStore
         : new ClassHierarchyResolvingStore(tripleStore);
+    // Sub-property resolution (req 8a0ed10b) wraps OUTSIDE the class decorator, so
+    // the class bridge keeps keying its index cache on the root store, and the
+    // property index is keyed on the root store too (`cacheKey`) — every executor
+    // over the same store shares one build of each.
+    const store =
+      config.resolvePropertyHierarchy === false
+        ? classResolved
+        : new PropertyHierarchyResolvingStore(classResolved, tripleStore);
 
     this.tripleStore = store;
     this.bgpExecutor = new BGPExecutor(store);

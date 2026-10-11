@@ -185,6 +185,34 @@ exo__Instance_class:
 - **ExoRDF triple**: Preserves original property name for tooling
 - **RDF/RDFS triple**: Enables standard SPARQL queries and inference
 
+### Query-time sub-property resolution
+
+A property declared with `exo__Property_superProperty` is a sub-property of its
+parent at query time: a SPARQL triple pattern with a constant predicate P also
+matches the triples of P's sub-properties, transitively (req `8a0ed10b`, RFC
+14217015 decision №7). With `_video ⊑ _exoizable`,
+
+```sparql
+SELECT ?idea ?src WHERE { ?idea eideas:ExoizationIdea_exoizable ?src }
+```
+
+returns the ideas recorded through `_video` too. Nothing is written to the store
+(`packages/core/src/infrastructure/sparql/PropertyHierarchyResolvingStore.ts`).
+
+- Only predicates under `https://exocortex.my/ontology/` are widened. The W3C
+  vocabulary above (`http://www.w3.org/…`) is not, and neither are
+  `exo:Class_superClass` / `exo:Instance_class` (the class bridge owns them). A
+  prefix the engine does not know as W3C (e.g. `prov__`, `dcterms__`) lives under
+  `https://exocortex.my/ontology/` and IS widened.
+- Only a predicate written as a CONSTANT is widened. A variable predicate returns
+  the stored predicates only — unbound, or bound by an earlier pattern
+  (`<p> exo:Asset_label ?p . ?s ?p ?o`): the result does not depend on the order
+  of the patterns. `GRAPH { … }` patterns are not widened.
+- Every `+` / `*` / `?` path yields each node once, and a path with a free
+  subject each (start, end) pair once (SPARQL 1.1 semantics — before, a node
+  reached from two predecessors came back twice, which widening multiplied).
+- `ExoQLQueryExecutor` config `resolvePropertyHierarchy: false` turns it off.
+
 ---
 
 ## 🆔 URI Construction Strategy

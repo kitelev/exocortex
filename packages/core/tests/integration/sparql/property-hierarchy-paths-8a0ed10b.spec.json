@@ -1,0 +1,41 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› (SP\\d+) @req",
+  "_doc": "Revert-verify mutants for the arbitrary-length-path dedup of req 8a0ed10b review M2: a +, * or ? path yields each node once (SPARQL 1.1 ALP is a set). Pre-existing defect (a node reached from two predecessors was two term objects in a reference-keyed Set), multiplied by sub-property widening. `tree`/`subject` are placeholders (§A145).",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/executors/PropertyPathExecutor.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/property-hierarchy-subproperties.test.ts --verbose 2>&1",
+  "mutants": {
+    "P1_one_or_more_result_not_keyed": {
+      "_note": "A node reached from two predecessors is yielded twice by + (and by *, which is + plus the start). Also SP30: the free-subject path over the diamond reaches c from a and from b within ONE start, so it needs the same per-start dedup (P4 removes the other half — the duplicate STARTS).",
+      "from": "        if (!resultKeys.has(key) && (targetNodes === null || this.nodeInSet(nextNode, targetNodes))) {",
+      "to": "        if ((targetNodes === null || this.nodeInSet(nextNode, targetNodes))) {",
+      "expect": ["SP23", "SP24", "SP30"]
+    },
+    "P2_zero_or_more_start_twice": {
+      "_note": "A * path whose cycle leads back to the start yields the start twice (once via the cycle, once as the zero-length step).",
+      "from": "    if (!this.nodeInSet(start, result) && (targetNodes === null || this.nodeInSet(start, targetNodes))) {",
+      "to": "    if ((targetNodes === null || this.nodeInSet(start, targetNodes))) {",
+      "expect": ["SP24"]
+    },
+    "P3_zero_or_one_start_twice": {
+      "_note": "A ? path over a self-loop yields the start twice (zero-length step and the one step). Keyed in O(1) since review round 2 (a linear nodeInSet per node was quadratic on a wide hop).",
+      "from": "      if (!optionalKeys.has(key)) {",
+      "to": "      if (optionalKeys.size >= 0) {",
+      "expect": ["SP25"]
+    },
+    "P4_free_subject_starts_not_deduped": {
+      "_note": "A free-subject path enumerates its start nodes by reference: a node occurring in N triples starts the path N times and every row comes back N times (review round 2 MEDIUM).",
+      "from": "          if (!startKeys.has(key)) {",
+      "to": "          if (startKeys.size >= 0) {",
+      "expect": ["SP30"]
+    }
+  }
+}

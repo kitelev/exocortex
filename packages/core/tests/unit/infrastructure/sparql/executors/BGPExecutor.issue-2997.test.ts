@@ -15,6 +15,18 @@ import { IRI } from "../../../../../src/domain/models/rdf/IRI";
 import { Literal } from "../../../../../src/domain/models/rdf/Literal";
 import { BGPOperation, PropertyPath } from "../../../../../src/infrastructure/sparql/algebra/AlgebraOperation";
 
+
+/**
+ * The structured literal-guard payload of a console.error call made through
+ * LoggingService.error (req 8a0ed10b paid the file's no-console debt): in
+ * production mode the fields are the JSON after "Details:", in development
+ * mode they are own properties of the logged Error.
+ */
+const loggedDiagnostic = (call: unknown[]): Record<string, unknown> =>
+  call[1] && typeof call[1] === "object"
+    ? (call[1] as Record<string, unknown>)
+    : (JSON.parse(String(call[0]).split("\n  Details: ")[1]) as Record<string, unknown>);
+
 describe("BGPExecutor — Issue #2997 Phase 3 literal-safety guard", () => {
   let tripleStore: InMemoryTripleStore;
   let executor: BGPExecutor;
@@ -216,7 +228,7 @@ describe("BGPExecutor — Issue #2997 Phase 3 literal-safety guard", () => {
 
       expect(errorSpy).toHaveBeenCalled();
       const lastCall = errorSpy.mock.calls[errorSpy.mock.calls.length - 1];
-      expect(lastCall[1]).toMatchObject({
+      expect(loggedDiagnostic(lastCall)).toMatchObject({
         executor: "BGPExecutor",
         position: "subject",
         value: "Барик (Area)",

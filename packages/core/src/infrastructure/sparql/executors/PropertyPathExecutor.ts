@@ -7,6 +7,7 @@ import type {
   Variable as AlgebraVariable,
 } from "../algebra/AlgebraOperation";
 import { SolutionMapping } from "../SolutionMapping";
+import { LoggingService } from "../../../services/LoggingService";
 import { IRI as RDFiri } from "../../../domain/models/rdf/IRI";
 import { BlankNode } from "../../../domain/models/rdf/BlankNode";
 import { Literal as RDFLiteral } from "../../../domain/models/rdf/Literal";
@@ -34,6 +35,18 @@ export class PropertyPathExecutor {
   private readonly MAX_DEPTH = 100; // Prevent infinite loops
 
   constructor(private readonly tripleStore: ITripleStore) {}
+
+  /** Error code of the literal-safety diagnostic (Issue #2997 / #3282). */
+  static readonly LITERAL_GUARD_CODE = "SPARQL_LITERAL_GUARD";
+
+  /**
+   * The literal-safety diagnostic as the Error `LoggingService.error` takes: the
+   * structured fields are own properties of the Error and its message is their
+   * JSON, so the logged line carries them in production and a spy sees them.
+   */
+  static literalGuardDetail(diagnostic: Record<string, string>): Error {
+    return Object.assign(new Error(JSON.stringify(diagnostic)), diagnostic);
+  }
 
   /**
    * Execute a property path pattern and return solution mappings.
@@ -67,12 +80,16 @@ export class PropertyPathExecutor {
           "Wikilink could not be resolved to IRI (likely label-form wikilink with no matching basename/alias). " +
           "Check whether the target file exists in the queried vault, or add an alias. See issue #3282.",
       };
-      // Use console.error for visibility — previous console.warn was silently
+      // Error level for visibility — a previous console.warn was silently
       // swallowed by tooling and users could not diagnose zero-result queries.
-      console.error(
+      // Through the project logger (the file's no-console debt, paid when req
+      // 8a0ed10b touched it): same console.error level and message; the fields
+      // ride on the Error (own properties + JSON in the logged details).
+      LoggingService.error(
         `[PropertyPathExecutor] literal-safety guard fired: literal in ${position} position — yielding 0 solutions. ` +
           `value="${truncated}" path=${pathDesc}`,
-        diagnostic,
+        PropertyPathExecutor.literalGuardDetail(diagnostic),
+        PropertyPathExecutor.LITERAL_GUARD_CODE,
       );
       if (PropertyPathExecutor.isStrictModeEnabled()) {
         throw new PropertyPathExecutorError(
@@ -247,6 +264,11 @@ export class PropertyPathExecutor {
   ): Promise<Set<Subject | RDFObject>> {
     const visited = new Set<string>();
     const result = new Set<Subject | RDFObject>();
+    // An arbitrary-length path yields each node ONCE (SPARQL 1.1 ALP is a set). The
+    // result Set compares by reference, and a node reached from two predecessors is
+    // two different term objects — key the result by value (req 8a0ed10b review:
+    // sub-property widening adds predecessors, so the duplicates multiplied).
+    const resultKeys = new Set<string>();
     const queue: { node: Subject | RDFObject; depth: number }[] = [{ node: start, depth: 0 }];
 
     while (queue.length > 0) {
@@ -261,8 +283,9 @@ export class PropertyPathExecutor {
       for (const nextNode of reachable) {
         const key = this.nodeToKey(nextNode);
 
-        // Add to result (only nodes reachable in 1+ steps)
-        if (targetNodes === null || this.nodeInSet(nextNode, targetNodes)) {
+        // Add to result (only nodes reachable in 1+ steps), once per value
+        if (!resultKeys.has(key) && (targetNodes === null || this.nodeInSet(nextNode, targetNodes))) {
+          resultKeys.add(key);
           result.add(nextNode);
         }
 
@@ -288,8 +311,8 @@ export class PropertyPathExecutor {
   ): Promise<Set<Subject | RDFObject>> {
     const result = await this.evaluateOneOrMorePath(start, item, targetNodes);
 
-    // Also include start node (zero steps)
-    if (targetNodes === null || this.nodeInSet(start, targetNodes)) {
+    // Also include start node (zero steps) — unless a cycle already brought it back
+    if (!this.nodeInSet(start, result) && (targetNodes === null || this.nodeInSet(start, targetNodes))) {
       result.add(start);
     }
 
@@ -306,16 +329,23 @@ export class PropertyPathExecutor {
     targetNodes: Set<Subject | RDFObject> | null
   ): Promise<Set<Subject | RDFObject>> {
     const result = new Set<Subject | RDFObject>();
+    // Keyed by value in O(1) — a linear nodeInSet per node made a wide `?` hop quadratic.
+    const optionalKeys = new Set<string>();
 
     // Zero steps - include start
     if (targetNodes === null || this.nodeInSet(start, targetNodes)) {
       result.add(start);
+      optionalKeys.add(this.nodeToKey(start));
     }
 
-    // One step
+    // One step — once per value (a ZeroOrOne path is a set too)
     const oneStep = await this.evaluatePathItem(start, item, targetNodes);
     for (const node of oneStep) {
-      result.add(node);
+      const key = this.nodeToKey(node);
+      if (!optionalKeys.has(key)) {
+        optionalKeys.add(key);
+        result.add(node);
+      }
     }
 
     return result;
@@ -396,11 +426,20 @@ export class PropertyPathExecutor {
     if (this.isVariable(element)) {
       // For unbound variables, we need to get all possible values
       // This is done by the caller who iterates all subjects/objects
+      // Each start node ONCE (by value): a node occurring in N triples is N term
+      // objects, and a reference-keyed Set kept them all — every free-subject path
+      // then ran N times and returned N copies of its rows (req 8a0ed10b review r2).
       const allNodes = new Set<Subject | RDFObject>();
+      const startKeys = new Set<string>();
       const allTriples = await this.tripleStore.match(undefined, undefined, undefined);
       for (const triple of allTriples) {
-        allNodes.add(triple.subject);
-        allNodes.add(triple.object);
+        for (const node of [triple.subject, triple.object]) {
+          const key = this.nodeToKey(node);
+          if (!startKeys.has(key)) {
+            startKeys.add(key);
+            allNodes.add(node);
+          }
+        }
       }
       return allNodes;
     }
