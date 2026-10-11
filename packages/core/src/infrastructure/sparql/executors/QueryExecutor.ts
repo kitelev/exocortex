@@ -776,9 +776,31 @@ export class ExoQLQueryExecutor {
   private substituteInTriple(triple: Record<string, unknown>, bindings: SolutionMapping): unknown {
     return {
       subject: this.substituteInTripleElement(triple.subject as Record<string, unknown>, bindings),
-      predicate: triple.predicate, // Predicate paths are not substituted
+      predicate: this.substituteInPredicate(triple.predicate as Record<string, unknown>, bindings),
       object: this.substituteInTripleElement(triple.object as Record<string, unknown>, bindings),
     };
+  }
+
+  /**
+   * A VARIABLE predicate bound to an IRI is substituted, so the joined pattern is
+   * an index lookup by that predicate instead of a scan of every triple per left
+   * solution (req 60ed88e7 — `{ BIND(P AS ?p) ?s ?p ?o }`). It is marked
+   * `fromBinding`: the BGP executor matches it as stored, without sub-property
+   * widening, the same as a predicate bound inside one BGP (req 8a0ed10b), so the
+   * result is the one the unsubstituted scan + merge gave.
+   *
+   * Property paths, constants, and a variable bound to anything but an IRI (a
+   * predicate is always an IRI, so such a row cannot match — the merge drops it)
+   * are left as they are.
+   */
+  private substituteInPredicate(predicate: Record<string, unknown>, bindings: SolutionMapping): unknown {
+    if (predicate && predicate.type === 'variable') {
+      const asTerm = this.termToAlgebraNode(bindings.get(predicate.value as string));
+      if (asTerm !== null && asTerm.type === 'iri') {
+        return { ...asTerm, fromBinding: true };
+      }
+    }
+    return predicate;
   }
 
   /**
@@ -917,6 +939,11 @@ export class ExoQLQueryExecutor {
     if (expr.type === "aggregate") {
       // Aggregates in extend are handled at the group level
       return undefined;
+    }
+
+    // `BIND(<iri> AS ?v)` binds the IRI term, not its string (req 60ed88e7).
+    if (expr.type === "literal" && expr.iri === true) {
+      return new IRI(String(expr.value));
     }
 
     // Use FilterExecutor's evaluateExpression for all other expression types

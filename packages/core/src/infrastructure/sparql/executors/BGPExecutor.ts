@@ -51,8 +51,12 @@ export class BGPExecutor {
       return;
     }
 
-    // Start with first triple pattern
-    let solutions = this.matchTriplePattern(bgp.triples[0]);
+    // Start with first triple pattern. Its predicate may already be BOUND — a join
+    // substituted a variable predicate (req 60ed88e7) — and is then matched as stored.
+    let solutions = this.matchTriplePattern(
+      bgp.triples[0],
+      this.isPredicateFromBinding(bgp.triples[0].predicate),
+    );
 
     // Join with remaining patterns
     for (let i = 1; i < bgp.triples.length; i++) {
@@ -63,6 +67,19 @@ export class BGPExecutor {
     for await (const solution of solutions) {
       yield solution;
     }
+  }
+
+  /**
+   * A predicate that comes from a variable binding — still a variable (instantiated
+   * per solution inside this BGP) or an IRI a join substituted for one (marked
+   * `fromBinding`, req 60ed88e7). Such a predicate is matched as stored, without
+   * sub-property widening (req 8a0ed10b); only a predicate WRITTEN as a constant
+   * is widened.
+   */
+  private isPredicateFromBinding(predicate: AlgebraTriple["predicate"]): boolean {
+    if (this.isPropertyPath(predicate)) return false;
+    if (this.isVariable(predicate)) return true;
+    return predicate.type === "iri" && predicate.fromBinding === true;
   }
 
   /**
@@ -431,8 +448,7 @@ export class BGPExecutor {
     }
 
     // A variable predicate stays a variable predicate after instantiation (req 8a0ed10b).
-    const predicateFromBinding =
-      !this.isPropertyPath(pattern.predicate) && this.isVariable(pattern.predicate);
+    const predicateFromBinding = this.isPredicateFromBinding(pattern.predicate);
 
     // For each existing solution, find compatible bindings from new pattern
     for (const existingSolution of existingSolutions) {

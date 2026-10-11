@@ -216,6 +216,21 @@ const isIriHandler: FunctionHandler = (args, ctx) => {
 functionHandlers.set("isiri", isIriHandler);
 functionHandlers.set("isuri", isIriHandler);
 
+// SPARQL 1.1 §17.4.2.8 IRI / URI. The argument is an IRI or a simple literal; a
+// string function (STR, CONCAT, REPLACE …) yields a plain JS string here, so that is
+// accepted too. ⛔ Not registered before req 60ed88e7: `IRI(…)` threw «Unknown
+// function», and `BIND(IRI(CONCAT(…)) AS ?p)` left ?p UNBOUND — the later
+// `?s ?p ?o` then ran as a scan of every triple (#4551, second case).
+const iriHandler: FunctionHandler = (args, ctx) => {
+  const value = ctx.evaluateExpression(args[0], ctx.solution);
+  if (typeof value === "string") {
+    return BuiltInFunctions.iri(new Literal(value));
+  }
+  return BuiltInFunctions.iri(value as RDFTerm | undefined);
+};
+functionHandlers.set("iri", iriHandler);
+functionHandlers.set("uri", iriHandler);
+
 functionHandlers.set("isblank", (args, ctx) => {
   const term = ctx.getTermFromExpression(args[0], ctx.solution) as
     | RDFTerm
@@ -765,7 +780,7 @@ functionHandlers.set("format_date", (args, ctx) => {
 functionHandlers.set("exo:eval", () => {
   // Imported lazily to avoid a circular dependency between
   // `infrastructure/sparql/filters` and `exoql/`.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- lazy require breaks the filters ↔ exoql import cycle (see above)
   const { ExoQLEvalDisabledError } = require("../../../exoql/eval-errors") as {
     ExoQLEvalDisabledError: new () => Error;
   };

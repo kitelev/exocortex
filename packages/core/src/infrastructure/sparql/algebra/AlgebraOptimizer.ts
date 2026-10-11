@@ -469,6 +469,20 @@ export class AlgebraOptimizer {
   }
 
   private reorderJoin(join: JoinOperation): AlgebraOperation {
+    // ⛔ A BIND is never moved to the RIGHT of a pattern that follows it (req
+    // 60ed88e7). It extends only the patterns that PRECEDE it (SPARQL 1.1
+    // §18.2.2.4); on the right of a bind join it would be evaluated with the left
+    // solution substituted INTO its expression, so `{ BIND(STR(?x) AS ?y) ?s
+    // exo:Asset_label ?x }` would bind ?y — the standard leaves it unbound — and
+    // only when the later pattern happens to look constrained.
+    if (this.containsExtend(join.left)) {
+      return {
+        type: "join",
+        left: this.joinReordering(join.left),
+        right: this.joinReordering(join.right),
+      };
+    }
+
     // Prefer the constrained (small cardinality) side as LEFT for bind join.
     // A subtree is "constrained" if it contains VALUES, concrete BGP objects,
     // or FILTER with constants — it produces fewer intermediate results.
@@ -510,6 +524,15 @@ export class AlgebraOptimizer {
       left: this.joinReordering(join.left),
       right: this.joinReordering(join.right),
     };
+  }
+
+  /** Whether a BIND (`extend`) sits anywhere in the subtree. */
+  private containsExtend(operation: AlgebraOperation): boolean {
+    if (operation.type === "extend") return true;
+    const op = operation as unknown as Record<string, AlgebraOperation | undefined>;
+    return [op.input, op.left, op.right].some(
+      (child) => child !== undefined && typeof child === "object" && this.containsExtend(child),
+    );
   }
 
   /**
