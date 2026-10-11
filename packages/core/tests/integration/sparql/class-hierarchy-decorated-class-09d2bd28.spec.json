@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for RFC 14217015 P1.2 (vault-exodev task 09d2bd28, req 9fddda62 regression coverage): ClassHierarchyResolvingStore.matchHierarchySubject returns the UNION of a symbolic class subject's direct edges (a reified exo__Statement of an adapter, EKA D5) and its file-IRI edges (the class's own frontmatter). Each mutant removes one half of that contract and must redden exactly the axes named in `expect`. `red_re` anchors on the jest failure header `● <suite> › Dn @req…`, not on the bare key (integration-test-revert-verify §A44/§A104). `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). D6 (Instance_class emitted as the class uid, RFC 78572fa9 flip ON) carries no mutant: it is green on the pre-fix base too and pins that the union does not disturb that mode — a walk entering the class by its FILE IRI never consults the symbolic subject.",
+  "_doc": "Revert-verify mutants for RFC 14217015 P1.2 (vault-exodev task 09d2bd28, req 9fddda62 regression coverage): ClassHierarchyResolvingStore.matchHierarchySubject returns the UNION of a symbolic class subject's direct edges (a reified exo__Statement of an adapter, EKA D5) and its file-IRI edges (the class's own frontmatter). Each mutant removes one half of that contract and must redden exactly the axes named in `expect`. `red_re` anchors on the jest failure header `● <suite> › Dn @req…`, not on the bare key (integration-test-revert-verify §A44/§A104). `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). D6 (Instance_class emitted as the class uid, RFC 78572fa9 flip ON) is green on the pre-fix base too: a walk entering the class by its FILE IRI keeps its native edges through the `!fileIri` branch, which M5 removes. The shortcut `if (direct.length === 0) return rewritten;` carries no mutant — dropping it is an equivalent mutant (the dedup of an empty direct set returns the same triples).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -36,6 +36,12 @@
       "from": "    // A Statement restating a native edge yields the same rewritten triple twice.\n    return ClassHierarchyResolvingStore.dedupTriples([...direct, ...rewritten]);",
       "to": "    // A Statement restating a native edge yields the same rewritten triple twice.\n    return rewritten;",
       "expect": ["D2", "D3", "D4"]
+    },
+    "M5_file_iri_subject_loses_native_edges": {
+      "_note": "A FILE-IRI subject (the walk's entry when Instance_class is emitted as the class uid) is not a symbolic class, so it must keep its direct (native) edges; returning nothing drops every native ancestor in that mode.",
+      "from": "    const fileIri = await this.resolveSymbolicToFileIri(subject.value);\n    if (!fileIri) {\n      return direct;\n    }",
+      "to": "    const fileIri = await this.resolveSymbolicToFileIri(subject.value);\n    if (!fileIri) {\n      return [];\n    }",
+      "expect": ["D6"]
     }
   }
 }

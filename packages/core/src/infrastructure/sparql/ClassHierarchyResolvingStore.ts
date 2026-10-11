@@ -97,8 +97,10 @@ export class SymbolicClassAmbiguityError extends Error {
  *    resolve subject → file IRI, delegate, rewrite the returned triples' SUBJECT back
  *    to the symbolic form (so `PropertyPathExecutor`'s per-node visited-set stays
  *    consistent across the transitive walk), and UNION them with the subject's direct
- *    edges — a reified `exo__Statement` (EKA D5) puts hierarchy edges on the SYMBOLIC
- *    subject, so a decorated class carries edges under both forms (RFC 14217015 AC1b).
+ *    edges — a reified `exo__Statement` (EKA D5) puts an `exo__Class_superClass` edge
+ *    on the SYMBOLIC subject, so a decorated class carries edges under both forms
+ *    (RFC 14217015 AC1b). The materialized Statement edge has no `rdfs:subClassOf`
+ *    mirror, so a `rdfs:subClassOf*` walk does not see the adapter parent.
  * 2. **Instance_class OBJECT position** (RFC 78572fa9 Phase 3 stage-1, req
  *    `c359e3d2`) — `exo__Instance_class` queried with a symbolic class OBJECT: once
  *    the emission flip stores the class uid there, resolve the queried symbolic
