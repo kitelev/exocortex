@@ -1,6 +1,6 @@
 /**
  * req 088f94c6 (ems__Bug b090c2e8) — `apply trash` records the reason as its own
- * `ems__EffortTrashReason` asset and never rewrites the effort's body.
+ * `ems__EffortTrashNote` asset and never rewrites the effort's body.
  *
  * Production data, not hand-authored copies: the temp vault is built from the
  * REAL `packages/exoas-exocmd` and `packages/exoas-exo` submodule trees, so the
@@ -16,7 +16,7 @@
  * public submodules alone.
  *
  * Axes:
- *   R1 — the reason becomes a new asset of class ems__EffortTrashReason, labelled with the input
+ *   R1 — the reason becomes a new asset of class ems__EffortTrashNote, labelled with the input
  *   R2 — the reason lives in the effort's folder and is defined by the effort's ontology
  *   R3 — the reason links to the effort via exo__Asset_relates (new → old)
  *   R4 — the effort still turns Trashed, with the default category and a resolution timestamp
@@ -50,7 +50,7 @@ const REQ = "@req:088f94c6-7076-4e96-9dff-e282349db9f5";
 
 const TASK_CLASS = "1b20a8f0-d745-4e93-91db-4531b3df120e"; // ems__Task
 const PROJECT_CLASS = "7db5eeff-718a-49b0-8d2b-39b084a356e3"; // ems__Project
-const TRASH_REASON_CLASS = "90f77d9e-27f9-48f2-ad1a-8490d99eb088"; // ems__EffortTrashReason
+const TRASH_NOTE_CLASS = "32f0c68a-9951-46b2-9cdc-7e51a78c4ae1"; // ems__EffortTrashNote
 const STATUS_TRASHED = "5d14f18d-db2b-4847-9ac1-144cb93b2541";
 const REASON_NO_LONGER_RELEVANT = "6332c6d8-861f-475c-a051-4b6bbb669f7a";
 const STATUS_BACKLOG = "753a44d5-846c-4b82-9196-4fd9a4d48777";
@@ -284,7 +284,7 @@ function linkTargets(value: unknown): string[] {
 
     const stderr = (): string => errSpy.mock.calls.map((c) => c.join(" ")).join("\n");
 
-    it(`R1 ${REQ} the reason becomes a new ems__EffortTrashReason asset labelled with the input`, async () => {
+    it(`R1 ${REQ} the reason becomes a new ems__EffortTrashNote asset labelled with the input`, async () => {
       const t = writeTask();
       expect(reasonsIn(t.dir)).toHaveLength(0); // input built
 
@@ -294,7 +294,7 @@ function linkTargets(value: unknown): string[] {
       const reasons = reasonsIn(t.dir);
       expect(reasons).toHaveLength(1);
       const fm = readFrontmatter(reasons[0]);
-      expect(linkTargets(fm["exo__Instance_class"])).toEqual([TRASH_REASON_CLASS]);
+      expect(linkTargets(fm["exo__Instance_class"])).toEqual([TRASH_NOTE_CLASS]);
       expect(fm["exo__Asset_label"]).toBe("Переехало в другой проект");
     }, 60_000);
 

@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify for req 088f94c6: the create_instance step a960eb76 that turns the trash reason into its own ems__EffortTrashReason asset. Subject: the SHIPPED step in the exoas-exocmd submodule. Run from the repo root after setting `tree` and `subject` to YOUR checkout (both absolute): python3 -I ~/.claude/bin/mutant-driver.py <copy of this spec>. Needs initialised submodules. Not pinned by a mutant here: the ontology — the step declares none of its own, the Universal Default Template 62907ff4 copies the effort's isDefinedBy into every created instance (measured: dropping a duplicate default from this step reddened nothing, so the duplicate was removed). The folder is the ontology's ($isDefinedByFolder), pinned by M7 through R10.",
+  "_doc": "Revert-verify for req 088f94c6: the create_instance step a960eb76 that turns the trash reason into its own ems__EffortTrashNote asset. Subject: the SHIPPED step in the exoas-exocmd submodule. Run from the repo root after setting `tree` and `subject` to YOUR checkout (both absolute): python3 -I ~/.claude/bin/mutant-driver.py <copy of this spec>. Needs initialised submodules. Not pinned by a mutant here: the ontology — the step declares none of its own, the Universal Default Template 62907ff4 copies the effort's isDefinedBy into every created instance (measured: dropping a duplicate default from this step reddened nothing, so the duplicate was removed). The folder is the ontology's ($isDefinedByFolder), pinned by M7 through R10.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/exoas-exocmd/exocmd/a960eb76-c669-43af-80b4-94dac438dd70.md",
   "symlink_node_modules": [
@@ -16,7 +16,7 @@
       "expect": ["R3"]
     },
     "M5_wrong_reason_class": {
-      "from": "exocmd__Grounding_targetClass: \"[[90f77d9e-27f9-48f2-ad1a-8490d99eb088]]\"",
+      "from": "exocmd__Grounding_targetClass: \"[[32f0c68a-9951-46b2-9cdc-7e51a78c4ae1]]\"",
       "to": "exocmd__Grounding_targetClass: \"[[1b20a8f0-d745-4e93-91db-4531b3df120e]]\"",
       "expect": ["R1"]
     },
