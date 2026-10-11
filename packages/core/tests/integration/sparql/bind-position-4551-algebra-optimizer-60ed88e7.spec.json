@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutants for issue #4551 / req 60ed88e7 (vault-exodev task c223e6ef, RFC 14217015 P1.5): a SPARQL BIND extends the group prefix at its position. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › Bn @req` (ITRV §A44/§A104). `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Subject: AlgebraOptimizer.reorderJoin never moves a pattern ahead of a preceding BIND.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› (B\\d+) @req",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/bind-position-4551.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/algebra/AlgebraOptimizer.ts",
+  "mutants": {
+    "AO1_guard_off": {
+      "_note": "The reordering may swap a constrained later pattern to the left of a BIND.",
+      "from": "    if (this.containsExtend(join.left)) {\n",
+      "to": "    if (false && this.containsExtend(join.left)) {\n",
+      "expect": ["B7", "B16"]
+    },
+    "AO2_guard_shallow": {
+      "_note": "containsExtend sees only an Extend at the top of the left operand, not deeper (e.g. under a LeftJoin).",
+      "from": "    return [op.input, op.left, op.right].some(\n",
+      "to": "    return [op.input].filter(() => false).some(\n",
+      "expect": ["B16"]
+    }
+  }
+}

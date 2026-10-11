@@ -1,0 +1,35 @@
+{
+  "_doc": "Revert-verify mutants for issue #4551 / req 60ed88e7 (vault-exodev task c223e6ef, RFC 14217015 P1.5): a SPARQL BIND extends the group prefix at its position. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › Bn @req` (ITRV §A44/§A104). `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Subject: QueryExecutor — bind-join predicate substitution and the IRI value of BIND(<iri>).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› (B\\d+) @req",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/bind-position-4551.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/executors/QueryExecutor.ts",
+  "mutants": {
+    "QE1_no_predicate_substitution": {
+      "_note": "The join no longer substitutes a bound PREDICATE: same rows, but every left solution scans every triple. Type-preserving: an impossible type tag.",
+      "from": "      if (asTerm !== null && asTerm.type === 'iri') {\n",
+      "to": "      if (asTerm !== null && asTerm.type === 'iri-never') {\n",
+      "expect": ["B5"]
+    },
+    "QE2_no_fromBinding_mark": {
+      "_note": "The substituted predicate is not marked fromBinding — it is widened like a constant.",
+      "from": "        return { ...asTerm, fromBinding: true };\n",
+      "to": "        return { ...asTerm };\n",
+      "expect": ["B6", "B15"]
+    },
+    "QE3_bind_iri_as_string": {
+      "_note": "The marked BIND(<iri>) still binds the string (the consumer half of PT4).",
+      "from": "      return new IRI(String(expr.value));\n",
+      "to": "      return String(expr.value);\n",
+      "expect": ["B1", "B5", "B6", "B8", "B9", "B11", "B14", "B15"]
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "_doc": "Revert-verify mutants for issue #4551 / req 60ed88e7 (vault-exodev task c223e6ef, RFC 14217015 P1.5): a SPARQL BIND extends the group prefix at its position. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › Bn @req` (ITRV §A44/§A104). `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Subject: FunctionRegistry — IRI()/URI() are registered and accept a string argument.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› (B\\d+) @req",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/bind-position-4551.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/filters/FunctionRegistry.ts",
+  "mutants": {
+    "FR1_iri_unregistered": {
+      "_note": "IRI() unknown again (BIND of it leaves the variable unbound).",
+      "from": "functionHandlers.set(\"iri\", iriHandler);\n",
+      "to": "functionHandlers.set(\"iri-unregistered\", iriHandler);\n",
+      "expect": ["B2", "B12", "B13"]
+    },
+    "FR2_uri_unregistered": {
+      "_note": "URI() unknown again.",
+      "from": "functionHandlers.set(\"uri\", iriHandler);\n",
+      "to": "functionHandlers.set(\"uri-unregistered\", iriHandler);\n",
+      "expect": ["B17"]
+    },
+    "FR3_string_argument_rejected": {
+      "_note": "A plain-string argument (what STR/CONCAT/REPLACE yield) is no longer converted — IRI() errors on it. Type-preserving form (an impossible length) keeps the narrowing (ITRV §A36).",
+      "from": "  if (typeof value === \"string\") {\n",
+      "to": "  if (typeof value === \"string\" && value.length < 0) {\n",
+      "expect": ["B2", "B12", "B13", "B17"]
+    }
+  }
+}

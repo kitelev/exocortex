@@ -227,8 +227,11 @@ describe("BIND extends the group prefix at its position (req 60ed88e7, #4551)", 
   });
 
   it("B7 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 the optimizer does not move a constrained later pattern ahead of the BIND", async () => {
+    // A plain copy (not STR/CONCAT): unbound ?x leaves ?y unbound, a value a bind
+    // join substitutes into the expression binds it. STR(<substituted node>) errors
+    // and CONCAT accepts an unbound argument as "" — both would hide the overtaking.
     const q = `SELECT ?s ?y WHERE {
-      BIND(STR(?x) AS ?y)
+      BIND(?x AS ?y)
       ?s exo:Asset_label ?x .
       ?s exo:Instance_class eideas:ExoizationIdea }`;
     // Input is built: the later BGP is CONSTRAINED (concrete object) — the shape the
@@ -272,7 +275,7 @@ describe("BIND extends the group prefix at its position (req 60ed88e7, #4551)", 
     expect(await rows(q, ["idea", "src"])).toEqual([pair(I.v1, S.v1), pair(I.v2, S.v2), pair(I.book, S.book)].sort());
   });
 
-  it("B13 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 IRI(…) / URI(…) build an IRI term — the #4551 expression shape joins with the later pattern", async () => {
+  it("B13 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 IRI(…) builds an IRI term — the #4551 expression shape joins with the later pattern", async () => {
     // The expression of the issue's second case, over a label held as a literal.
     const q = (fn: string) => `SELECT ?idea ?src WHERE {
       BIND("exoization-ideas__ExoizationIdea_video" AS ?pl)
@@ -280,7 +283,6 @@ describe("BIND extends the group prefix at its position (req 60ed88e7, #4551)", 
       ?idea ?p ?src }`;
     const videos = [pair(I.v1, S.v1), pair(I.v2, S.v2)].sort();
     expect(await rows(q("IRI"), ["idea", "src"])).toEqual(videos);
-    expect(await rows(q("URI"), ["idea", "src"])).toEqual(videos);
     // An IRI argument is returned as is; a non-string argument is an error (unbound).
     expect(await rows(`SELECT ?p WHERE { BIND(IRI(eideas:ExoizationIdea_video) AS ?p) }`, ["p"])).toEqual([`<${VIDEO}>`]);
     expect(await rows(`SELECT ?p WHERE { BIND(IRI(42) AS ?p) }`, ["p"])).toEqual(["∅"]);
@@ -292,6 +294,33 @@ describe("BIND extends the group prefix at its position (req 60ed88e7, #4551)", 
       await rows(`SELECT ?p WHERE { BIND(eideas:ExoizationIdea_video AS ?p) FILTER(?p = eideas:ExoizationIdea_video) }`, ["p"]),
     ).toEqual([`<${VIDEO}>`]);
     expect(await rows(`SELECT ?p WHERE { BIND(eideas:ExoizationIdea_video AS ?p) FILTER(STR(?p) = "${VIDEO}") }`, ["p"])).toEqual([`<${VIDEO}>`]);
+  });
+
+  it("B17 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 URI(…) is the synonym of IRI(…)", async () => {
+    const q = `SELECT ?idea ?src WHERE {
+      BIND("exoization-ideas__ExoizationIdea_video" AS ?pl)
+      BIND(URI(CONCAT("https://exocortex.my/ontology/", REPLACE(STR(?pl), "__", "#"))) AS ?p)
+      ?idea ?p ?src }`;
+    expect(await rows(q, ["idea", "src"])).toEqual([pair(I.v1, S.v1), pair(I.v2, S.v2)].sort());
+  });
+
+  it("B15 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a BIND-bound predicate in a LATER triple of the joined BGP is matched as stored too", async () => {
+    const q = `SELECT ?idea ?src WHERE {
+      BIND(eideas:ExoizationIdea_exoizable AS ?p)
+      ?idea exo:Instance_class eideas:ExoizationIdea .
+      ?idea ?p ?src }`;
+    expect(await rows(q, ["idea", "src"])).toEqual([pair(I.direct, S.generic)]);
+  });
+
+  it("B16 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a BIND deeper in the join's left operand is not overtaken either", async () => {
+    const q = `SELECT ?s ?y WHERE {
+      BIND(?x AS ?y)
+      OPTIONAL { ?s exo:Asset_uid ?u }
+      ?s exo:Asset_label ?x .
+      ?s exo:Instance_class eideas:ExoizationIdea }`;
+    const got = await rows(q, ["s", "y"]);
+    expect(got).toHaveLength(IDEAS.length);
+    expect(got.every((r) => r.endsWith("| ∅"))).toBe(true);
   });
 
   it("B12 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a BIND reading an earlier BIND chains, and the later pattern joins with the result", async () => {

@@ -1,0 +1,54 @@
+{
+  "_doc": "Revert-verify mutants for issue #4551 / req 60ed88e7 (vault-exodev task c223e6ef, RFC 14217015 P1.5): a SPARQL BIND extends the group prefix at its position. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › Bn @req` (ITRV §A44/§A104). `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Subject: PatternTranslator.translateWhere / translateBind.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› (B\\d+) @req",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/bind-position-4551.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/algebra/PatternTranslator.ts",
+  "mutants": {
+    "PT1_later_bind_dropped": {
+      "_note": "A BIND after the first group element no longer extends the prefix (it vanishes).",
+      "from": "          result = this.translateBind(rightPattern, result);\n",
+      "to": "          void rightPattern;\n",
+      "expect": ["B2", "B3", "B4", "B12", "B13", "B17"]
+    },
+    "PT2_first_bind_dropped": {
+      "_note": "A BIND as the FIRST group element is dropped (the empty group stands in).",
+      "from": "        result = this.translateBind(first, { type: \"bgp\", triples: [] } as BGPOperation);\n",
+      "to": "        result = { type: \"bgp\", triples: [] } as BGPOperation;\n",
+      "expect": [
+        "B1",
+        "B5",
+        "B6",
+        "B8",
+        "B9",
+        "B10",
+        "B11",
+        "B12",
+        "B13",
+        "B14",
+        "B15",
+        "B17"
+      ]
+    },
+    "PT3_filters_positional": {
+      "_note": "FILTERs are translated in place (joined as Filter(∅)) instead of group-scoped at the end. B14 is NOT in the set, by mechanism: AlgebraOptimizer.eliminateEmptyBGPInFilterJoin rewrites `Join(X, Filter(∅, e))` back to the group-level `Filter(X, e)`, so a positional FILTER that FOLLOWS the prefix is repaired by the optimizer (a second barrier); only a FILTER first in the group escapes it (Join(Filter(∅), …) under an Extend is never recursed) — B4.",
+      "from": "    const groupPatterns = patterns.filter((p) => p.type !== \"filter\");\n",
+      "to": "    const groupPatterns = patterns;\n",
+      "expect": ["B4"]
+    },
+    "PT4_iri_marker_dropped": {
+      "_note": "BIND(<iri>) is no longer marked: it binds the IRI's string, which never joins with a stored IRI.",
+      "from": "      expression: writtenAsIri && expression.type === \"literal\" ? { ...expression, iri: true } : expression,\n",
+      "to": "      expression,\n",
+      "expect": ["B1", "B5", "B6", "B8", "B9", "B11", "B14", "B15"]
+    }
+  }
+}
