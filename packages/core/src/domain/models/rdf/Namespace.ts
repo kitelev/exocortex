@@ -68,7 +68,7 @@ export class Namespace {
     "http://www.w3.org/2004/02/skos/core#"
   );
 
-  static readonly EXO =new Namespace("exo", "https://exocortex.my/ontology/exo#");
+  static readonly EXO = new Namespace("exo", "https://exocortex.my/ontology/exo#");
 
   static readonly EMS = new Namespace("ems", "https://exocortex.my/ontology/ems#");
 

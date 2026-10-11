@@ -33,6 +33,10 @@
  *       it, so a binding authored against `skos__Concept` never matched.
  *   K7  pre-write gate (`CandidateShaclValidator`): a violation on the W3C
  *       predicate names the frontmatter KEY `skos__exactMatch`, not the raw IRI.
+ *   K8  `find --class skos__Concept` binds the W3C class IRI and finds the
+ *       stub's instance (find.ts built `<…/ontology/skos#Concept>` by hand).
+ *   K9  a query that uses `skos:` WITHOUT declaring it finds the mapping: the
+ *       CLI auto-declares the W3C base, not the ad-hoc one (QueryPrefixInjector).
  *   K3  cache format: a cache written before e750782f (formatVersion 4, the ad-hoc
  *       `https://exocortex.my/ontology/skos#` IRI for UNCHANGED files) is invalid
  *       and rebuilt — otherwise the W3C IRI never reaches a `--use-cache` caller.
@@ -51,6 +55,10 @@ import {
 } from "../../src/cache/CacheManager.js";
 import { resolveButtons } from "../../src/commands/resolve-buttons.js";
 import { CandidateShaclValidator } from "../../src/services/CandidateShaclValidator.js";
+import { findCommand } from "../../src/commands/find.js";
+import { injectExocortexPrefixes } from "../../src/utils/QueryPrefixInjector.js";
+import { InMemoryTripleStore, SPARQLParser, ExoQLAlgebraTranslator, ExoQLQueryExecutor } from "@kitelev/exocortex-core";
+import { jest } from "@jest/globals";
 
 const W3C_SKOS = "http://www.w3.org/2004/02/skos/core#";
 const ADHOC_SKOS = "https://exocortex.my/ontology/skos#";
@@ -187,6 +195,16 @@ exo__Property_range:
 ---
 `,
     [`${PMBOK_UID}.md`]: inst(PMBOK_UID, "Риск", SKOS_CONCEPT_UID),
+    // find --class resolves through a find__Alias asset (same shape as the #4350 fixture)
+    [`find/e7510000-0000-4000-8000-000000000050.md`]: `---
+exo__Asset_isDefinedBy: "[[!find]]"
+exo__Asset_uid: e7510000-0000-4000-8000-000000000050
+exo__Asset_label: "class"
+exo__Instance_class:
+  - "[[6b98cd5e-485b-4d53-b54e-402eb8f06fca|find__Alias]]"
+find__Alias_sparql: "?path <https://exocortex.my/ontology/exo#Instance_class> ?value"
+---
+`,
     [`${NOTE_UID}.md`]: `---
 exo__Asset_uid: ${NOTE_UID}
 exo__Asset_label: "Заметка о риске"
@@ -319,6 +337,35 @@ skos__exactMatch: "[[${TASK_UID}]]"
     const exact = result.violations.filter((v) => v.propertyIri === EXACT_PATH);
     expect(exact).toHaveLength(1);
     expect(exact[0].propertyPath).toBe("skos__exactMatch");
+  }, 30_000);
+
+  it("K8 @req:e750782f-907b-4573-99ce-f9a5e3150418 find --class skos__Concept binds the W3C class IRI and finds the stub's instance", async () => {
+    let captured = "";
+    const spies = [
+      jest.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array): boolean => {
+        captured += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf-8");
+        return true;
+      }),
+      jest.spyOn(process.stderr, "write").mockImplementation((): boolean => true),
+      jest.spyOn(process, "exit").mockImplementation((() => undefined) as never),
+    ];
+    try {
+      await findCommand().parseAsync(["--vault", fixtureDir, "--class", "skos__Concept"], { from: "user" });
+    } finally {
+      for (const sp of spies) sp.mockRestore();
+    }
+    expect(captured.split("\n").filter((l) => l.length > 0)).toEqual([`${PMBOK_UID}.md`]);
+  }, 30_000);
+
+  it("K9 @req:e750782f-907b-4573-99ce-f9a5e3150418 a query using skos: WITHOUT declaring it finds the mapping (W3C base auto-declared)", async () => {
+    const converter = new NoteToRDFConverter(new FileSystemVaultAdapter(fixtureDir));
+    const store = new InMemoryTripleStore();
+    await store.addAll(await converter.convertVault());
+    const query = injectExocortexPrefixes("SELECT ?a ?n WHERE { ?a skos:exactMatch ?n }");
+    const algebra = new ExoQLAlgebraTranslator().translate(new SPARQLParser().parse(query));
+    const rows = await new ExoQLQueryExecutor(store).executeAll(algebra);
+    const pairs = rows.map((r) => [String((r.get("a") as { value?: string })?.value), String((r.get("n") as { value?: string })?.value)]);
+    expect(pairs).toContainEqual([`obsidian://vault/${TERM_OK_UID}.md`, `obsidian://vault/${NEUTRAL_UID}.md`]);
   }, 30_000);
 
   it("K3 @req:e750782f-907b-4573-99ce-f9a5e3150418 a cache written before e750782f (formatVersion 4, ad-hoc skos IRI) is invalid and rebuilt", async () => {

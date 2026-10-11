@@ -8,7 +8,11 @@
  */
 import { describe, it, expect } from "@jest/globals";
 import { Namespace, SPARQLParser } from "@kitelev/exocortex-core";
-import { PREFIX_PATTERN_SOURCE, PREFIX_RE } from "../../../src/utils/namespacePrefix.js";
+import {
+  PREFIX_PATTERN_SOURCE,
+  PREFIX_RE,
+  W3C_NAMESPACE_BASES,
+} from "../../../src/utils/namespacePrefix.js";
 import { injectExocortexPrefixes } from "../../../src/utils/QueryPrefixInjector.js";
 
 describe("namespace-prefix grammar — CLI copy ≡ core (issue #4350)", () => {
@@ -24,6 +28,24 @@ describe("namespace-prefix grammar — CLI copy ≡ core (issue #4350)", () => {
     for (const p of candidates) {
       expect([p, PREFIX_RE.test(p)]).toEqual([p, Namespace.isValidPrefix(p)]);
     }
+  });
+});
+
+describe("W3C namespace bases — CLI copy ≡ core registry (req e750782f-907b-4573-99ce-f9a5e3150418)", () => {
+  it("[P3] @req:e750782f-907b-4573-99ce-f9a5e3150418 every external base core registers is in the CLI table, and nothing else", () => {
+    const external = Namespace.knownNamespaces()
+      .filter((ns) => !ns.iri.value.startsWith("https://exocortex.my/ontology/"))
+      .map((ns) => [ns.prefix, ns.iri.value]);
+    expect(external.length).toBeGreaterThan(0); // canary: an empty registry would pass vacuously
+    expect([...W3C_NAMESPACE_BASES.entries()].sort()).toEqual(external.sort());
+  });
+});
+
+describe("injectExocortexPrefixes — registered W3C vocabularies (req e750782f-907b-4573-99ce-f9a5e3150418)", () => {
+  it("[Q4] @req:e750782f-907b-4573-99ce-f9a5e3150418 an undeclared skos: is declared with the W3C base the converter emits", () => {
+    const result = injectExocortexPrefixes("SELECT ?a ?n WHERE { ?a skos:exactMatch ?n }");
+    expect(result).toContain("PREFIX skos: <http://www.w3.org/2004/02/skos/core#>");
+    expect(result).not.toContain("https://exocortex.my/ontology/skos#");
   });
 });
 
