@@ -18,11 +18,6 @@
       "count": 1
     },
     {
-      "file": "packages/core/src/infrastructure/sparql/filters/FunctionRegistry.ts",
-      "rule": "eslint-comments/require-description",
-      "count": 1
-    },
-    {
       "file": "packages/core/src/infrastructure/sparql/filters/functions/HashFunctions.ts",
       "rule": "(no-rule)",
       "count": 5
