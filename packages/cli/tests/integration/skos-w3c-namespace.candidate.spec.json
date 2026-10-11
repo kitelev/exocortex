@@ -1,0 +1,19 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "red_re": "› ([SK]\\d+) ",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/cli/jest.config.js packages/cli/tests/integration/skos-w3c-namespace.integration.test.ts 2>&1",
+  "_doc": "Revert-verify mutants for req e750782f-907b-4573-99ce-f9a5e3150418, SUBJECT packages/cli/src/services/CandidateShaclValidator.ts: the pre-write gate names the frontmatter key of a W3C predicate.",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/services/CandidateShaclValidator.ts",
+  "mutants": {
+    "Q1_regex_key_back": {
+      "from": "  const term = Namespace.fromTermIRI(iri);\n  return term ? `${term.namespace.prefix}__${term.localName}` : iri;",
+      "to": "  const match = iri.match(\n    /^https:\\/\\/exocortex\\.my\\/ontology\\/([A-Za-z][A-Za-z0-9_]*(?:-[A-Za-z0-9_]+)*)#(.+)$/,\n  );\n  return match ? `${match[1]}__${match[2]}` : iri;",
+      "expect": ["K7"]
+    }
+  }
+}

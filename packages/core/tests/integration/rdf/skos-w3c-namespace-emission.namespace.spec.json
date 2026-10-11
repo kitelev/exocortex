@@ -13,7 +13,8 @@
     "N1_skos_not_registered": {
       "from": "    Namespace.SKOS,\n  ];",
       "to": "  ];",
-      "expect": ["K2", "K3", "K5", "S1", "S2", "S3", "S4", "S5", "S6"]
+      "expect": ["K2", "K3", "K5", "K7", "S1", "S2", "S3", "S4", "S5", "S6"],
+      "_note": "K7 reddens because the gate's violation is filtered by the W3C predicate path, which the mutant no longer emits (the ad-hoc https://exocortex.my/ontology/skos#exactMatch is reported instead). K6 stays green BY CONSTRUCTION: the ad-hoc class IRI is also read back as skos__Concept by Namespace.fromTermIRI, so the class name survives either form; K1/K4 are absence-of-false-violation axes keyed on the W3C path."
     }
   }
 }

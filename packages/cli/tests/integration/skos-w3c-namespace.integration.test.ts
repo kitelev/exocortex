@@ -27,6 +27,12 @@
  *       of the stub would fail a range of `test__Thing`. The live stub has no
  *       superClass today (measured 2026-10-12), so this edge is the one a future
  *       `$skos` schema would add — the axis pins the entry before that happens.
+ *   K6  resolve-buttons: an instance of the stub reports `skos__Concept` among
+ *       its classes — the CLI reads the store's W3C class IRI back through
+ *       `Namespace.fromTermIRI`; the `/ontology/<p>#` regex it replaced dropped
+ *       it, so a binding authored against `skos__Concept` never matched.
+ *   K7  pre-write gate (`CandidateShaclValidator`): a violation on the W3C
+ *       predicate names the frontmatter KEY `skos__exactMatch`, not the raw IRI.
  *   K3  cache format: a cache written before e750782f (formatVersion 4, the ad-hoc
  *       `https://exocortex.my/ontology/skos#` IRI for UNCHANGED files) is invalid
  *       and rebuilt — otherwise the W3C IRI never reaches a `--use-cache` caller.
@@ -43,6 +49,8 @@ import {
   CACHE_FORMAT_VERSION,
   serializeNode,
 } from "../../src/cache/CacheManager.js";
+import { resolveButtons } from "../../src/commands/resolve-buttons.js";
+import { CandidateShaclValidator } from "../../src/services/CandidateShaclValidator.js";
 
 const W3C_SKOS = "http://www.w3.org/2004/02/skos/core#";
 const ADHOC_SKOS = "https://exocortex.my/ontology/skos#";
@@ -287,6 +295,31 @@ describe("req e750782f — the skos prefix through the CLI", () => {
     );
     expect(about).toEqual([]);
   });
+
+  it("K6 @req:e750782f-907b-4573-99ce-f9a5e3150418 resolve-buttons names skos__Concept among the classes of an instance of the stub", async () => {
+    const result = await resolveButtons(fixtureDir, `${PMBOK_UID}.md`);
+    expect(result.classes).toContain("skos__Concept");
+  }, 30_000);
+
+  it("K7 @req:e750782f-907b-4573-99ce-f9a5e3150418 the pre-write gate names the frontmatter KEY skos__exactMatch, not the raw W3C IRI", async () => {
+    const uid = "e7510000-0000-4000-8000-0000000000aa";
+    const result = await new CandidateShaclValidator(
+      fixtureDir,
+    ).validateCandidate(
+      `${uid}.md`,
+      `---
+exo__Asset_uid: ${uid}
+exo__Asset_label: "Кандидат"
+exo__Instance_class:
+  - "[[${CONCEPT_UID}]]"
+skos__exactMatch: "[[${TASK_UID}]]"
+---
+`,
+    );
+    const exact = result.violations.filter((v) => v.propertyIri === EXACT_PATH);
+    expect(exact).toHaveLength(1);
+    expect(exact[0].propertyPath).toBe("skos__exactMatch");
+  }, 30_000);
 
   it("K3 @req:e750782f-907b-4573-99ce-f9a5e3150418 a cache written before e750782f (formatVersion 4, ad-hoc skos IRI) is invalid and rebuilt", async () => {
     const vault = fs.mkdtempSync(path.join(os.tmpdir(), "exo-e750782f-cache-"));
