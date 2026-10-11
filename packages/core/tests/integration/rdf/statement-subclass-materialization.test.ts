@@ -36,6 +36,8 @@ const SUB_UID = "33333333-0000-4000-8000-0000000000c0"; // test__SubThesis ⊂ t
 const NOTE_UID = "44444444-0000-4000-8000-0000000000d0"; // test__Note ⊂ exo__Asset
 const CYC_A_UID = "55555555-0000-4000-8000-0000000000e1"; // test__CycA ⊂ test__CycB
 const CYC_B_UID = "55555555-0000-4000-8000-0000000000e2"; // test__CycB ⊂ test__CycA
+const ODD_UID = "77777777-0000-4000-8000-0000000000f1"; // human label, ⊂ exo__Asset
+const SUB2_UID = "77777777-0000-4000-8000-0000000000f2"; // ⊂ [[ODD_UID|exo__Statement]] (stale alias)
 
 const A_UID = "a0000000-0000-4000-8000-000000000001"; // concept A
 const B_UID = "b0000000-0000-4000-8000-000000000002"; // concept B
@@ -83,6 +85,11 @@ function baseFixture(): Fixture {
     [NOTE_UID]: classFm(NOTE_UID, "test__Note", ASSET_UID),
     [CYC_A_UID]: classFm(CYC_A_UID, "test__CycA", CYC_B_UID),
     [CYC_B_UID]: classFm(CYC_B_UID, "test__CycB", CYC_A_UID),
+    [ODD_UID]: classFm(ODD_UID, "Странный класс", ASSET_UID),
+    [SUB2_UID]: {
+      ...classFm(SUB2_UID, "test__Sub2"),
+      exo__Class_superClass: `[[${ODD_UID}|exo__Statement]]`,
+    },
     [A_UID]: { exo__Asset_uid: A_UID, exo__Asset_label: "Concept A" },
     [B_UID]: { exo__Asset_uid: B_UID, exo__Asset_label: "Concept B" },
     [L_UID]: { exo__Asset_uid: L_UID, exo__Asset_label: "test__Concept_leadsTo" },
@@ -99,9 +106,15 @@ function makeVault(fx: Fixture, withFallback: boolean): IVaultAdapter {
   const vault: Partial<IVaultAdapter> = {
     getFrontmatter: jest.fn((file: IFile) => (fx.cold.has(file.basename) ? null : byPath(file))),
     read: jest.fn().mockResolvedValue(""),
+    // CLI semantics (FileSystemVaultAdapter): a UID resolves by file name, a
+    // label-form link resolves through `exo__Asset_label` / `aliases` too —
+    // Obsidian would NOT resolve the latter (scenario S11 pins that the walk
+    // does not depend on it).
     getFirstLinkpathDest: jest.fn((linkpath: string) => {
-      const uid = linkpath.split("|")[0];
-      return fx.fm[uid] ? fileOf(uid) : null;
+      const ref = linkpath.split("|")[0];
+      if (fx.fm[ref]) return fileOf(ref);
+      const hit = Object.entries(fx.fm).find(([, f]) => f.exo__Asset_label === ref);
+      return hit ? fileOf(hit[0]) : null;
     }),
   };
   if (withFallback) {
@@ -232,13 +245,23 @@ describe("RFC 14217015 AC1c — subclasses of exo__Statement materialize their l
     expect(hasEdge(triples)).toBe(false);
   });
 
-  it(`S5c ${REQ} stopping at the cap logs ONE warning that names the asset`, async () => {
+  it(`S5c ${REQ} stopping at the cap logs exactly ONE warning`, async () => {
     const fx = baseFixture();
     overCapChain(fx);
     const logger = makeLogger();
-    const { file } = await convert(fx, STMT_OBJ(chainUid(0), "53"), { logger });
+    await convert(fx, STMT_OBJ(chainUid(0), "53"), { logger });
     expect(logger.warn.mock.calls).toHaveLength(1);
-    expect(JSON.stringify(logger.warn.mock.calls[0])).toContain(file.path);
+  });
+
+  it(`S5d ${REQ} the cap warning names the asset IN ITS MESSAGE`, async () => {
+    // The plugin logger sends only the message to its Notice and file channels;
+    // the context object reaches the console alone.
+    const fx = baseFixture();
+    overCapChain(fx);
+    const logger = makeLogger();
+    const { file } = await convert(fx, STMT_OBJ(chainUid(0), "54"), { logger });
+    const messages = logger.warn.mock.calls.map((c) => String(c[0]));
+    expect(messages.some((m) => m.includes(file.path))).toBe(true);
   });
 
   it(`S10 ${REQ} an asset WITHOUT the statement slots never walks its class hierarchy`, async () => {
@@ -272,6 +295,35 @@ describe("RFC 14217015 AC1c — subclasses of exo__Statement materialize their l
     const fx = baseFixture();
     const { triples } = await convert(fx, STMT_OBJ(STMT_UID, "07"), { emitInstanceClassAsUid: true });
     expect(hasEdge(triples)).toBe(true);
+  });
+
+  it(`S11 ${REQ} a LABEL-form class reference is not resolved to a file — no edge on either surface`, async () => {
+    // `[[test__Thesis]]` resolves to the Thesis file in the CLI adapter (via the
+    // label/aliases) but not in Obsidian; walking it would split the two surfaces.
+    const fx = baseFixture();
+    const { triples } = await convert(fx, {
+      ...STMT_OBJ(THESIS_UID, "11"),
+      exo__Instance_class: ["[[test__Thesis]]"],
+    });
+    expect(hasEdge(triples)).toBe(false);
+  });
+
+  it(`S12 ${REQ} a class written [[<uid>|exo__Statement]] keeps its edge whatever the uid points to (pre-existing alias-first path untouched)`, async () => {
+    // Green before AND after the change by design: the loop's alias-first
+    // resolution already counted it as exo__Statement; the walk must not
+    // overwrite that verdict (it would say "not a statement" — the uid is Note).
+    const fx = baseFixture();
+    const { triples } = await convert(fx, {
+      ...STMT_OBJ(THESIS_UID, "12"),
+      exo__Instance_class: [`[[${NOTE_UID}|exo__Statement]]`],
+    });
+    expect(hasEdge(triples)).toBe(true);
+  });
+
+  it(`S13 ${REQ} inside the walk a resolved class file decides alone — a stale |exo__Statement alias on a superClass ref does not count`, async () => {
+    const fx = baseFixture();
+    const { triples } = await convert(fx, STMT_OBJ(SUB2_UID, "13"));
+    expect(hasEdge(triples)).toBe(false);
   });
 
   it(`S9 ${REQ} control — exactly exo__Statement in the default emission mode gives the edge (unchanged path)`, async () => {

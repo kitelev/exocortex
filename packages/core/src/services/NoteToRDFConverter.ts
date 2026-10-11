@@ -641,6 +641,10 @@ export class NoteToRDFConverter {
     // (exact match failed, all three slots resolved) — so an ordinary asset never
     // pays for it: on 2026-10-11 the live vaults held 146 + 68 slot carriers, all
     // typed exactly exo#Statement, i.e. the walk ran on none of them.
+    // `!isReifiedStmt` is load-bearing, not an optimisation: the loop resolves a
+    // class alias-first (`[[<uid>|exo__Statement]]` counts as exo__Statement
+    // whatever the uid points to), the walk file-first; without the gate the
+    // walk would OVERWRITE the loop's verdict and drop that pre-existing edge.
     if (!isReifiedStmt && reifiedSubject && reifiedPredicate && reifiedObject) {
       isReifiedStmt = await this.isStatementSubclass(
         frontmatter["exo__Instance_class"],
@@ -2024,10 +2028,12 @@ export class NoteToRDFConverter {
    *
    * Walks `exo__Class_superClass` over CLASS-FILE frontmatter, breadth-first,
    * bounded by {@link MAX_STATEMENT_SUPERCLASS_DEPTH} hops and guarded against
-   * cycles by a visited set (the `resolveChain` recipe). A class is identified by
-   * its file's `exo__Asset_label` when the wikilink resolves to a file — the UID
-   * wins over a stale alias, as in `resolve-buttons` — and by the text of the
-   * reference otherwise. Because identity comes from the file, an exact
+   * cycles by a visited set (the `resolveChain` recipe). A UID reference is
+   * resolved to its class file and identified by that file's `exo__Asset_label`
+   * alone — a stale alias never overrides the file, as in `resolve-buttons`. A
+   * label-form reference is NOT resolved to a file (the CLI adapter would resolve
+   * it through `aliases`, Obsidian would not) and is identified by its text, so it
+   * cannot be walked further. Because identity comes from the file, an exact
    * `exo__Statement` whose `exo__Instance_class` is emitted as the class file IRI
    * (`emitInstanceClassAsUid`) is recognised here too.
    *
@@ -2056,13 +2062,23 @@ export class NoteToRDFConverter {
       const target = this.extractWikilink(clean) ?? clean;
       const alias = this.extractWikilinkAlias(clean);
 
-      const classFile = this.vault.getFirstLinkpathDest(target, "");
+      // Only a UID reference is resolved to a class FILE. A label-form ref
+      // (`[[exoization__Thesis]]`) would resolve through `aliases` in the CLI
+      // adapter but not in Obsidian, so the same vault would give the edge on one
+      // surface and not the other; it is identified by its text instead (UID-canon
+      // writes class refs as bare UIDs).
+      const classFile = this.isUUID(target)
+        ? this.vault.getFirstLinkpathDest(target, "")
+        : null;
       const fm = classFile ? await this.classFileFrontmatter(classFile) : null;
       const label = fm?.["exo__Asset_label"];
-      const identity =
-        (typeof label === "string" ? this.expandClassValue(label) : null) ??
-        this.expandClassValue(target) ??
-        (alias ? this.expandClassValue(alias) : null);
+      // A resolved class file decides alone — a stale alias never overrides it.
+      const identity = classFile
+        ? typeof label === "string"
+          ? this.expandClassValue(label)
+          : null
+        : (this.expandClassValue(target) ??
+          (alias ? this.expandClassValue(alias) : null));
       if (identity?.value === statementIri) {
         return true;
       }
@@ -2084,8 +2100,11 @@ export class NoteToRDFConverter {
     }
 
     if (capped) {
+      // The path lives in the MESSAGE: the plugin logger routes only the message
+      // to its Notice and file channels (the context object reaches the console
+      // alone) — the same rule as the #3468 skip summary above.
       this.logger.warn(
-        `exo__Statement subclass walk stopped at ${maxDepth} superclass hops; the logical edge is not emitted`,
+        `exo__Statement subclass walk stopped at ${maxDepth} superclass hops for ${file.path}; the logical edge is not emitted`,
         { path: file.path },
       );
     }
