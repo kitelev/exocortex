@@ -46,8 +46,15 @@ export type { SerializedNode, SerializedTriple };
  * symbolic IRI instead of the class's file IRI. A v3 cache would keep serving
  * the old graph for every file whose mtime did not move, and a delta would mix
  * the two; the bump makes every v3 cache "invalid" and rebuilt once.
+ *
+ * req e750782f (v5): the `skos` prefix now resolves to the W3C SKOS namespace,
+ * so UNCHANGED files that mention a `skos__*` label (the `skos__Concept` stub,
+ * its instances, a statement whose predicate is `skos__exactMatch`) emit
+ * `http://www.w3.org/2004/02/skos/core#…` instead of
+ * `https://exocortex.my/ontology/skos#…`. A v4 cache is manifest-valid for them
+ * and would keep serving the ad-hoc IRI; the bump rebuilds every v4 cache once.
  */
-export const CACHE_FORMAT_VERSION = 4;
+export const CACHE_FORMAT_VERSION = 5;
 
 /**
  * Cache metadata stored alongside the triple cache

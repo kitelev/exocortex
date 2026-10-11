@@ -97,6 +97,10 @@ export const NAMESPACE_PREFIX_MAP: ReadonlyMap<string, string> = new Map([
   ["owl__", "http://www.w3.org/2002/07/owl#"],
   ["xsd__", "http://www.w3.org/2001/XMLSchema#"],
   ["sh__", "http://www.w3.org/ns/shacl#"],
+  // req e750782f-907b-4573-99ce-f9a5e3150418: core registers skos canonically,
+  // so the skos__Concept subClassOf edge must be built under the same W3C IRI —
+  // otherwise every SKOS mapping whose range is skos__Concept is a false sh:class.
+  ["skos__", "http://www.w3.org/2004/02/skos/core#"],
 ]);
 
 export type ShapesFormat = "text" | "json" | "earl";
