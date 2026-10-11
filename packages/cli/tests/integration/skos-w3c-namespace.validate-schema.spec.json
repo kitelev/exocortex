@@ -14,6 +14,24 @@
       "from": "  [\"skos__\", \"http://www.w3.org/2004/02/skos/core#\"],\n",
       "to": "",
       "expect": ["K5"]
+    },
+    "X1_parent_ontology_uri_only_exocortex": {
+      "_note": "Review round 1 (MEDIUM, K1/K4 vacuity): Pass 2b keeps a W3C parent IRI as the ONTOLOGY-URI edge. The frontmatter edge desk__Neutral ⊂ skos__Concept has a FILE-IRI subject, so only K4 rests on this branch (measured).",
+      "from": "          : parentFileIri; // already an ontology URI",
+      "to": "          : (parentFileIri.startsWith(\"https://exocortex.my/ontology/\") ? parentFileIri : undefined); // already an ontology URI",
+      "expect": ["K4"]
+    },
+    "X2_file_parent_only_exocortex": {
+      "_note": "The desk ADAPTER edge materialises with the SYMBOLIC class IRI as subject (`concept#Concept exo:Class_superClass skos:Concept`), so its W3C parent is kept by the 'file IRI' branch — K1 rests on it (measured; X1 leaves K1 green).",
+      "from": "        fileSet.add(parentFileIri);",
+      "to": "        if (parentFileIri.startsWith(\"obsidian://\") || parentFileIri.startsWith(\"https://exocortex.my/ontology/\")) fileSet.add(parentFileIri);",
+      "expect": ["K1"]
+    },
+    "D1_source2_exocortex_only": {
+      "_note": "Review round 1 (LOW): legacy loadDeclaredProperties Source 2 read only exocortex-base labels, so skos__exactMatch was 'undeclared'.",
+      "from": "    if (typeof label === \"string\" && Namespace.fromTermIRI(label)) {",
+      "to": "    if (typeof label === \"string\" && label.startsWith(\"https://exocortex.my/ontology/\")) {",
+      "expect": ["K10"]
     }
   }
 }

@@ -1,0 +1,19 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "red_re": "› ([SK]\\d+) ",
+  "_doc": "Revert-verify mutant for req e750782f-907b-4573-99ce-f9a5e3150418, SUBJECT packages/cli/src/cache/QueryResultCache.ts (review round 1, LOW): the query-result key carries CACHE_FORMAT_VERSION, so an entry the previous CLI wrote is not served after the format bump.",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/cache/QueryResultCache.ts",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/cli/jest.config.js packages/cli/tests/integration/skos-w3c-namespace.integration.test.ts 2>&1",
+  "mutants": {
+    "Q2_key_without_format_version": {
+      "from": "      .update(`v${CACHE_FORMAT_VERSION}\\n${normalized}`)",
+      "to": "      .update(normalized)",
+      "expect": ["K11"]
+    }
+  }
+}

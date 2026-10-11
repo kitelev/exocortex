@@ -1,0 +1,23 @@
+{
+  "_doc": "Revert-verify mutant for req e750782f-907b-4573-99ce-f9a5e3150418 (review round 1, MEDIUM) — OntologySchemaService.toClassName kept only exocortex-base classes, dropping skos__Concept as a range class and as an ancestor.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/application/services/OntologySchemaService.ts",
+  "harness": "cd \"$(dirname {subject})/../../..\" && node ../../node_modules/jest/bin/jest.js tests/unit/skos-w3c-namespace.plugin.test.ts --verbose 2>&1",
+  "mutants": {
+    "L4_class_name_exocortex_only": {
+      "_note": "The pre-fix restriction (exocortex base), in one line.",
+      "from": "    if (term && !Namespace.isSchemaVocabulary(term.namespace)) {",
+      "to": "    if (term && term.namespace.iri.value.startsWith(Namespace.EXOCORTEX_ONTOLOGY_BASE)) {",
+      "expect": ["L4", "L5"]
+    }
+  }
+}

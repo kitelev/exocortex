@@ -1,0 +1,20 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "red_re": "› ([SK]\\d+) ",
+  "_doc": "Revert-verify mutant for req e750782f-907b-4573-99ce-f9a5e3150418 (review round 1, HIGH): find --class built the class IRI by hand under the exocortex base, so `find --class skos__Concept` bound <…/ontology/skos#Concept> and found nothing.",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/find.ts",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/cli/jest.config.js packages/cli/tests/integration/skos-w3c-namespace.integration.test.ts 2>&1",
+  "mutants": {
+    "F4_find_class_adhoc_base": {
+      "_note": "The pre-fix IRI shape, verbatim.",
+      "from": "    const iri = `<${namespaceBaseFor(slugMatch[1])}${slugMatch[2]}>`;",
+      "to": "    const iri = `<https://exocortex.my/ontology/${slugMatch[1]}#${slugMatch[2]}>`;",
+      "expect": ["K8"]
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "red_re": "› ([SK]\\d+) ",
+  "_doc": "Revert-verify mutant for req e750782f-907b-4573-99ce-f9a5e3150418: the CLI copy of the W3C bases without skos — both readers that consult it (find --class, the prefix injector) fall back to the ad-hoc base. Parity test P3 (namespace-prefix-parity-4350) fails on the same mutation; it is not in this harness.",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/utils/namespacePrefix.ts",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/cli/jest.config.js packages/cli/tests/integration/skos-w3c-namespace.integration.test.ts 2>&1",
+  "mutants": {
+    "W1_cli_copy_without_skos": {
+      "from": "  [\"skos\", \"http://www.w3.org/2004/02/skos/core#\"],\n",
+      "to": "",
+      "expect": ["K8", "K9"]
+    }
+  }
+}

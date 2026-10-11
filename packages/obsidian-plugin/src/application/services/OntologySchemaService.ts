@@ -380,13 +380,17 @@ export class OntologySchemaService {
    * class hierarchy. Both were caught by this file's own suite.
    * ⛤ {@link toPropertyName} deliberately does NOT restrict: a property KEY in
    * `rdfs__`/`owl__` form is real (`RDFVocabularyMapper` emits and reads it).
+   *
+   * ⛔ req e750782f-907b-4573-99ce-f9a5e3150418: the restriction is to the W3C
+   * SCHEMA vocabularies ({@link Namespace.isSchemaVocabulary}), not to "every
+   * base outside exocortex.my". The two read the same only while the registered
+   * W3C group held nothing but schema terms; skos is registered now, and
+   * `skos__Concept` IS a class (the desk ranges its mapping properties over it) —
+   * the exocortex-base test dropped it from ranges and from the hierarchy.
    */
   private toClassName(iri: string): string | null {
     const term = Namespace.fromTermIRI(iri);
-    if (
-      term &&
-      term.namespace.iri.value.startsWith(Namespace.EXOCORTEX_ONTOLOGY_BASE)
-    ) {
+    if (term && !Namespace.isSchemaVocabulary(term.namespace)) {
       return `${term.namespace.prefix}__${term.localName}`;
     }
     return null;

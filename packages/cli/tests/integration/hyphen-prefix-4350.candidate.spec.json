@@ -15,9 +15,9 @@
   "mutants": {
     "M12_candidate_key_keeps_old_shape": {
       "from": "  const term = Namespace.fromTermIRI(iri);",
-      "to": "  const term = /^https:\\/\\/exocortex\\.my\\/ontology\\/[A-Za-z][A-Za-z0-9_]*#/.test(iri) ? Namespace.fromTermIRI(iri) : null;",
+      "to": "  const term = /^https:\\/\\/exocortex\\.my\\/ontology\\/[^#]*-[^#]*#/.test(iri) ? null : Namespace.fromTermIRI(iri);",
       "expect": ["H3"],
-      "_note": "Re-anchored by req e750782f-907b-4573-99ce-f9a5e3150418 (ITRV §A117): the hyphen-aware regex this mutant narrowed was replaced by core's Namespace.fromTermIRI, so the mutant moves with the guard — it now restores the pre-#4350 no-hyphen prefix shape in front of fromTermIRI; a hyphen-prefixed IRI then yields the raw IRI and H3 must redden as before."
+      "_note": "Re-anchored by req e750782f-907b-4573-99ce-f9a5e3150418 (ITRV §A117): the hyphen-aware regex this mutant narrowed was replaced by core's Namespace.fromTermIRI, so the mutant moves with the guard — it now restores the pre-#4350 no-hyphen prefix shape in front of fromTermIRI; a hyphen-prefixed IRI then yields the raw IRI and H3 must redden as before. ⛤ Narrowed in review round 1 of e750782f (ITRV §A132, single concern): the previous `to` refused EVERY IRI outside the exocortex base too — i.e. it also reverted the W3C read-back (skos, rdfs) that this mutant is not about. Now only a hyphen-bearing exocortex prefix yields the raw IRI."
     }
   }
 }

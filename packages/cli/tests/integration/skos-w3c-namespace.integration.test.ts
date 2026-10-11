@@ -3,9 +3,17 @@
  * through the CLI consumers of the prefix table (RFC 14217015 §5, decision №6).
  *
  * The author-comparison desk ("стол") records a mapping as an `exo__Statement`
- * [author term, `skos__exactMatch`, neutral concept]; the property's domain and
- * range are `skos__Concept`, and the desk's adapter states
- * `concept__Concept ⊂ skos__Concept` (another `exo__Statement`, predicate by UID).
+ * [author term, `skos__exactMatch`, neutral concept]; the property's domain is
+ * `exo__Asset` and its range `skos__Concept` (the desk decision, RFC 14217015 §5),
+ * and the desk's adapter states `concept__Concept ⊂ skos__Concept` (another
+ * `exo__Statement`, predicate by UID).
+ *
+ * ⛔ Review round 1 (MEDIUM): with domain = range = `skos__Concept` K1 and K4 were
+ * vacuous — the shape targets the DOMAIN, so a subject the hierarchy did not see
+ * as `skos__Concept` was never checked, and "no violation" held with the edge
+ * removed. Domain `exo__Asset` checks every subject; the flips (adapter statement
+ * removed ⇒ K1 red; frontmatter superClass removed ⇒ K4 red) and mutant
+ * X1_parent_ontology_uri_only_exocortex (validate-schema.ts Pass 2b) prove both.
  * Production shape on a temp vault, REAL converter + REAL SHACL validator:
  *
  *   K1  SHACL: a mapping between two concept__Concept instances raises NO
@@ -40,13 +48,31 @@
  *   K3  cache format: a cache written before e750782f (formatVersion 4, the ad-hoc
  *       `https://exocortex.my/ontology/skos#` IRI for UNCHANGED files) is invalid
  *       and rebuilt — otherwise the W3C IRI never reaches a `--use-cache` caller.
+ *   K10 legacy `validate schema` (no `--shapes-mode`): the `skos__exactMatch`
+ *       property-def counts as DECLARED — `loadDeclaredProperties` read only
+ *       exocortex-base labels, while `keyToURI("skos__exactMatch")` builds the W3C
+ *       IRI, so every SKOS mapping key read as undeclared.
+ *   K11 query-result cache: an entry the previous CLI wrote (key = the query text
+ *       alone) is NOT served after the format bump — the key carries the format
+ *       version, so CQ1 does not keep returning the old CLI's 0 rows for its TTL.
+ *
+ * ⛤ Which Pass 2b branch holds which axis (measured, mutant-driver): the desk
+ * ADAPTER edge materialises with the SYMBOLIC class IRI as subject
+ * (`concept#Concept exo:Class_superClass skos:Concept`), so K1 is held by the
+ * "file IRI" branch (mutant X2); the FRONTMATTER edge of `desk__Neutral` has a
+ * file-IRI subject, so K4 is held by the ontology-URI branch (mutant X1).
  */
 import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { NoteToRDFConverter, vaultPathToIRI } from "@kitelev/exocortex-core";
-import { runShapesValidation } from "../../src/commands/validate-schema.js";
+import {
+  runShapesValidation,
+  loadDeclaredProperties,
+} from "../../src/commands/validate-schema.js";
+import { QueryResultCache } from "../../src/cache/QueryResultCache.js";
+import * as crypto from "crypto";
 import { FileSystemVaultAdapter } from "../../src/adapters/FileSystemVaultAdapter.js";
 import {
   CacheManager,
@@ -221,7 +247,7 @@ aliases:
 exo__Instance_class:
   - "[[exo__ObjectProperty]]"
 exo__Property_domain:
-  - "[[${SKOS_CONCEPT_UID}]]"
+  - "[[${EXO_ASSET_UID}]]"
 exo__Property_range:
   - "[[${SKOS_CONCEPT_UID}]]"
 ---
@@ -405,4 +431,33 @@ skos__exactMatch: "[[${TASK_UID}]]"
       fs.rmSync(vault, { recursive: true, force: true });
     }
   }, 30_000);
+  it("K10 @req:e750782f-907b-4573-99ce-f9a5e3150418 legacy validate schema counts the skos__exactMatch property-def as declared (W3C IRI)", async () => {
+    const converter = new NoteToRDFConverter(new FileSystemVaultAdapter(fixtureDir));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const declared = await loadDeclaredProperties((await converter.convertVault()) as any[]);
+    expect(declared.has(EXACT_PATH)).toBe(true);
+    expect(declared.has(`${ADHOC_SKOS}exactMatch`)).toBe(false);
+    // Canary: an ad-hoc-namespace property-def is still declared.
+    expect(declared.has(ABOUT_PATH)).toBe(true);
+  }, 30_000);
+
+  it("K11 @req:e750782f-907b-4573-99ce-f9a5e3150418 a query result cached by the previous CLI (key without the format version) is not served", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "exo-e750782f-qcache-"));
+    try {
+      const cache = new QueryResultCache({ cacheDir: dir });
+      const query = "SELECT ?a WHERE { ?a skos:exactMatch ?n }";
+      // The entry a pre-e750782f CLI left behind: same query, key = sha256(text).
+      const oldKey = crypto.createHash("sha256").update(query).digest("hex");
+      fs.writeFileSync(
+        path.join(dir, `${oldKey}.json`),
+        JSON.stringify({ timestamp: Date.now(), result: { rows: "stale" } }),
+      );
+      expect(await cache.get(query, 300)).toBeNull();
+      // Canary: an entry written by THIS cli is served.
+      await cache.set(query, { rows: "fresh" }, 300);
+      expect(await cache.get(query, 300)).toEqual({ rows: "fresh" });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

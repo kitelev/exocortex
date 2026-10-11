@@ -138,6 +138,35 @@ export class Namespace {
   ];
 
   /**
+   * The registered W3C SCHEMA vocabularies — RDF, RDFS, OWL, XSD and SHACL. Their
+   * terms describe the graph's own structure (`rdfs:Class`, `owl:Thing`,
+   * `xsd:string`, `sh:NodeShape`); none of them is a DOMAIN class a user files
+   * notes under, so a consumer that turns a range or an ancestor IRI into a CLASS
+   * filter must drop them (`OntologySchemaService.toClassName`,
+   * `ReferencePropertyField.extractClassFromRange` — issue #4353 axes A35/A44).
+   *
+   * ⛔ req e750782f-907b-4573-99ce-f9a5e3150418: SKOS is registered but is NOT a
+   * schema vocabulary — `skos:Concept` is a domain class with instances (the
+   * author-comparison desk ranges its mapping properties over it). Before skos
+   * was registered those consumers filtered "every non-exocortex base", which
+   * reads the same as this list only while the W3C group is exactly these five;
+   * this constant names the five so a registered DOMAIN vocabulary is not
+   * dropped by accident.
+   */
+  private static readonly SCHEMA_VOCABULARIES: ReadonlyArray<Namespace> = [
+    Namespace.RDF,
+    Namespace.RDFS,
+    Namespace.OWL,
+    Namespace.XSD,
+    Namespace.SHACL,
+  ];
+
+  /** Is `ns` one of the W3C schema vocabularies ({@link SCHEMA_VOCABULARIES})? */
+  static isSchemaVocabulary(ns: Namespace): boolean {
+    return Namespace.SCHEMA_VOCABULARIES.some((v) => v.iri.value === ns.iri.value);
+  }
+
+  /**
    * The ONE definition of a namespace-prefix shape: a lowercase letter, then
    * alphanumerics, optionally continued by hyphen-separated alphanumeric runs
    * (`ems`, `aiKnow`, `tbank-nessy`, `device-work-macbook`). A hyphen may sit

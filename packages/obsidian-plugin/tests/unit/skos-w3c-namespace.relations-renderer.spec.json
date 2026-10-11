@@ -1,0 +1,23 @@
+{
+  "_doc": "Revert-verify mutant for req e750782f-907b-4573-99ce-f9a5e3150418 (review round 1, MEDIUM) — RelationsRenderer.predicateIriToKey read only the exocortex base, so a reified skos:exactMatch mapping showed its raw W3C IRI as the group heading and never deduped against its inline twin.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/presentation/renderers/layout/RelationsRenderer.ts",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && node ../../node_modules/jest/bin/jest.js tests/unit/skos-w3c-namespace.plugin.test.ts --verbose 2>&1",
+  "mutants": {
+    "L1_predicate_key_exocortex_only": {
+      "_note": "The pre-fix body, verbatim.",
+      "from": "export function predicateIriToKey(iri: string): string {\n  return symbolicIriToPropertyKey(iri) ?? iri;\n}",
+      "to": "export function predicateIriToKey(iri: string): string {\n  if (iri.startsWith(\"https://exocortex.my/ontology/\")) {\n    const rest = iri.slice(\"https://exocortex.my/ontology/\".length);\n    const hash = rest.indexOf(\"#\");\n    if (hash >= 0) {\n      return `${rest.slice(0, hash)}__${rest.slice(hash + 1)}`;\n    }\n  }\n  return iri;\n}",
+      "expect": ["L1", "L2", "L3"]
+    }
+  }
+}

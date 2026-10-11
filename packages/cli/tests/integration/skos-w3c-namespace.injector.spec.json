@@ -1,0 +1,20 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "red_re": "› ([SK]\\d+) ",
+  "_doc": "Revert-verify mutant for req e750782f-907b-4573-99ce-f9a5e3150418 (review round 1, HIGH): QueryPrefixInjector declared every undeclared prefix under the exocortex base, so a query using `skos:` without declaring it found 0 mappings.",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/utils/QueryPrefixInjector.ts",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/cli/jest.config.js packages/cli/tests/integration/skos-w3c-namespace.integration.test.ts 2>&1",
+  "mutants": {
+    "I1_injector_adhoc_base": {
+      "_note": "The pre-fix declaration shape, verbatim.",
+      "from": "    missingPrefixes.push(`PREFIX ${prefix}: <${namespaceBaseFor(prefix)}>`);",
+      "to": "    missingPrefixes.push(`PREFIX ${prefix}: <https://exocortex.my/ontology/${prefix}#>`);",
+      "expect": ["K9"]
+    }
+  }
+}

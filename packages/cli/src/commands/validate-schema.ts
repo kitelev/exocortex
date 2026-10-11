@@ -17,6 +17,7 @@ import {
   DomainLiteral,
   DomainTriple,
   OBSIDIAN_VAULT_SCHEME,
+  Namespace,
   type ValidationReport,
   type Violation,
   type ClassHierarchy,
@@ -418,9 +419,14 @@ export async function loadDeclaredProperties(
       }
     }
 
-    // Source 2: IRI labels (full ontology URIs stored as exo:Asset_label)
+    // Source 2: IRI labels (full ontology URIs stored as exo:Asset_label).
+    // req e750782f: any term IRI a REGISTERED or ad-hoc namespace resolves —
+    // not only the exocortex.my base. A `skos__exactMatch` property-def's label
+    // is emitted under the W3C SKOS base, and `keyToURI("skos__exactMatch")`
+    // builds that same IRI, so the exocortex-only test left every SKOS mapping
+    // key "undeclared" in the legacy (non-shapes) mode.
     const label = json.label;
-    if (typeof label === "string" && label.startsWith("https://exocortex.my/ontology/")) {
+    if (typeof label === "string" && Namespace.fromTermIRI(label)) {
       declaredProperties.add(label);
     }
   }

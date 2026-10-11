@@ -13,8 +13,28 @@
     "N1_skos_not_registered": {
       "from": "    Namespace.SKOS,\n  ];",
       "to": "  ];",
-      "expect": ["K2", "K3", "K5", "K7", "S1", "S2", "S3", "S4", "S5", "S6"],
-      "_note": "K7 reddens because the gate's violation is filtered by the W3C predicate path, which the mutant no longer emits (the ad-hoc https://exocortex.my/ontology/skos#exactMatch is reported instead). K6 stays green BY CONSTRUCTION: the ad-hoc class IRI is also read back as skos__Concept by Namespace.fromTermIRI, so the class name survives either form; K1/K4 are absence-of-false-violation axes keyed on the W3C path."
+      "expect": [
+        "K10",
+        "K2",
+        "K3",
+        "K5",
+        "K7",
+        "K8",
+        "K9",
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5",
+        "S6"
+      ],
+      "_note": "K7 reddens because the gate's violation is filtered by the W3C predicate path, which the mutant no longer emits (the ad-hoc https://exocortex.my/ontology/skos#exactMatch is reported instead). K6 stays green BY CONSTRUCTION: the ad-hoc class IRI is also read back as skos__Concept by Namespace.fromTermIRI, so the class name survives either form; K1/K4 are absence-of-false-violation axes keyed on the W3C path. ⛤ K8, K9, K10 (axes added in review round 1) redden for one reason, read one by one: the CLI keeps its OWN copy of the W3C bases (namespaceBaseFor / NAMESPACE_PREFIX_MAP) and keeps building the W3C IRI — find --class binds <skos/core#Concept> (K8), the injected `skos:` prefix is the W3C base (K9), keyToURI(\"skos__exactMatch\") is the W3C IRI (K10) — while the unregistered core emits the ad-hoc one, so the two no longer meet. That divergence is exactly what parity test P3 (namespace-prefix-parity-4350) forbids; this mutant shows its user-visible cost."
+    },
+    "N2_skos_counted_as_schema": {
+      "_note": "Review round 1 (MEDIUM): SKOS is registered but is a DOMAIN vocabulary — counting it among the schema ones makes the plugin drop skos__Concept as a range/ancestor class (plugin axes L4-L6 cover the consumers, spec skos-w3c-namespace.ontology-schema / .reference-field).",
+      "from": "    Namespace.SHACL,\n  ];\n\n  /** Is `ns` one of the W3C schema vocabularies",
+      "to": "    Namespace.SHACL,\n    Namespace.SKOS,\n  ];\n\n  /** Is `ns` one of the W3C schema vocabularies",
+      "expect": ["S7"]
     }
   }
 }

@@ -224,4 +224,32 @@ describe(`the skos prefix emits the W3C SKOS namespace (${REQ})`, () => {
       );
     }
   });
+
+  /**
+   * Review round 1 (MEDIUM): two plugin readers turned a range / ancestor IRI into
+   * a CLASS only for the exocortex base, i.e. "registered W3C ⇒ schema term". That
+   * stopped being true with skos — `skos:Concept` is the desk's mapping range — so
+   * the schema group is named explicitly and SKOS sits outside it.
+   */
+  it(`S7 ${REQ} SKOS is registered but is NOT a schema vocabulary (RDF/RDFS/OWL/XSD/SHACL are)`, () => {
+    for (const ns of [
+      Namespace.RDF,
+      Namespace.RDFS,
+      Namespace.OWL,
+      Namespace.XSD,
+      Namespace.SHACL,
+    ]) {
+      expect(Namespace.isSchemaVocabulary(ns)).toBe(true);
+    }
+    expect(Namespace.isSchemaVocabulary(Namespace.SKOS)).toBe(false);
+    // Canaries: the exocortex namespaces, registered and ad-hoc, are domain ones.
+    expect(Namespace.isSchemaVocabulary(Namespace.EXO)).toBe(false);
+    expect(Namespace.isSchemaVocabulary(Namespace.forPrefix("concept")!)).toBe(false);
+    // Equality is by namespace IRI, not by object identity.
+    expect(
+      Namespace.isSchemaVocabulary(
+        Namespace.fromTermIRI("http://www.w3.org/2001/XMLSchema#string")!.namespace,
+      ),
+    ).toBe(true);
+  });
 });

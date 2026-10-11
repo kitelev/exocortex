@@ -27,9 +27,6 @@ import { DisplayNameResolver } from '@plugin/domain/display-name/DisplayNameReso
 import { DEFAULT_DISPLAY_NAME_SETTINGS } from '@plugin/domain/settings/ExocortexSettings';
 import { ObsidianApp, ExocortexPluginInterface, MetadataRecord } from '@plugin/types';
 
-/** RFC 93a0b2ee Task 1.3 — Exocortex ontology IRI base (`…/ontology/`). */
-const EXOCORTEX_ONTOLOGY_BASE = "https://exocortex.my/ontology/";
-
 /**
  * RFC `93a0b2ee` Task 1.3 — convert a symbolic predicate IRI to its frontmatter
  * property-key form (`<prefix>__<localName>`) for dedup + grouping. It handles
@@ -37,16 +34,18 @@ const EXOCORTEX_ONTOLOGY_BASE = "https://exocortex.my/ontology/";
  * — as `Namespace.fromTermIRI` also does since issue #4350 — since the
  * dedup key must canonicalise the inline frontmatter key and the reified
  * predicate IRI to the SAME token. Non-ontology IRIs pass through unchanged.
+ *
+ * ⛔ req e750782f-907b-4573-99ce-f9a5e3150418: delegates to the SHARED inverse
+ * ({@link symbolicIriToPropertyKey} → `Namespace.fromTermIRI`) instead of a
+ * hand-rolled `https://exocortex.my/ontology/` anchor. The anchor read only the
+ * ad-hoc base, so a REGISTERED W3C predicate — `skos__exactMatch`, emitted as
+ * `http://www.w3.org/2004/02/skos/core#exactMatch` once skos is registered —
+ * reached the group heading AND the dedup key as a raw IRI: a desk mapping
+ * written both inline and as an `exo__Statement` rendered twice. The same held
+ * for the registered `rdfs__`/`owl__` predicates before this change.
  */
 export function predicateIriToKey(iri: string): string {
-  if (iri.startsWith(EXOCORTEX_ONTOLOGY_BASE)) {
-    const rest = iri.slice(EXOCORTEX_ONTOLOGY_BASE.length); // e.g. "ems#Effort_area"
-    const hash = rest.indexOf("#");
-    if (hash >= 0) {
-      return `${rest.slice(0, hash)}__${rest.slice(hash + 1)}`;
-    }
-  }
-  return iri;
+  return symbolicIriToPropertyKey(iri) ?? iri;
 }
 
 /**
