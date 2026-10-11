@@ -26,10 +26,16 @@
       "expect": ["B16"]
     },
     "AO3_extend_variables_hidden": {
-      "_note": "getOperationVariables reports no variables for a BIND (the pre-review behaviour): a group FILTER on a shared variable is pushed into the right operand alone and every row is dropped (review CRITICAL).",
+      "_note": "getOperationVariables reports no variables for a BIND (the pre-review behaviour): a group FILTER on a shared variable is pushed into the right operand alone and every row is dropped (review CRITICAL). B22 (review round 2): with the BIND's variables hidden, leftVars is empty, so the round-2 pushdown guard sees no left-bound filter variable and pushes `?s != ?o` right.",
       "from": "    } else if (operation.type === \"extend\") {\n      // A BIND keeps every variable of its input and adds its own (req 60ed88e7).\n",
       "to": "    } else if (operation.type === \"extend\" && operation.variable.length < 0) {\n      // A BIND keeps every variable of its input and adds its own (req 60ed88e7).\n",
-      "expect": ["B18"]
+      "expect": ["B18", "B22"]
+    },
+    "AO4_pushdown_reads_left": {
+      "_note": "The round-2 pushdown guard is dropped: a FILTER reading a left-bound AND a right-only variable (`?s != ?o`) is pushed into the right operand, the bind join substitutes an IRI into the expression and every row is dropped (review round 2, HIGH).",
+      "from": "      if (rightOnly && !leftOnly && !filterVars.some((v) => leftVars.has(v))) {\n",
+      "to": "      if (rightOnly && !leftOnly) {\n",
+      "expect": ["B22"]
     }
   }
 }

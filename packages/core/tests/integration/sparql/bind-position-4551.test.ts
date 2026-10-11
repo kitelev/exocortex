@@ -369,6 +369,41 @@ describe("BIND extends the group prefix at its position (req 60ed88e7, #4551)", 
     expect(text).toContain(`BIND(<${VIDEO}> AS ?p)`);
   });
 
+  // ---- Review round 2 (PR #4557) ----
+
+  it("B22 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a BIND mid-group keeps a FILTER reading a shared AND a right-only variable working", async () => {
+    const withBind = (filter: string) =>
+      rows(`SELECT ?s ?p ?o WHERE { ?s exo:Asset_label ?l BIND(STR(?l) AS ?y) ?s ?p ?o FILTER(${filter}) }`, ["s", "p", "o"]);
+    const without = (filter: string) =>
+      rows(`SELECT ?s ?p ?o WHERE { ?s exo:Asset_label ?l . ?s ?p ?o FILTER(${filter}) }`, ["s", "p", "o"]);
+    for (const filter of ["?s != ?o", "STR(?s) != STR(?o)", "isIRI(?s) && BOUND(?o)"]) {
+      const expected = await without(filter);
+      expect(expected.length).toBeGreaterThan(0);
+      expect(await withBind(filter)).toEqual(expected);
+    }
+  });
+
+  it("B23 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a LIMIT subquery is evaluated on its own — no outer value is substituted before the slice", async () => {
+    const sub = `SELECT ?idea ?p WHERE { ?idea ?p ?src } ORDER BY ?idea ?p LIMIT 3`;
+    // Independent evaluation: the subquery's own 3 rows, then the join keeps the ones with ?p = video.
+    const own = await rows(sub, ["idea", "p"]);
+    expect(own).toHaveLength(3);
+    const expected = own.filter((r) => r.endsWith(`| <${VIDEO}>`));
+    const got = await rows(`SELECT ?idea ?p WHERE { VALUES ?p { eideas:ExoizationIdea_video } { ${sub} } }`, ["idea", "p"]);
+    expect(got).toEqual(expected);
+  });
+
+  it("B24 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 the UUID-index rewrite keeps a BIND that defines the filtered variable", async () => {
+    const run = async (sparql: string) => {
+      const op = new AlgebraOptimizer().optimizeWithSubjects(translator.translate(parser.parse(`${PREFIX}\n${sparql}`)), [fileIri(I.v1)]);
+      return (await new ExoQLQueryExecutor(store).executeAll(op)).length;
+    };
+    const filter = `FILTER(CONTAINS(STR(?s), "${I.v1}"))`;
+    const expected = await run(`SELECT ?p ?o WHERE { ?x exo:Asset_label ?l . ?x ?p ?o BIND(?x AS ?s) ${filter} }`);
+    expect(expected).toBeGreaterThan(0);
+    expect(await run(`SELECT ?p ?o WHERE { ?x exo:Asset_label ?l BIND(?x AS ?s) ?s ?p ?o ${filter} }`)).toBe(expected);
+  });
+
   it("B12 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a BIND reading an earlier BIND chains, and the later pattern joins with the result", async () => {
     const q = `SELECT ?idea ?src WHERE {
       BIND("ExoizationIdea_video" AS ?local)

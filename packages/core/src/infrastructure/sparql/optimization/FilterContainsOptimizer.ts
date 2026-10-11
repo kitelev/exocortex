@@ -365,7 +365,10 @@ export class FilterContainsOptimizer {
       };
     }
 
-    if (matchingUris.length === 1) {
+    // A BIND that DEFINES the filtered variable (`BIND(?x AS ?s)`) would lose its
+    // value under the injection (the subject becomes a constant and the filter is
+    // dropped): the VALUES join keeps it (PR #4557 review round 2: 416 rows, not 8).
+    if (matchingUris.length === 1 && !this.bindsVariable(filter.input, pattern.variable)) {
       // Single match: rewrite BGP to use exact subject match
       const optimizedInput = this.injectSubjectConstraint(
         filter.input,
@@ -493,6 +496,15 @@ export class FilterContainsOptimizer {
     }
 
     return matchingUris;
+  }
+
+  /** Whether a BIND in the subtree (input/left/right) assigns `variable`. */
+  private bindsVariable(operation: AlgebraOperation, variable: string): boolean {
+    if (operation.type === "extend" && operation.variable === variable) return true;
+    const op = operation as unknown as Record<string, AlgebraOperation | undefined>;
+    return [op.input, op.left, op.right].some(
+      (child) => child !== undefined && typeof child === "object" && this.bindsVariable(child, variable),
+    );
   }
 
   /**

@@ -301,7 +301,12 @@ export class AlgebraOptimizer {
         };
       }
 
-      if (rightOnly && !leftOnly) {
+      // ⛔ Only when NO filter variable is bound on the left: the bind join
+      // substitutes the left solution into the right operand, filter expression
+      // included, and a substituted IRI is not an evaluable expression node — the
+      // filter then drops every row (`?s != ?o` with ?s shared; bug 4e3ce943). A
+      // positional BIND made this shape common (PR #4557 review round 2, HIGH).
+      if (rightOnly && !leftOnly && !filterVars.some((v) => leftVars.has(v))) {
         return {
           type: "join",
           left: this.filterPushDown(input.left),

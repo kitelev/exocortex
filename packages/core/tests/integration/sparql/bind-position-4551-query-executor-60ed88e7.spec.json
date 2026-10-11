@@ -33,9 +33,15 @@
     },
     "QE4_subquery_scope_ignored": {
       "_note": "A subquery's unprojected variables are substituted again (the pre-review behaviour): a leading BIND captures a variable the subquery does not project. Type-preserving (`length < 0`, never true).",
-      "from": "      if (node.type === 'project') return new Set(node.variables);\n",
-      "to": "      if (node.type === 'project' && node.variables.length < 0) return new Set(node.variables);\n",
+      "from": "      if (node.type === 'project') return sliced ? new Set() : new Set(node.variables);\n",
+      "to": "      if (node.type === 'project' && node.variables.length < 0) return sliced ? new Set() : new Set(node.variables);\n",
       "expect": ["B19"]
+    },
+    "QE5_slice_substituted": {
+      "_note": "A LIMIT/OFFSET subquery is substituted into again: a bound outer value restricts the subquery before its slice, changing which rows the slice keeps (review round 2, MEDIUM).",
+      "from": "      if (node.type === 'slice') sliced = true;\n",
+      "to": "      if (node.type === 'slice') sliced = false;\n",
+      "expect": ["B23"]
     }
   }
 }

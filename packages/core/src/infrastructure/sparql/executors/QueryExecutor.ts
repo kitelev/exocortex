@@ -730,20 +730,26 @@ export class ExoQLQueryExecutor {
   }
 
   /**
-   * The variables a SELECT's algebra projects — the first `project` under its
-   * solution modifiers — or null when it projects everything (`SELECT *`).
+   * The variables a substitution may reach inside a subquery: the ones its first
+   * `project` (under the solution modifiers) names, or null when it projects
+   * everything (`SELECT *`). A LIMIT/OFFSET subquery takes none: substituting an
+   * outer value before the slice changes WHICH rows the slice keeps (PR #4557
+   * review round 2 — `{ SELECT ?s ?p … ORDER BY ?s LIMIT 1 }` joined with a
+   * bound ?p returned a row the standard does not).
    */
   private projectedVariables(query: AlgebraOperation): Set<string> | null {
     let node: AlgebraOperation | undefined = query;
+    let sliced = false;
     while (node) {
-      if (node.type === 'project') return new Set(node.variables);
+      if (node.type === 'project') return sliced ? new Set() : new Set(node.variables);
+      if (node.type === 'slice') sliced = true;
       if (node.type === 'slice' || node.type === 'distinct' || node.type === 'reduced' || node.type === 'orderby') {
         node = node.input;
         continue;
       }
-      return null;
+      return sliced ? new Set() : null;
     }
-    return null;
+    return sliced ? new Set() : null;
   }
 
   /**

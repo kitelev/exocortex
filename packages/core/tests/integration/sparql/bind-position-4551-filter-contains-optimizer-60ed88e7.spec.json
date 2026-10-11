@@ -18,6 +18,12 @@
       "from": "    if (operation.type === \"filter\" || operation.type === \"extend\") {\n",
       "to": "    if (operation.type === \"filter\") {\n",
       "expect": ["B20"]
+    },
+    "FC2_defining_bind_ignored": {
+      "_note": "The injection runs even when a BIND defines the filtered variable: the BIND's value is lost and the patterns before it stay unconstrained (review round 2, LOW: 416 rows instead of 8).",
+      "from": "    if (matchingUris.length === 1 && !this.bindsVariable(filter.input, pattern.variable)) {\n",
+      "to": "    if (matchingUris.length === 1) {\n",
+      "expect": ["B24"]
     }
   }
 }
