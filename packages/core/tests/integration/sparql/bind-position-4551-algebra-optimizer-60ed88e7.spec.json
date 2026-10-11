@@ -26,10 +26,10 @@
       "expect": ["B16"]
     },
     "AO16_pushdown_gate_off": {
-      "_note": "A group FILTER over a join with a BIND goes through the base pushdown again: the base reports no variables for an Extend, so a filter on a shared variable is pushed into the right operand and the bind join substitutes an IRI into its expression — every row dropped (the round-1 CRITICAL and its successors). Type-preserving: an impossible conjunct.",
+      "_note": "A group FILTER over a join with a BIND goes through the base pushdown again: the base reports no variables for an Extend, so a filter on a shared variable is pushed into the right operand and the bind join substitutes an IRI into its expression — every row dropped (the round-1 CRITICAL and its successors). Type-preserving: an impossible conjunct. B28–B30 (a BIND of ?window read in arithmetic / IN / a cast): the base does not walk those nodes and pushes the filter where ?window is substituted or unbound; B32: its plain reference (a mid-group BIND + a filter on ?s) is broken the same way.",
       "from": "    if (input.type === \"join\" && this.containsExtend(input)) {\n",
       "to": "    if (input.type === \"join\" && this.containsExtend(input) && Number.isNaN(0)) {\n",
-      "expect": ["B18", "B22"]
+      "expect": ["B18", "B22", "B28", "B29", "B30", "B32"]
     }
   }
 }

@@ -14,7 +14,7 @@
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/algebra/PatternTranslator.ts",
   "mutants": {
     "PT1_later_bind_dropped": {
-      "_note": "A BIND after the first group element no longer extends the prefix (it vanishes). B24 (review round 2): the dropped BIND is the one that defines ?s, so the UUID rewrite injects into `?s ?p ?o` alone — a cross product with the label rows. Review round 3: B25 — its `BIND(IF(EXISTS …) AS ?v)` follows a pattern and vanishes, ?v is unbound; B31 — both BINDs of ?n follow a pattern, the reference loses its rows; B32 — the BIND after the label pattern vanishes, the group has no Extend, so the UUID injection runs and leaves the subquery / UNION / VALUES operand unconstrained (the old injection defect). Round 4: B39-B41 compare with a reference whose BIND of ?n follows the patterns; dropped, ?n is unbound and the reference loses its rows.",
+      "_note": "A BIND after the first group element no longer extends the prefix (it vanishes). B24 (review round 2): the dropped BIND is the one that defines ?s, so the UUID rewrite injects into `?s ?p ?o` alone — a cross product with the label rows. Review round 3: B25 — its `BIND(IF(EXISTS …) AS ?v)` follows a pattern and vanishes, ?v is unbound; B31 — both BINDs of ?n follow a pattern, the reference loses its rows; B32 — the BIND after the label pattern vanishes, the group has no Extend, so the UUID injection runs and leaves the subquery / UNION / VALUES operand unconstrained (the old injection defect). Round 4: B39-B41 compare with a reference whose BIND of ?n follows the patterns; dropped, ?n is unbound and the reference loses its rows. Round 5: B22 — with the mid-group BIND dropped the group is BIND-free, the base pushdown sends `?s != ?o` into the right operand and the substituted IRI drops every row (bug 4e3ce943, pre-existing for BIND-free groups).",
       "from": "          result = this.translateBind(rightPattern, result);\n",
       "to": "          void rightPattern;\n",
       "expect": [
@@ -24,6 +24,7 @@
         "B12",
         "B13",
         "B17",
+        "B22",
         "B24",
         "B25",
         "B31",
