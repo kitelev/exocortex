@@ -17,7 +17,7 @@
  *
  * Axes:
  *   R1 — the reason becomes a new asset of class ems__EffortTrashNote, labelled with the input
- *   R2 — the reason lives in the effort's folder and is defined by the effort's ontology
+ *   R2 — the reason is defined by the effort's ontology (its folder is R10's subject)
  *   R3 — the reason links to the effort via exo__Asset_relates (new → old)
  *   R4 — the effort still turns Trashed, with the default category and a resolution timestamp
  *   R5 — the effort's body is byte-identical after the command
@@ -137,6 +137,8 @@ function linkTargets(value: unknown): string[] {
         // ems__Effort_parent; without this property resolving they are skipped and R9 is blind.
         [PROJECT_CLASS, "ems__Project", "exo__Class"],
         ["6528ecfa-a03d-47f1-a819-9ba5fea8fc28", "ems__Effort_parent", "exo__ObjectProperty"],
+        // The reason's own class, so the step's targetClass and the shadow rule's condition resolve as in prod.
+        [TRASH_NOTE_CLASS, "ems__EffortTrashNote", "exo__Class"],
       ];
       fs.mkdirSync(path.join(root, "ems-stubs"), { recursive: true });
       for (const [uid, label, metaclass] of stubs) {
