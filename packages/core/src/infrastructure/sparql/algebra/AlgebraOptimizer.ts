@@ -281,10 +281,22 @@ export class AlgebraOptimizer {
   private pushDownFilter(filter: FilterOperation): AlgebraOperation {
     const input = filter.input;
 
-    // ⛔ A filter with EXISTS stays above the join: its pattern reads variables the
-    // expression walk does not see (the pattern's own), so neither side can be
-    // proven to bind them all (PR #4557 review round 3, H2).
-    if (input.type === "join" && !this.expressionContainsExists(filter.expression)) {
+    // ⛔ A join with a BIND (Extend) in it keeps the group FILTER above it (req
+    // 60ed88e7). A positional BIND turns an ordinary group into a join; pushing a
+    // FILTER into one operand then lands it where the bind join substitutes an IRI
+    // into its expression (bug 4e3ce943), and every refinement of the pushdown guard
+    // reopened a route (PR #4557 reviews, rounds 1–5). Above the join the FILTER is
+    // the group filter the standard prescribes. A join WITHOUT a BIND keeps the
+    // previous pushdown unchanged, so its plan is the one it had before the PR.
+    if (input.type === "join" && this.containsExtend(input)) {
+      return {
+        type: "filter",
+        expression: filter.expression,
+        input: this.filterPushDown(input),
+      };
+    }
+
+    if (input.type === "join") {
       const filterVars = this.getFilterVariables(filter.expression);
       const leftVars = this.getOperationVariables(input.left);
       const rightVars = this.getOperationVariables(input.right);
@@ -292,14 +304,7 @@ export class AlgebraOptimizer {
       const leftOnly = filterVars.every((v) => leftVars.has(v));
       const rightOnly = filterVars.every((v) => rightVars.has(v));
 
-      // ⛔ Symmetric to the right-push guard below: only when NO filter variable can
-      // be bound on the right. A filter pushed left onto a variable the right side
-      // shares is moved to the RIGHT of a bind join by the later join reordering
-      // (constrained side first), and the substituted IRI then drops every row (bug
-      // 4e3ce943). With no shared variable the filter reads the same bindings before
-      // and after the join, whichever side ends up on the left (PR #4557 review round
-      // 4, HIGH-1: `{ ?s label ?l . ?s ?p ?o } { ?s a C } FILTER(?s IN (…))` → 0).
-      if (leftOnly && !rightOnly && !filterVars.some((v) => rightVars.has(v))) {
+      if (leftOnly && !rightOnly) {
         return {
           type: "join",
           left: {
@@ -311,12 +316,7 @@ export class AlgebraOptimizer {
         };
       }
 
-      // ⛔ Only when NO filter variable is bound on the left: the bind join
-      // substitutes the left solution into the right operand, filter expression
-      // included, and a substituted IRI is not an evaluable expression node — the
-      // filter then drops every row (`?s != ?o` with ?s shared; bug 4e3ce943). A
-      // positional BIND made this shape common (PR #4557 review round 2, HIGH).
-      if (rightOnly && !leftOnly && !filterVars.some((v) => leftVars.has(v))) {
+      if (rightOnly && !leftOnly) {
         return {
           type: "join",
           left: this.filterPushDown(input.left),
@@ -362,73 +362,27 @@ export class AlgebraOptimizer {
     };
   }
 
-  /**
-   * Every variable the expression reads. ⛔ It walks EVERY expression node that
-   * holds sub-expressions — arithmetic, raw function calls and IN included: a
-   * variable it misses is invisible to the pushdown guard, so a filter reading a
-   * positional BIND inside `?window * 1` was pushed to the side where that BIND is
-   * unbound and dropped every row (PR #4557 review round 3, H2: 0 rows instead of
-   * 52). EXISTS is not walked here — `pushDownFilter` keeps such a filter above
-   * the join (`expressionContainsExists`).
-   */
   private getFilterVariables(expr: Expression): string[] {
     const vars: string[] = [];
 
     if (expr.type === "variable") {
       vars.push(expr.name);
-    } else if (expr.type === "comparison" || expr.type === "arithmetic") {
+    } else if (expr.type === "comparison") {
       vars.push(...this.getFilterVariables(expr.left));
       vars.push(...this.getFilterVariables(expr.right));
     } else if (expr.type === "logical") {
       for (const operand of expr.operands) {
         vars.push(...this.getFilterVariables(operand));
       }
-    } else if (expr.type === "function" || expr.type === "functionCall") {
+    } else if (expr.type === "function") {
       for (const arg of expr.args) {
         vars.push(...this.getFilterVariables(arg));
-      }
-    } else if (expr.type === "in") {
-      vars.push(...this.getFilterVariables(expr.expression));
-      for (const item of expr.list) {
-        vars.push(...this.getFilterVariables(item));
       }
     }
 
     return Array.from(new Set(vars));
   }
 
-  /** Whether an EXISTS / NOT EXISTS sits anywhere in the expression tree. */
-  private expressionContainsExists(expr: Expression): boolean {
-    switch (expr.type) {
-      case "exists":
-        return true;
-      case "comparison":
-      case "arithmetic":
-        return this.expressionContainsExists(expr.left) || this.expressionContainsExists(expr.right);
-      case "logical":
-        return expr.operands.some((operand) => this.expressionContainsExists(operand));
-      case "function":
-      case "functionCall":
-        return expr.args.some((arg) => this.expressionContainsExists(arg));
-      case "in":
-        return (
-          this.expressionContainsExists(expr.expression) ||
-          expr.list.some((item) => this.expressionContainsExists(item))
-        );
-      default:
-        return false;
-    }
-  }
-
-  /**
-   * The variables an operand can bind. ⛔ It must OVER-approximate: the pushdown
-   * guards read it as "the other side cannot bind this variable", so a type that
-   * reports too few (VALUES, a subquery, LATERAL, GRAPH — once an empty set) sends a
-   * filter to the side where the bind join substitutes an IRI into it and every row
-   * is dropped (PR #4557 review round 4, HIGH-1). Over-approximating the operand's
-   * OWN side is harmless: a variable no side binds reads the same unbound value
-   * before and after the join.
-   */
   private getOperationVariables(operation: AlgebraOperation): Set<string> {
     const vars = new Set<string>();
 
@@ -457,54 +411,9 @@ export class AlgebraOptimizer {
       return this.getOperationVariables(operation.left);
     } else if (operation.type === "project") {
       return new Set(operation.variables);
-    } else if (operation.type === "extend") {
-      // A BIND keeps every variable of its input and adds its own (req 60ed88e7).
-      // ⛔ Without this branch a positional BIND on the left of a join reported NO
-      // variables, so a group FILTER on a shared variable was pushed into the right
-      // operand alone; the bind join then substituted an IRI into the filter
-      // expression and every row was dropped (PR #4557 review, CRITICAL).
-      const inner = this.getOperationVariables(operation.input);
-      inner.add(operation.variable);
-      return inner;
-    } else if (operation.type === "values") {
-      return new Set(operation.variables);
-    } else if (operation.type === "subquery") {
-      // What the subquery projects (under its solution modifiers); `SELECT *` has
-      // no project node and falls back to every variable it mentions.
-      let node: AlgebraOperation = operation.query;
-      while (node.type === "slice" || node.type === "distinct" || node.type === "reduced" || node.type === "orderby") {
-        node = node.input;
-      }
-      return node.type === "project" ? new Set(node.variables) : this.mentionedVariables(operation.query);
-    } else {
-      // GRAPH, SERVICE, LATERAL, GROUP, … — every variable mentioned anywhere below.
-      return this.mentionedVariables(operation);
     }
 
-    // bgp
     return vars;
-  }
-
-  /** Every variable name mentioned anywhere in the subtree (terms, expressions, VALUES, BIND). */
-  private mentionedVariables(node: unknown, out: Set<string> = new Set()): Set<string> {
-    if (Array.isArray(node)) {
-      for (const item of node) this.mentionedVariables(item, out);
-      return out;
-    }
-    if (!node || typeof node !== "object") return out;
-    const record = node as Record<string, unknown>;
-    if (record.type === "variable") {
-      const name = typeof record.value === "string" ? record.value : record.name;
-      if (typeof name === "string") out.add(name);
-    }
-    if (typeof record.variable === "string") out.add(record.variable);
-    if (Array.isArray(record.variables)) {
-      for (const v of record.variables) if (typeof v === "string") out.add(v);
-    }
-    for (const value of Object.values(record)) {
-      if (value && typeof value === "object") this.mentionedVariables(value, out);
-    }
-    return out;
   }
 
   joinReordering(operation: AlgebraOperation): AlgebraOperation {
@@ -575,13 +484,13 @@ export class AlgebraOptimizer {
   }
 
   private reorderJoin(join: JoinOperation): AlgebraOperation {
-    // ⛔ A BIND is never moved to the RIGHT of a pattern that follows it (req
-    // 60ed88e7). It extends only the patterns that PRECEDE it (SPARQL 1.1
-    // §18.2.2.4); on the right of a bind join it would be evaluated with the left
-    // solution substituted INTO its expression, so `{ BIND(STR(?x) AS ?y) ?s
-    // exo:Asset_label ?x }` would bind ?y — the standard leaves it unbound — and
-    // only when the later pattern happens to look constrained.
-    if (this.containsExtend(join.left)) {
+    // ⛔ A join with a BIND (Extend) in either operand keeps the written order (req
+    // 60ed88e7). A BIND extends only the patterns that PRECEDE it (SPARQL 1.1
+    // §18.2.2.4); moved to the right of a bind join it would be evaluated with the
+    // left solution substituted INTO its expression, so `{ BIND(STR(?x) AS ?y) ?s
+    // exo:Asset_label ?x }` would bind ?y — the standard leaves it unbound. A join
+    // without a BIND is reordered as before.
+    if (this.containsExtend(join)) {
       return {
         type: "join",
         left: this.joinReordering(join.left),

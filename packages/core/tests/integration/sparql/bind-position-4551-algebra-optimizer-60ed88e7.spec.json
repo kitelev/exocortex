@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for issue #4551 / req 60ed88e7 (vault-exodev task c223e6ef, RFC 14217015 P1.5): a SPARQL BIND extends the group prefix at its position. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › Bn @req` (ITRV §A44/§A104). `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Subject: AlgebraOptimizer.reorderJoin never moves a pattern ahead of a preceding BIND.",
+  "_doc": "Revert-verify mutants for issue #4551 / req 60ed88e7 (vault-exodev task c223e6ef, RFC 14217015 P1.5): a SPARQL BIND extends the group prefix at its position. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › Bn @req` (ITRV §A44/§A104). `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Subject: AlgebraOptimizer.reorderJoin never moves a pattern ahead of a preceding BIND. ⛔ Round 5 (conservative strategy, orchestrator's decision by mandate): AlgebraOptimizer is the base c64bcd41 file plus two Extend gates (no FILTER pushdown and no join reordering in a join with a BIND) and containsExtend. Mutants AO3–AO15 targeted guards of the round-1..4 pushdown refinements; that code is gone, so are they. B43/B44 (BIND-free plans keep their answer) have no single-anchor mutant (ITRV §A138): the guarantee is the ABSENCE of a change to the base pushdown — its flip is two revisions (AlgebraOptimizer.ts from 3378ddb2: B43 and B44 red; this revision: green).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -14,94 +14,22 @@
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/algebra/AlgebraOptimizer.ts",
   "mutants": {
     "AO1_guard_off": {
-      "_note": "The reordering may swap a constrained later pattern to the left of a BIND. B32 (review round 3): the reference of B32 is the PLAIN plan of a group with a mid BIND and a FILTER on ?s; with the guard off the VALUES operand is moved left of the BIND, the FILTER lands on the Extend side of the bind join, the IRI substituted into its expression drops every row (bug 4e3ce943) — the reference is 0 and B32's built-input check reddens. ⛔ Round 4: B32 no longer reddens — with the symmetric pushdown guard the group FILTER on ?s stays above the join wherever the VALUES operand ends up, so B32's plain reference is no longer broken by the bug-4e3ce943 mechanism.",
-      "from": "    if (this.containsExtend(join.left)) {\n",
-      "to": "    if (false && this.containsExtend(join.left)) {\n",
+      "_note": "The reordering may swap a constrained later pattern to the left of a BIND (the join-order gate is off).",
+      "from": "    if (this.containsExtend(join)) {\n",
+      "to": "    if (false && this.containsExtend(join)) {\n",
       "expect": ["B7", "B16"]
     },
     "AO2_guard_shallow": {
-      "_note": "containsExtend sees only an Extend at the top of the left operand, not deeper (e.g. under a LeftJoin). B32 (review round 3): the reference of B32 is the PLAIN plan of a group with a mid BIND and a FILTER on ?s; with the guard off the VALUES operand is moved left of the BIND, the FILTER lands on the Extend side of the bind join, the IRI substituted into its expression drops every row (bug 4e3ce943) — the reference is 0 and B32's built-input check reddens. ⛔ Round 4: B32 no longer reddens — with the symmetric pushdown guard the group FILTER on ?s stays above the join wherever the VALUES operand ends up, so B32's plain reference is no longer broken by the bug-4e3ce943 mechanism.",
-      "from": "    return [op.input, op.left, op.right].some(\n",
-      "to": "    return [op.input].filter(() => false).some(\n",
+      "_note": "containsExtend sees an Extend only as a DIRECT child, not deeper (e.g. under a LeftJoin) — both gates miss it. Re-anchored in round 5: the old mutation (no recursion at all) now switched both gates off for every join, the AO1 + AO16 union.",
+      "from": "      (child) => child !== undefined && typeof child === \"object\" && this.containsExtend(child),\n",
+      "to": "      (child) => child !== undefined && typeof child === \"object\" && child.type === \"extend\",\n",
       "expect": ["B16"]
     },
-    "AO3_extend_variables_hidden": {
-      "_note": "getOperationVariables reports no variables for a BIND (the pre-review behaviour): a group FILTER on a shared variable is pushed into the right operand alone and every row is dropped (review CRITICAL). B22 (review round 2): with the BIND's variables hidden, leftVars is empty, so the round-2 pushdown guard sees no left-bound filter variable and pushes `?s != ?o` right. B32 (review round 3): with the BIND's variables hidden the group FILTER on ?s is pushed into the UNION operand alone, the bind join substitutes ?s into its expression and every row is dropped (the B18 mechanism) — B32's reference is 0 and its built-input check reddens. ⛔ Re-anchored in round 4: the old mutation (skip the extend branch) is now caught by the over-approximating fallback (mentionedVariables), so it reddened nothing; this one makes the extend branch itself report no variables.",
-      "from": "      inner.add(operation.variable);\n      return inner;\n",
-      "to": "      inner.add(operation.variable);\n      return new Set([...inner].filter(() => false));\n",
-      "expect": ["B18", "B22", "B32"]
-    },
-    "AO4_pushdown_reads_left": {
-      "_note": "The round-2 pushdown guard is dropped: a FILTER reading a left-bound AND a right-only variable (`?s != ?o`) is pushed into the right operand, the bind join substitutes an IRI into the expression and every row is dropped (review round 2, HIGH).",
-      "from": "      if (rightOnly && !leftOnly && !filterVars.some((v) => leftVars.has(v))) {\n",
-      "to": "      if (rightOnly && !leftOnly) {\n",
-      "expect": ["B22"]
-    },
-    "AO5_arith_hidden": {
-      "_note": "getFilterVariables does not walk arithmetic: `?window * 1` hides ?window, the filter is pushed into the right operand where the BIND is unbound, every row is dropped (review round 3, H2: 0 rows instead of 52).",
-      "from": "    } else if (expr.type === \"comparison\" || expr.type === \"arithmetic\") {\n",
-      "to": "    } else if (expr.type === \"comparison\") {\n",
-      "expect": ["B28"]
-    },
-    "AO6_in_hidden": {
-      "_note": "getFilterVariables does not walk IN (the list hides a BIND variable). Type-preserving: an impossible length.",
-      "from": "    } else if (expr.type === \"in\") {\n",
-      "to": "    } else if (expr.type === \"in\" && expr.list.length < 0) {\n",
-      "expect": ["B29"]
-    },
-    "AO7_fncall_hidden": {
-      "_note": "getFilterVariables does not walk a raw function call (`xsd:integer(?window)`), the pre-review behaviour.",
-      "from": "    } else if (expr.type === \"function\" || expr.type === \"functionCall\") {\n",
-      "to": "    } else if (expr.type === \"function\") {\n",
-      "expect": ["B30"]
-    },
-    "AO8_exists_pushed": {
-      "_note": "A FILTER with NOT EXISTS is pushed like any other: its visible variables are all on the left, so it runs before the join with the pattern's ?u still free and drops every row (review round 3, H2). Round 4: the whole EXISTS guard off also reddens B39-B41 (EXISTS inside a function / comparison / IN) — AO12-AO14 take one branch each.",
-      "from": "    if (input.type === \"join\" && !this.expressionContainsExists(filter.expression)) {\n",
-      "to": "    if (input.type === \"join\") {\n",
-      "expect": ["B31", "B39", "B40", "B41"]
-    },
-    "AO9_operand_vars_under_reported": {
-      "_note": "The over-approximating fallback of getOperationVariables reports NO variables (the pre-round-4 behaviour for LATERAL / GRAPH / SERVICE / GROUP): the right-push guard reads the empty LATERAL operand as 'binds nothing' and sends an IN filter on ?x to the side where the bind join substitutes an IRI into it — 0 rows (review round 4, HIGH-1, found by the author's own probe L1). VALUES and subqueries have their own branches (AO15, AO10). Type-preserving: an impossible size.",
-      "from": "      return this.mentionedVariables(operation);\n",
-      "to": "      return this.mentionedVariables(operation).size < 0 ? this.mentionedVariables(operation) : new Set<string>();\n",
-      "expect": ["B37"]
-    },
-    "AO10_subquery_vars_hidden": {
-      "_note": "A subquery operand reports none of its projected variables: an IN filter on a variable it projects is pushed into the other operand and the substituted IRI drops every row (review round 4, HIGH-1).",
-      "from": "      return node.type === \"project\" ? new Set(node.variables) : this.mentionedVariables(operation.query);\n",
-      "to": "      return node.type === \"project\" ? new Set(node.variables.filter(() => false)) : this.mentionedVariables(operation.query);\n",
-      "expect": ["B34"]
-    },
-    "AO11_left_push_ignores_right": {
-      "_note": "The left push no longer checks the right side (the pre-round-4 guard): a filter on a variable the right operand shares is pushed left, the join reordering then moves that operand to the right of the bind join and the substituted IRI drops every row (review round 4, HIGH-1).",
-      "from": "      if (leftOnly && !rightOnly && !filterVars.some((v) => rightVars.has(v))) {\n",
-      "to": "      if (leftOnly && !rightOnly) {\n",
-      "expect": ["B36"]
-    },
-    "AO12_exists_in_function_missed": {
-      "_note": "expressionContainsExists does not look inside a function call (IF, COALESCE): the FILTER is pushed onto the left operand, its EXISTS pattern runs with ?u still free and drops every row (review round 4, MEDIUM-1; reviewer's XAO1).",
-      "from": "        return expr.args.some((arg) => this.expressionContainsExists(arg));\n",
-      "to": "        return expr.args.length < 0 && expr.args.some((arg) => this.expressionContainsExists(arg));\n",
-      "expect": ["B39"]
-    },
-    "AO13_exists_in_comparison_missed": {
-      "_note": "expressionContainsExists does not look inside a comparison / arithmetic (review round 4, MEDIUM-1; reviewer's XAO2). Type-preserving form.",
-      "from": "        return this.expressionContainsExists(expr.left) || this.expressionContainsExists(expr.right);\n",
-      "to": "        return Number.isNaN(0) && (this.expressionContainsExists(expr.left) || this.expressionContainsExists(expr.right));\n",
-      "expect": ["B40"]
-    },
-    "AO14_exists_in_in_missed": {
-      "_note": "expressionContainsExists does not look inside the tested expression of IN (review round 4, MEDIUM-1; reviewer's XAO3). Type-preserving form.",
-      "from": "          this.expressionContainsExists(expr.expression) ||\n",
-      "to": "          Number.isNaN(0) && this.expressionContainsExists(expr.expression) ||\n",
-      "expect": ["B41"]
-    },
-    "AO15_values_vars_hidden": {
-      "_note": "A VALUES operand reports none of its variables (the pre-round-4 behaviour): an IN filter on the VALUES variable is pushed into the BGP operand and the substituted IRI drops every row (B33), or pushed onto an OPTIONAL operand where the variable may be unbound (B35) (review round 4, HIGH-1). Removing the branch instead is caught by the fallback, so the mutation empties it.",
-      "from": "      return new Set(operation.variables);\n    } else if (operation.type === \"subquery\") {\n",
-      "to": "      return new Set(operation.variables.filter(() => false));\n    } else if (operation.type === \"subquery\") {\n",
-      "expect": ["B33", "B35"]
+    "AO16_pushdown_gate_off": {
+      "_note": "A group FILTER over a join with a BIND goes through the base pushdown again: the base reports no variables for an Extend, so a filter on a shared variable is pushed into the right operand and the bind join substitutes an IRI into its expression — every row dropped (the round-1 CRITICAL and its successors). Type-preserving: an impossible conjunct.",
+      "from": "    if (input.type === \"join\" && this.containsExtend(input)) {\n",
+      "to": "    if (input.type === \"join\" && this.containsExtend(input) && Number.isNaN(0)) {\n",
+      "expect": ["B18", "B22"]
     }
   }
 }

@@ -586,6 +586,32 @@ describe("BIND extends the group prefix at its position (req 60ed88e7, #4551)", 
     expect(await rows(q, ["x"])).toEqual([v1, v2].sort());
   });
 
+  // ---- Review round 5 (PR #4557): a join WITHOUT a BIND keeps the previous plan ----
+  // Each refinement of the pushdown guard changed the plan of BIND-free joins too,
+  // and the join reordering then moved an operand where the bind join's older
+  // substitution defects show (MINUS loses the shared variable). Expected: the
+  // standard answer, which is also what the engine gave before the PR.
+  const VIDEO_P = `eideas:ExoizationIdea_video`;
+  const directIdea = `<${fileIri(I.direct)}>`;
+
+  it("B43 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a BIND-free `A MINUS {B} C` with a filter on a left-only and a shared variable keeps its answer", async () => {
+    const xs = async (sparql: string) => [...new Set(await rows(sparql, ["x"]))].sort();
+    expect(
+      await xs(`SELECT ?x ?u WHERE { { ?x exo:Asset_label ?l MINUS { ?x ${VIDEO_P} ?o } } ?x exo:Asset_uid ?u FILTER(STRSTARTS(?l, "Idea") && ?x != ${bookIdea}) }`),
+    ).toEqual([directIdea]);
+    expect(
+      await xs(`SELECT ?x ?u WHERE { ?x exo:Asset_label ?l MINUS { ?x ${VIDEO_P} ?o } ?x exo:Asset_uid ?u FILTER(STRSTARTS(?l, "Idea") && ?x != ${bookIdea}) }`),
+    ).toEqual([directIdea]);
+    expect(
+      await xs(`SELECT ?x ?u WHERE { ?x exo:Instance_class ?c MINUS { ?x ${VIDEO_P} ?o } ?x exo:Asset_uid ?u FILTER(?c = eideas:ExoizationIdea && ?x != ${bookIdea}) }`),
+    ).toEqual([directIdea]);
+  });
+
+  it("B44 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a BIND-free MINUS group on the RIGHT with a filter on its own and a shared variable keeps its answer", async () => {
+    const got = [...new Set(await rows(`SELECT ?x ?u WHERE { ?x exo:Asset_uid ?u { ?x exo:Asset_label ?l MINUS { ?x ${VIDEO_P} ?o } } FILTER(STRSTARTS(?l, "Idea") && ?x != ${bookIdea}) }`, ["x"]))].sort();
+    expect(got).toEqual([directIdea]);
+  });
+
   it("B12 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a BIND reading an earlier BIND chains, and the later pattern joins with the result", async () => {
     const q = `SELECT ?idea ?src WHERE {
       BIND("ExoizationIdea_video" AS ?local)
