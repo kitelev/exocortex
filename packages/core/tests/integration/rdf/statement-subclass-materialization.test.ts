@@ -56,6 +56,7 @@ function classFm(uid: string, label: string, superUid?: string): IFrontmatter {
   const fm: IFrontmatter = {
     exo__Asset_uid: uid,
     exo__Asset_label: label,
+    aliases: [label], // the live class files carry their label as an alias too
     exo__Instance_class: ["[[exo__Class]]"],
   };
   if (superUid) fm.exo__Class_superClass = `[[${superUid}]]`;
@@ -106,14 +107,16 @@ function makeVault(fx: Fixture, withFallback: boolean): IVaultAdapter {
   const vault: Partial<IVaultAdapter> = {
     getFrontmatter: jest.fn((file: IFile) => (fx.cold.has(file.basename) ? null : byPath(file))),
     read: jest.fn().mockResolvedValue(""),
-    // CLI semantics (FileSystemVaultAdapter): a UID resolves by file name, a
-    // label-form link resolves through `exo__Asset_label` / `aliases` too —
-    // Obsidian would NOT resolve the latter (scenario S11 pins that the walk
-    // does not depend on it).
+    // CLI semantics (FileSystemVaultAdapter.buildLinkpathIndex): a UID resolves
+    // by file name, a label-form link resolves through the target's `aliases`
+    // too — Obsidian would NOT resolve the latter (scenario S11 pins that the
+    // walk does not depend on it).
     getFirstLinkpathDest: jest.fn((linkpath: string) => {
       const ref = linkpath.split("|")[0];
       if (fx.fm[ref]) return fileOf(ref);
-      const hit = Object.entries(fx.fm).find(([, f]) => f.exo__Asset_label === ref);
+      const hit = Object.entries(fx.fm).find(
+        ([, f]) => Array.isArray(f.aliases) && f.aliases.includes(ref),
+      );
       return hit ? fileOf(hit[0]) : null;
     }),
   };
