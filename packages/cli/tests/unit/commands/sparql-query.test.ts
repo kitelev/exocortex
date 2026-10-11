@@ -107,6 +107,10 @@ jest.unstable_mockModule("../../../src/adapters/FileSystemVaultAdapter.js", () =
 
 // Mock CacheManager for --use-cache option
 jest.unstable_mockModule("../../../src/cache/CacheManager.js", () => ({
+  // req e750782f: QueryResultCache (in this graph via sparql-query.ts) keys its
+  // entries by the triple-cache format version, so the ESM link needs this named
+  // export. A shape-stub: the value only has to be stable within the suite.
+  CACHE_FORMAT_VERSION: 0,
   CacheManager: jest.fn(() => ({
     loadOrBuild: jest.fn().mockResolvedValue({ triples: [], cacheHit: false, durationMs: 10 }),
     buildCache: jest.fn().mockResolvedValue({ tripleCount: 0, durationMs: 10 }),

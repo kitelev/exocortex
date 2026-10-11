@@ -58,6 +58,16 @@ export class Namespace {
 
   static readonly SHACL = new Namespace("sh", "http://www.w3.org/ns/shacl#");
 
+  /**
+   * W3C SKOS — the mapping properties (`skos__exactMatch` and its four siblings)
+   * of the author-comparison desk carry this address by founder decision
+   * (RFC 14217015 decision 6), req `e750782f-907b-4573-99ce-f9a5e3150418`.
+   */
+  static readonly SKOS = new Namespace(
+    "skos",
+    "http://www.w3.org/2004/02/skos/core#"
+  );
+
   static readonly EXO = new Namespace("exo", "https://exocortex.my/ontology/exo#");
 
   static readonly EMS = new Namespace("ems", "https://exocortex.my/ontology/ems#");
@@ -98,7 +108,7 @@ export class Namespace {
    * 1. **Exocortex namespaces** — resolve to `EXOCORTEX_ONTOLOGY_BASE` anyway;
    *    listed so that the canonical singleton (not a fresh equal-valued object)
    *    is returned.
-   * 2. **External W3C vocabularies** (`rdf`, `rdfs`, `owl`, `xsd`, `sh`) — these
+   * 2. **External W3C vocabularies** (`rdf`, `rdfs`, `owl`, `xsd`, `sh`, `skos`) — these
    *    MUST be listed, because their canonical IRIs are NOT derivable from
    *    `EXOCORTEX_ONTOLOGY_BASE`. Without them a vault asset labelled
    *    `rdfs__subClassOf` would emit `https://exocortex.my/ontology/rdfs#subClassOf`,
@@ -123,7 +133,38 @@ export class Namespace {
     Namespace.OWL,
     Namespace.XSD,
     Namespace.SHACL,
+    // req e750782f — supersedes the aceaa2cc non-goal for skos only (dc/foaf stay out).
+    Namespace.SKOS,
   ];
+
+  /**
+   * The registered W3C SCHEMA vocabularies — RDF, RDFS, OWL, XSD and SHACL. Their
+   * terms describe the graph's own structure (`rdfs:Class`, `owl:Thing`,
+   * `xsd:string`, `sh:NodeShape`); none of them is a DOMAIN class a user files
+   * notes under, so a consumer that turns a range or an ancestor IRI into a CLASS
+   * filter must drop them (`OntologySchemaService.toClassName`,
+   * `ReferencePropertyField.extractClassFromRange` — issue #4353 axes A35/A44).
+   *
+   * ⛔ req e750782f-907b-4573-99ce-f9a5e3150418: SKOS is registered but is NOT a
+   * schema vocabulary — `skos:Concept` is a domain class with instances (the
+   * author-comparison desk ranges its mapping properties over it). Before skos
+   * was registered those consumers filtered "every non-exocortex base", which
+   * reads the same as this list only while the W3C group is exactly these five;
+   * this constant names the five so a registered DOMAIN vocabulary is not
+   * dropped by accident.
+   */
+  private static readonly SCHEMA_VOCABULARIES: ReadonlyArray<Namespace> = [
+    Namespace.RDF,
+    Namespace.RDFS,
+    Namespace.OWL,
+    Namespace.XSD,
+    Namespace.SHACL,
+  ];
+
+  /** Is `ns` one of the W3C schema vocabularies ({@link SCHEMA_VOCABULARIES})? */
+  static isSchemaVocabulary(ns: Namespace): boolean {
+    return Namespace.SCHEMA_VOCABULARIES.some((v) => v.iri.value === ns.iri.value);
+  }
 
   /**
    * The ONE definition of a namespace-prefix shape: a lowercase letter, then

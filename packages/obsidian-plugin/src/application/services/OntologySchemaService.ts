@@ -380,13 +380,17 @@ export class OntologySchemaService {
    * class hierarchy. Both were caught by this file's own suite.
    * ⛤ {@link toPropertyName} deliberately does NOT restrict: a property KEY in
    * `rdfs__`/`owl__` form is real (`RDFVocabularyMapper` emits and reads it).
+   *
+   * ⛔ req e750782f-907b-4573-99ce-f9a5e3150418: the restriction is to the W3C
+   * SCHEMA vocabularies ({@link Namespace.isSchemaVocabulary}), not to "every
+   * base outside exocortex.my". The two read the same only while the registered
+   * W3C group held nothing but schema terms; skos is registered now, and
+   * `skos__Concept` IS a class (the desk ranges its mapping properties over it) —
+   * the exocortex-base test dropped it from ranges and from the hierarchy.
    */
   private toClassName(iri: string): string | null {
     const term = Namespace.fromTermIRI(iri);
-    if (
-      term &&
-      term.namespace.iri.value.startsWith(Namespace.EXOCORTEX_ONTOLOGY_BASE)
-    ) {
+    if (term && !Namespace.isSchemaVocabulary(term.namespace)) {
       return `${term.namespace.prefix}__${term.localName}`;
     }
     return null;
@@ -461,6 +465,17 @@ export class OntologySchemaService {
     }
     if (rangeType.includes("TaskSize")) {
       return PropertyFieldType.SizeSelect;
+    }
+
+    // req e750782f-907b-4573-99ce-f9a5e3150418 (review round 2): a range in a
+    // registered DOMAIN vocabulary is a class reference too — `skos:Concept`, the
+    // desk's mapping range, arrives under the W3C base, which none of the
+    // substring tests below matches, so the field fell back to Text and its value
+    // was no longer written as a wikilink. Schema vocabularies (xsd/rdfs/owl/…)
+    // are not classes and keep falling through.
+    const term = Namespace.fromTermIRI(rangeType);
+    if (term && !Namespace.isSchemaVocabulary(term.namespace)) {
+      return PropertyFieldType.Wikilink;
     }
 
     // Check if it's a reference to another class

@@ -2180,8 +2180,13 @@ describe("RelationsRenderer", () => {
     });
 
     it("passes non-ontology / hash-less IRIs through unchanged", () => {
-      expect(predicateIriToKey("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")).toBe(
-        "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+      // ⛤ req e750782f-907b-4573-99ce-f9a5e3150418: this control used `rdf:type`
+      // until predicateIriToKey delegated to the shared inverse — rdf is a
+      // REGISTERED vocabulary, so it now reads back as `rdf__type` (axis L1 in
+      // skos-w3c-namespace.plugin.test.ts). An UNREGISTERED W3C vocabulary keeps
+      // the pass-through contract.
+      expect(predicateIriToKey("http://www.w3.org/2003/01/geo/wgs84_pos#lat")).toBe(
+        "http://www.w3.org/2003/01/geo/wgs84_pos#lat",
       );
       expect(predicateIriToKey("obsidian://vault/foo.md")).toBe(
         "obsidian://vault/foo.md",

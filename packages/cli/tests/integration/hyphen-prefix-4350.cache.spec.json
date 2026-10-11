@@ -19,9 +19,9 @@
       "expect": ["H5"]
     },
     "M13_format_version_back_to_3": {
-      "_note": "The v3 → v4 bump is what retires a cache written before #4350: back at 3, a v3 cache is accepted and keeps the hyphen class as a file IRI (H6). Review finding HIGH on #4352.",
-      "from": "export const CACHE_FORMAT_VERSION = 4;",
-      "to": "export const CACHE_FORMAT_VERSION = 3;",
+      "_note": "The v3 → v4 bump is what retires a cache written before #4350: back at 3, a v3 cache is accepted and keeps the hyphen class as a file IRI (H6). Review finding HIGH on #4352. ⛤ Re-anchored by req e750782f (v4 → v5 bump killed the literal anchor `= 4;`, ITRV §A127/§A69): the mutant now rewrites the DECLARATION FORM — `= <old> as number || <current>` evaluates to <old> whatever the current version is, so the next bump no longer breaks it.",
+      "from": "export const CACHE_FORMAT_VERSION = ",
+      "to": "export const CACHE_FORMAT_VERSION = 3 as number || ",
       "expect": ["H6"]
     }
   }

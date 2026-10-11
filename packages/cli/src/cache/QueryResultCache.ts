@@ -2,6 +2,7 @@ import crypto from "crypto";
 import path from "path";
 import os from "os";
 import fs from "fs-extra";
+import { CACHE_FORMAT_VERSION } from "./CacheManager.js";
 
 /**
  * Default eviction caps (Issue #3981). When either the entry count or the
@@ -114,7 +115,15 @@ export class QueryResultCache {
   getCacheKey(query: string): string {
     // Normalize query: trim and collapse whitespace
     const normalized = query.trim().replace(/\s+/g, " ");
-    return crypto.createHash("sha256").update(normalized).digest("hex");
+    // req e750782f: the key carries the triple-cache FORMAT version. A format bump
+    // means the CLI emits a different graph for unchanged files (v5: `skos__*`
+    // under the W3C base), so a result computed by the previous CLI answers a
+    // different graph — without the version it is served for its whole TTL
+    // (CQ1 with the W3C `skos:` prefix keeps returning the old CLI's 0 rows).
+    return crypto
+      .createHash("sha256")
+      .update(`v${CACHE_FORMAT_VERSION}\n${normalized}`)
+      .digest("hex");
   }
 
   /**

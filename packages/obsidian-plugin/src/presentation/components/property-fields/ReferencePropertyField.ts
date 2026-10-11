@@ -113,7 +113,7 @@ export class ReferencePropertyField {
 
     inputEl.addEventListener("blur", () => {
       // Delay hiding to allow click on suggestions
-      setTimeout(() => this.hideSuggestions(), 200);
+      window.setTimeout(() => this.hideSuggestions(), 200);
     });
 
     // Add required indicator
@@ -251,11 +251,13 @@ export class ReferencePropertyField {
     // regex returned null and the picker simply showed everything. Latent today
     // (no shipped property declares a raw W3C range) but it is the reverse of the
     // breakage this issue set out to fix.
+    // ⛔ req e750782f-907b-4573-99ce-f9a5e3150418: "not a class" means the W3C
+    // SCHEMA vocabularies ({@link Namespace.isSchemaVocabulary}), not every base
+    // outside exocortex.my — skos is registered and `skos__Concept` IS a class
+    // (the desk's mapping range); the exocortex-base test left such a field with
+    // no class filter at all, offering every note in the vault.
     const term = Namespace.fromTermIRI(rangeType);
-    if (
-      term &&
-      term.namespace.iri.value.startsWith(Namespace.EXOCORTEX_ONTOLOGY_BASE)
-    ) {
+    if (term && !Namespace.isSchemaVocabulary(term.namespace)) {
       return `${term.namespace.prefix}__${term.localName}`;
     }
 

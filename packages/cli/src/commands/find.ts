@@ -20,7 +20,7 @@ import {
   transformShorthandNotation,
   filterOntologyPrefixes,
 } from "../utils/QueryPrefixInjector.js";
-import { PREFIX_PATTERN_SOURCE } from "../utils/namespacePrefix.js";
+import { PREFIX_PATTERN_SOURCE, namespaceBaseFor } from "../utils/namespacePrefix.js";
 
 export interface FindOptions {
   vault: string;
@@ -86,7 +86,6 @@ async function resolveAliasFragment(
 // Prefix from the shared CLI copy of the core grammar (issue #4350): a
 // `tbank-nessy__LessonLearned` value binds as the class IRI, not as a literal.
 const SLUG_RE = new RegExp(`^(${PREFIX_PATTERN_SOURCE})__([A-Za-z0-9_]+)$`);
-const ONTOLOGY_BASE = "https://exocortex.my/ontology/";
 
 /**
  * Substitute occurrences of the SPARQL variable `?value` in a fragment.
@@ -100,7 +99,9 @@ const ONTOLOGY_BASE = "https://exocortex.my/ontology/";
 function bindValueLiteral(fragment: string, value: string): string {
   const slugMatch = SLUG_RE.exec(value);
   if (slugMatch) {
-    const iri = `<${ONTOLOGY_BASE}${slugMatch[1]}#${slugMatch[2]}>`;
+    // Through the CLI mirror of core `Namespace.forPrefix`: `skos__Concept` binds
+    // the W3C IRI the converter emits (req e750782f-907b-4573-99ce-f9a5e3150418).
+    const iri = `<${namespaceBaseFor(slugMatch[1])}${slugMatch[2]}>`;
     return fragment.replace(/\?value\b/g, iri);
   }
   const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
