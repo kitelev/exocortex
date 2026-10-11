@@ -93,10 +93,12 @@ export class SymbolicClassAmbiguityError extends Error {
  * file-IRI` class index (built lazily, once per store-content change):
  *
  * 1. **Hierarchy SUBJECT position** (req `9fddda62`) — `exo__Class_superClass` / its
- *    `rdfs:subClassOf` mirror (RFC 871) queried with a symbolic class subject that
- *    has no direct edges: resolve subject → file IRI, delegate, rewrite the returned
- *    triples' SUBJECT back to the symbolic form (so `PropertyPathExecutor`'s per-node
- *    visited-set stays consistent across the transitive walk).
+ *    `rdfs:subClassOf` mirror (RFC 871) queried with a symbolic class subject:
+ *    resolve subject → file IRI, delegate, rewrite the returned triples' SUBJECT back
+ *    to the symbolic form (so `PropertyPathExecutor`'s per-node visited-set stays
+ *    consistent across the transitive walk), and UNION them with the subject's direct
+ *    edges — a reified `exo__Statement` (EKA D5) puts hierarchy edges on the SYMBOLIC
+ *    subject, so a decorated class carries edges under both forms (RFC 14217015 AC1b).
  * 2. **Instance_class OBJECT position** (RFC 78572fa9 Phase 3 stage-1, req
  *    `c359e3d2`) — `exo__Instance_class` queried with a symbolic class OBJECT: once
  *    the emission flip stores the class uid there, resolve the queried symbolic
@@ -118,10 +120,13 @@ export class SymbolicClassAmbiguityError extends Error {
  *   `^exo:Class_superClass` (find-subclasses; `match(undefined, pred, start)` →
  *   variable subject → pass-through) are out of scope — the RFC targets the
  *   default-graph forward walk.
- * - **Symmetric** — a file-IRI subject with native edges short-circuits (its first
- *   hop is direct); only symbolic subjects are bridged. So it heals BOTH the
- *   symbolic-form and the file-IRI-form instances (whose first hop is native and
- *   whose subsequent symbolic ancestor hops are bridged).
+ * - **Symmetric** — a file-IRI subject keeps its native edges (its first hop is
+ *   direct); only symbolic subjects are bridged. So it heals BOTH the symbolic-form
+ *   and the file-IRI-form instances (whose first hop is native and whose subsequent
+ *   symbolic ancestor hops are bridged). ⚠ Not the reverse: edges on a class's
+ *   SYMBOLIC subject (an adapter `exo__Statement`) are not added to a walk that
+ *   enters that class by its FILE IRI — e.g. with `emitInstanceClassAsUid` on, a
+ *   decorated class keeps its native ancestors but its adapter parent is invisible.
  * - **Zero store growth** — the resolution is per-match and discarded; nothing is
  *   written to the store, so `RDFSInferenceEngine` is never fed (the anti-A2
  *   guarantee — A2 grew the store +22-27% via materialized ancestor triples).
@@ -295,13 +300,18 @@ export class ClassHierarchyResolvingStore implements ITripleStore {
   }
 
   /**
-   * Class-hierarchy SUBJECT-position bridge (req 9fddda62). A subject with native
-   * hierarchy edges (a class queried by its FILE IRI — the file-IRI-form instances'
-   * first hop) resolves directly; no bridge needed. Load-bearing invariant: the
-   * converter NEVER emits a symbolic class IRI as a hierarchy-triple SUBJECT
-   * (`Class_superClass` subjects are always the class FILE IRI), so `direct` is empty
-   * for a symbolic subject — the short-circuit only fires for file-IRI subjects and
-   * never suppresses a needed bridge.
+   * Class-hierarchy SUBJECT-position bridge (req 9fddda62). The result is the UNION
+   * of the subject's direct edges and — when the subject is a known symbolic class —
+   * the edges living on its class FILE IRI, rewritten to the queried symbolic form.
+   *
+   * Why a union and not «direct, else bridge»: a symbolic class IRI CAN be a
+   * hierarchy-triple subject. A reified `exo__Statement` [class, Class_superClass,
+   * parent] (EKA D5, the adapter pattern of RFC 14217015) is materialized at index
+   * time with the class's SYMBOLIC IRI as subject, while the class's own frontmatter
+   * edges stay on its FILE IRI. Returning the direct edges alone hid every native
+   * ancestor of a decorated class (RFC 14217015 AC1b). A subject that is not a known
+   * symbolic class — a file IRI, a W3C IRI — resolves to null and keeps its direct
+   * edges unchanged.
    */
   private async matchHierarchySubject(
     subject: IRI,
@@ -309,13 +319,9 @@ export class ClassHierarchyResolvingStore implements ITripleStore {
     object?: RDFObject,
   ): Promise<Triple[]> {
     const direct = await this.real.match(subject, predicate, object);
-    if (direct.length > 0) {
-      return direct;
-    }
 
-    // No direct edges → the subject is a symbolic class IRI whose hierarchy edges
-    // live on its file IRI. Resolve it and delegate; if the subject is not a known
-    // symbolic class, the (empty) direct result stands.
+    // Edges on the class FILE IRI belong to the same class node. If the subject is
+    // not a known symbolic class, the direct result stands.
     const fileIri = await this.resolveSymbolicToFileIri(subject.value);
     if (!fileIri) {
       return direct;
@@ -323,14 +329,19 @@ export class ClassHierarchyResolvingStore implements ITripleStore {
 
     const bridged = await this.real.match(fileIri, predicate, object);
     if (bridged.length === 0) {
-      return bridged;
+      return direct;
     }
 
     // Rewrite each bridged triple's SUBJECT back to the symbolic form the caller
     // queried, so PropertyPathExecutor's per-node identity (visited-set keyed on
     // `node.toString()`) stays consistent as the transitive walk climbs symbolic
     // nodes. The predicate and object (the symbolic parent class) are preserved.
-    return bridged.map((t) => new Triple(subject, t.predicate, t.object));
+    const rewritten = bridged.map((t) => new Triple(subject, t.predicate, t.object));
+    if (direct.length === 0) {
+      return rewritten;
+    }
+    // A Statement restating a native edge yields the same rewritten triple twice.
+    return ClassHierarchyResolvingStore.dedupTriples([...direct, ...rewritten]);
   }
 
   /**

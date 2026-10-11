@@ -1,0 +1,41 @@
+{
+  "_doc": "Revert-verify mutants for RFC 14217015 P1.2 (vault-exodev task 09d2bd28, req 9fddda62 regression coverage): ClassHierarchyResolvingStore.matchHierarchySubject returns the UNION of a symbolic class subject's direct edges (a reified exo__Statement of an adapter, EKA D5) and its file-IRI edges (the class's own frontmatter). Each mutant removes one half of that contract and must redden exactly the axes named in `expect`. `red_re` anchors on the jest failure header `● <suite> › Dn @req…`, not on the bare key (integration-test-revert-verify §A44/§A104). `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). D6 (Instance_class emitted as the class uid, RFC 78572fa9 flip ON) carries no mutant: it is green on the pre-fix base too and pins that the union does not disturb that mode — a walk entering the class by its FILE IRI never consults the symbolic subject.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› (D\\d+) @req",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/ClassHierarchyResolvingStore.ts",
+  "harness": "cd \"$(dirname {subject})/../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/class-hierarchy-decorated-class.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_direct_edges_short_circuit_restored": {
+      "_note": "The pre-fix behaviour: any direct edge on the symbolic subject suppresses the file-IRI bridge, so a decorated class loses its native ancestors (the defect of RFC 14217015 §Q3).",
+      "from": "    const direct = await this.real.match(subject, predicate, object);\n\n    // Edges on the class FILE IRI",
+      "to": "    const direct = await this.real.match(subject, predicate, object);\n    if (direct.length > 0) {\n      return direct;\n    }\n\n    // Edges on the class FILE IRI",
+      "expect": ["D1", "D3", "D4"]
+    },
+    "M2_union_without_dedup": {
+      "_note": "A Statement restating a native edge yields the same rewritten triple from both halves; without the dedup the one-hop result doubles.",
+      "from": "    // A Statement restating a native edge yields the same rewritten triple twice.\n    return ClassHierarchyResolvingStore.dedupTriples([...direct, ...rewritten]);",
+      "to": "    // A Statement restating a native edge yields the same rewritten triple twice.\n    return [...direct, ...rewritten];",
+      "expect": ["D5"]
+    },
+    "M3_direct_edges_dropped_when_file_has_none": {
+      "_note": "A decorated ROOT class has no native edge on its file IRI; returning the empty bridged result instead of the direct one drops its adapter parent.",
+      "from": "    if (bridged.length === 0) {\n      return direct;\n    }\n\n    // Rewrite each bridged triple's SUBJECT",
+      "to": "    if (bridged.length === 0) {\n      return bridged;\n    }\n\n    // Rewrite each bridged triple's SUBJECT",
+      "expect": ["D7"]
+    },
+    "M4_direct_edges_dropped_from_union": {
+      "_note": "The mirror of M1: the file-IRI edges replace the direct ones instead of joining them, so the adapter parent of a class with native ancestors vanishes.",
+      "from": "    // A Statement restating a native edge yields the same rewritten triple twice.\n    return ClassHierarchyResolvingStore.dedupTriples([...direct, ...rewritten]);",
+      "to": "    // A Statement restating a native edge yields the same rewritten triple twice.\n    return rewritten;",
+      "expect": ["D2", "D3", "D4"]
+    }
+  }
+}
