@@ -24,6 +24,8 @@
  *   R6 — without a reason the command refuses by name and changes nothing
  *   R7 — every step of the shipped composite resolves inside the public submodules
  *   R8 — a blank reason ("" or spaces) is refused like a missing one
+ *   R9 — the reason carries exactly its own keys: no ems__Effort_parent, for a task or a project
+ *  R10 — the reason lands in its ontology's folder even when the effort lies elsewhere
  */
 import {
   jest,
@@ -47,11 +49,11 @@ const SUBMODULES = ["exoas-exocmd", "exoas-exo"] as const;
 const REQ = "@req:088f94c6-7076-4e96-9dff-e282349db9f5";
 
 const TASK_CLASS = "1b20a8f0-d745-4e93-91db-4531b3df120e"; // ems__Task
+const PROJECT_CLASS = "7db5eeff-718a-49b0-8d2b-39b084a356e3"; // ems__Project
 const TRASH_REASON_CLASS = "90f77d9e-27f9-48f2-ad1a-8490d99eb088"; // ems__EffortTrashReason
 const STATUS_TRASHED = "5d14f18d-db2b-4847-9ac1-144cb93b2541";
 const REASON_NO_LONGER_RELEVANT = "6332c6d8-861f-475c-a051-4b6bbb669f7a";
 const STATUS_BACKLOG = "753a44d5-846c-4b82-9196-4fd9a4d48777";
-const ONTOLOGY_UID = "0880f94c-0000-4000-8000-00000000000a";
 const TRASH_COMPOSITE = "d612e5f5-f495-47a1-ad4d-4f468e8b841a";
 
 /** Body with characters a template engine or a YAML round-trip could disturb. */
@@ -131,6 +133,10 @@ function linkTargets(value: unknown): string[] {
         ["44c6e9e3-955f-4afc-9ca5-b4bd70667051", "ems__Effort_status", "exo__ObjectProperty"],
         ["e34c283b-dcbd-4e4b-ac3a-d4d2ca11750b", "ems__Effort_trashedReason", "exo__ObjectProperty"],
         ["6c5ea4a6-b592-40cb-9253-ea8f29ee0f56", "ems__Effort_resolutionTimestamp", "exo__DatatypeProperty"],
+        // The Universal Default Template's parent rules (65acce2f Task, 01f570c9 Project) write
+        // ems__Effort_parent; without this property resolving they are skipped and R9 is blind.
+        [PROJECT_CLASS, "ems__Project", "exo__Class"],
+        ["6528ecfa-a03d-47f1-a819-9ba5fea8fc28", "ems__Effort_parent", "exo__ObjectProperty"],
       ];
       fs.mkdirSync(path.join(root, "ems-stubs"), { recursive: true });
       for (const [uid, label, metaclass] of stubs) {
@@ -203,19 +209,28 @@ function linkTargets(value: unknown): string[] {
       errSpy.mockRestore();
     });
 
-    /** A Backlog task in its own folder, co-located with its ontology. */
-    function writeTask(): { rel: string; uid: string; dir: string } {
+    /**
+     * A Backlog effort in its own folder. By default its ontology lies in the same folder
+     * (co-located); `misplaced` puts the ontology in a sibling folder instead, so the
+     * effort's folder and its ontology's folder differ (R10).
+     */
+    function writeTask(
+      opts: { cls?: string; misplaced?: boolean } = {},
+    ): { rel: string; uid: string; dir: string; ontologyDir: string; ontologyUid: string } {
       n += 1;
       const folder = `work-${n}`;
       const dir = path.join(root, folder);
       fs.mkdirSync(dir, { recursive: true });
+      const ontologyUid = `0880f94c-0000-4000-9000-${n.toString(16).padStart(12, "0")}`;
+      const ontologyDir = opts.misplaced ? path.join(root, `${folder}-ontology`) : dir;
+      fs.mkdirSync(ontologyDir, { recursive: true });
       fs.writeFileSync(
-        path.join(dir, `${ONTOLOGY_UID}.md`),
+        path.join(ontologyDir, `${ontologyUid}.md`),
         [
           "---",
-          `exo__Asset_uid: ${ONTOLOGY_UID}`,
-          `exo__Asset_label: "trash-reason test ontology"`,
-          `exo__Asset_isDefinedBy: "[[${ONTOLOGY_UID}]]"`,
+          `exo__Asset_uid: ${ontologyUid}`,
+          `exo__Asset_label: "trash-reason test ontology ${n}"`,
+          `exo__Asset_isDefinedBy: "[[${ontologyUid}]]"`,
           "exo__Instance_class:",
           '  - "[[exo__Ontology]]"',
           "---",
@@ -228,9 +243,9 @@ function linkTargets(value: unknown): string[] {
         "---",
         `exo__Asset_uid: ${uid}`,
         "exo__Instance_class:",
-        `  - "[[${TASK_CLASS}]]"`,
-        `exo__Asset_label: "Task to throw away ${n}"`,
-        `exo__Asset_isDefinedBy: "[[${ONTOLOGY_UID}]]"`,
+        `  - "[[${opts.cls ?? TASK_CLASS}]]"`,
+        `exo__Asset_label: "Effort to throw away ${n}"`,
+        `exo__Asset_isDefinedBy: "[[${ontologyUid}]]"`,
         `ems__Effort_status: "[[${STATUS_BACKLOG}]]"`,
         "exo__Asset_updatedAt: 2020-01-01T00:00:00",
         "---",
@@ -238,7 +253,7 @@ function linkTargets(value: unknown): string[] {
       ];
       const rel = `${folder}/${uid}.md`;
       fs.writeFileSync(path.join(root, rel), lines.join("\n"), "utf-8");
-      return { rel, uid, dir };
+      return { rel, uid, dir, ontologyDir, ontologyUid };
     }
 
     async function runTrash(rel: string, input?: Record<string, unknown>): Promise<number> {
@@ -283,15 +298,14 @@ function linkTargets(value: unknown): string[] {
       expect(fm["exo__Asset_label"]).toBe("Переехало в другой проект");
     }, 60_000);
 
-    it(`R2 ${REQ} the reason lives in the effort's folder and is defined by the effort's ontology`, async () => {
+    it(`R2 ${REQ} the reason is defined by the effort's ontology`, async () => {
       const t = writeTask();
       await runTrash(t.rel, { label: "Дубль другой задачи" });
 
       const reasons = reasonsIn(t.dir);
       expect(reasons).toHaveLength(1);
-      expect(path.dirname(reasons[0])).toBe(t.dir);
       expect(linkTargets(readFrontmatter(reasons[0])["exo__Asset_isDefinedBy"])).toEqual([
-        ONTOLOGY_UID,
+        t.ontologyUid,
       ]);
     }, 60_000);
 
@@ -326,9 +340,10 @@ function linkTargets(value: unknown): string[] {
 
       await runTrash(t.rel, { label: "Неактуально" });
 
-      expect(linkTargets(readFrontmatter(path.join(root, t.rel))["ems__Effort_status"])).toEqual([
-        STATUS_TRASHED,
-      ]); // the command ran
+      // The command ran: its last step bumps updatedAt (not the status — that is R4's subject).
+      expect(String(readFrontmatter(path.join(root, t.rel))["exo__Asset_updatedAt"])).not.toContain(
+        "2020-01-01",
+      );
       expect(bodyOf(path.join(root, t.rel))).toBe(before);
     }, 60_000);
 
@@ -356,6 +371,41 @@ function linkTargets(value: unknown): string[] {
         expect(reasonsIn(t.dir)).toHaveLength(0);
       }
       expect(stderr()).toMatch(/"label"/);
+    }, 60_000);
+
+    it(`R9 ${REQ} the reason carries no key beyond its own — no ems__Effort_parent — for a task and for a project`, async () => {
+      // Keys the reason may carry. A subset check, not equality: a missing key is the
+      // subject of R1–R3, an extra one (the universal parent rules) is the subject here.
+      const allowed = new Set([
+        "aliases",
+        "exo__Asset_createdAt",
+        "exo__Asset_isDefinedBy",
+        "exo__Asset_label",
+        "exo__Asset_relates",
+        "exo__Asset_uid",
+        "exo__Asset_updatedAt",
+        "exo__Instance_class",
+      ]);
+      for (const cls of [TASK_CLASS, PROJECT_CLASS]) {
+        const t = writeTask({ cls });
+        await runTrash(t.rel, { label: "Не нужно" });
+
+        const reasons = reasonsIn(t.dir);
+        expect(reasons).toHaveLength(1); // the reason exists, so the check below is not vacuous
+        const fm = readFrontmatter(reasons[0]);
+        expect(fm).not.toHaveProperty("ems__Effort_parent");
+        expect(Object.keys(fm).filter((k) => !allowed.has(k))).toEqual([]);
+      }
+    }, 120_000);
+
+    it(`R10 ${REQ} the reason lands in its ontology's folder even when the effort lies elsewhere`, async () => {
+      const t = writeTask({ misplaced: true });
+      expect(t.ontologyDir).not.toBe(t.dir); // input built
+
+      await runTrash(t.rel, { label: "Лежала не на месте" });
+
+      expect(reasonsIn(t.ontologyDir)).toHaveLength(1);
+      expect(reasonsIn(t.dir)).toHaveLength(0);
     }, 60_000);
 
     it(`R7 ${REQ} every step of the shipped trash composite resolves inside the public submodules`, () => {
