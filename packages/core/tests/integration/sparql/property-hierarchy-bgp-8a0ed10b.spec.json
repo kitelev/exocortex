@@ -15,8 +15,8 @@
   "mutants": {
     "B1_bound_predicate_widened": {
       "_note": "The join no longer marks a variable-bound predicate: it is widened when an earlier pattern bound it (bind-first of SP20 returns 4 rows, bind-last 1), and queryOwn through a label-bound ?p reports an inherited sub-property value as own (SP28). Type-preserving (`length < 0`, never true). Re-anchored 2026-10-12 (PR #4557, req 60ed88e7): the join-site computation moved into isPredicateFromBinding, which also recognises a predicate a JOIN substituted (`fromBinding`); the mutant drops only its VARIABLE branch — the same guarantee as before (an unbound variable predicate is a pass-through either way, so only the join-instantiated one changes).",
-      "from": "    if (this.isVariable(predicate)) return true;\n",
-      "to": "    if (this.isVariable(predicate)) return predicate.value.length < 0;\n",
+      "from": "    if (this.isVariable(predicate)) return variableIsBound;\n",
+      "to": "    if (this.isVariable(predicate)) return variableIsBound && predicate.value.length < 0;\n",
       "expect": ["SP20", "SP28"]
     },
     "B2_exact_match_assumed_present": {

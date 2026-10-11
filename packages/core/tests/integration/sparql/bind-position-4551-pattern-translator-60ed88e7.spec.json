@@ -35,20 +35,33 @@
         "B13",
         "B14",
         "B15",
-        "B17"
+        "B17",
+        "B19",
+        "B21"
       ]
     },
     "PT3_filters_positional": {
-      "_note": "FILTERs are translated in place (joined as Filter(∅)) instead of group-scoped at the end. B14 is NOT in the set, by mechanism: AlgebraOptimizer.eliminateEmptyBGPInFilterJoin rewrites `Join(X, Filter(∅, e))` back to the group-level `Filter(X, e)`, so a positional FILTER that FOLLOWS the prefix is repaired by the optimizer (a second barrier); only a FILTER first in the group escapes it (Join(Filter(∅), …) under an Extend is never recursed) — B4.",
+      "_note": "FILTERs are translated in place (joined as Filter(∅)) instead of group-scoped at the end. B14 is NOT in the set, by mechanism: AlgebraOptimizer.eliminateEmptyBGPInFilterJoin rewrites `Join(X, Filter(∅, e))` back to the group-level `Filter(X, e)`, so a positional FILTER that FOLLOWS the prefix is repaired by the optimizer (a second barrier); only a FILTER first in the group escapes it (Join(Filter(∅), …) under an Extend is never recursed) — B4. B20 (added after review round 1): the mutant leaves each FILTER both in place AND at group level (filterPatterns is still applied at the end), so the filter runs twice; the UUID-index rewrite (optimizeWithSubjects) drops only the OUTER copy and replaces ?s with the IRI, and the inner copy then reads an unbound ?s — 0 rows with and without the BIND, which trips the axis's `input is built` guard.",
       "from": "    const groupPatterns = patterns.filter((p) => p.type !== \"filter\");\n",
       "to": "    const groupPatterns = patterns;\n",
-      "expect": ["B4"]
+      "expect": ["B4", "B20"]
     },
     "PT4_iri_marker_dropped": {
       "_note": "BIND(<iri>) is no longer marked: it binds the IRI's string, which never joins with a stored IRI.",
       "from": "      expression: writtenAsIri && expression.type === \"literal\" ? { ...expression, iri: true } : expression,\n",
       "to": "      expression,\n",
-      "expect": ["B1", "B5", "B6", "B8", "B9", "B11", "B14", "B15"]
+      "expect": [
+        "B1",
+        "B5",
+        "B6",
+        "B8",
+        "B9",
+        "B11",
+        "B14",
+        "B15",
+        "B19",
+        "B21"
+      ]
     }
   }
 }

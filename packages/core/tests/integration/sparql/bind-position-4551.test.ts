@@ -31,6 +31,7 @@ import { ExoQLQueryExecutor } from "../../../src/infrastructure/sparql/executors
 import { SPARQLParser } from "../../../src/infrastructure/sparql/SPARQLParser";
 import { ExoQLAlgebraTranslator } from "../../../src/infrastructure/sparql/algebra/AlgebraTranslator";
 import { AlgebraOptimizer } from "../../../src/infrastructure/sparql/algebra/AlgebraOptimizer";
+import { SPARQLGenerator } from "../../../src/infrastructure/sparql/algebra/SPARQLGenerator";
 import type { AlgebraOperation } from "../../../src/infrastructure/sparql/algebra/AlgebraOperation";
 import { IRI } from "../../../src/domain/models/rdf/IRI";
 import { Triple } from "../../../src/domain/models/rdf/Triple";
@@ -321,6 +322,51 @@ describe("BIND extends the group prefix at its position (req 60ed88e7, #4551)", 
     const got = await rows(q, ["s", "y"]);
     expect(got).toHaveLength(IDEAS.length);
     expect(got.every((r) => r.endsWith("| ∅"))).toBe(true);
+  });
+
+  // ---- Review round 1 (PR #4557) ----
+
+  it("B18 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a BIND mid-group keeps a group FILTER on a shared variable working", async () => {
+    const target = `<${fileIri(I.v1)}>`;
+    const withBind = (filter: string) =>
+      rows(`SELECT ?s ?p ?o WHERE { ?s exo:Asset_label ?l BIND(STR(?l) AS ?y) ?s ?p ?o FILTER(${filter}) }`, ["s", "p", "o"]);
+    const without = (filter: string) =>
+      rows(`SELECT ?s ?p ?o WHERE { ?s exo:Asset_label ?l . ?s ?p ?o FILTER(${filter}) }`, ["s", "p", "o"]);
+    for (const filter of [`?s = ${target}`, `CONTAINS(STR(?s), "${I.v1}")`, `?s != ${target}`]) {
+      const expected = await without(filter);
+      // Input is built: the filter keeps some rows and drops others.
+      expect(expected.length).toBeGreaterThan(0);
+      expect(await withBind(filter)).toEqual(expected);
+    }
+  });
+
+  it("B19 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a BIND does not capture a variable a subquery does not project", async () => {
+    const all = await count(`SELECT (COUNT(*) AS ?n) WHERE { { SELECT ?idea WHERE { ?idea ?p ?src } } }`);
+    expect(all).toBe(await store.count());
+    expect(
+      await count(`SELECT (COUNT(*) AS ?n) WHERE { BIND(eideas:ExoizationIdea_video AS ?p) { SELECT ?idea WHERE { ?idea ?p ?src } } }`),
+    ).toBe(all);
+    // Control: a PROJECTED ?p joins with the bound value.
+    expect(
+      await count(`SELECT (COUNT(*) AS ?n) WHERE { BIND(eideas:ExoizationIdea_video AS ?p) { SELECT ?idea ?p WHERE { ?idea ?p ?src } } }`),
+    ).toBe(2);
+  });
+
+  it("B20 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 the UUID-index filter rewrite constrains the patterns before a BIND too", async () => {
+    const run = async (sparql: string) => {
+      const op = new AlgebraOptimizer().optimizeWithSubjects(translator.translate(parser.parse(`${PREFIX}\n${sparql}`)), [fileIri(I.v1)]);
+      return (await new ExoQLQueryExecutor(store).executeAll(op)).length;
+    };
+    const filter = `FILTER(CONTAINS(STR(?s), "${I.v1}"))`;
+    const expected = await run(`SELECT ?p ?o WHERE { ?s exo:Asset_label ?l . ?s ?p ?o ${filter} }`);
+    expect(expected).toBeGreaterThan(0);
+    expect(await run(`SELECT ?p ?o WHERE { ?s exo:Asset_label ?l BIND(STR(?l) AS ?y) ?s ?p ?o ${filter} }`)).toBe(expected);
+  });
+
+  it("B21 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 the SPARQL generator writes a BIND of an IRI back as an IRI", () => {
+    const op = translator.translate(parser.parse(`${PREFIX}\nSELECT ?s ?o WHERE { BIND(eideas:ExoizationIdea_video AS ?p) ?s ?p ?o }`));
+    const text = new SPARQLGenerator().generateSelect(op);
+    expect(text).toContain(`BIND(<${VIDEO}> AS ?p)`);
   });
 
   it("B12 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a BIND reading an earlier BIND chains, and the later pattern joins with the result", async () => {

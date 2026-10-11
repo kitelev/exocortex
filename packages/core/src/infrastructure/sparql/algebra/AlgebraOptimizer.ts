@@ -396,6 +396,15 @@ export class AlgebraOptimizer {
       return this.getOperationVariables(operation.left);
     } else if (operation.type === "project") {
       return new Set(operation.variables);
+    } else if (operation.type === "extend") {
+      // A BIND keeps every variable of its input and adds its own (req 60ed88e7).
+      // ⛔ Without this branch a positional BIND on the left of a join reported NO
+      // variables, so a group FILTER on a shared variable was pushed into the right
+      // operand alone; the bind join then substituted an IRI into the filter
+      // expression and every row was dropped (PR #4557 review, CRITICAL).
+      const inner = this.getOperationVariables(operation.input);
+      inner.add(operation.variable);
+      return inner;
     }
 
     return vars;
@@ -526,7 +535,11 @@ export class AlgebraOptimizer {
     };
   }
 
-  /** Whether a BIND (`extend`) sits anywhere in the subtree. */
+  /**
+   * Whether a BIND (`extend`) sits in the subtree, following `input` / `left` /
+   * `right` only — a BIND inside a subquery, a GRAPH/SERVICE pattern or an EXISTS
+   * is scoped to it and does not count.
+   */
   private containsExtend(operation: AlgebraOperation): boolean {
     if (operation.type === "extend") return true;
     const op = operation as unknown as Record<string, AlgebraOperation | undefined>;

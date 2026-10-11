@@ -274,6 +274,11 @@ export class SPARQLGenerator {
         return `?${expr.name}`;
 
       case "literal":
+        // `BIND(<iri> AS ?v)` — the BIND expression marked as an IRI (req 60ed88e7)
+        // round-trips as an IRI, not as its string.
+        if (expr.iri === true) {
+          return `<${String(expr.value)}>`;
+        }
         if (typeof expr.value === "string") {
           const escaped = expr.value
             .replace(/\\/g, "\\\\")

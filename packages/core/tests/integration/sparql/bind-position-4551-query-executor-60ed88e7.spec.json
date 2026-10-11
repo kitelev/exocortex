@@ -29,7 +29,13 @@
       "_note": "The marked BIND(<iri>) still binds the string (the consumer half of PT4).",
       "from": "      return new IRI(String(expr.value));\n",
       "to": "      return String(expr.value);\n",
-      "expect": ["B1", "B5", "B6", "B8", "B9", "B11", "B14", "B15"]
+      "expect": ["B1", "B5", "B6", "B8", "B9", "B11", "B14", "B15", "B19"]
+    },
+    "QE4_subquery_scope_ignored": {
+      "_note": "A subquery's unprojected variables are substituted again (the pre-review behaviour): a leading BIND captures a variable the subquery does not project. Type-preserving (`length < 0`, never true).",
+      "from": "      if (node.type === 'project') return new Set(node.variables);\n",
+      "to": "      if (node.type === 'project' && node.variables.length < 0) return new Set(node.variables);\n",
+      "expect": ["B19"]
     }
   }
 }

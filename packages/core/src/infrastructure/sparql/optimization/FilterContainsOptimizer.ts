@@ -540,7 +540,10 @@ export class FilterContainsOptimizer {
       }
     }
 
-    if (operation.type === "filter") {
+    // A positional BIND (req 60ed88e7) wraps the patterns before it in Extend; the
+    // constraint must reach them too, or the filter is dropped while that part of the
+    // group stays unconstrained (PR #4557 review: 416 rows instead of 8).
+    if (operation.type === "filter" || operation.type === "extend") {
       const inputOpt = this.injectSubjectConstraint(operation.input, variable, uri);
       if (inputOpt !== operation.input) {
         return {

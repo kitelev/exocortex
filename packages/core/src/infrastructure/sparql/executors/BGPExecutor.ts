@@ -53,9 +53,10 @@ export class BGPExecutor {
 
     // Start with first triple pattern. Its predicate may already be BOUND — a join
     // substituted a variable predicate (req 60ed88e7) — and is then matched as stored.
+    // A variable predicate here is UNBOUND: it stays the store's `match` pass-through.
     let solutions = this.matchTriplePattern(
       bgp.triples[0],
-      this.isPredicateFromBinding(bgp.triples[0].predicate),
+      this.isPredicateFromBinding(bgp.triples[0].predicate, false),
     );
 
     // Join with remaining patterns
@@ -70,15 +71,16 @@ export class BGPExecutor {
   }
 
   /**
-   * A predicate that comes from a variable binding — still a variable (instantiated
-   * per solution inside this BGP) or an IRI a join substituted for one (marked
-   * `fromBinding`, req 60ed88e7). Such a predicate is matched as stored, without
-   * sub-property widening (req 8a0ed10b); only a predicate WRITTEN as a constant
-   * is widened.
+   * A predicate that comes from a variable binding — a variable instantiated per
+   * solution by an earlier triple of this BGP (`variableIsBound`, the join position)
+   * or an IRI a join substituted for one (marked `fromBinding`, req 60ed88e7). Such
+   * a predicate is matched as stored, without sub-property widening (req 8a0ed10b);
+   * only a predicate WRITTEN as a constant is widened. An UNBOUND variable predicate
+   * (first triple) is not one: it keeps the store's own `match` pass-through.
    */
-  private isPredicateFromBinding(predicate: AlgebraTriple["predicate"]): boolean {
+  private isPredicateFromBinding(predicate: AlgebraTriple["predicate"], variableIsBound: boolean): boolean {
     if (this.isPropertyPath(predicate)) return false;
-    if (this.isVariable(predicate)) return true;
+    if (this.isVariable(predicate)) return variableIsBound;
     return predicate.type === "iri" && predicate.fromBinding === true;
   }
 
@@ -448,7 +450,7 @@ export class BGPExecutor {
     }
 
     // A variable predicate stays a variable predicate after instantiation (req 8a0ed10b).
-    const predicateFromBinding = this.isPredicateFromBinding(pattern.predicate);
+    const predicateFromBinding = this.isPredicateFromBinding(pattern.predicate, true);
 
     // For each existing solution, find compatible bindings from new pattern
     for (const existingSolution of existingSolutions) {

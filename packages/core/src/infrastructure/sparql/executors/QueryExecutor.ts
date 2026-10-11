@@ -41,6 +41,9 @@ import { IRI } from "../../../domain/models/rdf/IRI";
 import { Literal } from "../../../domain/models/rdf/Literal";
 import { DateTimeFunctions } from "../filters/functions/DateTimeFunctions";
 
+/** What variable substitution reads from a solution — just the lookup. */
+type BindingLookup = Pick<SolutionMapping, "get">;
+
 const XSD = "http://www.w3.org/2001/XMLSchema#";
 const XSD_NUMERIC_DATATYPES: ReadonlySet<string> = new Set([
   `${XSD}integer`,
@@ -670,13 +673,27 @@ export class ExoQLQueryExecutor {
   /**
    * Recursively substitute variables in an operation with values from bindings.
    */
-  private substituteInOperation(op: AlgebraOperation, bindings: SolutionMapping): AlgebraOperation {
+  private substituteInOperation(op: AlgebraOperation, bindings: BindingLookup): AlgebraOperation {
     if (!op || typeof op !== 'object') {
       return op as AlgebraOperation;
     }
 
     // Use a mutable record view for generic property access across all operation types
     const opRecord = op as unknown as Record<string, unknown>;
+
+    // A subquery sees only the variables it PROJECTS (SPARQL 1.1 §18.2.1): an inner
+    // variable that is not projected is a different variable, and substituting an
+    // outer value into it changes the subquery's result. A positional BIND made this
+    // reachable through a leading `BIND(P AS ?p) { SELECT ?s WHERE { ?s ?p ?o } }`
+    // (PR #4557 review: 2 rows instead of 267). `SELECT *` projects everything.
+    if (op.type === 'subquery' && op.query) {
+      const projected = this.projectedVariables(op.query);
+      const visible: BindingLookup = projected === null
+        ? bindings
+        : { get: (variable: string) => (projected.has(variable) ? bindings.get(variable) : undefined) };
+      op.query = this.substituteInOperation(op.query, visible);
+      return op;
+    }
 
     // Handle triple patterns in BGP
     if (op.type === 'bgp' && op.triples) {
@@ -713,11 +730,28 @@ export class ExoQLQueryExecutor {
   }
 
   /**
+   * The variables a SELECT's algebra projects — the first `project` under its
+   * solution modifiers — or null when it projects everything (`SELECT *`).
+   */
+  private projectedVariables(query: AlgebraOperation): Set<string> | null {
+    let node: AlgebraOperation | undefined = query;
+    while (node) {
+      if (node.type === 'project') return new Set(node.variables);
+      if (node.type === 'slice' || node.type === 'distinct' || node.type === 'reduced' || node.type === 'orderby') {
+        node = node.input;
+        continue;
+      }
+      return null;
+    }
+    return null;
+  }
+
+  /**
    * Recursively substitute variables in filter expressions.
    * Primarily needed to handle EXISTS/NOT EXISTS patterns which contain
    * AlgebraOperations that need variable substitution for bind join correctness.
    */
-  private substituteInExpression(expr: Record<string, unknown>, bindings: SolutionMapping): void {
+  private substituteInExpression(expr: Record<string, unknown>, bindings: BindingLookup): void {
     if (!expr || typeof expr !== 'object') return;
 
     // Handle EXISTS/NOT EXISTS patterns
@@ -773,7 +807,7 @@ export class ExoQLQueryExecutor {
   /**
    * Substitute variables in a triple pattern with values from bindings.
    */
-  private substituteInTriple(triple: Record<string, unknown>, bindings: SolutionMapping): unknown {
+  private substituteInTriple(triple: Record<string, unknown>, bindings: BindingLookup): unknown {
     return {
       subject: this.substituteInTripleElement(triple.subject as Record<string, unknown>, bindings),
       predicate: this.substituteInPredicate(triple.predicate as Record<string, unknown>, bindings),
@@ -793,7 +827,7 @@ export class ExoQLQueryExecutor {
    * predicate is always an IRI, so such a row cannot match — the merge drops it)
    * are left as they are.
    */
-  private substituteInPredicate(predicate: Record<string, unknown>, bindings: SolutionMapping): unknown {
+  private substituteInPredicate(predicate: Record<string, unknown>, bindings: BindingLookup): unknown {
     if (predicate && predicate.type === 'variable') {
       const asTerm = this.termToAlgebraNode(bindings.get(predicate.value as string));
       if (asTerm !== null && asTerm.type === 'iri') {
@@ -806,7 +840,7 @@ export class ExoQLQueryExecutor {
   /**
    * Substitute a variable in a triple element if it has a binding.
    */
-  private substituteInTripleElement(element: Record<string, unknown>, bindings: SolutionMapping): unknown {
+  private substituteInTripleElement(element: Record<string, unknown>, bindings: BindingLookup): unknown {
     if (element && element.type === 'variable') {
       // In TRIPLE position the variable name lives in `.value`; in EXPRESSION
       // position it lives in `.name` (see substituteInExpression).
