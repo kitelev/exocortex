@@ -185,6 +185,27 @@ exo__Instance_class:
 - **ExoRDF triple**: Preserves original property name for tooling
 - **RDF/RDFS triple**: Enables standard SPARQL queries and inference
 
+### Query-time sub-property resolution
+
+A property declared with `exo__Property_superProperty` is a sub-property of its
+parent at query time: a SPARQL triple pattern with a constant predicate P also
+matches the triples of P's sub-properties, transitively (req `8a0ed10b`, RFC
+14217015 decision №7). With `_video ⊑ _exoizable`,
+
+```sparql
+SELECT ?idea ?src WHERE { ?idea eideas:ExoizationIdea_exoizable ?src }
+```
+
+returns the ideas recorded through `_video` too. Nothing is written to the store
+(`packages/core/src/infrastructure/sparql/PropertyHierarchyResolvingStore.ts`).
+
+- Only predicates under `https://exocortex.my/ontology/` are widened; the W3C
+  vocabulary above is not, and neither are `exo:Class_superClass` /
+  `exo:Instance_class` (the class bridge owns them).
+- A variable predicate (`?s ?p ?o`) returns the stored predicates only, and
+  `GRAPH { … }` patterns are not widened.
+- `ExoQLQueryExecutor` config `resolvePropertyHierarchy: false` turns it off.
+
 ---
 
 ## 🆔 URI Construction Strategy
