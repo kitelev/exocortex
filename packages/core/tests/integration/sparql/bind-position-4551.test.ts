@@ -404,6 +404,94 @@ describe("BIND extends the group prefix at its position (req 60ed88e7, #4551)", 
     expect(await run(`SELECT ?p ?o WHERE { ?x exo:Asset_label ?l BIND(?x AS ?s) ?s ?p ?o ${filter} }`)).toBe(expected);
   });
 
+  // ---- Review round 3 (PR #4557) ----
+
+  it("B25 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 EXISTS over a LIMIT subquery stays correlated — the outer solution is substituted before the slice", async () => {
+    const CLS = `?x exo:Instance_class eideas:ExoizationIdea`;
+    const videoIdeas = [`<${fileIri(I.v1)}>`, `<${fileIri(I.v2)}>`].sort();
+    const others = [`<${fileIri(I.direct)}>`, `<${fileIri(I.book)}>`].sort();
+    // Input is built: without the slice EXISTS keeps exactly the two video ideas.
+    expect(
+      await rows(`SELECT ?x WHERE { ${CLS} FILTER EXISTS { SELECT ?x WHERE { ?x eideas:ExoizationIdea_video ?o } } }`, ["x"]),
+    ).toEqual(videoIdeas);
+    const sliced = `{ SELECT ?x WHERE { ?x eideas:ExoizationIdea_video ?o } LIMIT 1 }`;
+    expect(await rows(`SELECT ?x WHERE { ${CLS} FILTER EXISTS ${sliced} }`, ["x"])).toEqual(videoIdeas);
+    expect(await rows(`SELECT ?x WHERE { ${CLS} FILTER NOT EXISTS ${sliced} }`, ["x"])).toEqual(others);
+    expect(await rows(`SELECT ?x ?v WHERE { ${CLS} BIND(IF(EXISTS ${sliced}, "y", "n") AS ?v) }`, ["x", "v"])).toEqual(
+      [...videoIdeas.map((x) => `${x} | y`), ...others.map((x) => `${x} | n`)].sort(),
+    );
+  });
+
+  it("B26 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 LATERAL over a nested LIMIT subquery stays correlated — top-N per outer row", async () => {
+    const q = `SELECT ?x ?l WHERE {
+      ?x exo:Instance_class eideas:ExoizationIdea
+      LATERAL { SELECT ?l WHERE { { SELECT ?x ?l WHERE { ?x exo:Asset_label ?l } LIMIT 1 } } } }`;
+    const own = IDEAS.map((n) => `<${fileIri(n.uid)}> | "${String(n.frontmatter.exo__Asset_label)}"`).sort();
+    expect((await rows(q, ["x", "l"])).map((r) => r.replace(/"\^\^.*$/, '"'))).toEqual(own);
+  });
+
+  it("B27 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a LIMIT subquery on the right of a join runs once, not once per left row", async () => {
+    const sub = `{ SELECT ?x ?u WHERE { ?x exo:Asset_uid ?u } ORDER BY ?u LIMIT 5 }`;
+    const left = `?x exo:Asset_label ?l0`;
+    // Input is built: the left side has far more rows than one.
+    expect((await rows(`SELECT ?x WHERE { ${left} }`, ["x"])).length).toBeGreaterThan(40);
+    const expected = await rows(`SELECT ?x ?u WHERE { ${sub} ${left} }`, ["x", "u"]);
+    expect(expected).toHaveLength(5);
+    store.predicateCalls.length = 0;
+    expect(await rows(`SELECT ?x ?u WHERE { ${left} ${sub} }`, ["x", "u"])).toEqual(expected);
+    const uidLookups = store.predicateCalls.filter((p) => p === "https://exocortex.my/ontology/exo#Asset_uid").length;
+    expect(uidLookups).toBeLessThanOrEqual(2);
+  });
+
+  it("B28 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a FILTER reading a BIND variable inside arithmetic is not pushed away from it", async () => {
+    const q = (cmp: string) => `SELECT ?s WHERE { BIND(48 AS ?window) ?s exo:Asset_uid ?t FILTER(STRLEN(?t) <= ${cmp}) }`;
+    const expected = await rows(q("?window"), ["s"]);
+    expect(expected.length).toBeGreaterThan(0);
+    expect(await rows(q("?window * 1"), ["s"])).toEqual(expected);
+  });
+
+  it("B29 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a FILTER reading a BIND variable inside IN is not pushed away from it", async () => {
+    expect(
+      await rows(`SELECT ?s WHERE { BIND("Idea one video" AS ?w) ?s exo:Asset_label ?l FILTER(STRLEN(?l) > 0 && ?l IN (?w)) }`, ["s"]),
+    ).toEqual([`<${fileIri(I.v1)}>`]);
+  });
+
+  it("B30 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a FILTER reading a BIND variable inside a cast is not pushed away from it", async () => {
+    const q = (cmp: string) => `SELECT ?s WHERE { BIND(48 AS ?window) ?s exo:Asset_uid ?t FILTER(STRLEN(?t) <= ${cmp}) }`;
+    const expected = await rows(q("?window"), ["s"]);
+    expect(expected.length).toBeGreaterThan(0);
+    expect(await rows(q("<http://www.w3.org/2001/XMLSchema#integer>(?window)"), ["s"])).toEqual(expected);
+  });
+
+  it("B31 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a FILTER with NOT EXISTS stays above the join after a BIND", async () => {
+    const filter = `FILTER(?n > 0 && NOT EXISTS { ?s exo:Asset_label ?u })`;
+    // Control: the BIND last (no join under it) — every joined row passes (a label is never the uid).
+    const expected = await rows(`SELECT ?s ?u WHERE { ?s exo:Asset_label ?l . ?s exo:Asset_uid ?u BIND(STRLEN(STR(?l)) AS ?n) ${filter} }`, ["s", "u"]);
+    expect(expected.length).toBeGreaterThan(40);
+    expect(
+      await rows(`SELECT ?s ?u WHERE { ?s exo:Asset_label ?l BIND(STRLEN(STR(?l)) AS ?n) ?s exo:Asset_uid ?u ${filter} }`, ["s", "u"]),
+    ).toEqual(expected);
+  });
+
+  it("B32 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 the UUID-index rewrite of a group with a BIND keeps the constraint on a subquery, UNION or VALUES operand", async () => {
+    const filter = `FILTER(CONTAINS(STR(?s), "${I.v1}"))`;
+    const shapes = [
+      `?s exo:Asset_label ?l BIND(STR(?l) AS ?y) { SELECT ?s ?k WHERE { ?s exo:Asset_uid ?k } } ${filter}`,
+      `?s exo:Asset_label ?l BIND(STR(?l) AS ?y) { ?s exo:Asset_uid ?k } UNION { ?s exo:Asset_label ?k } ${filter}`,
+      `?s exo:Asset_label ?l BIND(STR(?l) AS ?y) VALUES ?s { <${fileIri(I.v1)}> <${fileIri(I.v2)}> } ${filter}`,
+    ];
+    for (const where of shapes) {
+      const sparql = `SELECT ?s ?k WHERE { ${where} }`;
+      // The plain plan (no rewrite) is the reference; it keeps only rows of I.v1.
+      const expected = await rows(sparql, ["s", "k"]);
+      expect(expected.length).toBeGreaterThan(0);
+      expect(expected.every((r) => r.startsWith(`<${fileIri(I.v1)}>`))).toBe(true);
+      const op = new AlgebraOptimizer().optimizeWithSubjects(translator.translate(parser.parse(`${PREFIX}\n${sparql}`)), [fileIri(I.v1)]);
+      const got = (await new ExoQLQueryExecutor(store).executeAll(op)).map((s) => ["s", "k"].map((v) => fmt(s.get(v))).join(" | ")).sort();
+      expect(got).toEqual(expected);
+    }
+  });
+
   it("B12 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a BIND reading an earlier BIND chains, and the later pattern joins with the result", async () => {
     const q = `SELECT ?idea ?src WHERE {
       BIND("ExoizationIdea_video" AS ?local)

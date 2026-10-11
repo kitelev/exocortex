@@ -281,7 +281,10 @@ export class AlgebraOptimizer {
   private pushDownFilter(filter: FilterOperation): AlgebraOperation {
     const input = filter.input;
 
-    if (input.type === "join") {
+    // ⛔ A filter with EXISTS stays above the join: its pattern reads variables the
+    // expression walk does not see (the pattern's own), so neither side can be
+    // proven to bind them all (PR #4557 review round 3, H2).
+    if (input.type === "join" && !this.expressionContainsExists(filter.expression)) {
       const filterVars = this.getFilterVariables(filter.expression);
       const leftVars = this.getOperationVariables(input.left);
       const rightVars = this.getOperationVariables(input.right);
@@ -352,25 +355,62 @@ export class AlgebraOptimizer {
     };
   }
 
+  /**
+   * Every variable the expression reads. ⛔ It walks EVERY expression node that
+   * holds sub-expressions — arithmetic, raw function calls and IN included: a
+   * variable it misses is invisible to the pushdown guard, so a filter reading a
+   * positional BIND inside `?window * 1` was pushed to the side where that BIND is
+   * unbound and dropped every row (PR #4557 review round 3, H2: 0 rows instead of
+   * 52). EXISTS is not walked here — `pushDownFilter` keeps such a filter above
+   * the join (`expressionContainsExists`).
+   */
   private getFilterVariables(expr: Expression): string[] {
     const vars: string[] = [];
 
     if (expr.type === "variable") {
       vars.push(expr.name);
-    } else if (expr.type === "comparison") {
+    } else if (expr.type === "comparison" || expr.type === "arithmetic") {
       vars.push(...this.getFilterVariables(expr.left));
       vars.push(...this.getFilterVariables(expr.right));
     } else if (expr.type === "logical") {
       for (const operand of expr.operands) {
         vars.push(...this.getFilterVariables(operand));
       }
-    } else if (expr.type === "function") {
+    } else if (expr.type === "function" || expr.type === "functionCall") {
       for (const arg of expr.args) {
         vars.push(...this.getFilterVariables(arg));
+      }
+    } else if (expr.type === "in") {
+      vars.push(...this.getFilterVariables(expr.expression));
+      for (const item of expr.list) {
+        vars.push(...this.getFilterVariables(item));
       }
     }
 
     return Array.from(new Set(vars));
+  }
+
+  /** Whether an EXISTS / NOT EXISTS sits anywhere in the expression tree. */
+  private expressionContainsExists(expr: Expression): boolean {
+    switch (expr.type) {
+      case "exists":
+        return true;
+      case "comparison":
+      case "arithmetic":
+        return this.expressionContainsExists(expr.left) || this.expressionContainsExists(expr.right);
+      case "logical":
+        return expr.operands.some((operand) => this.expressionContainsExists(operand));
+      case "function":
+      case "functionCall":
+        return expr.args.some((arg) => this.expressionContainsExists(arg));
+      case "in":
+        return (
+          this.expressionContainsExists(expr.expression) ||
+          expr.list.some((item) => this.expressionContainsExists(item))
+        );
+      default:
+        return false;
+    }
   }
 
   private getOperationVariables(operation: AlgebraOperation): Set<string> {

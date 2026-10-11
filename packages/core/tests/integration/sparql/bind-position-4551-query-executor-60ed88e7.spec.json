@@ -38,10 +38,34 @@
       "expect": ["B19"]
     },
     "QE5_slice_substituted": {
-      "_note": "A LIMIT/OFFSET subquery is substituted into again: a bound outer value restricts the subquery before its slice, changing which rows the slice keeps (review round 2, MEDIUM).",
-      "from": "      if (node.type === 'slice') sliced = true;\n",
-      "to": "      if (node.type === 'slice') sliced = false;\n",
-      "expect": ["B23"]
+      "_note": "A LIMIT/OFFSET subquery is substituted into again by the bind join: a bound outer value restricts the subquery before its slice, changing which rows the slice keeps (review round 2, MEDIUM). B27: the shared variable is visible again, so the join binds per left row instead of running the subquery once.",
+      "from": "      if (node.type === 'slice' && scope === 'join') sliced = true;\n",
+      "to": "      if (node.type === 'slice' && scope === 'join') sliced = false;\n",
+      "expect": ["B23", "B27"]
+    },
+    "QE6_slice_rule_everywhere": {
+      "_note": "The slice rule applies to every substitution, not only the join (the round-2 code): EXISTS / NOT EXISTS / IF(EXISTS) and LATERAL over a LIMIT subquery stop being correlated (review round 3, H1). Shares QE5's anchor (§A94) — the difference is in `to`.",
+      "from": "      if (node.type === 'slice' && scope === 'join') sliced = true;\n",
+      "to": "      if (node.type === 'slice') sliced = true;\n",
+      "expect": ["B25", "B26"]
+    },
+    "QE7_exists_join_scope": {
+      "_note": "EXISTS substitutes with the join scope — the slice withholds the outer solution (H1, the EXISTS half).",
+      "from": "    const boundPattern = this.substituteVariables(pattern, solution, \"correlated\");\n",
+      "to": "    const boundPattern = this.substituteVariables(pattern, solution, \"join\");\n",
+      "expect": ["B25"]
+    },
+    "QE8_lateral_join_scope": {
+      "_note": "LATERAL substitutes with the join scope — a nested LIMIT subquery stops being top-N per outer row (H1, the LATERAL half).",
+      "from": "      const substitutedPattern = this.substituteVariables(operation.right, outerSolution, \"correlated\");\n",
+      "to": "      const substitutedPattern = this.substituteVariables(operation.right, outerSolution, \"join\");\n",
+      "expect": ["B26"]
+    },
+    "QE9_hidden_shared_counted": {
+      "_note": "The join counts a variable hidden inside a sliced subquery as shared: same rows, but the subquery is re-run unchanged once per left row (review round 3, M1: 1.1 s → 6.6 s).",
+      "from": "        if (projected === null || projected.has(v)) vars.add(v);\n",
+      "to": "        vars.add(v);\n",
+      "expect": ["B27"]
     }
   }
 }

@@ -365,10 +365,13 @@ export class FilterContainsOptimizer {
       };
     }
 
-    // A BIND that DEFINES the filtered variable (`BIND(?x AS ?s)`) would lose its
-    // value under the injection (the subject becomes a constant and the filter is
-    // dropped): the VALUES join keeps it (PR #4557 review round 2: 416 rows, not 8).
-    if (matchingUris.length === 1 && !this.bindsVariable(filter.input, pattern.variable)) {
+    // ⛔ No injection into a group with a BIND (req 60ed88e7): a positional BIND
+    // wraps the patterns before it in Extend, and the injection drops the filter —
+    // so every pattern that binds the variable outside the BGPs it reaches (a BIND
+    // defining it, a subquery / UNION / GRAPH / VALUES on the right) is left
+    // unconstrained (PR #4557 reviews: 416 rows instead of 8; round 3 M2: 52 instead
+    // of 1). The VALUES join below constrains by merge and holds for every shape.
+    if (matchingUris.length === 1 && !this.containsExtend(filter.input)) {
       // Single match: rewrite BGP to use exact subject match
       const optimizedInput = this.injectSubjectConstraint(
         filter.input,
@@ -498,12 +501,15 @@ export class FilterContainsOptimizer {
     return matchingUris;
   }
 
-  /** Whether a BIND in the subtree (input/left/right) assigns `variable`. */
-  private bindsVariable(operation: AlgebraOperation, variable: string): boolean {
-    if (operation.type === "extend" && operation.variable === variable) return true;
+  /**
+   * Whether a BIND sits in the subtree, following `input` / `left` / `right` — a
+   * superset of every node `injectSubjectConstraint` descends into.
+   */
+  private containsExtend(operation: AlgebraOperation): boolean {
+    if (operation.type === "extend") return true;
     const op = operation as unknown as Record<string, AlgebraOperation | undefined>;
     return [op.input, op.left, op.right].some(
-      (child) => child !== undefined && typeof child === "object" && this.bindsVariable(child, variable),
+      (child) => child !== undefined && typeof child === "object" && this.containsExtend(child),
     );
   }
 
@@ -552,10 +558,7 @@ export class FilterContainsOptimizer {
       }
     }
 
-    // A positional BIND (req 60ed88e7) wraps the patterns before it in Extend; the
-    // constraint must reach them too, or the filter is dropped while that part of the
-    // group stays unconstrained (PR #4557 review: 416 rows instead of 8).
-    if (operation.type === "filter" || operation.type === "extend") {
+    if (operation.type === "filter") {
       const inputOpt = this.injectSubjectConstraint(operation.input, variable, uri);
       if (inputOpt !== operation.input) {
         return {

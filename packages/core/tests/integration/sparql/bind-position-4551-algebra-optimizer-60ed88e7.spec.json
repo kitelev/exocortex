@@ -36,6 +36,30 @@
       "from": "      if (rightOnly && !leftOnly && !filterVars.some((v) => leftVars.has(v))) {\n",
       "to": "      if (rightOnly && !leftOnly) {\n",
       "expect": ["B22"]
+    },
+    "AO5_arith_hidden": {
+      "_note": "getFilterVariables does not walk arithmetic: `?window * 1` hides ?window, the filter is pushed into the right operand where the BIND is unbound, every row is dropped (review round 3, H2: 0 rows instead of 52).",
+      "from": "    } else if (expr.type === \"comparison\" || expr.type === \"arithmetic\") {\n",
+      "to": "    } else if (expr.type === \"comparison\") {\n",
+      "expect": ["B28"]
+    },
+    "AO6_in_hidden": {
+      "_note": "getFilterVariables does not walk IN (the list hides a BIND variable). Type-preserving: an impossible length.",
+      "from": "    } else if (expr.type === \"in\") {\n",
+      "to": "    } else if (expr.type === \"in\" && expr.list.length < 0) {\n",
+      "expect": ["B29"]
+    },
+    "AO7_fncall_hidden": {
+      "_note": "getFilterVariables does not walk a raw function call (`xsd:integer(?window)`), the pre-review behaviour.",
+      "from": "    } else if (expr.type === \"function\" || expr.type === \"functionCall\") {\n",
+      "to": "    } else if (expr.type === \"function\") {\n",
+      "expect": ["B30"]
+    },
+    "AO8_exists_pushed": {
+      "_note": "A FILTER with NOT EXISTS is pushed like any other: its visible variables are all on the left, so it runs before the join with the pattern's ?u still free and drops every row (review round 3, H2).",
+      "from": "    if (input.type === \"join\" && !this.expressionContainsExists(filter.expression)) {\n",
+      "to": "    if (input.type === \"join\") {\n",
+      "expect": ["B31"]
     }
   }
 }

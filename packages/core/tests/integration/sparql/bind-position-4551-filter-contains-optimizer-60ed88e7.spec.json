@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for issue #4551 / req 60ed88e7 (vault-exodev task c223e6ef, RFC 14217015 P1.5): a SPARQL BIND extends the group prefix at its position. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › Bn @req` (ITRV §A44/§A104). `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Subject: FilterContainsOptimizer.injectSubjectConstraint reaches the patterns before a positional BIND.",
+  "_doc": "Revert-verify mutants for issue #4551 / req 60ed88e7 (vault-exodev task c223e6ef, RFC 14217015 P1.5): a SPARQL BIND extends the group prefix at its position. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › Bn @req` (ITRV §A44/§A104). `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Subject: FilterContainsOptimizer does not inject a UUID subject constraint into a group with a BIND — it takes the VALUES join, which constrains by merge. B32 (review round 3, M2: a subquery / UNION / VALUES operand next to a BIND) has NO single-anchor mutant here, by mechanism (ITRV §A138): with the guard off the injection still cannot descend into an Extend, so these shapes fall back to the VALUES join and stay correct; B32 reddens only under the round-2 code (descent into Extend + injection), which takes two edits. Its flip is the two-revision one: B32 red with FilterContainsOptimizer.ts from 6eb8c8c6, green with this revision (recorded in the PR body).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -13,17 +13,11 @@
   "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/bind-position-4551.test.ts --verbose 2>&1",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/optimization/FilterContainsOptimizer.ts",
   "mutants": {
-    "FC1_extend_not_entered": {
-      "_note": "The UUID constraint is not injected under an Extend: the filter is dropped while the patterns before the BIND stay unconstrained (review MEDIUM: 416 rows instead of 8).",
-      "from": "    if (operation.type === \"filter\" || operation.type === \"extend\") {\n",
-      "to": "    if (operation.type === \"filter\") {\n",
-      "expect": ["B20"]
-    },
-    "FC2_defining_bind_ignored": {
-      "_note": "The injection runs even when a BIND defines the filtered variable: the BIND's value is lost and the patterns before it stay unconstrained (review round 2, LOW: 416 rows instead of 8).",
-      "from": "    if (matchingUris.length === 1 && !this.bindsVariable(filter.input, pattern.variable)) {\n",
+    "FC1_bind_group_injected": {
+      "_note": "The subject constraint is injected into a group with a BIND: the injection cannot enter the Extend, so it constrains only the pattern after the BIND and drops the filter (B20: 416 rows instead of 8); a BIND that defines the filtered variable loses it (B24).",
+      "from": "    if (matchingUris.length === 1 && !this.containsExtend(filter.input)) {\n",
       "to": "    if (matchingUris.length === 1) {\n",
-      "expect": ["B24"]
+      "expect": ["B20", "B24"]
     }
   }
 }
