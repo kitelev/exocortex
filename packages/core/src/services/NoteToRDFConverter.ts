@@ -245,6 +245,16 @@ export class NoteToRDFConverter {
    */
   static readonly INDEX_PROGRESS_INTERVAL = 200;
 
+  /**
+   * req ebbe3db4 — how many `exo__Class_superClass` hops {@link isStatementSubclass}
+   * follows from an asset's class before giving up. The live class hierarchies are
+   * at most a handful of hops deep; the cap bounds a pathological acyclic chain the
+   * way `MAX_PROTOTYPE_DEPTH` bounds `resolveChain`. A cycle is stopped earlier by
+   * the visited set, so reaching the cap means a genuinely long chain — reported
+   * once per asset through the logger, and the edge is NOT emitted (fail-closed).
+   */
+  static readonly MAX_STATEMENT_SUPERCLASS_DEPTH = 16;
+
   private readonly vocabularyMapper: RDFVocabularyMapper;
 
   /**
@@ -446,6 +456,9 @@ export class NoteToRDFConverter {
     // `isReifiedStmt` is set from the exo__Instance_class resolution already
     // performed in the loop (no extra valueToClassURI cost on the reindex hot
     // path; covers alias AND bare-UID class forms via the same code path).
+    // A SUBCLASS of exo__Statement is recognised after the loop by
+    // `isStatementSubclass` (req ebbe3db4) — only for an asset whose three
+    // statement slots all resolved and whose class is not exactly exo#Statement.
     let reifiedSubject: IRI | undefined;
     let reifiedPredicate: IRI | undefined;
     let reifiedObject: IRI | Literal | undefined;
@@ -621,6 +634,19 @@ export class NoteToRDFConverter {
     // remain (round-trip), and the edge reuses their already-resolved terms.
     // Emitted only when subject AND predicate resolve to IRIs (SPARQL requires
     // an IRI in those positions); the object may be an IRI or a Literal.
+    //
+    // RFC 14217015 AC1c (decision №7, req ebbe3db4): a SUBCLASS of exo__Statement
+    // («Тезис» `exoization__Thesis` ⊂ exo__Statement, one class per thesis) gives
+    // the same edge. The superclass walk runs only here — after the cheap gates
+    // (exact match failed, all three slots resolved) — so an ordinary asset never
+    // pays for it: on 2026-10-11 the live vaults held 146 + 68 slot carriers, all
+    // typed exactly exo#Statement, i.e. the walk ran on none of them.
+    if (!isReifiedStmt && reifiedSubject && reifiedPredicate && reifiedObject) {
+      isReifiedStmt = await this.isStatementSubclass(
+        frontmatter["exo__Instance_class"],
+        file,
+      );
+    }
     if (isReifiedStmt && reifiedSubject && reifiedPredicate && reifiedObject) {
       triples.push(new Triple(reifiedSubject, reifiedPredicate, reifiedObject));
     }
@@ -1990,6 +2016,95 @@ export class NoteToRDFConverter {
         );
       }
     }
+  }
+
+  /**
+   * RFC 14217015 AC1c (decision №7, req ebbe3db4): is one of the asset's classes
+   * `exo__Statement` or a (transitive) subclass of it?
+   *
+   * Walks `exo__Class_superClass` over CLASS-FILE frontmatter, breadth-first,
+   * bounded by {@link MAX_STATEMENT_SUPERCLASS_DEPTH} hops and guarded against
+   * cycles by a visited set (the `resolveChain` recipe). A class is identified by
+   * its file's `exo__Asset_label` when the wikilink resolves to a file — the UID
+   * wins over a stale alias, as in `resolve-buttons` — and by the text of the
+   * reference otherwise. Because identity comes from the file, an exact
+   * `exo__Statement` whose `exo__Instance_class` is emitted as the class file IRI
+   * (`emitInstanceClassAsUid`) is recognised here too.
+   *
+   * Scope, by construction of a per-file converter: only superclass edges written
+   * in class frontmatter are followed. A class made a subclass of exo__Statement
+   * solely by another reified statement (an adapter bridge) is not — that bridge
+   * may be indexed after this asset. `rdfs__subClassOf` has no carrier in the
+   * vaults and is not walked.
+   */
+  private async isStatementSubclass(
+    classValue: unknown,
+    file: IFile,
+  ): Promise<boolean> {
+    const statementIri = Namespace.EXO.term("Statement").value;
+    const maxDepth = NoteToRDFConverter.MAX_STATEMENT_SUPERCLASS_DEPTH;
+    const queue: Array<{ value: unknown; depth: number }> = (
+      Array.isArray(classValue) ? classValue : [classValue]
+    ).map((value) => ({ value, depth: 0 }));
+    const visited = new Set<string>();
+    let capped = false;
+
+    for (let i = 0; i < queue.length; i++) {
+      const { value, depth } = queue[i];
+      if (typeof value !== "string") continue;
+      const clean = this.removeQuotes(value);
+      const target = this.extractWikilink(clean) ?? clean;
+      const alias = this.extractWikilinkAlias(clean);
+
+      const classFile = this.vault.getFirstLinkpathDest(target, "");
+      const fm = classFile ? await this.classFileFrontmatter(classFile) : null;
+      const label = fm?.["exo__Asset_label"];
+      const identity =
+        (typeof label === "string" ? this.expandClassValue(label) : null) ??
+        this.expandClassValue(target) ??
+        (alias ? this.expandClassValue(alias) : null);
+      if (identity?.value === statementIri) {
+        return true;
+      }
+
+      const key = classFile?.path ?? identity?.value ?? target;
+      if (visited.has(key)) continue; // cycle guard
+      visited.add(key);
+
+      if (!fm) continue;
+      const parents = fm["exo__Class_superClass"];
+      if (parents === undefined || parents === null) continue;
+      if (depth >= maxDepth) {
+        capped = true;
+        continue;
+      }
+      for (const parent of Array.isArray(parents) ? parents : [parents]) {
+        queue.push({ value: parent, depth: depth + 1 });
+      }
+    }
+
+    if (capped) {
+      this.logger.warn(
+        `exo__Statement subclass walk stopped at ${maxDepth} superclass hops; the logical edge is not emitted`,
+        { path: file.path },
+      );
+    }
+    return false;
+  }
+
+  /**
+   * Class-file frontmatter for {@link isStatementSubclass}: warm cache (or the
+   * pre-resolved map) first, then the adapter's disk fallback. The pre-resolution
+   * pass warms only the asset's DIRECT targets, so on a cold plugin start the
+   * grandparent classes of a walk are reachable through the fallback alone.
+   */
+  private async classFileFrontmatter(
+    file: IFile,
+  ): Promise<Record<string, unknown> | null> {
+    const cached = this.targetFrontmatter(file);
+    if (cached) return cached;
+    const withFallback = this.vault.getFrontmatterWithFallback?.bind(this.vault);
+    return withFallback ? await withFallback(file) : null;
   }
 
   private valueToClassURI(value: unknown): IRI | Literal {
