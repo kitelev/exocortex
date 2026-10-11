@@ -44,16 +44,16 @@
       "expect": ["B23", "B27"]
     },
     "QE6_slice_rule_everywhere": {
-      "_note": "The slice rule applies to every substitution, not only the join (the round-2 code): EXISTS / NOT EXISTS / IF(EXISTS) and LATERAL over a LIMIT subquery stop being correlated (review round 3, H1). Shares QE5's anchor (§A94) — the difference is in `to`.",
+      "_note": "The slice rule applies to every substitution, not only the join (the round-2 code): EXISTS / NOT EXISTS / IF(EXISTS) and LATERAL over a LIMIT subquery stop being correlated (review round 3, H1). Shares QE5's anchor (§A94) — the difference is in `to`. Round 4: the correlated scope never withholds from a slice under this mutation, so the EXISTS inside a join operand (B38) and the LIMIT subquery joined inside an EXISTS pattern (B42) lose their correlation too.",
       "from": "      if (node.type === 'slice' && scope === 'join') sliced = true;\n",
       "to": "      if (node.type === 'slice') sliced = true;\n",
-      "expect": ["B25", "B26"]
+      "expect": ["B25", "B26", "B38", "B42"]
     },
     "QE7_exists_join_scope": {
-      "_note": "EXISTS substitutes with the join scope — the slice withholds the outer solution (H1, the EXISTS half).",
+      "_note": "EXISTS substitutes with the join scope — the slice withholds the outer solution (H1, the EXISTS half). Round 4: B42 is a top-level EXISTS too — its pattern joins a LIMIT subquery, which the join scope withholds from.",
       "from": "    const boundPattern = this.substituteVariables(pattern, solution, \"correlated\");\n",
       "to": "    const boundPattern = this.substituteVariables(pattern, solution, \"join\");\n",
-      "expect": ["B25"]
+      "expect": ["B25", "B42"]
     },
     "QE8_lateral_join_scope": {
       "_note": "LATERAL substitutes with the join scope — a nested LIMIT subquery stops being top-N per outer row (H1, the LATERAL half).",
@@ -66,6 +66,18 @@
       "from": "        if (projected === null || projected.has(v)) vars.add(v);\n",
       "to": "        vars.add(v);\n",
       "expect": ["B27"]
+    },
+    "QE10_nested_exists_join_scope": {
+      "_note": "An EXISTS inside a join operand inherits the join scope (the pre-round-4 behaviour): its LIMIT subquery takes no outer value, the bind join already replaced the shared variable in the operand's own patterns, so the EXISTS loses its correlation — every row kept / none (review round 4, HIGH-2; reviewer's XQE1).",
+      "from": "      expr.pattern = this.substituteInOperation(expr.pattern as AlgebraOperation, bindings, \"correlated\");\n",
+      "to": "      expr.pattern = this.substituteInOperation(expr.pattern as AlgebraOperation, bindings, scope);\n",
+      "expect": ["B38"]
+    },
+    "QE11_right_recursion_join_scope": {
+      "_note": "The scope is not carried into the RIGHT child of a nested operation: a LIMIT subquery joined inside an EXISTS pattern is treated with the join scope and loses the outer value (review round 4, MEDIUM-1; reviewer's XQE3).",
+      "from": "      opRecord.right = this.substituteInOperation(opRecord.right as AlgebraOperation, bindings, scope);\n",
+      "to": "      opRecord.right = this.substituteInOperation(opRecord.right as AlgebraOperation, bindings, \"join\");\n",
+      "expect": ["B42"]
     }
   }
 }
