@@ -1,0 +1,101 @@
+{
+  "_doc": "Revert-verify mutants for RFC 14217015 P1.3 (vault-exodev task 2038636f, req ebbe3db4): NoteToRDFConverter materializes the logical edge of a reified statement whose class is a SUBCLASS of exo__Statement, by a bounded (16 hops), cycle-guarded walk of exo__Class_superClass over class-file frontmatter, run only after the three statement slots resolved and the exact exo#Statement match failed. Each mutant removes one guard and must redden exactly the axes in `expect`; no two mutants share a set (§A147). S3 (negative axis) and S4/S9/S10 are green on the pre-fix base by design — S3 is the negative axis, S9 the unchanged exact-Statement control, S4/S10 guard behaviour the base never exercised. S9 carries no mutant of its own: it is a control of the PRE-EXISTING exact-match path; dropping that loop check is distinguishable only on a stale `[[<uid>|exo__Statement]]` alias (S12), the same input as M10. S11/S12/S13 are green on the pre-fix base by design (they pin guards of the walk, not missing behaviour). `red_re` anchors on the jest failure header (§A104). `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› (S\\d+\\w?) @req",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/NoteToRDFConverter.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/rdf/statement-subclass-materialization.test.ts --verbose 2>&1",
+  "mutants": {
+    "M0_subclass_walk_removed": {
+      "_note": "The pre-fix behaviour: only an exact exo#Statement class materializes the edge.",
+      "from": "    if (!isReifiedStmt && reifiedSubject && reifiedPredicate && reifiedObject) {\n      isReifiedStmt = await this.isStatementSubclass(",
+      "to": "    if (false as boolean && reifiedSubject && reifiedPredicate && reifiedObject) {\n      isReifiedStmt = await this.isStatementSubclass(",
+      "expect": ["S1", "S2", "S5a", "S5c", "S5d", "S6", "S7"]
+    },
+    "M1_walk_runs_without_slots": {
+      "_note": "The cost gate: without the slot conjuncts every asset walks its hierarchy; an ordinary asset on a 17-hop chain then hits the cap and warns.",
+      "from": "    if (!isReifiedStmt && reifiedSubject && reifiedPredicate && reifiedObject) {\n      isReifiedStmt = await this.isStatementSubclass(",
+      "to": "    if (!isReifiedStmt) {\n      isReifiedStmt = await this.isStatementSubclass(",
+      "expect": ["S10"]
+    },
+    "M2_identity_ignores_class_file_label": {
+      "_note": "A bare-UID superClass ref is identified only through the class file's exo__Asset_label; dropping it loses exo__Statement wherever it is referenced by UID (the vault's dominant form).",
+      "from": "          ? this.expandClassValue(label)\n          : null\n        : (this.expandClassValue(target) ??",
+      "to": "          ? null\n          : null\n        : (this.expandClassValue(target) ??",
+      "expect": ["S1", "S2", "S5a", "S6", "S7"]
+    },
+    "M3_cycle_guard_removed": {
+      "_note": "Without the visited set a cycle is stopped only by the depth cap, which warns.",
+      "from": "      if (visited.has(key)) continue; // cycle guard",
+      "to": "      if (visited.has(key) && false) continue; // cycle guard",
+      "expect": ["S4"]
+    },
+    "M4_cap_one_hop_too_loose": {
+      "_note": "`>` instead of `>=` lets the 17th hop through — the over-cap chain then gives the edge and no warning.",
+      "from": "      if (depth >= maxDepth) {",
+      "to": "      if (depth > maxDepth) {",
+      "expect": ["S5b", "S5c", "S5d"]
+    },
+    "M5_cap_one_hop_too_tight": {
+      "_note": "The other side of the boundary: a chain of exactly 16 hops must still give the edge.",
+      "from": "      if (depth >= maxDepth) {",
+      "to": "      if (depth >= maxDepth - 1) {",
+      "expect": ["S5a"]
+    },
+    "M6_no_disk_fallback": {
+      "_note": "On a cold plugin cache only the asset's direct class is pre-warmed; the grandparents are reachable through getFrontmatterWithFallback alone.",
+      "from": "    return withFallback ? await withFallback(file) : null;",
+      "to": "    return withFallback ? null : null;",
+      "expect": ["S6"]
+    },
+    "M7_cap_warning_removed": {
+      "_note": "Reaching the cap must be reported, not silent.",
+      "from": "    if (capped) {\n      // The path lives in the MESSAGE",
+      "to": "    if (capped && false) {\n      // The path lives in the MESSAGE",
+      "expect": ["S5c", "S5d"]
+    },
+    "M8_own_class_identity_skipped": {
+      "_note": "The asset's OWN classes are identity-checked too: an exact exo__Statement emitted as the class FILE IRI (emitInstanceClassAsUid) fails the loop's symbolic comparison and is recognised only here.",
+      "from": "      if (identity?.value === statementIri) {",
+      "to": "      if (depth > 0 && identity?.value === statementIri) {",
+      "expect": ["S7"]
+    },
+    "M9_any_class_counts_as_statement": {
+      "_note": "The walk must recognise exo__Statement, not any identified class: a non-statement class carrying the slots then gives an edge. Written as a prefix test (every symbolic class IRI is https) rather than `identity !== null`, which narrows `identity` to never below and breaks compilation (§A36). S5b/S5c/S5d redden too, and legitimately: the over-cap chain's classes carry prefix-form labels (test__Chain0…), so the mutant returns true at depth 0 — the edge appears and the cap (and its warning) is never reached. S11/S13 redden for the same reason: their asset's own class is identified (`test__Thesis` by its text, `test__Sub2` by its file label), so any identified class passes.",
+      "from": "      if (identity?.value === statementIri) {",
+      "to": "      if (identity?.value.startsWith(\"https://\")) {",
+      "expect": ["S11", "S13", "S3", "S4", "S5b", "S5c", "S5d"]
+    },
+    "M10_walk_overwrites_loop_verdict": {
+      "_note": "Dropping `!isReifiedStmt` lets the walk OVERWRITE the loop's alias-first verdict: a class written [[<non-statement uid>|exo__Statement]] loses the edge it had before this PR (review LOW-1 — the conjunct was wrongly called equivalent). Dropping the loop's exact check instead is observably identical (red only on S12) and carries no separate mutant.",
+      "from": "    if (!isReifiedStmt && reifiedSubject && reifiedPredicate && reifiedObject) {\n      isReifiedStmt = await this.isStatementSubclass(",
+      "to": "    if (reifiedSubject && reifiedPredicate && reifiedObject) {\n      isReifiedStmt = await this.isStatementSubclass(",
+      "expect": ["S12"]
+    },
+    "M11_label_form_resolved_to_file": {
+      "_note": "Resolving a label-form class ref to a file goes through `aliases` in the CLI adapter and not in Obsidian — the edge would exist on one surface only (review MEDIUM-2).",
+      "from": "      const classFile = this.isUUID(target)\n        ? this.vault.getFirstLinkpathDest(target, \"\")\n        : null;",
+      "to": "      const classFile = target.length > 0\n        ? this.vault.getFirstLinkpathDest(target, \"\")\n        : null;",
+      "expect": ["S11"]
+    },
+    "M12_stale_alias_overrides_file": {
+      "_note": "A resolved class file decides alone; consulting the alias as a fallback lets a stale |exo__Statement alias on a human-labelled class fake the hierarchy (review LOW-2).",
+      "from": "          ? this.expandClassValue(label)\n          : null\n        : (this.expandClassValue(target) ??",
+      "to": "          ? (this.expandClassValue(label) ?? (alias ? this.expandClassValue(alias) : null))\n          : alias ? this.expandClassValue(alias) : null\n        : (this.expandClassValue(target) ??",
+      "expect": ["S13"]
+    },
+    "M13_cap_warning_without_path": {
+      "_note": "The path must be in the message string (the plugin's Notice/file channels drop the context object) — review MEDIUM-1.",
+      "from": "superclass hops for ${file.path}; the logical edge is not emitted`,",
+      "to": "superclass hops; the logical edge is not emitted`,",
+      "expect": ["S5d"]
+    }
+  }
+}

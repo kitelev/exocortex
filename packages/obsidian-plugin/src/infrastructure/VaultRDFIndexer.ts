@@ -306,8 +306,10 @@ export class VaultRDFIndexer {
     // freshly-emitted one after any edit to the statement's subject/predicate/
     // object. A graph edit is graph-wide; mirror the FileSpace-declaration
     // branch above and do a full `refresh()` (clear + rebuild), which purges the
-    // stale edge. Detected from the CURRENT (pre-edit) store state — the file is
-    // still typed `exo#Statement` there — so this also covers the removal case
+    // stale edge. Detected from the CURRENT (pre-edit) store state — the file
+    // still carries its `exo:Statement_subject` triple there (req ebbe3db4: the
+    // slot, not `rdf:type exo#Statement`, so a SUBCLASS statement is caught too)
+    // — so this also covers the removal case
     // (edited to no longer be a statement, whose old edge would otherwise
     // linger). Reified statements are rare, so the full-refresh cost is
     // acceptable (same trade-off as the FileSpace branch). (Enum `rdf:type`
@@ -344,9 +346,17 @@ export class VaultRDFIndexer {
   }
 
   /**
-   * Issue #3936: is `path` CURRENTLY indexed as a reified `exo__Statement`
-   * (i.e. the store holds `<fileIRI> rdf:type exo#Statement`, emitted by the
-   * converter for a note whose `exo__Instance_class` is `exo__Statement`)?
+   * Issue #3936: is `path` CURRENTLY indexed as a reified `exo__Statement`?
+   *
+   * req ebbe3db4 (RFC 14217015 AC1c): recognised by the file's
+   * `exo:Statement_subject` triple, NOT by `rdf:type exo#Statement`. A statement
+   * whose class is a SUBCLASS of exo__Statement («Тезис» `exoization__Thesis`)
+   * is typed by its own class, yet the converter materializes its edge too — the
+   * type test would route it to the incremental path and leave the old edge
+   * stale. The slot triple is a strict superset: the edge needs a resolved
+   * subject, and that subject is exactly this triple's object. A slot carrier
+   * that is not a statement at all also takes the full refresh — harmless, and
+   * rare (every carrier in the live vaults, 2026-10-11, was a statement).
    *
    * A reified statement emits an extra materialized edge on a NON-file-IRI
    * subject that the subject-scoped `removeFileTriples` cannot evict, so an
@@ -357,10 +367,9 @@ export class VaultRDFIndexer {
    */
   private async wasReifiedStatement(path: string): Promise<boolean> {
     const fileIRI = new IRI(`obsidian://vault/${encodeURI(path)}`);
-    const rdfType = Namespace.RDF.term("type");
-    const statementClass = Namespace.EXO.term("Statement");
-    const typed = await this.tripleStore.match(fileIRI, rdfType, statementClass);
-    return typed.length > 0;
+    const statementSubject = Namespace.EXO.term("Statement_subject");
+    const slots = await this.tripleStore.match(fileIRI, statementSubject);
+    return slots.length > 0;
   }
 
   async removeFile(file: TFile): Promise<void> {

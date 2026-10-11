@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutants for RFC 14217015 P1.3 (req ebbe3db4, scenario S8): VaultRDFIndexer.wasReifiedStatement recognises a reified statement by the file's exo:Statement_subject triple, so a SUBCLASS statement (typed by its own class, never exo#Statement) is routed to a full refresh and its stale materialized edge is purged. `red_re` anchors on the jest failure header (§A104). `tree`/`subject` are placeholders (§A145).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› (S\\d+\\w?) @req",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/infrastructure/VaultRDFIndexer.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/infrastructure/VaultRDFIndexer.statement-subclass-reindex.test.ts --verbose 2>&1",
+  "mutants": {
+    "N1_type_test_restored": {
+      "_note": "The pre-fix detection: rdf:type exo#Statement misses a Thesis-typed statement, the incremental path leaves its old edge stale.",
+      "from": "    const statementSubject = Namespace.EXO.term(\"Statement_subject\");\n    const slots = await this.tripleStore.match(fileIRI, statementSubject);",
+      "to": "    const statementSubject = Namespace.RDF.term(\"type\");\n    const slots = await this.tripleStore.match(fileIRI, statementSubject, Namespace.EXO.term(\"Statement\"));",
+      "expect": ["S8"]
+    },
+    "N2_every_file_refreshes": {
+      "_note": "The other direction: an ordinary note must keep the incremental path.",
+      "from": "    return slots.length > 0;",
+      "to": "    return slots.length >= 0;",
+      "expect": ["S8b"]
+    }
+  }
+}
