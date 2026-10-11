@@ -42,6 +42,18 @@ import type {
 const algebraIri = (value: string): AlgebraIRI => ({ type: "iri", value });
 const algebraVar = (name: string): TripleElement => ({ type: "variable", value: name });
 
+
+/**
+ * The structured literal-guard payload of a console.error call made through
+ * LoggingService.error (req 8a0ed10b paid the file's no-console debt): in
+ * production mode the fields are the JSON after "Details:", in development
+ * mode they are own properties of the logged Error.
+ */
+const loggedDiagnostic = (call: unknown[]): Record<string, unknown> =>
+  call[1] && typeof call[1] === "object"
+    ? (call[1] as Record<string, unknown>)
+    : (JSON.parse(String(call[0]).split("\n  Details: ")[1]) as Record<string, unknown>);
+
 describe("PropertyPathExecutor literal-safety guard (Issue #3282)", () => {
   let executor: PropertyPathExecutor;
   let triples: Triple[];
@@ -107,7 +119,7 @@ describe("PropertyPathExecutor literal-safety guard (Issue #3282)", () => {
 
         // Structured payload — Issue #3282 acceptance criterion.
         const lastCall = errorSpy.mock.calls[errorSpy.mock.calls.length - 1];
-        const diagnostic = lastCall[1];
+        const diagnostic = loggedDiagnostic(lastCall);
         expect(diagnostic).toMatchObject({
           position: "subject",
           value: "Барик (Area)",
@@ -127,7 +139,7 @@ describe("PropertyPathExecutor literal-safety guard (Issue #3282)", () => {
 
         expect(results).toEqual([]);
         expect(errorSpy).toHaveBeenCalled();
-        const diagnostic = errorSpy.mock.calls[errorSpy.mock.calls.length - 1][1];
+        const diagnostic = loggedDiagnostic(errorSpy.mock.calls[errorSpy.mock.calls.length - 1]);
         expect(diagnostic).toMatchObject({ position: "object", value: "Барик (Area)" });
       } finally {
         errorSpy.mockRestore();
@@ -140,7 +152,7 @@ describe("PropertyPathExecutor literal-safety guard (Issue #3282)", () => {
       const errorSpy = jest.spyOn(console, "error").mockImplementation(() => undefined);
       try {
         await collectResults(longLiteral, oneOrMorePath, algebraVar("o"));
-        const diagnostic = errorSpy.mock.calls[errorSpy.mock.calls.length - 1][1];
+        const diagnostic = loggedDiagnostic(errorSpy.mock.calls[errorSpy.mock.calls.length - 1]);
         const value = (diagnostic as { value: string }).value;
         expect(value.length).toBeLessThanOrEqual(80);
         expect(value.endsWith("...")).toBe(true);

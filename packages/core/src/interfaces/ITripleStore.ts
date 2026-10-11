@@ -38,6 +38,21 @@ export interface ITripleStore {
   beginTransaction(): Promise<ITransaction>;
 
   /**
+   * `match` WITHOUT query-time sub-property widening (req 8a0ed10b). A store that
+   * widens a constant predicate to its sub-properties
+   * (`PropertyHierarchyResolvingStore`) exposes the as-stored match here, so the
+   * BGP executor can match a predicate that came from a VARIABLE binding exactly —
+   * a variable predicate sees the stored triples whatever the order of the
+   * patterns. A store without widening need not implement it (callers fall back
+   * to `match`).
+   */
+  matchExactPredicate?(
+    subject?: Subject,
+    predicate?: Predicate,
+    object?: RDFObject
+  ): Promise<Triple[]>;
+
+  /**
    * Find subjects containing a specific UUID.
    * This is an optimization for FILTER(CONTAINS(STR(?s), 'uuid')) patterns.
    *

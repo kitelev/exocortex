@@ -32,11 +32,15 @@ import { InMemoryTripleStore } from "../../../src/infrastructure/rdf/InMemoryTri
 import { ExoQLQueryExecutor } from "../../../src/infrastructure/sparql/executors/QueryExecutor";
 import type { QueryExecutorConfig } from "../../../src/infrastructure/sparql/executors/QueryExecutor";
 import { PropertyHierarchyResolvingStore } from "../../../src/infrastructure/sparql/PropertyHierarchyResolvingStore";
+import { ExoQL } from "../../../src/exoql";
+import { INFERRED_GRAPH } from "../../../src/services/PrototypeChainMaterializer";
 import { SPARQLParser } from "../../../src/infrastructure/sparql/SPARQLParser";
 import { ExoQLAlgebraTranslator } from "../../../src/infrastructure/sparql/algebra/AlgebraTranslator";
 import type { AskOperation } from "../../../src/infrastructure/sparql/algebra/AlgebraOperation";
 import { IRI } from "../../../src/domain/models/rdf/IRI";
-import type { Triple, Subject, Predicate, Object as RDFObject } from "../../../src/domain/models/rdf/Triple";
+import { Triple } from "../../../src/domain/models/rdf/Triple";
+import type { Subject, Predicate, Object as RDFObject } from "../../../src/domain/models/rdf/Triple";
+import { Literal } from "../../../src/domain/models/rdf/Literal";
 import { Namespace } from "../../../src/domain/models/rdf/Namespace";
 
 const ei = (local: string) => Namespace.forPrefix("exoization-ideas")!.term(local).value;
@@ -447,6 +451,108 @@ describe("a query by a property sees its sub-properties (req 8a0ed10b, RFC 14217
       note(odd, { exo__Asset_label: "exoization-ideas__Exoizable (old name)", exo__Property_superProperty: `[[${U.exoizable}]]` }),
     ]);
     expect(await rows(store, CQ6, ["idea", "src"])).toEqual(ALL_FOUR);
+  });
+
+  // ---- Review round 1 (PR #4556) ----
+
+  it(`SP20 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 a VARIABLE predicate bound by an EARLIER pattern is not widened — the result does not depend on pattern order`, async () => {
+    const store = await buildStore(BASE);
+    const bindFirst = `SELECT ?s ?o WHERE { <${fileIri(U.exoizable)}> exo:Asset_label ?p . ?s ?p ?o }`;
+    const bindLast = `SELECT ?s ?o WHERE { ?s ?p ?o . <${fileIri(U.exoizable)}> exo:Asset_label ?p }`;
+    // Input is built: the label of the property file IS the predicate IRI.
+    expect(await rows(store, `SELECT ?p WHERE { <${fileIri(U.exoizable)}> exo:Asset_label ?p }`, ["p"])).toEqual([`<${EXOIZABLE}>`]);
+    expect(await rows(store, bindFirst, ["s", "o"])).toEqual([pair(I.direct, S.generic)]);
+    expect(await rows(store, bindLast, ["s", "o"])).toEqual([pair(I.direct, S.generic)]);
+    // Control: the same predicate written as a CONSTANT is widened.
+    expect(await rows(store, `SELECT ?s ?o WHERE { ?s eideas:ExoizationIdea_exoizable ?o }`, ["s", "o"])).toEqual(ALL_FOUR);
+  });
+
+  it(`SP21 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 matchExactPredicate is the as-stored match (no widening)`, async () => {
+    const store = await buildStore(BASE);
+    const triples = await new PropertyHierarchyResolvingStore(store).matchExactPredicate(undefined, new IRI(EXOIZABLE), undefined);
+    expect(triples.map((x) => fmt(x.subject))).toEqual([`<${fileIri(I.direct)}>`]);
+  });
+
+  /** A diamond through sub-properties: n0 -sub1-> a, n0 -sub2-> b, a -rel-> c, b -sub1-> c, c -rel-> n0. */
+  async function diamondStore() {
+    const rel = uid();
+    const sub1 = uid();
+    const sub2 = uid();
+    const N = { n0: uid(), a: uid(), b: uid(), c: uid() };
+    const store = await buildStore([
+      prop(rel, "test__rel"),
+      prop(sub1, "test__relSub1", rel),
+      prop(sub2, "test__relSub2", rel),
+      note(N.n0, { exo__Asset_label: "n0", test__relSub1: `[[${N.a}]]`, test__relSub2: `[[${N.b}]]` }),
+      note(N.a, { exo__Asset_label: "a", test__rel: `[[${N.c}]]` }),
+      note(N.b, { exo__Asset_label: "b", test__relSub1: `[[${N.c}]]` }),
+      note(N.c, { exo__Asset_label: "c", test__rel: `[[${N.n0}]]` }),
+    ]);
+    const iri = (u: string) => `<${fileIri(u)}>`;
+    return { store, N, iri };
+  }
+
+  it(`SP23 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 a one-or-more path over sub-property hops yields each reachable node ONCE`, async () => {
+    const { store, N, iri } = await diamondStore();
+    const got = await rows(store, `SELECT ?o WHERE { <${fileIri(N.n0)}> test:rel+ ?o }`, ["o"]);
+    expect(got).toEqual([iri(N.n0), iri(N.a), iri(N.b), iri(N.c)].sort());
+  });
+
+  it(`SP24 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 a zero-or-more path yields its start once even when a cycle leads back to it`, async () => {
+    const { store, N, iri } = await diamondStore();
+    const got = await rows(store, `SELECT ?o WHERE { <${fileIri(N.a)}> test:rel* ?o }`, ["o"]);
+    expect(got).toEqual([iri(N.n0), iri(N.a), iri(N.b), iri(N.c)].sort());
+  });
+
+  it(`SP25 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 a zero-or-one path over a self-loop yields its start once`, async () => {
+    const rel = uid();
+    const m0 = uid();
+    const store = await buildStore([prop(rel, "test__loop"), note(m0, { exo__Asset_label: "m0", test__loop: `[[${m0}]]` })]);
+    expect(await rows(store, `SELECT ?o WHERE { <${fileIri(m0)}> test:loop? ?o }`, ["o"])).toEqual([`<${fileIri(m0)}>`]);
+  });
+
+  it(`SP26 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 a simple literal and the same xsd:string literal reached through two properties are one value`, async () => {
+    const store = await buildStore(BASE);
+    await store.add(new Triple(new IRI(fileIri(I.video)), new IRI(VIDEO), new Literal("same")));
+    await store.add(new Triple(new IRI(fileIri(I.video)), new IRI(EXOIZABLE), new Literal("same", Namespace.XSD.term("string"))));
+    const got = await rows(store, `SELECT ?o WHERE { <${fileIri(I.video)}> eideas:ExoizationIdea_exoizable ?o }`, ["o"]);
+    expect(got.filter((o) => !o.startsWith("<"))).toHaveLength(1);
+    expect(got).toContain(`<${fileIri(S.video)}>`);
+  });
+
+  it(`SP27 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 a diamond of declarations (D ⊑ B ⊑ A, D ⊑ C ⊑ A) matches the shared descendant once`, async () => {
+    const A = uid();
+    const B = uid();
+    const C = uid();
+    const D = uid();
+    const x = uid();
+    const store = await buildStore([
+      ...SOURCES,
+      prop(A, "test__dA"),
+      prop(B, "test__dB", A),
+      prop(C, "test__dC", A),
+      note(D, { exo__Asset_label: "test__dD", exo__Property_superProperty: [`[[${B}]]`, `[[${C}]]`] }),
+      note(x, { exo__Asset_label: "x", test__dD: `[[${S.s1}]]` }),
+    ]);
+    store.predicateCalls.length = 0;
+    expect(await rows(store, `SELECT ?s ?o WHERE { ?s test:dA ?o }`, ["s", "o"])).toEqual([`<${fileIri(x)}> | <${fileIri(S.s1)}>`]);
+    expect(store.predicateCalls.filter((p) => p === t("dD"))).toHaveLength(1);
+  });
+
+  it(`SP28 @req:8a0ed10b-24e7-493f-a431-48bca5e431e2 queryOwn through a label-bound ?p does not report an INHERITED sub-property value as own`, async () => {
+    const store = await buildStore(BASE);
+    // An inherited value, materialized as PrototypeChainMaterializer does: default graph + exo:inferred.
+    const inherited = new Triple(new IRI(fileIri(I.video)), new IRI(VIDEO), new IRI(fileIri(S.s1)));
+    await store.add(inherited);
+    await store.addToGraph!(inherited, INFERRED_GRAPH);
+    const own = async (propUid: string) =>
+      (await ExoQL.queryOwn(`${PREFIX}\nSELECT ?s ?p ?o WHERE { <${fileIri(propUid)}> exo:Asset_label ?p . ?s ?p ?o }`, store))
+        .map((x) => `${fmt(x.get("s"))} | ${fmt(x.get("o"))}`)
+        .sort();
+    // Control: by the sub-property itself the annotator drops the inherited value.
+    expect(await own(U.video)).toEqual([pair(I.video, S.video)]);
+    // By the parent: the sub-property value — own or inherited — is not reached at all.
+    expect(await own(U.exoizable)).toEqual([pair(I.direct, S.generic)]);
   });
 });
 

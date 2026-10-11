@@ -49,7 +49,9 @@ const KEY_SEP = String.fromCharCode(0);
  * Everything else is a byte-identical pass-through.
  *
  * - **Scope gate.** Only predicates under `https://exocortex.my/ontology/` are
- *   widened. The W3C vocabulary is not: five of its terms already have native
+ *   widened (including a prefix the engine does not know as W3C — `prov__`,
+ *   `dcterms__` — which `Namespace.forPrefix` puts under that base). The W3C
+ *   vocabulary (`http://www.w3.org/…`) is not: five of its terms already have native
  *   mirrors (`RDFVocabularyMapper`), `rdfs:subClassOf` would pull reified adapter
  *   edges into class walks, and the live declaration
  *   `exo__Statement_object ⊑ rdf__subject` is a data defect that would put
@@ -73,9 +75,12 @@ const KEY_SEP = String.fromCharCode(0);
  *   never its own sub-property. No depth cap: the visited set already bounds the
  *   walk by the number of declared properties, and a cap would silently cut a
  *   legitimate chain.
- * - **Variable predicate** (`?s ?p ?o`) is a pass-through: the stored predicates
- *   are returned, no entailed triples are added. `GRAPH { … }` patterns route
- *   through `matchInGraph`, also a pass-through.
+ * - **Only a predicate written as a CONSTANT is widened.** A variable predicate
+ *   (`?s ?p ?o`) returns the stored predicates, no entailed triples are added —
+ *   unbound (`match(s, undefined, o)`, a pass-through) AND bound by an earlier
+ *   pattern of the join: the BGP executor matches such a predicate through
+ *   {@link matchExactPredicate}, so the result does not depend on the order of the
+ *   patterns. `GRAPH { … }` patterns route through `matchInGraph`, a pass-through.
  * - **Zero store growth** — nothing is written to the store.
  * - **Reversible** — `resolvePropertyHierarchy: false` on `ExoQLQueryExecutor`
  *   disables the decorator.
@@ -94,6 +99,8 @@ export class PropertyHierarchyResolvingStore implements ITripleStore {
     Namespace.EXO.term("Property_superProperty").value;
   private static readonly EXO_ASSET_LABEL =
     Namespace.EXO.term("Asset_label").value;
+
+  private static readonly XSD_STRING = Namespace.XSD.term("string").value;
 
   /** Only predicates of the exocortex ontologies are widened (see the class doc). */
   private static readonly ONTOLOGY_BASE = "https://exocortex.my/ontology/";
@@ -170,6 +177,20 @@ export class PropertyHierarchyResolvingStore implements ITripleStore {
   }
 
   /**
+   * The as-stored match, without widening — used by the BGP executor for a
+   * predicate that came from a VARIABLE binding, so `{ <p> exo:Asset_label ?p .
+   * ?s ?p ?o }` and `{ ?s ?p ?o . <p> exo:Asset_label ?p }` agree (both see the
+   * stored triples only). Only a predicate written as a constant is widened.
+   */
+  matchExactPredicate(
+    subject?: Subject,
+    predicate?: Predicate,
+    object?: RDFObject,
+  ): Promise<Triple[]> {
+    return this.real.match(subject, predicate, object);
+  }
+
+  /**
    * Direct matches of P plus the matches of each sub-property Q, rewritten to P.
    * Direct triples come first, then the sub-properties in index order, so the
    * result is deterministic for a given store.
@@ -211,7 +232,10 @@ export class PropertyHierarchyResolvingStore implements ITripleStore {
   private static termKey(term: Subject | RDFObject): string {
     if (term instanceof IRI) return `I:${term.value}`;
     if (term instanceof Literal) {
-      return `L:${term.value}^${term.datatype?.value ?? ""}@${term.language ?? ""}`;
+      // A simple literal IS an xsd:string (RDF 1.1) — the store treats them as one term.
+      const datatype = term.datatype?.value;
+      const dt = datatype === PropertyHierarchyResolvingStore.XSD_STRING ? "" : (datatype ?? "");
+      return `L:${term.value}^${dt}@${term.language ?? ""}`;
     }
     if (term instanceof BlankNode) return `B:${term.id}`;
     return `?:${term.toString()}`;

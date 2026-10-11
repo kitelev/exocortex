@@ -14,6 +14,7 @@ import { BlankNode } from "../../../domain/models/rdf/BlankNode";
 import { QuotedTriple } from "../../../domain/models/rdf/QuotedTriple";
 import type { Subject, Predicate, Object as RDFObject } from "../../../domain/models/rdf/Triple";
 import { PropertyPathExecutor } from "./PropertyPathExecutor";
+import { LoggingService } from "../../../services/LoggingService";
 
 export class BGPExecutorError extends Error {
   constructor(message: string, cause?: Error) {
@@ -197,7 +198,10 @@ export class BGPExecutor {
    * Supports both simple predicates and property paths.
    * Also supports RDF-Star quoted triples in subject/object positions.
    */
-  private async *matchTriplePattern(pattern: AlgebraTriple): AsyncIterableIterator<SolutionMapping> {
+  private async *matchTriplePattern(
+    pattern: AlgebraTriple,
+    predicateFromBinding = false,
+  ): AsyncIterableIterator<SolutionMapping> {
     // Issue #2997 Phase 3: For property paths, the subject/object can also be
     // bound to a literal via instantiation (e.g., the previous BGP triple bound
     // a variable to a Literal value). PropertyPathExecutor's resolveElement
@@ -252,8 +256,14 @@ export class BGPExecutor {
         ? undefined  // Can't directly match quoted triples with variables
         : this.toRDFTerm(pattern.object);
 
-    // Query triple store
-    const triples = await this.tripleStore.match(subject, predicate, object);
+    // Query triple store. A predicate bound from a VARIABLE (join instantiation) is
+    // matched as stored, without sub-property widening (req 8a0ed10b): only a
+    // predicate written as a constant is widened, so a variable predicate gives
+    // the same result whatever the order of the patterns.
+    const triples =
+      predicateFromBinding && this.tripleStore.matchExactPredicate
+        ? await this.tripleStore.matchExactPredicate(subject, predicate, object)
+        : await this.tripleStore.match(subject, predicate, object);
 
     // Convert each matching triple to a solution mapping
     for (const triple of triples) {
@@ -420,13 +430,17 @@ export class BGPExecutor {
       existingSolutions.push(solution);
     }
 
+    // A variable predicate stays a variable predicate after instantiation (req 8a0ed10b).
+    const predicateFromBinding =
+      !this.isPropertyPath(pattern.predicate) && this.isVariable(pattern.predicate);
+
     // For each existing solution, find compatible bindings from new pattern
     for (const existingSolution of existingSolutions) {
       // Instantiate pattern with existing bindings
       const instantiatedPattern = this.instantiatePattern(pattern, existingSolution);
 
       // Match instantiated pattern
-      for await (const newBinding of this.matchTriplePattern(instantiatedPattern)) {
+      for await (const newBinding of this.matchTriplePattern(instantiatedPattern, predicateFromBinding)) {
         // Merge with existing solution
         const merged = existingSolution.merge(newBinding);
         if (merged !== null) {
@@ -561,9 +575,13 @@ export class BGPExecutor {
         "Wikilink could not be resolved to IRI (likely label-form wikilink with no matching basename/alias). " +
         "Check whether the target file exists in the queried vault, or add an alias. See issue #3282.",
     };
-    console.error(
+    // Through the project logger (the file's no-console debt, paid when req
+    // 8a0ed10b touched it): same console.error level and message, the fields on
+    // the Error — see PropertyPathExecutor.literalGuardDetail.
+    LoggingService.error(
       `[BGPExecutor] literal-safety guard fired in ${context}: literal in ${position} position — yielding 0 solutions. value="${truncated}"`,
-      diagnostic,
+      PropertyPathExecutor.literalGuardDetail(diagnostic),
+      PropertyPathExecutor.LITERAL_GUARD_CODE,
     );
     if (PropertyPathExecutor.isStrictModeEnabled()) {
       throw new BGPExecutorError(

@@ -199,11 +199,16 @@ SELECT ?idea ?src WHERE { ?idea eideas:ExoizationIdea_exoizable ?src }
 returns the ideas recorded through `_video` too. Nothing is written to the store
 (`packages/core/src/infrastructure/sparql/PropertyHierarchyResolvingStore.ts`).
 
-- Only predicates under `https://exocortex.my/ontology/` are widened; the W3C
-  vocabulary above is not, and neither are `exo:Class_superClass` /
-  `exo:Instance_class` (the class bridge owns them).
-- A variable predicate (`?s ?p ?o`) returns the stored predicates only, and
-  `GRAPH { … }` patterns are not widened.
+- Only predicates under `https://exocortex.my/ontology/` are widened. The W3C
+  vocabulary above (`http://www.w3.org/…`) is not, and neither are
+  `exo:Class_superClass` / `exo:Instance_class` (the class bridge owns them). A
+  prefix the engine does not know as W3C (e.g. `prov__`, `dcterms__`) lives under
+  `https://exocortex.my/ontology/` and IS widened.
+- Only a predicate written as a CONSTANT is widened. A variable predicate returns
+  the stored predicates only — unbound, or bound by an earlier pattern
+  (`<p> exo:Asset_label ?p . ?s ?p ?o`): the result does not depend on the order
+  of the patterns. `GRAPH { … }` patterns are not widened.
+- A `+` / `*` / `?` path over a widened predicate yields each node once.
 - `ExoQLQueryExecutor` config `resolvePropertyHierarchy: false` turns it off.
 
 ---

@@ -8,11 +8,6 @@
       "count": 1
     },
     {
-      "file": "packages/core/src/infrastructure/sparql/executors/BGPExecutor.ts",
-      "rule": "no-console",
-      "count": 1
-    },
-    {
       "file": "packages/core/src/infrastructure/sparql/executors/FilterExecutor.ts",
       "rule": "eslint-comments/no-restricted-disable",
       "count": 1
@@ -20,11 +15,6 @@
     {
       "file": "packages/core/src/infrastructure/sparql/executors/FilterExecutor.ts",
       "rule": "eslint-comments/require-description",
-      "count": 1
-    },
-    {
-      "file": "packages/core/src/infrastructure/sparql/executors/PropertyPathExecutor.ts",
-      "rule": "no-console",
       "count": 1
     },
     {

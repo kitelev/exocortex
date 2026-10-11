@@ -29,7 +29,12 @@
         "SP12",
         "SP14",
         "SP17",
-        "SP19"
+        "SP19",
+        "SP20",
+        "SP23",
+        "SP24",
+        "SP26",
+        "SP27"
       ]
     },
     "W2_index_keyed_per_executor": {

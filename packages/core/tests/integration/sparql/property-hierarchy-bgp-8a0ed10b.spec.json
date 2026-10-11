@@ -1,0 +1,23 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› (SP\\d+) @req",
+  "_doc": "Revert-verify mutant for the BGP half of req 8a0ed10b review H1: a predicate bound from a VARIABLE in a join is matched through ITripleStore.matchExactPredicate (no sub-property widening), so a variable predicate gives the same result whatever the order of the patterns. `tree`/`subject` are placeholders (§A145).",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/executors/BGPExecutor.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/property-hierarchy-subproperties.test.ts --verbose 2>&1",
+  "mutants": {
+    "B1_bound_predicate_widened": {
+      "_note": "The join no longer marks a variable-bound predicate: it is widened when an earlier pattern bound it (bind-first of SP20 returns 4 rows, bind-last 1), and queryOwn through a label-bound ?p reports an inherited sub-property value as own (SP28). Type-preserving (`length < 0`, never true).",
+      "from": "    const predicateFromBinding =\n      !this.isPropertyPath(pattern.predicate) && this.isVariable(pattern.predicate);",
+      "to": "    const predicateFromBinding =\n      !this.isPropertyPath(pattern.predicate) && this.isVariable(pattern.predicate) && pattern.subject.type.length < 0;",
+      "expect": ["SP20", "SP28"]
+    }
+  }
+}

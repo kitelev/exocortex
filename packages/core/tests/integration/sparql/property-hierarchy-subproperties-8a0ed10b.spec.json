@@ -30,20 +30,25 @@
         "SP14",
         "SP16",
         "SP17",
-        "SP19"
+        "SP19",
+        "SP20",
+        "SP23",
+        "SP24",
+        "SP26",
+        "SP27"
       ]
     },
     "M2_closure_not_transitive": {
       "_note": "Only DIRECT sub-properties are seen; a sub-sub-property (youtubeVideo ⊑ video ⊑ exoizable) is lost.",
       "from": "          if (!visited.has(grandChild)) queue.push(grandChild);",
       "to": "          if (!visited.has(grandChild)) queue.length;",
-      "expect": ["SP2"]
+      "expect": ["SP2", "SP27"]
     },
     "M3_no_dedup": {
       "_note": "A value reached through the property and a sub-property (or two sub-properties) comes back twice.",
       "from": "    return PropertyHierarchyResolvingStore.dedupTriples(out);",
       "to": "    return out;",
-      "expect": ["SP4"]
+      "expect": ["SP4", "SP26"]
     },
     "M4_no_namespace_gate": {
       "_note": "The W3C vocabulary is widened too: the live declaration exo__Statement_object ⊑ rdf__subject puts statement objects into rdf:subject.",
@@ -79,7 +84,12 @@
         "SP12",
         "SP16",
         "SP17",
-        "SP19"
+        "SP19",
+        "SP20",
+        "SP23",
+        "SP24",
+        "SP26",
+        "SP27"
       ]
     },
     "M8_symbolic_end_dropped": {
@@ -98,7 +108,12 @@
         "SP14",
         "SP16",
         "SP17",
-        "SP19"
+        "SP19",
+        "SP20",
+        "SP23",
+        "SP24",
+        "SP26",
+        "SP27"
       ]
     },
     "M9_index_never_invalidated": {
@@ -130,6 +145,55 @@
       "from": "      if (label.object instanceof IRI) return label.object.value;",
       "to": "      if (label.object instanceof IRI || label.object instanceof Literal) return label.object.value;",
       "expect": ["SP17"]
+    },
+    "M14_exact_predicate_widened": {
+      "_note": "matchExactPredicate widens like match: a predicate bound from a variable is widened, so the result depends on pattern order (review H1) and queryOwn through a label-bound ?p reaches inherited sub-property values and labels them own (review M1).",
+      "from": "  ): Promise<Triple[]> {\n    return this.real.match(subject, predicate, object);\n  }\n\n  /**\n   * Direct matches",
+      "to": "  ): Promise<Triple[]> {\n    return this.match(subject, predicate, object);\n  }\n\n  /**\n   * Direct matches",
+      "expect": ["SP20", "SP21", "SP28"]
+    },
+    "M15_xsd_string_not_normalized": {
+      "_note": "A simple literal and the same xsd:string literal reached through two properties come back as two values (review L2).",
+      "from": "      const dt = datatype === PropertyHierarchyResolvingStore.XSD_STRING ? \"\" : (datatype ?? \"\");",
+      "to": "      const dt = datatype ?? \"\";",
+      "expect": ["SP26"]
+    },
+    "M16_diamond_descendant_revisited": {
+      "_note": "A descendant reached through two declaration paths enters the closure twice; the dedup hides it in the rows, the match count does not (review L5). Type-preserving form (`length < 0`, never true). Also SP15: the same check is what keeps the PARENT out of its own closure (`visited` starts with it) — without it a self-declaration P ⊑ P puts P into its closure and the direct match runs twice. M11 removes the other half (the parent's seed in `visited`) and reddens SP15 alone.",
+      "from": "        if (visited.has(next)) continue;",
+      "to": "        if (visited.has(next) && next.length < 0) continue;",
+      "expect": ["SP15", "SP27"]
+    },
+    "MX1_widen_upward": {
+      "_note": "Declarations read backwards (contributed by the review): a query by a sub-property sees its parent (SP3), a query by the parent sees nothing extra (every widening axis). SP5 stays green — a cycle is symmetric under the swap.",
+      "from": "      const child = await this.toPredicateForm(d.subject);\n      const parent = await this.toPredicateForm(d.object);\n",
+      "to": "      const child = await this.toPredicateForm(d.object);\n      const parent = await this.toPredicateForm(d.subject);\n",
+      "expect": [
+        "SP1",
+        "SP2",
+        "SP3",
+        "SP4",
+        "SP6",
+        "SP8",
+        "SP9",
+        "SP10",
+        "SP12",
+        "SP14",
+        "SP16",
+        "SP17",
+        "SP19",
+        "SP20",
+        "SP23",
+        "SP24",
+        "SP26",
+        "SP27"
+      ]
+    },
+    "MX2_unbound_variable_predicate_widened": {
+      "_note": "An UNBOUND variable predicate gets entailed triples added (contributed by the review): `?s ?p ?o` returns the stored predicate AND its parents (SP11), and the bind-last join of SP20 sees them through the later label pattern.",
+      "from": "    return this.real.match(subject, predicate, object);\n  }\n\n  /**\n   * The as-stored match",
+      "to": "    if (!predicate) { const all = await this.real.match(subject, predicate, object); const idx = await this.getIndex(); const extra: Triple[] = []; for (const [par, subs] of idx) for (const tr of all) if (subs.some((q) => q.value === tr.predicate.value)) extra.push(new Triple(tr.subject, new IRI(par), tr.object)); return [...all, ...extra]; }\n    return this.real.match(subject, predicate, object);\n  }\n\n  /**\n   * The as-stored match",
+      "expect": ["SP11", "SP20"]
     }
   }
 }
