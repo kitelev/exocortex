@@ -795,8 +795,14 @@ export class ExoQLQueryExecutor {
     if (!expr || typeof expr !== 'object') return;
 
     // Handle EXISTS/NOT EXISTS patterns
+    // EXISTS is evaluated by substitution (§18.6) even inside a join operand: the
+    // bind join replaces the shared variable in the operand's own patterns, so the
+    // per-row EXISTS evaluation no longer sees it — the substitution here is the
+    // only correlation left, and a slice must not withhold it (PR #4557 review
+    // round 4, HIGH-2: `{ ?x label ?l FILTER EXISTS { SELECT ?x … LIMIT 1 } }`
+    // nested in a join returned every row).
     if (expr.type === 'exists' && expr.pattern) {
-      expr.pattern = this.substituteInOperation(expr.pattern as AlgebraOperation, bindings, scope);
+      expr.pattern = this.substituteInOperation(expr.pattern as AlgebraOperation, bindings, "correlated");
     }
 
     // ⛔ A variable REFERENCE inside an expression was never replaced — this

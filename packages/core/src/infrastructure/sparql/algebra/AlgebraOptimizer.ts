@@ -292,7 +292,14 @@ export class AlgebraOptimizer {
       const leftOnly = filterVars.every((v) => leftVars.has(v));
       const rightOnly = filterVars.every((v) => rightVars.has(v));
 
-      if (leftOnly && !rightOnly) {
+      // ⛔ Symmetric to the right-push guard below: only when NO filter variable can
+      // be bound on the right. A filter pushed left onto a variable the right side
+      // shares is moved to the RIGHT of a bind join by the later join reordering
+      // (constrained side first), and the substituted IRI then drops every row (bug
+      // 4e3ce943). With no shared variable the filter reads the same bindings before
+      // and after the join, whichever side ends up on the left (PR #4557 review round
+      // 4, HIGH-1: `{ ?s label ?l . ?s ?p ?o } { ?s a C } FILTER(?s IN (…))` → 0).
+      if (leftOnly && !rightOnly && !filterVars.some((v) => rightVars.has(v))) {
         return {
           type: "join",
           left: {
@@ -413,6 +420,15 @@ export class AlgebraOptimizer {
     }
   }
 
+  /**
+   * The variables an operand can bind. ⛔ It must OVER-approximate: the pushdown
+   * guards read it as "the other side cannot bind this variable", so a type that
+   * reports too few (VALUES, a subquery, LATERAL, GRAPH — once an empty set) sends a
+   * filter to the side where the bind join substitutes an IRI into it and every row
+   * is dropped (PR #4557 review round 4, HIGH-1). Over-approximating the operand's
+   * OWN side is harmless: a variable no side binds reads the same unbound value
+   * before and after the join.
+   */
   private getOperationVariables(operation: AlgebraOperation): Set<string> {
     const vars = new Set<string>();
 
@@ -450,9 +466,45 @@ export class AlgebraOptimizer {
       const inner = this.getOperationVariables(operation.input);
       inner.add(operation.variable);
       return inner;
+    } else if (operation.type === "values") {
+      return new Set(operation.variables);
+    } else if (operation.type === "subquery") {
+      // What the subquery projects (under its solution modifiers); `SELECT *` has
+      // no project node and falls back to every variable it mentions.
+      let node: AlgebraOperation = operation.query;
+      while (node.type === "slice" || node.type === "distinct" || node.type === "reduced" || node.type === "orderby") {
+        node = node.input;
+      }
+      return node.type === "project" ? new Set(node.variables) : this.mentionedVariables(operation.query);
+    } else {
+      // GRAPH, SERVICE, LATERAL, GROUP, … — every variable mentioned anywhere below.
+      return this.mentionedVariables(operation);
     }
 
+    // bgp
     return vars;
+  }
+
+  /** Every variable name mentioned anywhere in the subtree (terms, expressions, VALUES, BIND). */
+  private mentionedVariables(node: unknown, out: Set<string> = new Set()): Set<string> {
+    if (Array.isArray(node)) {
+      for (const item of node) this.mentionedVariables(item, out);
+      return out;
+    }
+    if (!node || typeof node !== "object") return out;
+    const record = node as Record<string, unknown>;
+    if (record.type === "variable") {
+      const name = typeof record.value === "string" ? record.value : record.name;
+      if (typeof name === "string") out.add(name);
+    }
+    if (typeof record.variable === "string") out.add(record.variable);
+    if (Array.isArray(record.variables)) {
+      for (const v of record.variables) if (typeof v === "string") out.add(v);
+    }
+    for (const value of Object.values(record)) {
+      if (value && typeof value === "object") this.mentionedVariables(value, out);
+    }
+    return out;
   }
 
   joinReordering(operation: AlgebraOperation): AlgebraOperation {

@@ -502,6 +502,90 @@ describe("BIND extends the group prefix at its position (req 60ed88e7, #4551)", 
     }
   });
 
+  // ---- Review round 4 (PR #4557) ----
+
+  const v1 = `<${fileIri(I.v1)}>`;
+  const v2 = `<${fileIri(I.v2)}>`;
+  const bookIdea = `<${fileIri(I.book)}>`;
+  const CLS = `?x exo:Instance_class eideas:ExoizationIdea`;
+  const slicedVideo = `{ SELECT ?x WHERE { ?x eideas:ExoizationIdea_video ?o } LIMIT 1 }`;
+
+  it("B33 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 an IN / NOT IN filter on a variable shared with a VALUES operand keeps its rows", async () => {
+    const inValues = (filter: string) => rows(`SELECT ?s ?p ?o WHERE { VALUES ?s { ${v1} ${v2} ${bookIdea} } ?s ?p ?o FILTER(${filter}) }`, ["s", "p", "o"]);
+    const reference = (subjects: string) => rows(`SELECT ?s ?p ?o WHERE { ?s ?p ?o FILTER(?s IN (${subjects})) }`, ["s", "p", "o"]);
+    const keptIn = await reference(`${v1}, ${v2}`);
+    expect(keptIn.length).toBeGreaterThan(0);
+    expect(await inValues(`?s IN (${v1}, ${v2})`)).toEqual(keptIn);
+    const keptNotIn = await reference(`${v2}, ${bookIdea}`);
+    expect(keptNotIn.length).toBeGreaterThan(0);
+    expect(await inValues(`?s NOT IN (${v1})`)).toEqual(keptNotIn);
+  });
+
+  it("B34 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 an IN / NOT IN filter on a variable a subquery operand projects keeps its rows", async () => {
+    const q = (filter: string) => `SELECT ?s WHERE { { SELECT ?s WHERE { ?s exo:Instance_class eideas:ExoizationIdea } } ?s exo:Asset_label ?l FILTER(${filter}) }`;
+    expect(await rows(q(`?s IN (${v1}, ${v2})`), ["s"])).toEqual([v1, v2].sort());
+    expect(await rows(q(`?s NOT IN (${v1})`), ["s"])).toEqual([`<${fileIri(I.direct)}>`, v2, bookIdea].sort());
+  });
+
+  it("B35 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 an IN filter on a variable an OPTIONAL and a VALUES operand share keeps its rows", async () => {
+    const SV1 = `<${fileIri(S.v1)}>`;
+    const base = `${CLS} OPTIONAL { ?x eideas:ExoizationIdea_video ?o } VALUES ?o { ${SV1} }`;
+    const expected = await rows(`SELECT ?x ?o WHERE { ${base} }`, ["x", "o"]);
+    // Input is built: every row carries ?o = S.v1 (bound by the OPTIONAL or by VALUES).
+    expect(expected.length).toBeGreaterThan(1);
+    expect(expected.every((r) => r.endsWith(`| ${SV1}`))).toBe(true);
+    expect(await rows(`SELECT ?x ?o WHERE { ${base} FILTER(?o IN (${SV1})) }`, ["x", "o"])).toEqual(expected);
+  });
+
+  it("B36 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a filter is not pushed onto the operand the join reordering moves to the right", async () => {
+    const filter = `FILTER(?s IN (${v1}, ${v2}) && ?p IN (exo:Asset_label))`;
+    // Reference: one BGP, no join to push across.
+    const expected = await rows(`SELECT ?s ?p WHERE { ?s exo:Asset_label ?l . ?s ?p ?o . ?s exo:Instance_class eideas:ExoizationIdea ${filter} }`, ["s", "p"]);
+    expect(expected).toHaveLength(2);
+    expect(
+      await rows(`SELECT ?s ?p WHERE { { ?s exo:Asset_label ?l . ?s ?p ?o } { ?s exo:Instance_class eideas:ExoizationIdea } ${filter} }`, ["s", "p"]),
+    ).toEqual(expected);
+  });
+
+  it("B37 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 an IN filter on a variable a LATERAL operand binds keeps its rows", async () => {
+    const q = `SELECT ?x WHERE { ${CLS} LATERAL { SELECT ?l WHERE { ?x exo:Asset_label ?l } LIMIT 1 } ?x exo:Asset_uid ?u FILTER(?x IN (${v1}, ${v2})) }`;
+    expect(await rows(q, ["x"])).toEqual([v1, v2].sort());
+  });
+
+  it("B38 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 EXISTS over a LIMIT subquery inside a join operand stays correlated", async () => {
+    const videoIdeas = [v1, v2].sort();
+    const others = [`<${fileIri(I.direct)}>`, bookIdea].sort();
+    expect(await rows(`SELECT ?x WHERE { ${CLS} . { ?x exo:Asset_label ?l FILTER EXISTS ${slicedVideo} } }`, ["x"])).toEqual(videoIdeas);
+    expect(await rows(`SELECT ?x WHERE { ${CLS} . { ?x exo:Asset_label ?l FILTER NOT EXISTS ${slicedVideo} } }`, ["x"])).toEqual(others);
+    expect(await rows(`SELECT ?x WHERE { ${CLS} BIND(1 AS ?one) { ?x exo:Asset_label ?l FILTER EXISTS ${slicedVideo} } }`, ["x"])).toEqual(videoIdeas);
+  });
+
+  // EXISTS hidden inside a larger FILTER expression after a BIND: the filter stays
+  // above the join. Reference: the BIND last (no join under the filter).
+  const existsAfterBind = async (filter: string) => {
+    const ctl = await rows(`SELECT ?s ?u WHERE { ?s exo:Asset_label ?l . ?s exo:Asset_uid ?u BIND(STRLEN(STR(?l)) AS ?n) FILTER(${filter}) }`, ["s", "u"]);
+    expect(ctl.length).toBeGreaterThan(40);
+    expect(await rows(`SELECT ?s ?u WHERE { ?s exo:Asset_label ?l BIND(STRLEN(STR(?l)) AS ?n) ?s exo:Asset_uid ?u FILTER(${filter}) }`, ["s", "u"])).toEqual(ctl);
+  };
+
+  it("B39 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a FILTER with EXISTS inside a function call (IF, COALESCE) stays above the join after a BIND", async () => {
+    await existsAfterBind(`IF(NOT EXISTS { ?s exo:Asset_label ?u }, ?n > 0, false)`);
+    await existsAfterBind(`COALESCE(NOT EXISTS { ?s exo:Asset_label ?u }, false) && ?n > 0`);
+  });
+
+  it("B40 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a FILTER with EXISTS inside a comparison stays above the join after a BIND", async () => {
+    await existsAfterBind(`(?n > 0) = (NOT EXISTS { ?s exo:Asset_label ?u })`);
+  });
+
+  it("B41 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a FILTER with EXISTS inside IN stays above the join after a BIND", async () => {
+    await existsAfterBind(`(NOT EXISTS { ?s exo:Asset_label ?u }) IN (?n > 0)`);
+  });
+
+  it("B42 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 EXISTS reaches a LIMIT subquery nested in a join inside its pattern", async () => {
+    const q = `SELECT ?x WHERE { ${CLS} FILTER EXISTS { ?x exo:Asset_label ?l ${slicedVideo} } }`;
+    expect(await rows(q, ["x"])).toEqual([v1, v2].sort());
+  });
+
   it("B12 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a BIND reading an earlier BIND chains, and the later pattern joins with the result", async () => {
     const q = `SELECT ?idea ?src WHERE {
       BIND("ExoizationIdea_video" AS ?local)
