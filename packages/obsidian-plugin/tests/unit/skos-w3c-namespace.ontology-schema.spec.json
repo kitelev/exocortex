@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutant for req e750782f-907b-4573-99ce-f9a5e3150418 (review round 1, MEDIUM) — OntologySchemaService.toClassName kept only exocortex-base classes, dropping skos__Concept as a range class and as an ancestor.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› \\[([A-Z]\\d+)\\]",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/application/services/OntologySchemaService.ts",
+  "harness": "cd \"$(dirname {subject})/../../..\" && node ../../node_modules/jest/bin/jest.js tests/unit/skos-w3c-namespace.plugin.test.ts --verbose 2>&1",
+  "mutants": {
+    "L4_class_name_exocortex_only": {
+      "_note": "The pre-fix restriction (exocortex base), in one line. Anchor carries the return line: since review round 2 the same guard line also sits in rangeToFieldType (mutant L7).",
+      "from": "    if (term && !Namespace.isSchemaVocabulary(term.namespace)) {\n      return `${term.namespace.prefix}__${term.localName}`;",
+      "to": "    if (term && term.namespace.iri.value.startsWith(Namespace.EXOCORTEX_ONTOLOGY_BASE)) {\n      return `${term.namespace.prefix}__${term.localName}`;",
+      "expect": ["L4", "L5"]
+    },
+    "L7_field_type_exocortex_only": {
+      "_note": "Review round 2 (MEDIUM): rangeToFieldType decided 'reference' by substring (exocortex.my/ontology, Asset, Task…), so a W3C skos:Concept range fell back to Text. The mutant restores the exocortex-only reading for this guard.",
+      "from": "    if (term && !Namespace.isSchemaVocabulary(term.namespace)) {\n      return PropertyFieldType.Wikilink;",
+      "to": "    if (term && term.namespace.iri.value.startsWith(Namespace.EXOCORTEX_ONTOLOGY_BASE)) {\n      return PropertyFieldType.Wikilink;",
+      "expect": ["L7"]
+    }
+  }
+}

@@ -1,14 +1,5 @@
 import { SPARQL_PREFIXES } from "@kitelev/exocortex-core";
-import { PREFIX_PATTERN_SOURCE, PREFIX_RE } from "./namespacePrefix.js";
-
-/**
- * Standard Exocortex ontology IRI base used to derive ad-hoc prefix
- * declarations for non-whitelisted namespaces (e.g. `aiKnow:`, `aiTask:`).
- * Mirrors `Namespace.EXOCORTEX_ONTOLOGY_BASE` in the core package — kept as a
- * local constant to avoid pulling the full RDF module into the CLI's mock
- * surface area for every consuming test.
- */
-const EXOCORTEX_ONTOLOGY_BASE = "https://exocortex.my/ontology/";
+import { PREFIX_PATTERN_SOURCE, PREFIX_RE, namespaceBaseFor } from "./namespacePrefix.js";
 
 /**
  * Prefix shape — see `namespacePrefix.ts` (the CLI copy of core
@@ -96,9 +87,10 @@ export function injectExocortexPrefixes(query: string): string {
   for (const prefix of usedPrefixes) {
     if (declaringPrefixes.has(prefix.toLowerCase())) continue;
     if (!VALID_PREFIX_PATTERN.test(prefix)) continue;
-    missingPrefixes.push(
-      `PREFIX ${prefix}: <${EXOCORTEX_ONTOLOGY_BASE}${prefix}#>`,
-    );
+    // A registered W3C vocabulary (`skos:`, `rdfs:`, `owl:`, `sh:`) declares its
+    // canonical base — the one the converter emits — not the ad-hoc form (req
+    // e750782f-907b-4573-99ce-f9a5e3150418: an undeclared `skos:` found 0 mappings).
+    missingPrefixes.push(`PREFIX ${prefix}: <${namespaceBaseFor(prefix)}>`);
     declaringPrefixes.add(prefix.toLowerCase());
   }
 

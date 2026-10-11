@@ -14,38 +14,28 @@
   "harness": "cd \"$(dirname {subject})/../../../..\" && node ../../node_modules/jest/bin/jest.js tests/unit/prefix-grammar-4353.test.ts --verbose 2>&1",
   "mutants": {
     "M1_range_iri_narrow": {
-      "_note": "Pre-fix extractClassFromRange (IRI branch): null → NO class filter, so the autocomplete offers every note in the vault instead of the range's instances.",
-      "from": "    const term = Namespace.fromTermIRI(rangeType);\n    if (\n      term &&\n      term.namespace.iri.value.startsWith(Namespace.EXOCORTEX_ONTOLOGY_BASE)\n    ) {\n      return `${term.namespace.prefix}__${term.localName}`;\n    }",
+      "_note": "Pre-fix extractClassFromRange (IRI branch): null → NO class filter, so the autocomplete offers every note in the vault instead of the range's instances. ⛤ Re-anchored for req e750782f-907b-4573-99ce-f9a5e3150418: the restriction now names the W3C SCHEMA vocabularies (`Namespace.isSchemaVocabulary`) instead of 'every base outside exocortex.my', because skos is registered and `skos__Concept` is a class. The mutation itself is unchanged.",
+      "from": "    const term = Namespace.fromTermIRI(rangeType);\n    if (term && !Namespace.isSchemaVocabulary(term.namespace)) {\n      return `${term.namespace.prefix}__${term.localName}`;\n    }",
       "to": "    const m = rangeType.match(/https:\\/\\/exocortex\\.my\\/ontology\\/([a-z]+)#(.+)$/);\n    if (m) {\n      return `${m[1]}__${m[2]}`;\n    }",
-      "expect": [
-        "A40",
-        "A41",
-        "A44"
-      ]
+      "expect": ["A40", "A41", "A44"]
     },
     "M2_range_prefixed_narrow": {
       "_note": "Pre-fix extractClassFromRange (prefixed branch): a range already written as `exo003__Alias` is refused.",
       "from": "    const parsed = Namespace.fromPropertyKey(rangeType);\n    if (parsed && /^[A-Za-z_]+$/.test(parsed.localName)) {\n      return rangeType;\n    }",
       "to": "    if (rangeType.match(/^[a-z]+__[A-Za-z_]+$/)) {\n      return rangeType;\n    }",
-      "expect": [
-        "A42"
-      ]
+      "expect": ["A42"]
     },
     "M3_format_class_label_narrow": {
       "_note": "Pre-fix formatClassLabel: the prefix stays in the suggestion badge.",
       "from": "    const parsed = Namespace.fromPropertyKey(className);\n    return parsed ? parsed.localName : className;",
       "to": "    return className.replace(/^[a-z]+__/, \"\");",
-      "expect": [
-        "A43"
-      ]
+      "expect": ["A43"]
     },
     "M4_range_namespace_restriction_dropped": {
-      "_note": "The guard ADDED for the review's MEDIUM finding: without the exocortex-base restriction a registered W3C range (`rdfs:Class`) becomes the class filter `[\"rdfs__Class\"]`, which matches zero notes — where the old regex returned null and the picker showed everything.",
-      "from": "    if (\n      term &&\n      term.namespace.iri.value.startsWith(Namespace.EXOCORTEX_ONTOLOGY_BASE)\n    ) {",
+      "_note": "The guard ADDED for the review's MEDIUM finding: without the exocortex-base restriction a registered W3C range (`rdfs:Class`) becomes the class filter `[\"rdfs__Class\"]`, which matches zero notes — where the old regex returned null and the picker showed everything. ⛤ Re-anchored for req e750782f-907b-4573-99ce-f9a5e3150418: the restriction now names the W3C SCHEMA vocabularies (`Namespace.isSchemaVocabulary`) instead of 'every base outside exocortex.my', because skos is registered and `skos__Concept` is a class. The mutation itself is unchanged.",
+      "from": "    if (term && !Namespace.isSchemaVocabulary(term.namespace)) {",
       "to": "    if (term) {",
-      "expect": [
-        "A44"
-      ]
+      "expect": ["A44"]
     }
   }
 }

@@ -1,0 +1,19 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "red_re": "› ([SK]\\d+) ",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/cli/jest.config.js packages/cli/tests/integration/skos-w3c-namespace.integration.test.ts 2>&1",
+  "_doc": "Revert-verify mutants for req e750782f-907b-4573-99ce-f9a5e3150418, SUBJECT packages/cli/src/commands/resolve-buttons.ts: the store's class IRI is read back through Namespace.fromTermIRI, not a /ontology/<p># regex that cannot read a registered W3C vocabulary.",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/resolve-buttons.ts",
+  "mutants": {
+    "R1_regex_inverse_back": {
+      "from": "  const term = Namespace.fromTermIRI(value);\n  return term ? `${term.namespace.prefix}__${term.localName}` : null;",
+      "to": "  const m = value.match(/\\/ontology\\/([^#/]+)#(.+)$/);\n  return m ? `${m[1]}__${m[2]}` : null;",
+      "expect": ["K6"]
+    }
+  }
+}

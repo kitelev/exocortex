@@ -1,0 +1,37 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "red_re": "› ([SK]\\d+) ",
+  "_doc": "Revert-verify mutants for req e750782f-907b-4573-99ce-f9a5e3150418, SUBJECT packages/cli/src/commands/validate-schema.ts. The skos__ map entry is load-bearing ONLY where skos__Concept is the SUBJECT of a class edge (K5): in K1/K4 the converter already emits the edge's object as the W3C IRI and labelToOntologyIRI is never asked (measured).",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/validate-schema.ts",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/integration/rdf/skos-w3c-namespace-emission.test.ts 2>&1; CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/cli/jest.config.js packages/cli/tests/integration/skos-w3c-namespace.integration.test.ts 2>&1",
+  "mutants": {
+    "V1_skos_map_entry_dropped": {
+      "from": "  [\"skos__\", \"http://www.w3.org/2004/02/skos/core#\"],\n",
+      "to": "",
+      "expect": ["K5"]
+    },
+    "X1_parent_ontology_uri_only_exocortex": {
+      "_note": "Review round 1 (MEDIUM, K1/K4 vacuity): Pass 2b keeps a W3C parent IRI as the ONTOLOGY-URI edge. The frontmatter edge desk__Neutral ⊂ skos__Concept has a FILE-IRI subject, so only K4 rests on this branch (measured).",
+      "from": "          : parentFileIri; // already an ontology URI",
+      "to": "          : (parentFileIri.startsWith(\"https://exocortex.my/ontology/\") ? parentFileIri : undefined); // already an ontology URI",
+      "expect": ["K4"]
+    },
+    "X2_file_parent_only_exocortex": {
+      "_note": "The desk ADAPTER edge materialises with the SYMBOLIC class IRI as subject (`concept#Concept exo:Class_superClass skos:Concept`), so its W3C parent is kept by the 'file IRI' branch — K1 rests on it (measured; X1 leaves K1 green).",
+      "from": "        fileSet.add(parentFileIri);",
+      "to": "        if (parentFileIri.startsWith(\"obsidian://\") || parentFileIri.startsWith(\"https://exocortex.my/ontology/\")) fileSet.add(parentFileIri);",
+      "expect": ["K1"]
+    },
+    "D1_source2_exocortex_only": {
+      "_note": "Review round 1 (LOW): legacy loadDeclaredProperties Source 2 read only exocortex-base labels, so skos__exactMatch was 'undeclared'.",
+      "from": "    if (typeof label === \"string\" && Namespace.fromTermIRI(label)) {",
+      "to": "    if (typeof label === \"string\" && label.startsWith(\"https://exocortex.my/ontology/\")) {",
+      "expect": ["K10"]
+    }
+  }
+}

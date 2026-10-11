@@ -4,6 +4,7 @@ import {
   parseYamlFrontmatterTolerant,
   frontmatterBlockBody,
   DomainTriple,
+  Namespace,
   type IFile,
 } from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
@@ -218,20 +219,23 @@ export class CandidateShaclValidator {
 }
 
 /**
- * `https://exocortex.my/ontology/<ns>#<Local>` → `<ns>__<Local>` — the
- * frontmatter KEY the caller typed, so a reported violation maps straight back
- * to the offending `--property` flag. Namespace-agnostic on purpose (unlike
- * `uriToKey`, which is limited to the curated `NAMESPACE_PREFIX_MAP` and would
- * return null for any newer namespace). Returns the raw IRI unchanged when the
- * path is not an Exocortex ontology term (a foreign/W3C predicate).
+ * Term IRI → `<ns>__<Local>` — the frontmatter KEY the caller typed, so a
+ * reported violation maps straight back to the offending `--property` flag.
+ * Namespace-agnostic on purpose (unlike `uriToKey`, which is limited to the
+ * curated `NAMESPACE_PREFIX_MAP` and would return null for any newer
+ * namespace). Returns the raw IRI unchanged when it is not a term of any
+ * known or derivable namespace.
+ *
+ * Through core's `Namespace.fromTermIRI` (the inverse of the converter's own
+ * prefix table): hyphen-separated prefixes (issue #4350, `tbank-nessy__x` →
+ * `…/ontology/tbank-nessy#x`) AND registered W3C vocabularies (req
+ * e750782f-907b-4573-99ce-f9a5e3150418: `skos__exactMatch` →
+ * `http://www.w3.org/2004/02/skos/core#exactMatch`) both name their key. The
+ * `…/ontology/<ns>#` regex this replaces returned the raw W3C IRI.
  */
 function iriToFrontmatterKey(iri: string): string {
-  // Hyphen-separated runs admitted (issue #4350): a `tbank-nessy__x` key is now
-  // emitted as `…/ontology/tbank-nessy#x`, and its violation must name that key.
-  const match = iri.match(
-    /^https:\/\/exocortex\.my\/ontology\/([A-Za-z][A-Za-z0-9_]*(?:-[A-Za-z0-9_]+)*)#(.+)$/,
-  );
-  return match ? `${match[1]}__${match[2]}` : iri;
+  const term = Namespace.fromTermIRI(iri);
+  return term ? `${term.namespace.prefix}__${term.localName}` : iri;
 }
 
 /**

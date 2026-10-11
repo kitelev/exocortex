@@ -168,13 +168,19 @@ export function extractClasses(
 }
 
 /**
- * Convert an ontology IRI (`https://exocortex.my/ontology/<prefix>#<Local>`) to
- * its symbolic class name (`<prefix>__<Local>`); `null` for non-ontology IRIs
- * (e.g. `obsidian://vault/...md` file IRIs).
+ * Convert a class term IRI to its symbolic class name (`<prefix>__<Local>`);
+ * `null` for non-term IRIs (e.g. `obsidian://vault/...md` file IRIs).
+ *
+ * Through core's `Namespace.fromTermIRI` — the inverse derived from the SAME
+ * `KNOWN_NAMESPACES` array the converter emits with — and not a local regex:
+ * a `/ontology/<p>#` regex cannot read a registered W3C vocabulary
+ * (`http://www.w3.org/2004/02/skos/core#Concept`), so an instance of the
+ * `skos__Concept` stub lost that class name here and a binding authored
+ * against it would never match (req e750782f-907b-4573-99ce-f9a5e3150418).
  */
 function ontologyIriToSymbolic(value: string): string | null {
-  const m = value.match(/\/ontology\/([^#/]+)#(.+)$/);
-  return m ? `${m[1]}__${m[2]}` : null;
+  const term = Namespace.fromTermIRI(value);
+  return term ? `${term.namespace.prefix}__${term.localName}` : null;
 }
 
 /**

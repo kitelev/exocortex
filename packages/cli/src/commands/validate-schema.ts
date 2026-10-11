@@ -17,6 +17,7 @@ import {
   DomainLiteral,
   DomainTriple,
   OBSIDIAN_VAULT_SCHEME,
+  Namespace,
   type ValidationReport,
   type Violation,
   type ClassHierarchy,
@@ -97,6 +98,10 @@ export const NAMESPACE_PREFIX_MAP: ReadonlyMap<string, string> = new Map([
   ["owl__", "http://www.w3.org/2002/07/owl#"],
   ["xsd__", "http://www.w3.org/2001/XMLSchema#"],
   ["sh__", "http://www.w3.org/ns/shacl#"],
+  // req e750782f-907b-4573-99ce-f9a5e3150418: core registers skos canonically,
+  // so the skos__Concept subClassOf edge must be built under the same W3C IRI —
+  // otherwise every SKOS mapping whose range is skos__Concept is a false sh:class.
+  ["skos__", "http://www.w3.org/2004/02/skos/core#"],
 ]);
 
 export type ShapesFormat = "text" | "json" | "earl";
@@ -414,9 +419,14 @@ export async function loadDeclaredProperties(
       }
     }
 
-    // Source 2: IRI labels (full ontology URIs stored as exo:Asset_label)
+    // Source 2: IRI labels (full ontology URIs stored as exo:Asset_label).
+    // req e750782f: any term IRI a REGISTERED or ad-hoc namespace resolves —
+    // not only the exocortex.my base. A `skos__exactMatch` property-def's label
+    // is emitted under the W3C SKOS base, and `keyToURI("skos__exactMatch")`
+    // builds that same IRI, so the exocortex-only test left every SKOS mapping
+    // key "undeclared" in the legacy (non-shapes) mode.
     const label = json.label;
-    if (typeof label === "string" && label.startsWith("https://exocortex.my/ontology/")) {
+    if (typeof label === "string" && Namespace.fromTermIRI(label)) {
       declaredProperties.add(label);
     }
   }

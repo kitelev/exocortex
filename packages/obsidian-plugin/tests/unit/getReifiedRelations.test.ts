@@ -268,11 +268,14 @@ describe("symbolicIriToPropertyKey (inverse of labelToSymbolicIRI)", () => {
     expect(
       symbolicIriToPropertyKey("obsidian://vault/assetspaces/x/1234.md"),
     ).toBeNull();
-    // An UNREGISTERED external vocabulary still yields null (SKOS is not in
-    // KNOWN_NAMESPACES) — the exemption is per-registered-namespace, not
-    // "anything on w3.org".
+    // An UNREGISTERED external vocabulary still yields null (W3C Basic Geo is
+    // not in KNOWN_NAMESPACES) — the exemption is per-registered-namespace, not
+    // "anything on w3.org". ⛤ This control used SKOS until req
+    // e750782f-907b-4573-99ce-f9a5e3150418 registered it; SKOS now round-trips
+    // (see the SKOS round-trip case below). Geo keeps the same shape: a w3.org
+    // base ending in '#'.
     expect(
-      symbolicIriToPropertyKey("http://www.w3.org/2004/02/skos/core#broader"),
+      symbolicIriToPropertyKey("http://www.w3.org/2003/01/geo/wgs84_pos#lat"),
     ).toBeNull();
     expect(symbolicIriToPropertyKey("https://exocortex.my/ontology/exo#")).toBeNull();
     expect(symbolicIriToPropertyKey("")).toBeNull();
@@ -315,6 +318,30 @@ describe("symbolicIriToPropertyKey (inverse of labelToSymbolicIRI)", () => {
       const iri = labelToSymbolicIRI(key);
       expect(iri).not.toBeNull();
       // The documented invariant: symbolicIriToPropertyKey(labelToSymbolicIRI(k)) === k
+      expect(symbolicIriToPropertyKey(iri!.value)).toBe(key);
+    }
+  });
+
+  /**
+   * The de-reify path of the author-comparison desk: a mapping statement's
+   * predicate is `skos__exactMatch` (RFC 14217015 §5). Once skos is registered,
+   * the forward path emits the W3C IRI — the inverse must read it back, or the
+   * reified mapping "could not be mapped back to a frontmatter key" (#3904).
+   */
+  it("@req:e750782f-907b-4573-99ce-f9a5e3150418 the W3C SKOS mapping predicates round-trip (desk mappings must de-reify)", () => {
+    expect(
+      symbolicIriToPropertyKey("http://www.w3.org/2004/02/skos/core#exactMatch"),
+    ).toBe("skos__exactMatch");
+    for (const key of [
+      "skos__exactMatch",
+      "skos__closeMatch",
+      "skos__broadMatch",
+      "skos__narrowMatch",
+      "skos__relatedMatch",
+      "skos__Concept",
+    ]) {
+      const iri = labelToSymbolicIRI(key);
+      expect(iri?.value.startsWith("http://www.w3.org/2004/02/skos/core#")).toBe(true);
       expect(symbolicIriToPropertyKey(iri!.value)).toBe(key);
     }
   });
