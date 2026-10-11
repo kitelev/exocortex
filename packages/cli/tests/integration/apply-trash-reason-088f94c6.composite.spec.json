@@ -1,0 +1,30 @@
+{
+  "_doc": "Revert-verify for req 088f94c6 (ems__Bug b090c2e8): `apply trash` records the reason as its own ems__EffortTrashReason asset and never rewrites the effort body. Subject: the SHIPPED trash composite d612e5f5 in the exoas-exocmd submodule. One spec per subject — the steps' own mutants live in apply-trash-reason-088f94c6.reason-step.spec.json. Run from the repo root after setting `tree` and `subject` to YOUR checkout (both absolute): python3 -I ~/.claude/bin/mutant-driver.py <copy of this spec>. Needs initialised submodules. R4 is the preservation axis (status/category/timestamp unchanged by this req) and no mutant here targets it; its revert is the full old composite, recorded in the PR body (old composite: R1-R3, R5-R8 red, R4 green).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/exoas-exocmd/exocmd/d612e5f5-f495-47a1-ad4d-4f468e8b841a.md",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../cli\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/apply-trash-reason-088f94c6.integration.test.ts 2>&1",
+  "red_re": "› (R\\d+\\w*) ",
+  "mutants": {
+    "M1_create_reason_step_dropped": {
+      "from": "  - \"[[a960eb76-c669-43af-80b4-94dac438dd70]]\"\n",
+      "to": "",
+      "expect": ["R1", "R2", "R3"]
+    },
+    "M2_private_comment_step_back": {
+      "_note": "Inserted BEFORE the create step on purpose. After a create_instance step the composite threads every body_template step into the CREATED asset (GroundingExecutor.executeComposite, lastCreatedPath), so the same step re-added at the tail rewrites the reason's body, not the effort's: measured R7 only. Before the create step it targets the effort, which is the shipped defect.",
+      "from": "  - \"[[a960eb76-c669-43af-80b4-94dac438dd70]]\"\n",
+      "to": "  - \"[[d3412530-3433-4291-bb8f-00bbedd2676e|Add Trashed Comment]]\"\n  - \"[[a960eb76-c669-43af-80b4-94dac438dd70]]\"\n",
+      "expect": ["R5", "R7"]
+    },
+    "M3_reason_input_not_required": {
+      "from": "\"required\\\":[\\\"label\\\"]}\"",
+      "to": "\"required\\\":[]}\"",
+      "expect": ["R6", "R8"]
+    }
+  }
+}
