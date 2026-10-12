@@ -484,13 +484,17 @@ export class AlgebraOptimizer {
   }
 
   private reorderJoin(join: JoinOperation): AlgebraOperation {
-    // ⛔ A join with a BIND (Extend) in either operand keeps the written order (req
-    // 60ed88e7). A BIND extends only the patterns that PRECEDE it (SPARQL 1.1
-    // §18.2.2.4); moved to the right of a bind join it would be evaluated with the
-    // left solution substituted INTO its expression, so `{ BIND(STR(?x) AS ?y) ?s
-    // exo:Asset_label ?x }` would bind ?y — the standard leaves it unbound. A join
-    // without a BIND is reordered as before.
-    if (this.containsExtend(join)) {
+    // ⛔ A BIND is never moved to the RIGHT of a pattern that follows it (req
+    // 60ed88e7). It extends only the patterns that PRECEDE it (SPARQL 1.1
+    // §18.2.2.4); on the right of a bind join it would be evaluated with the left
+    // solution substituted INTO its expression, so `{ BIND(STR(?x) AS ?y) ?s
+    // exo:Asset_label ?x }` would bind ?y — the standard leaves it unbound.
+    // ⛔ The LEFT operand only: a nested BIND group on the right may still be moved
+    // left, where it is evaluated on its own as the standard prescribes; pinning it
+    // on the right let the bind join substitute outer values into it (PR #4557
+    // review round 6, HIGH: `?s label ?l { ?s uid ?u BIND(?l AS ?y) }` bound ?y).
+    // A join without a BIND is reordered as before.
+    if (this.containsExtend(join.left)) {
       return {
         type: "join",
         left: this.joinReordering(join.left),
@@ -543,8 +547,9 @@ export class AlgebraOptimizer {
 
   /**
    * Whether a BIND (`extend`) sits in the subtree, following `input` / `left` /
-   * `right` only — a BIND inside a subquery, a GRAPH/SERVICE pattern or an EXISTS
-   * is scoped to it and does not count.
+   * `right` only. It does not look inside a subquery, a GRAPH/SERVICE pattern or an
+   * EXISTS — a BIND there is NOT guarded: such an operand can still end up on the
+   * right of a bind join and receive outer values (the older bug f440b567).
    */
   private containsExtend(operation: AlgebraOperation): boolean {
     if (operation.type === "extend") return true;

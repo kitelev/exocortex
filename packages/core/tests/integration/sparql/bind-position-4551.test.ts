@@ -322,6 +322,14 @@ describe("BIND extends the group prefix at its position (req 60ed88e7, #4551)", 
     const got = await rows(q, ["s", "y"]);
     expect(got).toHaveLength(IDEAS.length);
     expect(got.every((r) => r.endsWith("| ∅"))).toBe(true);
+    // Two levels down (round 6: the order gate reads the LEFT operand, so the Extend
+    // must be found as a grandchild of it, not only as a child).
+    const deeper = await rows(
+      `SELECT ?s ?y WHERE { BIND(?x AS ?y) OPTIONAL { ?s exo:Asset_uid ?u } OPTIONAL { ?s exo:Asset_createdAt ?c } ?s exo:Asset_label ?x . ?s exo:Instance_class eideas:ExoizationIdea }`,
+      ["s", "y"],
+    );
+    expect(deeper).toHaveLength(IDEAS.length);
+    expect(deeper.every((r) => r.endsWith("| ∅"))).toBe(true);
   });
 
   // ---- Review round 1 (PR #4557) ----
@@ -610,6 +618,44 @@ describe("BIND extends the group prefix at its position (req 60ed88e7, #4551)", 
   it("B44 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a BIND-free MINUS group on the RIGHT with a filter on its own and a shared variable keeps its answer", async () => {
     const got = [...new Set(await rows(`SELECT ?x ?u WHERE { ?x exo:Asset_uid ?u { ?x exo:Asset_label ?l MINUS { ?x ${VIDEO_P} ?o } } FILTER(STRSTARTS(?l, "Idea") && ?x != ${bookIdea}) }`, ["x"]))].sort();
     expect(got).toEqual([directIdea]);
+  });
+
+  // ---- Review round 6 (PR #4557): a nested group with a BIND is evaluated on its own ----
+  const solutionsOf = async (sparql: string) =>
+    (await new ExoQLQueryExecutor(store).executeAll(plan(sparql))).map((s) => ({ s: fmt(s.get("s")), y: s.get("y") }));
+
+  it("B45 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a nested BIND group on the RIGHT does not see an outer variable", async () => {
+    const all = await solutionsOf(`SELECT ?s ?y WHERE { ?s exo:Asset_label ?l { ?s exo:Asset_uid ?u BIND(?l AS ?y) } }`);
+    expect(all.length).toBeGreaterThan(40);
+    expect(all.filter((r) => r.y !== undefined)).toEqual([]);
+    const ideas = await solutionsOf(`SELECT ?s ?y WHERE { ?s exo:Asset_label ?l { ?s exo:Asset_uid ?u BIND(?l AS ?y) } FILTER(STRSTARTS(?l, "Idea")) }`);
+    expect(ideas).toHaveLength(IDEAS.length);
+    expect(ideas.filter((r) => r.y !== undefined)).toEqual([]);
+    // Its own FILTER on an outer-only variable is an error inside the group: no rows.
+    expect(await rows(`SELECT ?s WHERE { ?s exo:Asset_label ?l { ?s exo:Asset_uid ?u BIND(STRLEN(?u) AS ?n) FILTER(STRSTARTS(?l, "Idea")) } }`, ["s"])).toEqual([]);
+  });
+
+  it("B46 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a BIND group written FIRST is evaluated on its own, with or without an inner FILTER", async () => {
+    // ?k is a LITERAL (the label): a substituted IRI would make the BIND expression
+    // unevaluable (bug 4e3ce943) and leave ?y unbound by accident.
+    for (const group of [
+      `{ ?s exo:Asset_uid ?u BIND(?k AS ?y) FILTER(BOUND(?u)) }`,
+      `{ ?s exo:Asset_uid ?u BIND(?k AS ?y) }`,
+    ]) {
+      const got = await solutionsOf(`SELECT ?s ?y WHERE { ${group} ?s exo:Asset_label ?k . ?s exo:Instance_class eideas:ExoizationIdea }`);
+      expect(got).toHaveLength(IDEAS.length);
+      expect(got.filter((r) => r.y !== undefined)).toEqual([]);
+    }
+  });
+
+  it("B47 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a group FILTER over a join whose BIND is on the RIGHT stays above the join", async () => {
+    // Pushed left onto the label pattern, the filter would be moved right of the
+    // bind join by the reordering (the BIND group costs less) and receive the
+    // substituted IRI (bug 4e3ce943). Reference: the same group without the BIND.
+    const filter = `FILTER(?s != ${bookIdea})`;
+    const expected = await rows(`SELECT ?s WHERE { ?s exo:Asset_label ?l { ?s exo:Asset_uid ?u } ${filter} }`, ["s"]);
+    expect(expected.length).toBeGreaterThan(40);
+    expect(await rows(`SELECT ?s WHERE { ?s exo:Asset_label ?l { ?s exo:Asset_uid ?u BIND(STRLEN(?u) AS ?n) } ${filter} }`, ["s"])).toEqual(expected);
   });
 
   it("B12 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 a BIND reading an earlier BIND chains, and the later pattern joins with the result", async () => {
