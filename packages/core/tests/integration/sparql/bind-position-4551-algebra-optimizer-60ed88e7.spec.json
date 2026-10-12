@@ -44,11 +44,17 @@
       "expect": ["B47"]
     },
     "AO19_pushdown_gate_any_input": {
-      "_note": "The pushdown gate no longer requires a join input. Declared zero (ITRV §A135): the gate keeps the FILTER above the operand and recurses, which for a non-join input is what the base code does anyway — UNION / plain inputs are left unchanged by construction (review round 6, MEDIUM-1; reviewer's X5). Delivery is proved by the canary AO16 of this spec.",
+      "_note": "The pushdown gate no longer requires a join input. Declared zero (ITRV §A135/§A143): for a non-join input the gate keeps the FILTER above the operand and recurses — for a UNION the base would distribute it over the branches instead, a different plan with the same rows (a filter distributes over a union); keeping a filter above an operand is always standard-correct, so the mutant can only be more conservative (review round 7, LOW). Delivery is proved by the canary AO16 of this spec.",
       "from": "    if (input.type === \"join\" && this.containsExtend(input)) {\n",
       "to": "    if (this.containsExtend(input)) {\n",
       "expect": [],
       "_canary": "AO16_pushdown_gate_off"
+    },
+    "AO20_order_gate_both_operands": {
+      "_note": "The order gate reads BOTH operands (the round-5 code): a nested BIND group on the right is pinned there and the bind join substitutes outer values into it (review round 6, HIGH). Shares the AO1 anchor (ITRV §A94); the difference is in `to`.",
+      "from": "    if (this.containsExtend(join.left)) {\n",
+      "to": "    if (this.containsExtend(join)) {\n",
+      "expect": ["B45"]
     }
   }
 }
