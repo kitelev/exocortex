@@ -41,6 +41,25 @@ import { IRI } from "../../../domain/models/rdf/IRI";
 import { Literal } from "../../../domain/models/rdf/Literal";
 import { DateTimeFunctions } from "../filters/functions/DateTimeFunctions";
 
+/** What variable substitution reads from a solution — just the lookup. */
+type BindingLookup = Pick<SolutionMapping, "get">;
+
+/**
+ * Why a solution is substituted into a pattern, which decides what a SLICED
+ * subquery (LIMIT / OFFSET) receives:
+ * - `"join"` — the bind-join optimisation. Both operands of a join are evaluated
+ *   independently (SPARQL 1.1 §18.5), so substituting before the slice would change
+ *   WHICH rows the slice keeps: a sliced subquery receives nothing.
+ * - `"correlated"` — EXISTS (§18.6 `substitute`) and LATERAL evaluate the pattern
+ *   WITH the outer solution in it, and the slice applies afterwards: a sliced
+ *   subquery receives its projected variables like any other.
+ *
+ * ⛔ The slice rule lived in the shared path first and broke `FILTER EXISTS { SELECT
+ * ?x … LIMIT 1 }`, NOT EXISTS, `IF(EXISTS …)` and LATERAL top-N (PR #4557 review
+ * round 3, H1).
+ */
+type SubstitutionScope = "join" | "correlated";
+
 const XSD = "http://www.w3.org/2001/XMLSchema#";
 const XSD_NUMERIC_DATATYPES: ReadonlySet<string> = new Set([
   `${XSD}integer`,
@@ -189,7 +208,7 @@ export class ExoQLQueryExecutor {
     // Substituting first is the same bind-join mechanism `executeJoin` already
     // uses, and `substituteInOperation` deliberately recurses into filter
     // expressions ("handles EXISTS/NOT EXISTS patterns") for exactly this.
-    const boundPattern = this.substituteVariables(pattern, solution);
+    const boundPattern = this.substituteVariables(pattern, solution, "correlated");
 
     // The post-substitution merge is KEPT: substitution rewrites the variables
     // it can see, and the merge still guards the rows it cannot.
@@ -323,6 +342,10 @@ export class ExoQLQueryExecutor {
         leftVars.add(v);
       }
     }
+    // Only the variables a "join" substitution can reach count: a shared variable
+    // that lives solely inside a sliced subquery is never substituted, so binding
+    // per left row would re-run that subquery unchanged N times (PR #4557 review
+    // round 3, M1: 1.1 s → 6.6 s) — the hash join below runs it once.
     const rightVars = this.collectOperationVariables(operation.right);
     const hasSharedVars = [...leftVars].some(v => rightVars.has(v));
 
@@ -331,7 +354,7 @@ export class ExoQLQueryExecutor {
       // before execution, enabling index lookups in the triple store.
       // Turns O(N*M) into O(N*selectivity) for cross-BGP joins.
       for (const leftSolution of leftSolutions) {
-        const boundRight = this.substituteVariables(operation.right, leftSolution);
+        const boundRight = this.substituteVariables(operation.right, leftSolution, "join");
         for await (const rightSolution of this.execute(boundRight)) {
           const merged = leftSolution.merge(rightSolution);
           if (merged !== null) {
@@ -640,7 +663,7 @@ export class ExoQLQueryExecutor {
       // Substitute outer variable bindings in the inner pattern
       // This is the key to correlated subqueries - the inner pattern
       // sees concrete values from the outer binding
-      const substitutedPattern = this.substituteVariables(operation.right, outerSolution);
+      const substitutedPattern = this.substituteVariables(operation.right, outerSolution, "correlated");
 
       // Execute the substituted inner subquery
       for await (const innerSolution of this.execute(substitutedPattern)) {
@@ -659,24 +682,47 @@ export class ExoQLQueryExecutor {
    *
    * @param operation - The algebra operation to substitute variables in
    * @param bindings - The solution mapping providing variable bindings
+   * @param scope - Why the substitution happens (see `SubstitutionScope`)
    * @returns A new operation with variables replaced by concrete values
    */
-  private substituteVariables(operation: AlgebraOperation, bindings: SolutionMapping): AlgebraOperation {
+  private substituteVariables(
+    operation: AlgebraOperation,
+    bindings: SolutionMapping,
+    scope: SubstitutionScope,
+  ): AlgebraOperation {
     // Deep clone and substitute - using JSON for simplicity
     const cloned = JSON.parse(JSON.stringify(operation));
-    return this.substituteInOperation(cloned, bindings);
+    return this.substituteInOperation(cloned, bindings, scope);
   }
 
   /**
    * Recursively substitute variables in an operation with values from bindings.
    */
-  private substituteInOperation(op: AlgebraOperation, bindings: SolutionMapping): AlgebraOperation {
+  private substituteInOperation(
+    op: AlgebraOperation,
+    bindings: BindingLookup,
+    scope: SubstitutionScope,
+  ): AlgebraOperation {
     if (!op || typeof op !== 'object') {
       return op as AlgebraOperation;
     }
 
     // Use a mutable record view for generic property access across all operation types
     const opRecord = op as unknown as Record<string, unknown>;
+
+    // A subquery sees only the variables it PROJECTS (SPARQL 1.1 §18.2.1): an inner
+    // variable that is not projected is a different variable, and substituting an
+    // outer value into it changes the subquery's result. A positional BIND made this
+    // reachable through a leading `BIND(P AS ?p) { SELECT ?s WHERE { ?s ?p ?o } }`
+    // (PR #4557 review: 2 rows instead of 267). `SELECT *` projects everything.
+    if (op.type === 'subquery' && op.query) {
+      const projected = this.projectedVariables(op.query, scope);
+      const visible: BindingLookup = projected === null
+        ? bindings
+        : { get: (variable: string) => (projected.has(variable) ? bindings.get(variable) : undefined) };
+      op.query = this.substituteInOperation(op.query, visible, scope);
+      return op;
+    }
 
     // Handle triple patterns in BGP
     if (op.type === 'bgp' && op.triples) {
@@ -686,30 +732,54 @@ export class ExoQLQueryExecutor {
 
     // Recursively process nested operations
     if (opRecord.input) {
-      opRecord.input = this.substituteInOperation(opRecord.input as AlgebraOperation, bindings);
+      opRecord.input = this.substituteInOperation(opRecord.input as AlgebraOperation, bindings, scope);
     }
     if (opRecord.left) {
-      opRecord.left = this.substituteInOperation(opRecord.left as AlgebraOperation, bindings);
+      opRecord.left = this.substituteInOperation(opRecord.left as AlgebraOperation, bindings, scope);
     }
     if (opRecord.right) {
-      opRecord.right = this.substituteInOperation(opRecord.right as AlgebraOperation, bindings);
+      opRecord.right = this.substituteInOperation(opRecord.right as AlgebraOperation, bindings, scope);
     }
     if (opRecord.pattern) {
-      opRecord.pattern = this.substituteInOperation(opRecord.pattern as AlgebraOperation, bindings);
+      opRecord.pattern = this.substituteInOperation(opRecord.pattern as AlgebraOperation, bindings, scope);
     }
     if (opRecord.query) {
-      opRecord.query = this.substituteInOperation(opRecord.query as AlgebraOperation, bindings);
+      opRecord.query = this.substituteInOperation(opRecord.query as AlgebraOperation, bindings, scope);
     }
     if (opRecord.where) {
-      opRecord.where = this.substituteInOperation(opRecord.where as AlgebraOperation, bindings);
+      opRecord.where = this.substituteInOperation(opRecord.where as AlgebraOperation, bindings, scope);
     }
 
     // Substitute variables in filter expressions (handles EXISTS/NOT EXISTS patterns)
     if (opRecord.expression) {
-      this.substituteInExpression(opRecord.expression as Record<string, unknown>, bindings);
+      this.substituteInExpression(opRecord.expression as Record<string, unknown>, bindings, scope);
     }
 
     return op;
+  }
+
+  /**
+   * The variables a substitution may reach inside a subquery: the ones its first
+   * `project` (under the solution modifiers) names, or null when it projects
+   * everything (`SELECT *`). In the `"join"` scope a LIMIT/OFFSET subquery takes
+   * none: substituting an outer value before the slice changes WHICH rows the slice
+   * keeps (PR #4557 review round 2 — `{ SELECT ?s ?p … ORDER BY ?s LIMIT 1 }` joined
+   * with a bound ?p returned a row the standard does not). In the `"correlated"`
+   * scope the slice is no reason to withhold anything (see `SubstitutionScope`).
+   */
+  private projectedVariables(query: AlgebraOperation, scope: SubstitutionScope): Set<string> | null {
+    let node: AlgebraOperation | undefined = query;
+    let sliced = false;
+    while (node) {
+      if (node.type === 'project') return sliced ? new Set() : new Set(node.variables);
+      if (node.type === 'slice' && scope === 'join') sliced = true;
+      if (node.type === 'slice' || node.type === 'distinct' || node.type === 'reduced' || node.type === 'orderby') {
+        node = node.input;
+        continue;
+      }
+      return sliced ? new Set() : null;
+    }
+    return sliced ? new Set() : null;
   }
 
   /**
@@ -717,12 +787,22 @@ export class ExoQLQueryExecutor {
    * Primarily needed to handle EXISTS/NOT EXISTS patterns which contain
    * AlgebraOperations that need variable substitution for bind join correctness.
    */
-  private substituteInExpression(expr: Record<string, unknown>, bindings: SolutionMapping): void {
+  private substituteInExpression(
+    expr: Record<string, unknown>,
+    bindings: BindingLookup,
+    scope: SubstitutionScope,
+  ): void {
     if (!expr || typeof expr !== 'object') return;
 
     // Handle EXISTS/NOT EXISTS patterns
+    // EXISTS is evaluated by substitution (§18.6) even inside a join operand: the
+    // bind join replaces the shared variable in the operand's own patterns, so the
+    // per-row EXISTS evaluation no longer sees it — the substitution here is the
+    // only correlation left, and a slice must not withhold it (PR #4557 review
+    // round 4, HIGH-2: `{ ?x label ?l FILTER EXISTS { SELECT ?x … LIMIT 1 } }`
+    // nested in a join returned every row).
     if (expr.type === 'exists' && expr.pattern) {
-      expr.pattern = this.substituteInOperation(expr.pattern as AlgebraOperation, bindings);
+      expr.pattern = this.substituteInOperation(expr.pattern as AlgebraOperation, bindings, "correlated");
     }
 
     // ⛔ A variable REFERENCE inside an expression was never replaced — this
@@ -748,24 +828,24 @@ export class ExoQLQueryExecutor {
     }
 
     // Recurse into sub-expressions
-    if (expr.left) this.substituteInExpression(expr.left as Record<string, unknown>, bindings);
-    if (expr.right) this.substituteInExpression(expr.right as Record<string, unknown>, bindings);
+    if (expr.left) this.substituteInExpression(expr.left as Record<string, unknown>, bindings, scope);
+    if (expr.right) this.substituteInExpression(expr.right as Record<string, unknown>, bindings, scope);
     if (expr.operands) {
       for (const op of expr.operands as Record<string, unknown>[]) {
-        this.substituteInExpression(op, bindings);
+        this.substituteInExpression(op, bindings, scope);
       }
     }
     if (expr.args) {
       for (const arg of expr.args as Record<string, unknown>[]) {
-        this.substituteInExpression(arg, bindings);
+        this.substituteInExpression(arg, bindings, scope);
       }
     }
     if (expr.expression) {
-      this.substituteInExpression(expr.expression as Record<string, unknown>, bindings);
+      this.substituteInExpression(expr.expression as Record<string, unknown>, bindings, scope);
     }
     if (expr.list) {
       for (const item of expr.list as Record<string, unknown>[]) {
-        this.substituteInExpression(item, bindings);
+        this.substituteInExpression(item, bindings, scope);
       }
     }
   }
@@ -773,18 +853,40 @@ export class ExoQLQueryExecutor {
   /**
    * Substitute variables in a triple pattern with values from bindings.
    */
-  private substituteInTriple(triple: Record<string, unknown>, bindings: SolutionMapping): unknown {
+  private substituteInTriple(triple: Record<string, unknown>, bindings: BindingLookup): unknown {
     return {
       subject: this.substituteInTripleElement(triple.subject as Record<string, unknown>, bindings),
-      predicate: triple.predicate, // Predicate paths are not substituted
+      predicate: this.substituteInPredicate(triple.predicate as Record<string, unknown>, bindings),
       object: this.substituteInTripleElement(triple.object as Record<string, unknown>, bindings),
     };
   }
 
   /**
+   * A VARIABLE predicate bound to an IRI is substituted, so the joined pattern is
+   * an index lookup by that predicate instead of a scan of every triple per left
+   * solution (req 60ed88e7 — `{ BIND(P AS ?p) ?s ?p ?o }`). It is marked
+   * `fromBinding`: the BGP executor matches it as stored, without sub-property
+   * widening, the same as a predicate bound inside one BGP (req 8a0ed10b), so the
+   * result is the one the unsubstituted scan + merge gave.
+   *
+   * Property paths, constants, and a variable bound to anything but an IRI (a
+   * predicate is always an IRI, so such a row cannot match — the merge drops it)
+   * are left as they are.
+   */
+  private substituteInPredicate(predicate: Record<string, unknown>, bindings: BindingLookup): unknown {
+    if (predicate && predicate.type === 'variable') {
+      const asTerm = this.termToAlgebraNode(bindings.get(predicate.value as string));
+      if (asTerm !== null && asTerm.type === 'iri') {
+        return { ...asTerm, fromBinding: true };
+      }
+    }
+    return predicate;
+  }
+
+  /**
    * Substitute a variable in a triple element if it has a binding.
    */
-  private substituteInTripleElement(element: Record<string, unknown>, bindings: SolutionMapping): unknown {
+  private substituteInTripleElement(element: Record<string, unknown>, bindings: BindingLookup): unknown {
     if (element && element.type === 'variable') {
       // In TRIPLE position the variable name lives in `.value`; in EXPRESSION
       // position it lives in `.name` (see substituteInExpression).
@@ -919,6 +1021,11 @@ export class ExoQLQueryExecutor {
       return undefined;
     }
 
+    // `BIND(<iri> AS ?v)` binds the IRI term, not its string (req 60ed88e7).
+    if (expr.type === "literal" && expr.iri === true) {
+      return new IRI(String(expr.value));
+    }
+
     // Use FilterExecutor's evaluateExpression for all other expression types
     // This handles: variable, literal, function (REPLACE, STR, etc.), comparison, logical
     try {
@@ -984,8 +1091,9 @@ export class ExoQLQueryExecutor {
   }
 
   /**
-   * Collect all variable names referenced in an algebra operation.
-   * Used to find shared variables between join operands for bind join optimization.
+   * Collect the variable names a `"join"` substitution can reach in an algebra
+   * operation. Used to find shared variables between join operands for bind join
+   * optimization.
    */
   private collectOperationVariables(operation: unknown): Set<string> {
     const vars = new Set<string>();
@@ -996,6 +1104,18 @@ export class ExoQLQueryExecutor {
   private collectVarsFromOperation(operation: unknown, vars: Set<string>): void {
     if (!operation || typeof operation !== 'object') return;
     const op = operation as Record<string, unknown>;
+
+    // A subquery contributes only what `substituteInOperation` would substitute
+    // into it under the "join" scope — its projected variables, none when sliced.
+    if (op.type === 'subquery' && op.query) {
+      const inner = new Set<string>();
+      this.collectVarsFromOperation(op.query, inner);
+      const projected = this.projectedVariables(op.query as AlgebraOperation, 'join');
+      for (const v of inner) {
+        if (projected === null || projected.has(v)) vars.add(v);
+      }
+      return;
+    }
 
     // Collect from BGP triple patterns
     if (op.type === 'bgp' && op.triples) {

@@ -69,43 +69,46 @@ export class PatternTranslator {
       throw new AlgebraTranslatorError("Empty WHERE clause");
     }
 
+    // FILTERs are collected and applied to the WHOLE group at the end (SPARQL 1.1
+    // §18.2.2.4). Every other pattern — BIND included — keeps its POSITION.
     const filterPatterns = patterns.filter((p) => p.type === "filter");
-    const bindPatterns = patterns.filter((p) => p.type === "bind");
-    const otherPatterns = patterns.filter((p) => p.type !== "filter" && p.type !== "bind");
+    const groupPatterns = patterns.filter((p) => p.type !== "filter");
 
     let result: AlgebraOperation;
 
-    if (otherPatterns.length === 0) {
+    if (groupPatterns.length === 0) {
       result = { type: "bgp", triples: [] } as BGPOperation;
-    } else if (otherPatterns.length === 1) {
-      if (otherPatterns[0].type === "optional") {
-        const optExpr = (otherPatterns[0] as unknown as Record<string, unknown>).expression as SparqljsExpression | undefined;
-        result = {
-          type: "leftjoin",
-          left: { type: "bgp", triples: [] } as BGPOperation,
-          right: this.translateWhere(otherPatterns[0].patterns),
-          expression: optExpr ? this.translateExpressionFn(optExpr) : undefined,
-        } as LeftJoinOperation;
-      } else {
-        result = this.translatePattern(otherPatterns[0]);
-      }
     } else {
-      if (otherPatterns[0].type === "optional") {
-        const optExpr = (otherPatterns[0] as unknown as Record<string, unknown>).expression as SparqljsExpression | undefined;
+      const first = groupPatterns[0];
+      if (first.type === "bind") {
+        result = this.translateBind(first, { type: "bgp", triples: [] } as BGPOperation);
+      } else if (first.type === "optional") {
+        const optExpr = (first as unknown as Record<string, unknown>).expression as SparqljsExpression | undefined;
         result = {
           type: "leftjoin",
           left: { type: "bgp", triples: [] } as BGPOperation,
-          right: this.translateWhere(otherPatterns[0].patterns),
+          right: this.translateWhere(first.patterns),
           expression: optExpr ? this.translateExpressionFn(optExpr) : undefined,
         } as LeftJoinOperation;
       } else {
-        result = this.translatePattern(otherPatterns[0]);
+        result = this.translatePattern(first);
       }
 
-      for (let i = 1; i < otherPatterns.length; i++) {
-        const rightPattern = otherPatterns[i];
+      for (let i = 1; i < groupPatterns.length; i++) {
+        const rightPattern = groupPatterns[i];
 
-        if (this.isLateralPattern(rightPattern)) {
+        if (rightPattern.type === "bind") {
+          // BIND extends the patterns that PRECEDE it — `G := Extend(G, ?v, expr)`
+          // (SPARQL 1.1 §18.2.2.4) — and the patterns that FOLLOW it are joined
+          // with that result, so a later pattern reading ?v joins with its value.
+          //
+          // ⛔ Collecting every BIND and wrapping the finished join in Extend
+          // (issue #4551) lost the position: `{ BIND(P AS ?p) ?s ?p ?o }` became
+          // `Extend(?p = P)(BGP[?s ?p ?o])` — the BGP ran with ?p FREE and the
+          // Extend overwrote ?p in every row afterwards: 147 576 rows instead of 2.
+          // Same class as the MINUS branch below (bucketing by type lost scope).
+          result = this.translateBind(rightPattern, result);
+        } else if (this.isLateralPattern(rightPattern)) {
           const lateralSubquery = this.extractLateralSubquery(rightPattern);
           const cleanedSubquery = this.removeLateralMarker(lateralSubquery);
           const innerQuery = this.translateSelectFn(cleanedSubquery as SelectQuery);
@@ -146,10 +149,6 @@ export class PatternTranslator {
           result = { type: "join", left: result, right };
         }
       }
-    }
-
-    for (const bindPattern of bindPatterns) {
-      result = this.translateBind(bindPattern, result);
     }
 
     for (const filterPattern of filterPatterns) {
@@ -327,10 +326,15 @@ export class PatternTranslator {
       throw new AlgebraTranslatorError("BIND pattern must have variable and expression");
     }
 
+    const expression = this.translateExpressionFn(pattern.expression);
+    // `BIND(<iri> AS ?v)` binds the IRI TERM: a constant IRI translates to a string
+    // node, and a string never joins with a stored IRI (req 60ed88e7, #4551 F1).
+    const writtenAsIri = (pattern.expression as { termType?: string }).termType === "NamedNode";
+
     return {
       type: "extend",
       variable: pattern.variable.value,
-      expression: this.translateExpressionFn(pattern.expression),
+      expression: writtenAsIri && expression.type === "literal" ? { ...expression, iri: true } : expression,
       input,
     };
   }

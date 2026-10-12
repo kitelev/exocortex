@@ -1,0 +1,60 @@
+{
+  "_doc": "Revert-verify mutants for issue #4551 / req 60ed88e7 (vault-exodev task c223e6ef, RFC 14217015 P1.5): a SPARQL BIND extends the group prefix at its position. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › Bn @req` (ITRV §A44/§A104). `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Subject: AlgebraOptimizer.reorderJoin never moves a pattern ahead of a preceding BIND. ⛔ Round 5 (conservative strategy, orchestrator's decision by mandate): AlgebraOptimizer is the base c64bcd41 file plus two Extend gates (no FILTER pushdown and no join reordering in a join with a BIND) and containsExtend. Mutants AO3–AO15 targeted guards of the round-1..4 pushdown refinements; that code is gone, so are they. B43/B44 (BIND-free plans keep their answer) have no single-anchor mutant (ITRV §A138): the guarantee is the ABSENCE of a change to the base pushdown — its flip is two revisions (AlgebraOptimizer.ts from 3378ddb2: B43 and B44 red; this revision: green).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› (B\\d+) @req",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/bind-position-4551.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/algebra/AlgebraOptimizer.ts",
+  "mutants": {
+    "AO1_guard_off": {
+      "_note": "The reordering may swap a constrained later pattern to the left of a BIND (the join-order gate is off). Round 6: B46 — a BIND group written first, without an inner FILTER, is moved right of the bind join and its BIND receives the outer label.",
+      "from": "    if (this.containsExtend(join.left)) {\n",
+      "to": "    if (false && this.containsExtend(join.left)) {\n",
+      "expect": ["B7", "B16", "B46"]
+    },
+    "AO2_guard_shallow": {
+      "_note": "containsExtend sees an Extend only as a DIRECT child, not deeper (e.g. under a LeftJoin) — both gates miss it. Re-anchored in round 5: the old mutation (no recursion at all) now switched both gates off for every join, the AO1 + AO16 union. Round 6: the order gate reads join.left, so B16 locks it with an Extend two levels down (two OPTIONALs).",
+      "from": "      (child) => child !== undefined && typeof child === \"object\" && this.containsExtend(child),\n",
+      "to": "      (child) => child !== undefined && typeof child === \"object\" && child.type === \"extend\",\n",
+      "expect": ["B16"]
+    },
+    "AO16_pushdown_gate_off": {
+      "_note": "A group FILTER over a join with a BIND goes through the base pushdown again: the base reports no variables for an Extend, so a filter on a shared variable is pushed into the right operand and the bind join substitutes an IRI into its expression — every row dropped (the round-1 CRITICAL and its successors). Type-preserving: an impossible conjunct. B28–B30 (a BIND of ?window read in arithmetic / IN / a cast): the base does not walk those nodes and pushes the filter where ?window is substituted or unbound; B32: its plain reference (a mid-group BIND + a filter on ?s) is broken the same way. B47: a BIND group on the right — the filter pushed left is moved right of the bind join by the reordering.",
+      "from": "    if (input.type === \"join\" && this.containsExtend(input)) {\n",
+      "to": "    if (input.type === \"join\" && this.containsExtend(input) && Number.isNaN(0)) {\n",
+      "expect": ["B18", "B22", "B28", "B29", "B30", "B32", "B47"]
+    },
+    "AO17_containsExtend_no_input": {
+      "_note": "containsExtend does not follow `input`: a BIND group with an inner FILTER (Filter over Extend) written first is not seen, the reordering moves it right of the bind join and the outer value is substituted into its BIND (review round 6, MEDIUM-1; reviewer's X1).",
+      "from": "    return [op.input, op.left, op.right].some(\n",
+      "to": "    return [op.left, op.right].some(\n",
+      "expect": ["B46"]
+    },
+    "AO18_pushdown_gate_left_only": {
+      "_note": "The pushdown gate looks at the left operand only (review round 6, MEDIUM-1; reviewer's X8).",
+      "from": "    if (input.type === \"join\" && this.containsExtend(input)) {\n",
+      "to": "    if (input.type === \"join\" && this.containsExtend(input.left)) {\n",
+      "expect": ["B47"]
+    },
+    "AO19_pushdown_gate_any_input": {
+      "_note": "The pushdown gate no longer requires a join input. Declared zero (ITRV §A135/§A143): for a non-join input the gate keeps the FILTER above the operand and recurses — for a UNION the base would distribute it over the branches instead, a different plan with the same rows (a filter distributes over a union); keeping a filter above an operand is always standard-correct, so the mutant can only be more conservative (review round 7, LOW). Delivery is proved by the canary AO16 of this spec.",
+      "from": "    if (input.type === \"join\" && this.containsExtend(input)) {\n",
+      "to": "    if (this.containsExtend(input)) {\n",
+      "expect": [],
+      "_canary": "AO16_pushdown_gate_off"
+    },
+    "AO20_order_gate_both_operands": {
+      "_note": "The order gate reads BOTH operands (the round-5 code): a nested BIND group on the right is pinned there and the bind join substitutes outer values into it (review round 6, HIGH). Shares the AO1 anchor (ITRV §A94); the difference is in `to`.",
+      "from": "    if (this.containsExtend(join.left)) {\n",
+      "to": "    if (this.containsExtend(join)) {\n",
+      "expect": ["B45"]
+    }
+  }
+}

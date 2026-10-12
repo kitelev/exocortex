@@ -113,6 +113,13 @@ export interface Variable {
 export interface IRI {
   type: "iri";
   value: string;
+  /**
+   * Set when a join substituted a bound VARIABLE into the predicate position
+   * (req 60ed88e7): the predicate is then matched as stored, without sub-property
+   * widening — exactly as a predicate bound by an earlier triple of the same BGP
+   * (req 8a0ed10b). Absent on a predicate written as a constant.
+   */
+  fromBinding?: boolean;
 }
 
 export interface Literal {
@@ -193,6 +200,13 @@ export interface LiteralExpression {
   type: "literal";
   value: string | number | boolean;
   datatype?: string;
+  /**
+   * The whole expression of a BIND is an IRI written in the query
+   * (`BIND(<iri> AS ?v)`, `BIND(ex:name AS ?v)`). A constant IRI is translated to
+   * this string node, which FILTERs and functions read as its string; a BIND of it
+   * binds the IRI TERM instead, so a later pattern can join with it (req 60ed88e7).
+   */
+  iri?: true;
 }
 
 export interface ExistsExpression {

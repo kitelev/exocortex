@@ -281,6 +281,21 @@ export class AlgebraOptimizer {
   private pushDownFilter(filter: FilterOperation): AlgebraOperation {
     const input = filter.input;
 
+    // ⛔ A join with a BIND (Extend) in it keeps the group FILTER above it (req
+    // 60ed88e7). A positional BIND turns an ordinary group into a join; pushing a
+    // FILTER into one operand then lands it where the bind join substitutes an IRI
+    // into its expression (bug 4e3ce943), and every refinement of the pushdown guard
+    // reopened a route (PR #4557 reviews, rounds 1–5). Above the join the FILTER is
+    // the group filter the standard prescribes. A join WITHOUT a BIND keeps the
+    // previous pushdown unchanged, so its plan is the one it had before the PR.
+    if (input.type === "join" && this.containsExtend(input)) {
+      return {
+        type: "filter",
+        expression: filter.expression,
+        input: this.filterPushDown(input),
+      };
+    }
+
     if (input.type === "join") {
       const filterVars = this.getFilterVariables(filter.expression);
       const leftVars = this.getOperationVariables(input.left);
@@ -469,6 +484,24 @@ export class AlgebraOptimizer {
   }
 
   private reorderJoin(join: JoinOperation): AlgebraOperation {
+    // ⛔ A BIND is never moved to the RIGHT of a pattern that follows it (req
+    // 60ed88e7). It extends only the patterns that PRECEDE it (SPARQL 1.1
+    // §18.2.2.4); on the right of a bind join it would be evaluated with the left
+    // solution substituted INTO its expression, so `{ BIND(STR(?x) AS ?y) ?s
+    // exo:Asset_label ?x }` would bind ?y — the standard leaves it unbound.
+    // ⛔ The LEFT operand only: a nested BIND group on the right may still be moved
+    // left, where it is evaluated on its own as the standard prescribes; pinning it
+    // on the right let the bind join substitute outer values into it (PR #4557
+    // review round 6, HIGH: `?s label ?l { ?s uid ?u BIND(?l AS ?y) }` bound ?y).
+    // A join without a BIND is reordered as before.
+    if (this.containsExtend(join.left)) {
+      return {
+        type: "join",
+        left: this.joinReordering(join.left),
+        right: this.joinReordering(join.right),
+      };
+    }
+
     // Prefer the constrained (small cardinality) side as LEFT for bind join.
     // A subtree is "constrained" if it contains VALUES, concrete BGP objects,
     // or FILTER with constants — it produces fewer intermediate results.
@@ -510,6 +543,20 @@ export class AlgebraOptimizer {
       left: this.joinReordering(join.left),
       right: this.joinReordering(join.right),
     };
+  }
+
+  /**
+   * Whether a BIND (`extend`) sits in the subtree, following `input` / `left` /
+   * `right` only. It does not look inside a subquery, a GRAPH/SERVICE pattern or an
+   * EXISTS — a BIND there is NOT guarded: such an operand can still end up on the
+   * right of a bind join and receive outer values (the older bug f440b567).
+   */
+  private containsExtend(operation: AlgebraOperation): boolean {
+    if (operation.type === "extend") return true;
+    const op = operation as unknown as Record<string, AlgebraOperation | undefined>;
+    return [op.input, op.left, op.right].some(
+      (child) => child !== undefined && typeof child === "object" && this.containsExtend(child),
+    );
   }
 
   /**

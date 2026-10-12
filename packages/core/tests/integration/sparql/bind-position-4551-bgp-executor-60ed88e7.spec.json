@@ -1,0 +1,35 @@
+{
+  "_doc": "Revert-verify mutants for issue #4551 / req 60ed88e7 (vault-exodev task c223e6ef, RFC 14217015 P1.5): a SPARQL BIND extends the group prefix at its position. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › Bn @req` (ITRV §A44/§A104). `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Subject: BGPExecutor — a substituted predicate is matched as stored.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› (B\\d+) @req",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/bind-position-4551.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/executors/BGPExecutor.ts",
+  "mutants": {
+    "BG1_flag_never_read": {
+      "_note": "isPredicateFromBinding never recognises a substituted IRI (both BGP positions widen it).",
+      "from": "    return predicate.type === \"iri\" && predicate.fromBinding === true;\n",
+      "to": "    return predicate.type === \"iri\" && predicate.fromBinding === false;\n",
+      "expect": ["B6", "B15"]
+    },
+    "BG2_first_triple_flag_off": {
+      "_note": "Only the FIRST triple of the BGP ignores the flag.",
+      "from": "      this.isPredicateFromBinding(bgp.triples[0].predicate, false),\n",
+      "to": "      false,\n",
+      "expect": ["B6"]
+    },
+    "BG3_join_triple_flag_off": {
+      "_note": "Only a LATER triple of the BGP ignores the flag (the pre-fix variable-only test).",
+      "from": "    const predicateFromBinding = this.isPredicateFromBinding(pattern.predicate, true);\n",
+      "to": "    const predicateFromBinding = !this.isPropertyPath(pattern.predicate) && this.isVariable(pattern.predicate);\n",
+      "expect": ["B15"]
+    }
+  }
+}

@@ -365,7 +365,15 @@ export class FilterContainsOptimizer {
       };
     }
 
-    if (matchingUris.length === 1) {
+    // ⛔ No injection into a group with a BIND (req 60ed88e7): a positional BIND
+    // wraps the patterns before it in Extend, and the injection drops the filter —
+    // so every pattern that binds the variable outside the BGPs it reaches (a BIND
+    // defining it, a subquery / UNION / GRAPH / VALUES on the right) is left
+    // unconstrained (PR #4557 reviews: 416 rows instead of 8; round 3 M2: 52 instead
+    // of 1). The VALUES join below constrains by merge instead. It keeps the older
+    // limits of this rewrite (no production callers): a second conjunct of the filter
+    // is dropped, and an OPTIONAL that binds the variable is not constrained.
+    if (matchingUris.length === 1 && !this.containsExtend(filter.input)) {
       // Single match: rewrite BGP to use exact subject match
       const optimizedInput = this.injectSubjectConstraint(
         filter.input,
@@ -493,6 +501,18 @@ export class FilterContainsOptimizer {
     }
 
     return matchingUris;
+  }
+
+  /**
+   * Whether a BIND sits in the subtree, following `input` / `left` / `right` — a
+   * superset of every node `injectSubjectConstraint` descends into.
+   */
+  private containsExtend(operation: AlgebraOperation): boolean {
+    if (operation.type === "extend") return true;
+    const op = operation as unknown as Record<string, AlgebraOperation | undefined>;
+    return [op.input, op.left, op.right].some(
+      (child) => child !== undefined && typeof child === "object" && this.containsExtend(child),
+    );
   }
 
   /**
