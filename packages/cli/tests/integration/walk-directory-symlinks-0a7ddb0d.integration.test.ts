@@ -305,7 +305,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     }
   });
 
-  it("S16 links INSIDE a followed external tree are not followed — a hop back into the vault among them @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
+  it("S16 a hop back into the vault from INSIDE a followed external tree is not followed @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const root = vaultShell("v");
     write(path.join(root, "real", "n1.md"));
     const ext = path.join(base, "extdir");
@@ -417,6 +417,62 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
       "aaa.md",
       path.join("assetspaces", "k", "n.md"),
       path.join("inbox", "i.md"),
+      path.join("zzz", "last.md"),
+    ]);
+  });
+
+  it("S24 a link under a followed link that points at a SIBLING tree does not take over the vault's own later link @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
+    // Review round 3: S21/S22 point INTO the followed tree or at its ancestor;
+    // a rule that skipped only those (and judged the rest normally) passed
+    // every axis and brought the takeover back. The rule is "never followed,
+    // whatever its target" — this sibling target locks it.
+    const store = path.join(base, "store");
+    write(path.join(store, "assetspaces", "k", "n.md"));
+    write(path.join(store, "inbox", "i.md"));
+    nodeFs.symlinkSync(
+      path.join(store, "inbox"),
+      path.join(store, "assetspaces", "k", "zz-up"),
+    );
+    const root = vaultShell("v");
+    nodeFs.symlinkSync(
+      path.join(store, "assetspaces"),
+      path.join(root, "assetspaces"),
+    );
+    nodeFs.symlinkSync(path.join(store, "inbox"), path.join(root, "inbox"));
+
+    expect(walk(root)).toEqual([
+      "aaa.md",
+      path.join("assetspaces", "k", "n.md"),
+      path.join("inbox", "i.md"),
+      path.join("zzz", "last.md"),
+    ]);
+  });
+
+  it("S25 an outward mount link INSIDE the original is followed there but not through a linked copy — the copy sees less (named) @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
+    // Review round 3, LOW-1 made explicit: in the ORIGINAL `mnt` is a
+    // vault-level outward link and is followed; seen through the copy's
+    // `assetspaces` link it is a link BELOW a followed link and is not. The
+    // copy therefore misses that subtree — accepted and named in the req's
+    // Non-goals, not silent by accident.
+    const elsewhere = path.join(base, "elsewhere");
+    write(path.join(elsewhere, "m1.md"));
+    const orig = vaultShell("orig");
+    write(path.join(orig, "assetspaces", "kitelev", "exoas-x", "x", "n1.md"));
+    nodeFs.symlinkSync(
+      elsewhere,
+      path.join(orig, "assetspaces", "kitelev", "mnt"),
+    );
+    const linked = vaultShell("linked");
+    nodeFs.symlinkSync(
+      path.join(orig, "assetspaces"),
+      path.join(linked, "assetspaces"),
+    );
+
+    const mounted = path.join("assetspaces", "kitelev", "mnt", "m1.md");
+    expect(walk(orig)).toContain(mounted);
+    expect(walk(linked)).toEqual([
+      "aaa.md",
+      path.join("assetspaces", "kitelev", "exoas-x", "x", "n1.md"),
       path.join("zzz", "last.md"),
     ]);
   });

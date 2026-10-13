@@ -665,7 +665,9 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
    *   reported under their LOGICAL path (through the link), never the real one.
    *   ⛔ So the walk is no longer bounded by the vault folder: an outward link
    *   brings in whatever `.md` lies behind it (a deliberate decision of that
-   *   ticket; sync collection excludes those files, see `collectVaultSpecs`).
+   *   ticket; sync collection does not take the space DECLARATIONS reached
+   *   through such a link, see `collectVaultSpecs` — files behind a link that
+   *   is the mount folder of a real declaration still sync as before).
    *
    * `links` and `realDir` are internal: callers pass neither.
    */

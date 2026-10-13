@@ -28,6 +28,8 @@
         "S21",
         "S22",
         "S23",
+        "S24",
+        "S25",
         "S2a",
         "S2b",
         "S3",
@@ -73,7 +75,19 @@
     "M5_plain_subdir_real_path_is_parent": {
       "from": "        const childReal = path.join(realDir, entry.name);",
       "to": "        const childReal = path.join(realDir, \"\");",
-      "expect": ["S1", "S18", "S20c", "S21", "S22", "S2a", "S2b", "S3", "S5"]
+      "expect": [
+        "S1",
+        "S18",
+        "S20c",
+        "S21",
+        "S22",
+        "S24",
+        "S25",
+        "S2a",
+        "S2b",
+        "S3",
+        "S5"
+      ]
     },
     "M6_hidden_link_followed": {
       "from": "        if (this.shouldSkipDirectory(entry.name)) {\n          continue;\n        }\n        // The link's target AS WRITTEN",
@@ -108,6 +122,8 @@
         "S21",
         "S22",
         "S23",
+        "S24",
+        "S25",
         "S3",
         "S5"
       ]
@@ -132,14 +148,28 @@
       "from": "        if (realDir !== null) {\n          continue; // nested link: never followed",
       "to": "        if (realDir !== null && realDir === \"\\u0000\") {\n          continue; // nested link: never followed",
       "_note": "Review round 2: the state before the nested-link rule — a link below a followed link is judged by the other rules and, pointing outside the copy, followed.",
-      "expect": ["S21", "S22"]
+      "expect": ["S21", "S22", "S24", "S25"]
+    },
+    "N2_nested_rule_narrowed_to_inside_or_ancestor": {
+      "from": "        if (realDir !== null) {\n          continue; // nested link: never followed",
+      "to": "        if (realDir !== null && (() => { const t = this.realDirectoryBehind(fullPath); return t === null || isWithinPath(t, realDir) || isWithinPath(realDir, t); })()) {\n          continue; // nested link: never followed",
+      "_note": "Review round 3: the NARROW rule — a nested link is skipped only when its target lies inside the directory it sits in or contains it, and is judged normally otherwise. S21/S22 stay green under it (their targets are of exactly that kind); a sibling or unrelated target is followed again. Locks \"never followed, whatever its target\".",
+      "expect": ["S24", "S25"]
+    },
+    "M17_file_link_passes_directory_check": {
+      "from": "      if (!fs.statSync(linkPath).isDirectory()) {",
+      "to": "      if (!fs.statSync(linkPath).isDirectory() && linkPath === \"\\u0000\") {",
+      "_note": "Declared zero: a FILE link let through realDirectoryBehind is walked as a directory, readdir fails with ENOTDIR, and that failure is swallowed below a link — so S10 holds without this check (defensive). Canary M4 targets the same function.",
+      "_canary": "M4_dangling_link_throws",
+      "expect": []
     }
   },
   "_coverage": {
     "_note_matrix": "Measured, not predicted: every set comes from the driver's printed lists (control 0 red, rc=0). No two mutants share a red set (§A147). M1 (nothing followed) / M5 (plain subdirs under a link lost) / M11 (files under the REAL path) are told apart by S14, S15, S16, S19a.",
     "_note_rule_layers": "A link is judged twice: by its TEXT resolved from where it sits (linkTextStaysInVault) and by its RESOLVED target. M14 (text rule off) reddens only S18 — the one shape where the two disagree (a vault-relative link next to an outward assetspaces link). M3/M9 (resolved rules off) are reached by links whose text says nothing (a hop, a link opened through a linked root, another letter case). The ancestor half of the TEXT rule is defensive: where the text names an ancestor that exists, the resolved target is that ancestor too unless the path itself runs through a link — no mutant on it, stated.",
-    "_note_platform": "S12 and S17 assert only on a case-INSENSITIVE filesystem and return early elsewhere: on Linux CI M8 and M13 are green by construction (macOS-only discriminators). M7 reddens S9 only where os.tmpdir() is itself a link (macOS /var → /private/var); on Linux M7 is still caught by S13. S21 reddens under M3 and M7 only on macOS for the same reason: elsewhere the TEXT rule already skips the original's absolute alias, so the resolved-target rule is not reached.",
+    "_note_platform": "S12 and S17 assert only on a case-INSENSITIVE filesystem and return early elsewhere: on Linux CI M8 and M13 are green by construction (macOS-only discriminators). M7 reddens S9 only where os.tmpdir() is itself a link (macOS /var → /private/var); on Linux M7 is still caught by S13. S21 reddens under M3 and M7 only on macOS for the same reason: elsewhere the TEXT rule already skips the original's absolute alias, so the resolved-target rule is not reached. ⚠ Consequence on Linux (derived, not measured there): M3 and M7 both reduce to [S13] — the \"no two mutants share a red set\" claim holds on macOS, where the driver ran.",
     "_note_regression": "D1-D3 (deterministic-vault-walk-193147b4) and FileSystemVaultAdapter.test.ts are in the harness: they stub readdirSync with Dirents answering true to isDirectory or isFile, so the new isSymbolicLink branch is never reached for them and no mutant reddens them — the old suites need no stub change.",
-    "_note_nested": "Review round 2 (ticket 0a7ddb0d): a link BELOW a followed link is never followed. N1 removes that rule; it reddens S21 (an absolute alias inside the original's tree claims the real directory in a linked copy) and S22 (a link under `assetspaces` takes over the files of the vault's own later `inbox` link). Loops and diamonds inside an external tree are impossible by construction now; the visited set guards vault-level links only — S23 (two links to one directory) needs the check on the link (M2), S5 (a link to the parent of an already-walked one) also the check on plain sub-directories (M2b). S16 and S3 are no longer reddened by M2/M3/M7: their nested links are skipped by the nested rule before those checks are reached."
+    "_note_nested": "Review round 2 (ticket 0a7ddb0d): a link BELOW a followed link is never followed. N1 removes that rule; it reddens S21 (an absolute alias inside the original's tree claims the real directory in a linked copy) and S22 (a link under `assetspaces` takes over the files of the vault's own later `inbox` link). Loops and diamonds inside an external tree are impossible by construction now; the visited set guards vault-level links only — S23 (two links to one directory) needs the check on the link (M2), S5 (a link to the parent of an already-walked one) also the check on plain sub-directories (M2b). S16 and S3 are no longer reddened by M2/M3/M7: their nested links are skipped by the nested rule before those checks are reached. Review round 3: N1 also reddens S24 (sibling target) and S25 (unrelated outward target); N2 (the narrow rule: skip only targets inside the link's directory or containing it) reddens exactly S24 S25 — S21/S22 alone did not lock the rule. S16 is held by the resolved-inside rule as well, so N1 leaves it green; its title claims only the hop back into the vault.",
+    "_note_unreddened": "No mutant reddens S4 or S10, by construction: S4's inside link is caught by BOTH the text rule and the resolved-target rule (a single mutant removes one, the other holds), and S10's file link is held twice as well — the isDirectory check in realDirectoryBehind is defensive, since a followed file link would fail readdir with ENOTDIR, which is swallowed below a link."
   }
 }
