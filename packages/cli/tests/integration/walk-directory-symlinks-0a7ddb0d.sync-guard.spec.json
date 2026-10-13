@@ -1,0 +1,38 @@
+{
+  "_doc": "Revert-verify mutants for ticket 0a7ddb0d, sync-collection guard. SUBJECT: packages/cli/src/commands/exosync-parity.ts (collectVaultSpecs: a space declaration whose real path lies outside the vault is not a sync unit, and the skip is named in `warnings`). Same harness file as the walk spec. Run from the repo root after setting `tree` and `subject` to YOUR checkout. `expect` filled ONLY from a completed driver run.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-parity.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../\" && NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js tests/integration/walk-directory-symlinks-0a7ddb0d.integration.test.ts 2>&1",
+  "env_var": "SUT",
+  "red_re": "› ([SD]\\d+[a-z]?) ",
+  "mutants": {
+    "G1_guard_off": {
+      "from": "    if (!isWithinRealPath(path.join(vaultPath, file.path), vaultReal)) {",
+      "to": "    if (!isWithinRealPath(path.join(vaultPath, file.path), path.parse(vaultReal).root)) {",
+      "_note": "Every path is within the filesystem root ⇒ the guard never fires — the state before ticket 0a7ddb0d's spec added it.",
+      "expect": ["S20a", "S20c"]
+    },
+    "G2_skip_not_named": {
+      "from": "  if (reachedThroughLink.length > 0) {",
+      "to": "  if (reachedThroughLink.length > 1) {",
+      "expect": ["S20c"]
+    },
+    "G3_vault_side_not_real": {
+      "from": "  const vaultReal = realPathOrResolved(vaultPath);",
+      "to": "  const vaultReal = path.resolve(vaultPath);",
+      "_note": "Compares a REAL declaration path with a LOGICAL vault path: wherever the vault is opened through a link (macOS os.tmpdir() — /var → /private/var) every declaration looks outside. On a filesystem without such a link the two spellings coincide and the mutant is green — platform-bound, stated.",
+      "expect": ["S20a", "S20b", "S20c"]
+    }
+  },
+  "_coverage": {
+    "_note_matrix": "Measured: control 0 red, rc=0; G1 [S20a,S20c] / G2 [S20c] / G3 [S20a,S20b,S20c] — pairwise distinct. S20b (a mount folder that is itself a link, declared by a real file, is enumerated as before) is the control against an over-wide guard; G3 reddens it on macOS only (tmpdir behind a link), on Linux it is green by construction."
+  }
+}

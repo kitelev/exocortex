@@ -21,7 +21,12 @@
  */
 
 import { Command } from "commander";
-import { promises as fsp, existsSync, readFileSync } from "node:fs";
+import {
+  promises as fsp,
+  existsSync,
+  readFileSync,
+  realpathSync,
+} from "node:fs";
 import { webcrypto } from "node:crypto";
 import * as path from "node:path";
 import * as yaml from "js-yaml";
@@ -230,11 +235,25 @@ export function collectVaultSpecs(vaultPath: string): CollectedSpecs {
   const adapter = new FileSystemVaultAdapter(vaultPath);
   const acc = new SpaceSpecAccumulator();
   const parked: SyncRepoSpec[] = [];
+  const vaultReal = realPathOrResolved(vaultPath);
+  const reachedThroughLink: string[] = [];
   for (const file of adapter.getAllFiles()) {
     const fm = adapter.getFrontmatter(file) as Record<string, unknown> | null;
     if (!fm) continue;
     const verdict = classifySpaceDeclaration(fm, file.path);
     if (verdict.kind === "not-space") continue;
+    // ticket 0a7ddb0d — the vault walk follows a directory symlink that leads
+    // OUT of the vault, so a COPY whose `assetspaces/` is such a link now sees
+    // the ORIGINAL's space declarations. Before that ticket they were invisible
+    // and the copy had no sync units; taking them would sync another vault's
+    // files under this vault's (absent) watermark. A declaration whose real
+    // path lies outside the vault is therefore not a sync unit of THIS vault —
+    // named on stderr, not dropped silently. A mount folder that is itself a
+    // link, declared by a file that is not, is enumerated as before.
+    if (!isWithinRealPath(path.join(vaultPath, file.path), vaultReal)) {
+      reachedThroughLink.push(file.path);
+      continue;
+    }
     if (verdict.warning !== undefined) acc.warnings.push(verdict.warning);
     if (verdict.kind === "skip") continue;
     const spec = acc.offer(verdict.candidate);
@@ -244,6 +263,11 @@ export function collectVaultSpecs(vaultPath: string): CollectedSpecs {
       continue;
     }
     acc.commit(verdict.candidate);
+  }
+  if (reachedThroughLink.length > 0) {
+    acc.warnings.push(
+      `${reachedThroughLink.length} space declaration(s) lie behind a symbolic link to outside this vault and are not sync units of it (first: ${reachedThroughLink[0]})`,
+    );
   }
   // req c0810b83 — mark pull-only sync units from the device-local list. The
   // SAME core helper the plugin collector calls, so the list means one thing
@@ -259,6 +283,23 @@ export function collectVaultSpecs(vaultPath: string): CollectedSpecs {
     warnings: [...acc.warnings, ...pullOnlyWarnings],
     pullOnlyWarnings,
   };
+}
+
+function realPathOrResolved(p: string): string {
+  try {
+    return realpathSync.native(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
+/** `file`'s real path is `rootReal` or lies under it (ticket 0a7ddb0d). */
+function isWithinRealPath(file: string, rootReal: string): boolean {
+  const rel = path.relative(rootReal, realPathOrResolved(file));
+  return (
+    rel === "" ||
+    (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))
+  );
 }
 
 /**

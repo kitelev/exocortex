@@ -1,0 +1,123 @@
+{
+  "_doc": "Revert-verify mutants for ticket 0a7ddb0d (req <REQ-UID, assigned at StageImplementation>). SUBJECT: packages/cli/src/adapters/FileSystemVaultAdapter.ts (walkDirectory + linkTextStaysInVault + realDirectoryBehind + realPathOrResolved). The sync-collection guard lives in a different file and has its own spec (`.sync-guard.spec.json`): the driver takes ONE subject. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). Every mutant is TYPE-PRESERVING. The axes read the REAL filesystem in a temp dir: the defect lives in what a real Dirent of a symlink answers, so a stubbed readdirSync would be vacuous. `expect` filled ONLY from a completed driver run.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/adapters/FileSystemVaultAdapter.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../\" && NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js tests/integration/walk-directory-symlinks-0a7ddb0d.integration.test.ts tests/unit/adapters/deterministic-vault-walk-193147b4.test.ts tests/unit/adapters/FileSystemVaultAdapter.test.ts 2>&1",
+  "env_var": "SUT",
+  "red_re": "› ([SD]\\d+[a-z]?) ",
+  "mutants": {
+    "M1_link_branch_never_follows": {
+      "from": "        const linkReal = this.realDirectoryBehind(fullPath);",
+      "to": "        const linkReal = fullPath === \"\\u0000\" ? this.realDirectoryBehind(fullPath) : null;",
+      "_note": "The pre-fix state: no link is ever followed.",
+      "expect": [
+        "S1",
+        "S14",
+        "S16",
+        "S18",
+        "S19a",
+        "S20c",
+        "S2a",
+        "S2b",
+        "S3",
+        "S5"
+      ]
+    },
+    "M2_visited_check_off_for_links": {
+      "from": "        if (links.visited.has(linkReal)) {",
+      "to": "        if (links.visited.has(linkReal + \"\\u0000\")) {",
+      "expect": ["S3", "S5"]
+    },
+    "M2b_visited_check_off_for_plain_subdirs": {
+      "from": "        if (links.visited.has(childReal)) {",
+      "to": "        if (links.visited.has(childReal + \"\\u0000\")) {",
+      "expect": ["S5"]
+    },
+    "M3_resolved_inside_rule_off": {
+      "from": "          isWithinPath(linkReal, links.rootReal) ||",
+      "to": "          isWithinPath(linkReal, links.rootReal + \"\\u0000\") ||",
+      "expect": ["S12", "S13", "S16", "S17"]
+    },
+    "M9_resolved_ancestor_rule_off": {
+      "from": "          isWithinPath(links.rootReal, linkReal)\n",
+      "to": "          isWithinPath(links.rootReal, linkReal + \"\\u0000\")\n",
+      "expect": ["S9"]
+    },
+    "M14_text_rule_off": {
+      "from": "        if (this.linkTextStaysInVault(fullPath)) {",
+      "to": "        if (this.linkTextStaysInVault(fullPath + \"\\u0000\")) {",
+      "_note": "readlink of a path that does not exist fails ⇒ the text rule answers false for every link.",
+      "expect": ["S18"]
+    },
+    "M4_dangling_link_throws": {
+      "from": "      return fs.realpathSync.native(linkPath);\n    } catch {\n      return null;\n    }",
+      "to": "      return fs.realpathSync.native(linkPath);\n    } catch (e) {\n      throw e;\n    }",
+      "expect": ["S6"]
+    },
+    "M13_link_side_realpath_js_not_native": {
+      "from": "      return fs.realpathSync.native(linkPath);",
+      "to": "      return fs.realpathSync(linkPath);",
+      "expect": ["S17"]
+    },
+    "M5_plain_subdir_real_path_is_parent": {
+      "from": "        const childReal = path.join(realDir, entry.name);",
+      "to": "        const childReal = path.join(realDir, \"\");",
+      "expect": ["S1", "S18", "S20c", "S2a", "S2b", "S3", "S5"]
+    },
+    "M6_hidden_link_followed": {
+      "from": "        if (this.shouldSkipDirectory(entry.name)) {\n          continue;\n        }\n        // The link's target AS WRITTEN",
+      "to": "        if (this.shouldSkipDirectory(\"x\" + entry.name)) {\n          continue;\n        }\n        // The link's target AS WRITTEN",
+      "expect": ["S7"]
+    },
+    "M7_root_real_path_not_resolved": {
+      "from": "          links.rootReal = this.realPathOrResolved(this.rootPath);",
+      "to": "          links.rootReal = path.resolve(this.rootPath);",
+      "expect": ["S12", "S13", "S16", "S9"]
+    },
+    "M8_root_realpath_js_not_native": {
+      "from": "  private realPathOrResolved(p: string): string {\n    try {\n      return fs.realpathSync.native(p);",
+      "to": "  private realPathOrResolved(p: string): string {\n    try {\n      return fs.realpathSync(p);",
+      "expect": ["S12"]
+    },
+    "M10_root_real_path_eager": {
+      "from": "    links: SymlinkWalkState = { rootReal: null, visited: new Set() },",
+      "to": "    links: SymlinkWalkState = {\n      rootReal: this.realPathOrResolved(dir),\n      visited: new Set(),\n    },",
+      "expect": ["S11", "S11b"]
+    },
+    "M11_files_reported_under_real_path": {
+      "from": "        this.walkDirectory(fullPath, callback, links, linkReal);",
+      "to": "        this.walkDirectory(linkReal, callback, links, linkReal);",
+      "expect": ["S1", "S14", "S15", "S16", "S18", "S19a", "S3", "S5"]
+    },
+    "M15_error_under_link_rethrown": {
+      "from": "      if (realDir !== null) {\n        return;\n      }\n      throw error;",
+      "to": "      if (realDir === \"\\u0000\") {\n        return;\n      }\n      throw error;",
+      "expect": ["S19a"]
+    },
+    "M15b_error_in_vault_swallowed": {
+      "from": "      if (realDir !== null) {\n        return;\n      }\n      throw error;",
+      "to": "      if (realDir !== null || dir !== \"\\u0000\") {\n        return;\n      }\n      throw error;",
+      "expect": ["S19b"]
+    },
+    "M16_fifo_enters_link_branch": {
+      "from": "      } else if (entry.isSymbolicLink()) {",
+      "to": "      } else if (entry.isSymbolicLink() || entry.isFIFO()) {",
+      "_note": "The first prototype's plain `else`: a FIFO/socket/device then costs a readlink + stat.",
+      "expect": ["S11b"]
+    }
+  },
+  "_coverage": {
+    "_note_matrix": "Measured, not predicted: every set comes from the driver's printed lists (control 0 red, rc=0). No two mutants share a red set (§A147). M1 (nothing followed) / M5 (plain subdirs under a link lost) / M11 (files under the REAL path) are told apart by S14, S15, S16, S19a.",
+    "_note_rule_layers": "A link is judged twice: by its TEXT resolved from where it sits (linkTextStaysInVault) and by its RESOLVED target. M14 (text rule off) reddens only S18 — the one shape where the two disagree (a vault-relative link next to an outward assetspaces link). M3/M9 (resolved rules off) are reached by links whose text says nothing (a hop, a link opened through a linked root, another letter case). The ancestor half of the TEXT rule is defensive: where the text names an ancestor that exists, the resolved target is that ancestor too unless the path itself runs through a link — no mutant on it, stated.",
+    "_note_platform": "S12 and S17 assert only on a case-INSENSITIVE filesystem and return early elsewhere: on Linux CI M8 and M13 are green by construction (macOS-only discriminators). M7 reddens S9 only where os.tmpdir() is itself a link (macOS /var → /private/var); on Linux M7 is still caught by S13/S16.",
+    "_note_regression": "D1-D3 (deterministic-vault-walk-193147b4) and FileSystemVaultAdapter.test.ts are in the harness: they stub readdirSync with Dirents answering true to isDirectory or isFile, so the new isSymbolicLink branch is never reached for them and no mutant reddens them — the old suites need no stub change."
+  }
+}
