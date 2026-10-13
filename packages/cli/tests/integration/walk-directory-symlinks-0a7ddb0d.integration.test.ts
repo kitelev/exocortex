@@ -24,8 +24,10 @@ import { execFileSync } from "child_process";
  * vacuous by construction.
  *
  * Literal @req token for requirements-trace's static scanner:
- * @req:<REQ-UID — assigned when the requirement asset is created (StageImplementation)>
+ * @req:84520b18-25d0-433f-a423-a8d4918681cf
  */
+
+const REQ = "84520b18-25d0-433f-a423-a8d4918681cf";
 
 const { FileSystemVaultAdapter } =
   await import("../../src/adapters/FileSystemVaultAdapter.js");
@@ -86,7 +88,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     return root;
   }
 
-  it("S1 a vault whose assetspaces/ is an outward link walks the SAME relative paths in the SAME order as a real directory", () => {
+  it("S1 a vault whose assetspaces/ is an outward link walks the SAME relative paths in the SAME order as a real directory @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const ext = externalTree();
     const control = vaultShell("control");
     nodeFs.cpSync(ext, path.join(control, "assetspaces"), { recursive: true });
@@ -98,7 +100,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     expect(walk(linked)).toEqual(expected);
   });
 
-  it("S3 a loop inside the external tree terminates and yields each external file exactly once", () => {
+  it("S3 a loop inside the external tree terminates and yields each external file exactly once @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const extA = path.join(base, "extdir", "a");
     write(path.join(extA, "ext1.md"));
     write(path.join(extA, "b", "ext2.md"));
@@ -129,7 +131,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     return realRoot;
   }
 
-  it("S4 a link that stays INSIDE the vault is not followed, even when it sorts before the real directory", () => {
+  it("S4 a link that stays INSIDE the vault is not followed, even when it sorts before the real directory @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const realRoot = insideTree();
 
     expect(walk(nodeFs.realpathSync(realRoot))).toEqual([
@@ -138,7 +140,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     ]);
   });
 
-  it("S13 the same inside link is still recognised when the vault ROOT itself is opened through a link", () => {
+  it("S13 the same inside link is still recognised when the vault ROOT itself is opened through a link @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const realRoot = insideTree();
     const rootLink = path.join(base, "rootlink");
     nodeFs.symlinkSync(realRoot, rootLink);
@@ -149,7 +151,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     ]);
   });
 
-  it("S5 several links into one external tree (diamond, link to a parent) yield each file once, under the first by order", () => {
+  it("S5 several links into one external tree (diamond, link to a parent) yield each file once, under the first by order @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const ext = path.join(base, "extdir");
     write(path.join(ext, "top.md"));
     write(path.join(ext, "a", "ext1.md"));
@@ -171,7 +173,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     ]);
   });
 
-  it("S6 a dangling link and a self-referential link are skipped without an exception", () => {
+  it("S6 a dangling link and a self-referential link are skipped without an exception @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const root = vaultShell("v");
     nodeFs.symlinkSync(path.join(base, "nowhere"), path.join(root, "dangling"));
     nodeFs.symlinkSync(path.join(root, "self"), path.join(root, "self"));
@@ -179,7 +181,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     expect(walk(root)).toEqual(["aaa.md", path.join("zzz", "last.md")]);
   });
 
-  it("S7 a HIDDEN outward link is not followed (same rule as hidden directories)", () => {
+  it("S7 a HIDDEN outward link is not followed (same rule as hidden directories) @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const ext = externalTree();
     const root = vaultShell("v");
     nodeFs.symlinkSync(ext, path.join(root, ".assetspaces"));
@@ -187,7 +189,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     expect(walk(root)).toEqual(["aaa.md", path.join("zzz", "last.md")]);
   });
 
-  it("S9 a link to an ANCESTOR of the vault is not followed — written as the ancestor, or reaching it through a hop", () => {
+  it("S9 a link to an ANCESTOR of the vault is not followed — written as the ancestor, or reaching it through a hop @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const root = vaultShell("v");
     write(path.join(base, "outside.md"));
     nodeFs.symlinkSync(base, path.join(root, "up"));
@@ -201,7 +203,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     expect(walk(root)).toEqual(["aaa.md", path.join("zzz", "last.md")]);
   });
 
-  it("S10 a FILE link stays skipped (the sanction covers directory links only)", () => {
+  it("S10 a FILE link stays skipped (the sanction covers directory links only) @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const root = vaultShell("v");
     write(path.join(base, "outside-note.md"));
     nodeFs.symlinkSync(
@@ -212,7 +214,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     expect(walk(root)).toEqual(["aaa.md", path.join("zzz", "last.md")]);
   });
 
-  it("S11 a vault WITHOUT links costs the walk no extra stat/realpath call", () => {
+  it("S11 a vault WITHOUT links costs the walk no extra stat/realpath call @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const root = vaultShell("v");
     write(path.join(root, "m", "n.md"));
     const statSpy = jest.spyOn(fs, "statSync");
@@ -227,7 +229,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     }
   });
 
-  it("S11b a FIFO in the vault is skipped without any stat/realpath call", () => {
+  it("S11b a FIFO in the vault is skipped without any stat/realpath call @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const root = vaultShell("v");
     execFileSync("mkfifo", [path.join(root, "pipe.md")]);
     const statSpy = jest.spyOn(fs, "statSync");
@@ -242,7 +244,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     }
   });
 
-  it("S12 a vault opened in ANOTHER letter case still treats an inside link as inside (case-insensitive FS only)", () => {
+  it("S12 a vault opened in ANOTHER letter case still treats an inside link as inside (case-insensitive FS only) @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const realRoot = path.join(base, "CaseRoot");
     write(path.join(realRoot, "real", "n1.md"));
     nodeFs.symlinkSync(
@@ -257,7 +259,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     expect(walk(swapped)).toEqual([path.join("real", "n1.md")]);
   });
 
-  it("S14 files right under an outward link are reported under the LOGICAL path", () => {
+  it("S14 files right under an outward link are reported under the LOGICAL path @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const flat = path.join(base, "flat");
     write(path.join(flat, "f.md"));
     const root = vaultShell("v");
@@ -270,7 +272,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     ]);
   });
 
-  it("S15 no reported path leaves the vault, whatever links it holds", () => {
+  it("S15 no reported path leaves the vault, whatever links it holds @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const ext = externalTree();
     const flat = path.join(base, "flat");
     write(path.join(flat, "f.md"));
@@ -286,7 +288,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     }
   });
 
-  it("S16 links INSIDE the external tree are judged by the same rules: a hop back into the vault is not followed", () => {
+  it("S16 links INSIDE the external tree are judged by the same rules: a hop back into the vault is not followed @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const root = vaultShell("v");
     write(path.join(root, "real", "n1.md"));
     const ext = path.join(base, "extdir");
@@ -305,7 +307,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     ]);
   });
 
-  it("S17 a link whose target is written in ANOTHER letter case still counts as inside (case-insensitive FS only)", () => {
+  it("S17 a link whose target is written in ANOTHER letter case still counts as inside (case-insensitive FS only) @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const realRoot = path.join(nodeFs.realpathSync(base), "CaseLink");
     write(path.join(realRoot, "real", "n1.md"));
     const swapped = path.join(nodeFs.realpathSync(base), "caselink");
@@ -320,7 +322,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     expect(walk(realRoot)).toEqual([path.join("real", "n1.md")]);
   });
 
-  it("S18 a vault-relative link next to an outward assetspaces link does not take over the paths behind it", () => {
+  it("S18 a vault-relative link next to an outward assetspaces link does not take over the paths behind it @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const ext = externalTree();
     // Inside the external tree: a link whose text climbs to the vault's own
     // `inbox` — in the ORIGINAL vault it stays inside and is skipped.
@@ -370,7 +372,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     }) as unknown as typeof fs.readdirSync);
   }
 
-  it("S19a a read failure INSIDE a followed external tree skips that folder instead of failing the walk", () => {
+  it("S19a a read failure INSIDE a followed external tree skips that folder instead of failing the walk @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const ext = path.join(base, "extdir");
     write(path.join(ext, "ext1.md"));
     write(path.join(ext, "b", "ext2.md"));
@@ -388,7 +390,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     }
   });
 
-  it("S19b the same failure on a folder of the vault itself still fails the walk (unchanged)", () => {
+  it("S19b the same failure on a folder of the vault itself still fails the walk (unchanged) @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const root = vaultShell("v");
     const spy = failingReaddir(path.join("v", "zzz"), "ENAMETOOLONG");
     try {
@@ -422,7 +424,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     return { control, linked };
   }
 
-  it("S20a sync collection: declarations reached through an outward link are NOT sync units of the copy", () => {
+  it("S20a sync collection: declarations reached through an outward link are NOT sync units of the copy @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const { control, linked } = syncCopies();
 
     expect(collectVaultSpecs(control).specs.map((s) => s.localPath)).toEqual([
@@ -431,7 +433,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     expect(collectVaultSpecs(linked).specs).toEqual([]);
   });
 
-  it("S20c sync collection: the skip is named in the warnings, not silent", () => {
+  it("S20c sync collection: the skip is named in the warnings, not silent @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const { control, linked } = syncCopies();
 
     expect(collectVaultSpecs(control).warnings.join("\n")).not.toContain(
@@ -442,7 +444,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     );
   });
 
-  it("S20b sync collection: a MOUNT folder that is itself a link, declared by a real file, is enumerated as before", () => {
+  it("S20b sync collection: a MOUNT folder that is itself a link, declared by a real file, is enumerated as before @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const root = vaultShell("v");
     write(path.join(root, "decl.md"), declaration("exoas-x"));
     write(path.join(base, "mounts", "exoas-x", "a.md"));
@@ -569,7 +571,7 @@ describe("S2 resolve-buttons on a vault whose assetspaces/ is an outward link (t
   });
 
   for (const useCache of [false, true]) {
-    it(`S2${useCache ? "b" : "a"} visible/hidden equal the real-directory control and are non-empty (useCache=${useCache})`, async () => {
+    it(`S2${useCache ? "b" : "a"} visible/hidden equal the real-directory control and are non-empty (useCache=${useCache}) @req:${REQ}`, async () => {
       const control = path.join(base, "control");
       writeAssetspaces(path.join(control, "assetspaces"));
       const ext = path.join(base, "external", "assetspaces");
