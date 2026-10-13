@@ -173,6 +173,23 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     ]);
   });
 
+  it("S23 two vault-level links to the SAME external directory yield each file once, under the first @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
+    // A pure diamond — no parent/child pair: only the visited check on the
+    // LINK itself can stop the second walk (S5 also needs the plain-subdir
+    // one). Without this axis the two checks shared one red set (§A147).
+    const ext = path.join(base, "extdir");
+    write(path.join(ext, "ext1.md"));
+    const root = vaultShell("v");
+    nodeFs.symlinkSync(ext, path.join(root, "zext0"));
+    nodeFs.symlinkSync(ext, path.join(root, "zext1"));
+
+    expect(walk(root)).toEqual([
+      "aaa.md",
+      path.join("zext0", "ext1.md"),
+      path.join("zzz", "last.md"),
+    ]);
+  });
+
   it("S6 a dangling link and a self-referential link are skipped without an exception @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const root = vaultShell("v");
     nodeFs.symlinkSync(path.join(base, "nowhere"), path.join(root, "dangling"));
@@ -288,7 +305,7 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
     }
   });
 
-  it("S16 links INSIDE the external tree are judged by the same rules: a hop back into the vault is not followed @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
+  it("S16 links INSIDE a followed external tree are not followed — a hop back into the vault among them @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
     const root = vaultShell("v");
     write(path.join(root, "real", "n1.md"));
     const ext = path.join(base, "extdir");
@@ -352,6 +369,56 @@ describe("walkDirectory follows outward directory symlinks (ticket 0a7ddb0d)", (
       path.join("assetspaces", "kitelev", "exoas-x", "x", "n1.md"),
     );
     expect(walk(linked)).toEqual(expected);
+  });
+
+  it("S21 an ABSOLUTE link inside the original's tree does not take the real directory over in a linked copy @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
+    // Review round 2, probe 1: in the ORIGINAL `aaa-alias` points INSIDE the
+    // vault and is skipped; seen through the copy's `assetspaces` link it
+    // points OUTSIDE the copy. Followed, it sorted before `exoas-x` and
+    // claimed that real directory under ITS path.
+    const orig = vaultShell("orig");
+    nodeFs.cpSync(externalTree(), path.join(orig, "assetspaces"), {
+      recursive: true,
+    });
+    nodeFs.symlinkSync(
+      path.join(nodeFs.realpathSync(orig), "assetspaces", "kitelev", "exoas-x"),
+      path.join(orig, "assetspaces", "kitelev", "aaa-alias"),
+    );
+    const linked = vaultShell("linked");
+    nodeFs.symlinkSync(
+      path.join(orig, "assetspaces"),
+      path.join(linked, "assetspaces"),
+    );
+
+    const expected = walk(orig);
+    expect(expected).toContain(
+      path.join("assetspaces", "kitelev", "exoas-x", "x", "n1.md"),
+    );
+    expect(walk(linked)).toEqual(expected);
+  });
+
+  it("S22 a link under a followed link does not take over the files of the vault's OWN later link @req:84520b18-25d0-433f-a423-a8d4918681cf", () => {
+    // Review round 2, probe 5: `zz-up` sits under the followed `assetspaces`
+    // and points at the store both vault-level links come from; followed, it
+    // walked `store/inbox` first and the vault's own `inbox` link was then
+    // skipped as already visited.
+    const store = path.join(base, "store");
+    write(path.join(store, "assetspaces", "k", "n.md"));
+    write(path.join(store, "inbox", "i.md"));
+    nodeFs.symlinkSync(store, path.join(store, "assetspaces", "k", "zz-up"));
+    const root = vaultShell("v");
+    nodeFs.symlinkSync(
+      path.join(store, "assetspaces"),
+      path.join(root, "assetspaces"),
+    );
+    nodeFs.symlinkSync(path.join(store, "inbox"), path.join(root, "inbox"));
+
+    expect(walk(root)).toEqual([
+      "aaa.md",
+      path.join("assetspaces", "k", "n.md"),
+      path.join("inbox", "i.md"),
+      path.join("zzz", "last.md"),
+    ]);
   });
 
   /** `readdirSync` that fails with `code` for one directory, real otherwise. */

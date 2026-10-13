@@ -659,7 +659,9 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
    * - Follows a directory SYMLINK only when it leads OUT of the vault (ticket
    *   0a7ddb0d) — so a vault whose `assetspaces/` is a link reads the files
    *   behind it — and walks every such real directory at most once. A link
-   *   into the vault or to an ANCESTOR of it is not followed. Files are
+   *   into the vault or to an ANCESTOR of it is not followed, and neither is
+   *   any link BELOW a followed one (only links the walk reaches through real
+   *   directories are judged at all). Files are
    *   reported under their LOGICAL path (through the link), never the real one.
    *   ⛔ So the walk is no longer bounded by the vault folder: an outward link
    *   brings in whatever `.md` lies behind it (a deliberate decision of that
@@ -730,8 +732,9 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
         }
         // Below a followed link the real path is tracked by JOINING, not by a
         // syscall: a plain sub-directory of a real directory is that directory
-        // plus its name. Recorded so a second link into the same external tree
-        // (a diamond) or a link back up it (a loop) is walked once.
+        // plus its name (links below a followed link are not followed, so the
+        // join is exact). Recorded so a second vault-level link into the same
+        // external tree (a diamond, or a link to its parent) walks it once.
         const childReal = path.join(realDir, entry.name);
         if (links.visited.has(childReal)) {
           continue;
@@ -751,6 +754,19 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
         // `statSync` follows the link; a dangling link (ENOENT), a self-link
         // (ELOOP) or one gone mid-walk is skipped like before. File links stay
         // skipped (the sanction covers directory links only).
+        //
+        // ⛔ A link BELOW an already-followed link is never followed, whatever
+        // its target (review round 2 of ticket 0a7ddb0d). Inside a followed
+        // tree a link that the ORIGINAL vault judges "inside" — say
+        // `aaa-alias -> /abs/…/exoas-x` next to `exoas-x` — points OUTSIDE the
+        // copy, so the rules below would follow it; sorting first, it took the
+        // real directory over under ITS path, and `zz-up -> <store>` under
+        // `assetspaces` took over the files of the copy's OWN `inbox` link.
+        // Only the links the vault walk reaches through real directories are
+        // followed — no syscall is spent on the rest.
+        if (realDir !== null) {
+          continue; // nested link: never followed
+        }
         if (this.shouldSkipDirectory(entry.name)) {
           continue;
         }
