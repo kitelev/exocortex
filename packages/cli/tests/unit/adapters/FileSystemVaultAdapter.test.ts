@@ -670,8 +670,13 @@ describe("FileSystemVaultAdapter", () => {
     });
 
     describe("directory boundary enforcement", () => {
-      it("should not traverse parent directories via symlinks", () => {
-        // Scenario: symlink in vault points outside vault root
+      it("walks plain sub-directories and root files (a stubbed Dirent is never a symlink)", () => {
+        // ⛔ Formerly titled "should not traverse parent directories via
+        // symlinks": the stub below marks `external-link` as a DIRECTORY and the
+        // test asserts nothing about `sensitive.md`, so it never exercised a
+        // symlink. Since ticket 0a7ddb0d the walk DOES follow a directory link
+        // that leads out of the vault; that behaviour is pinned on the real
+        // filesystem by tests/integration/walk-directory-symlinks-0a7ddb0d.
 
         readdirSyncSpy.mockImplementation((dir) => {
           const dirStr = String(dir);

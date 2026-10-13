@@ -16,6 +16,27 @@ import { rewriteInboundWikilinks } from "../utils/wikilinkRewriter.js";
 /** UUID v4 pattern for wikilink resolution */
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * State of one `walkDirectory` traversal, shared by its recursion (ticket
+ * 0a7ddb0d). `rootReal` is resolved lazily — by the first link that reaches
+ * the resolved-target test — so a vault without links pays no extra syscall;
+ * `visited` holds the real paths of the directories walked through a followed
+ * link.
+ */
+interface SymlinkWalkState {
+  rootReal: string | null;
+  visited: Set<string>;
+}
+
+/** `child` is `parent` itself or lies under it (both absolute, real). */
+function isWithinPath(child: string, parent: string): boolean {
+  const rel = path.relative(parent, child);
+  return (
+    rel === "" ||
+    (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))
+  );
+}
+
 export class FileSystemVaultAdapter implements IVaultAdapter {
   /** UUID (lowercase) → relative filepath mapping for O(1) lookups */
   private uuidIndex: Map<string, string> | null = null;
@@ -635,11 +656,26 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
    * Security features:
    * - Skips hidden directories to avoid .Trash, .obsidian, etc.
    * - Handles EPERM/EACCES errors gracefully by skipping inaccessible directories
-   * - Only processes files within the vault boundary
+   * - Follows a directory SYMLINK only when it leads OUT of the vault (ticket
+   *   0a7ddb0d) — so a vault whose `assetspaces/` is a link reads the files
+   *   behind it — and walks every such real directory at most once. A link
+   *   into the vault or to an ANCESTOR of it is not followed, and neither is
+   *   any link BELOW a followed one (only links the walk reaches through real
+   *   directories are judged at all). Files are
+   *   reported under their LOGICAL path (through the link), never the real one.
+   *   ⛔ So the walk is no longer bounded by the vault folder: an outward link
+   *   brings in whatever `.md` lies behind it (a deliberate decision of that
+   *   ticket; sync collection does not take the space DECLARATIONS reached
+   *   through such a link, see `collectVaultSpecs` — files behind a link that
+   *   is the mount folder of a real declaration still sync as before).
+   *
+   * `links` and `realDir` are internal: callers pass neither.
    */
   private walkDirectory(
     dir: string,
     callback: (filePath: string) => void,
+    links: SymlinkWalkState = { rootReal: null, visited: new Set() },
+    realDir: string | null = null,
   ): void {
     let entries: fs.Dirent[];
 
@@ -650,6 +686,15 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
       const nodeError = error as NodeJS.ErrnoException;
       if (nodeError.code === "EPERM" || nodeError.code === "EACCES") {
         return; // Skip this directory silently
+      }
+      // ticket 0a7ddb0d — below a followed link the directory belongs to a
+      // tree OUTSIDE the vault, which the walk before that ticket never
+      // entered. Any failure there (ENAMETOOLONG on the longer LOGICAL path,
+      // ENOENT in a race, EIO on a detached volume) skips that directory —
+      // as the old walk skipped the whole link — instead of failing every
+      // command on the vault.
+      if (realDir !== null) {
+        return;
       }
       throw error; // Re-throw other errors
     }
@@ -683,10 +728,131 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
         if (this.shouldSkipDirectory(entry.name)) {
           continue;
         }
-        this.walkDirectory(fullPath, callback);
+        if (realDir === null) {
+          this.walkDirectory(fullPath, callback, links, null);
+          continue;
+        }
+        // Below a followed link the real path is tracked by JOINING, not by a
+        // syscall: a plain sub-directory of a real directory is that directory
+        // plus its name (links below a followed link are not followed, so the
+        // join is exact). Recorded so a second vault-level link into the same
+        // external tree (a diamond, or a link to its parent) walks it once.
+        const childReal = path.join(realDir, entry.name);
+        if (links.visited.has(childReal)) {
+          continue;
+        }
+        links.visited.add(childReal);
+        this.walkDirectory(fullPath, callback, links, childReal);
       } else if (entry.isFile()) {
         callback(fullPath);
+      } else if (entry.isSymbolicLink()) {
+        // ticket 0a7ddb0d — a SYMLINK's Dirent answers `false` to BOTH
+        // `isDirectory()` and `isFile()`, so before this branch every link was
+        // dropped without a word: a vault whose `assetspaces/` is a link loaded
+        // an empty graph and `resolve-buttons` printed 0 commands with rc 0.
+        // `isSymbolicLink()` is asked only after both of those said no: the
+        // Dirent stubs of the unit suites answer `true` to one of them and never
+        // get here, and a FIFO, socket or device stays skipped with no syscall.
+        // `statSync` follows the link; a dangling link (ENOENT), a self-link
+        // (ELOOP) or one gone mid-walk is skipped like before. File links stay
+        // skipped (the sanction covers directory links only).
+        //
+        // ⛔ A link BELOW an already-followed link is never followed, whatever
+        // its target (review round 2 of ticket 0a7ddb0d). Inside a followed
+        // tree a link that the ORIGINAL vault judges "inside" — say
+        // `aaa-alias -> /abs/…/exoas-x` next to `exoas-x` — points OUTSIDE the
+        // copy, so the rules below would follow it; sorting first, it took the
+        // real directory over under ITS path, and `zz-up -> <store>` under
+        // `assetspaces` took over the files of the copy's OWN `inbox` link.
+        // Only the links the vault walk reaches through real directories are
+        // followed — no syscall is spent on the rest.
+        if (realDir !== null) {
+          continue; // nested link: never followed
+        }
+        if (this.shouldSkipDirectory(entry.name)) {
+          continue;
+        }
+        // The link's target AS WRITTEN, resolved from where the link sits in
+        // the vault. Inside the vault (or containing it) ⇒ not followed, even
+        // when the filesystem resolves it outside: `0-x -> assetspaces/a`
+        // next to an outward `assetspaces` link names a folder the walk
+        // reaches under `assetspaces/a`, and following `0-x` (it sorts first)
+        // would take those files over under ITS path.
+        if (this.linkTextStaysInVault(fullPath)) {
+          continue;
+        }
+        const linkReal = this.realDirectoryBehind(fullPath);
+        if (linkReal === null) {
+          continue;
+        }
+        if (links.rootReal === null) {
+          links.rootReal = this.realPathOrResolved(this.rootPath);
+        }
+        // The same test on the RESOLVED target. Inside the vault ⇒ not
+        // followed: that content is the vault's own — walked under its real
+        // path, or deliberately hidden there — and following the link would
+        // let it (if it sorts first) take those files over under ITS path.
+        // An ANCESTOR of the vault contains the vault itself — a loop through
+        // the root that would also drag in everything around it.
+        if (
+          isWithinPath(linkReal, links.rootReal) ||
+          isWithinPath(links.rootReal, linkReal)
+        ) {
+          continue;
+        }
+        if (links.visited.has(linkReal)) {
+          continue;
+        }
+        links.visited.add(linkReal);
+        this.walkDirectory(fullPath, callback, links, linkReal);
       }
+    }
+  }
+
+  /**
+   * `true` when the link's target text, resolved from the link's own (logical)
+   * folder, is the vault root, lies under it, or contains it. No filesystem
+   * access beyond `readlink`; a link that cannot be read answers `false` and
+   * is judged by {@link realDirectoryBehind}.
+   */
+  private linkTextStaysInVault(linkPath: string): boolean {
+    let target: string;
+    try {
+      target = path.resolve(path.dirname(linkPath), fs.readlinkSync(linkPath));
+    } catch {
+      return false;
+    }
+    const root = path.resolve(this.rootPath);
+    return isWithinPath(target, root) || isWithinPath(root, target);
+  }
+
+  /**
+   * Real path of the directory a link leads to, or `null` when it leads to no
+   * directory (dangling, self-referential, a file, gone mid-walk).
+   * ⛤ `realpathSync.native`, not the JS one, on BOTH sides of the containment
+   * test (here and for the root): the native call canonicalises letter case on
+   * case-insensitive APFS — a link whose target is written `/users/…` must
+   * compare equal to the root's `/Users/…` — while the JS variant keeps the
+   * spelling it was given. ⛔ It does NOT canonicalise macOS firmlinks
+   * (`/System/Volumes/Data/…`): a link spelled through one is judged outside —
+   * a known limit of ticket 0a7ddb0d, not handled here.
+   */
+  private realDirectoryBehind(linkPath: string): string | null {
+    try {
+      if (!fs.statSync(linkPath).isDirectory()) {
+        return null;
+      }
+      return fs.realpathSync.native(linkPath);
+    } catch {
+      return null;
+    }
+  }
+
+  private realPathOrResolved(p: string): string {
+    try {
+      return fs.realpathSync.native(p);
+    } catch {
+      return path.resolve(p);
     }
   }
 }
