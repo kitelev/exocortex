@@ -1,0 +1,149 @@
+{
+  "_doc": "Revert-verify for ems__Bug 1fdfd7fb (ExoSync body merge kept a section TWICE when its heading was renamed differently on both sides), subject = StructuredMerger.ts, guard \"Divergent-rename guard\" in mergeBody. Axes H* in packages/core/tests/unit/services/sync/StructuredMerger.heading-rename.test.ts. H3 is a regression control no mutant locks: the guard takes no part in a one-sided rename. H7, H11, H18 and H25 are the named prices: the guard counts ANY one-sided new key (an added section, a one-sided rename, a level change, text put before the first heading when the base has no preamble), so a base section gone from both sides next to such an edit on each side conflicts - an unrelated delete-and-add (H7), the SAME rename plus an addition on each side (H11), the SAME rename plus a one-sided rename on each side (H18), new preamble text against an addition (H25); they flip together with the fix. The verdict on new preamble text depends on the blank line after the BASE frontmatter: with it the base has a (blank) preamble key and the same edit merges - H26 pins that choice, M17 is the rejected alternative (a blank base preamble treated as absent), which would make the verdict independent of the blank line but widen the price. H22 locks that a NON-blank preamble takes part (its text would otherwise land twice). M6 (additions condition weakened to \"either side added\") is locked by H12-H15, H20, H21 and H26. Note for ems__Bug 96a86732 (rename on one side vs delete on the other resurrects the section): at the level of heading keys H14/H15 (a convergent delete plus a one-sided addition) are the same input as rename-vs-delete, so ANY guard for that ticket that judges keys alone turns H14/H15 red - it has to look at section content, or H14/H15 must be re-judged as prices. No axis here asserts the resurrection either way. Known misses that belong to 96a86732, not here - each still keeps text twice: a rename onto a heading the base already has (renumbering); different headings put over the preamble text when a blank line follows the frontmatter; a heading line dropped on one side (its text becomes preamble) while the other side renames that heading, with a blank line after the frontmatter. Incidental overlap, named: a rename-vs-delete where the DELETING side also added a section, and the two preamble forms above WITHOUT a blank line after the frontmatter (H22), already conflict through this guard (the reason does not claim a rename). Run: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/StructuredMerger.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../..\" && node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/services/sync/StructuredMerger.heading-rename.test.ts 2>&1",
+  "red_re": "› (H\\d+) ",
+  "mutants": {
+    "M1_guard_never_fires": {
+      "_note": "The pre-fix behaviour. H7 and H11 redden too, as expected: they are the named prices of the guard.",
+      "from": "  if (removedOnBoth.length > 0) {\n",
+      "to": "  if (removedOnBoth.length < 0) {\n",
+      "expect": [
+        "H1",
+        "H10",
+        "H11",
+        "H16",
+        "H18",
+        "H2",
+        "H22",
+        "H23",
+        "H24",
+        "H25",
+        "H7",
+        "H9"
+      ]
+    },
+    "M3a_local_convergent_addition_counts": {
+      "_note": "A heading added on BOTH sides (the same rename) must not count as a local-only addition.",
+      "from": "      (k) => !b.keyed.has(k) && !r.keyed.has(k) && !blankPreamble(k, l.keyed),\n",
+      "to": "      (k) => !b.keyed.has(k) && !blankPreamble(k, l.keyed),\n",
+      "expect": ["H12"]
+    },
+    "M3b_remote_convergent_addition_counts": {
+      "_note": "Mirror of M3a on the remote side.",
+      "from": "      (k) => !b.keyed.has(k) && !l.keyed.has(k) && !blankPreamble(k, r.keyed),\n",
+      "to": "      (k) => !b.keyed.has(k) && !blankPreamble(k, r.keyed),\n",
+      "expect": ["H13"]
+    },
+    "M4_removed_on_either_side": {
+      "from": "    (k) => !l.keyed.has(k) && !r.keyed.has(k) && !blankPreamble(k, b.keyed),\n",
+      "to": "    (k) => (!l.keyed.has(k) || !r.keyed.has(k)) && !blankPreamble(k, b.keyed),\n",
+      "expect": ["H19", "H5"]
+    },
+    "M5_additions_not_required": {
+      "from": "    if (localOnly.length > 0 && remoteOnly.length > 0) {\n",
+      "to": "    if (localOnly.length >= 0 && remoteOnly.length >= 0) {\n",
+      "expect": ["H12", "H13", "H14", "H15", "H20", "H21", "H26", "H4", "H8"]
+    },
+    "M6_either_side_added": {
+      "_note": "The plain shape of a rename-vs-delete guard (ems__Bug 96a86732): it would quarantine merges that must stay merges.",
+      "from": "    if (localOnly.length > 0 && remoteOnly.length > 0) {\n",
+      "to": "    if (localOnly.length > 0 || remoteOnly.length > 0) {\n",
+      "expect": ["H12", "H13", "H14", "H15", "H20", "H21", "H26"]
+    },
+    "M7_reason_swaps_sides": {
+      "_note": "The reason reaches the user as `warn: quarantined <path>: <reason>` in `exosync sync` and in the plugin's warning log; naming the sides the wrong way round sends them to the wrong version.",
+      "from": "(local ${names(localOnly)}, remote ${names(remoteOnly)})",
+      "to": "(local ${names(remoteOnly)}, remote ${names(localOnly)})",
+      "expect": ["H1", "H24"]
+    },
+    "M8_exactly_one_local_addition": {
+      "_note": "Locked by the axes where the LOCAL side adds two keys: H9, H16, H24.",
+      "from": "    if (localOnly.length > 0 && remoteOnly.length > 0) {\n",
+      "to": "    if (localOnly.length === 1 && remoteOnly.length > 0) {\n",
+      "expect": ["H16", "H24", "H9"]
+    },
+    "M9_reason_names_first_key_only": {
+      "from": "          .slice(0, 3)\n",
+      "to": "          .slice(0, 1)\n",
+      "expect": ["H16", "H23", "H24"]
+    },
+    "M10a_blank_base_preamble_counts_as_removed": {
+      "from": "    (k) => !l.keyed.has(k) && !r.keyed.has(k) && !blankPreamble(k, b.keyed),\n",
+      "to": "    (k) => !l.keyed.has(k) && !r.keyed.has(k),\n",
+      "expect": ["H17"]
+    },
+    "M10b_blank_local_preamble_counts_as_added": {
+      "from": "      (k) => !b.keyed.has(k) && !r.keyed.has(k) && !blankPreamble(k, l.keyed),\n",
+      "to": "      (k) => !b.keyed.has(k) && !r.keyed.has(k),\n",
+      "expect": ["H14"]
+    },
+    "M10c_blank_remote_preamble_counts_as_added": {
+      "from": "      (k) => !b.keyed.has(k) && !l.keyed.has(k) && !blankPreamble(k, r.keyed),\n",
+      "to": "      (k) => !b.keyed.has(k) && !l.keyed.has(k),\n",
+      "expect": ["H15"]
+    },
+    "M11a_removed_on_remote_only": {
+      "_note": "H5 locks the mirror (removed on local only); H19 is its mirror input.",
+      "from": "    (k) => !l.keyed.has(k) && !r.keyed.has(k) && !blankPreamble(k, b.keyed),\n",
+      "to": "    (k) => !r.keyed.has(k) && !blankPreamble(k, b.keyed),\n",
+      "expect": ["H19"]
+    },
+    "M11b_removed_on_local_only": {
+      "from": "    (k) => !l.keyed.has(k) && !r.keyed.has(k) && !blankPreamble(k, b.keyed),\n",
+      "to": "    (k) => !l.keyed.has(k) && !blankPreamble(k, b.keyed),\n",
+      "expect": ["H5"]
+    },
+    "M12a_local_base_key_counts_as_added": {
+      "_note": "A base section the REMOTE side dropped while the local kept it is not a local addition.",
+      "from": "      (k) => !b.keyed.has(k) && !r.keyed.has(k) && !blankPreamble(k, l.keyed),\n",
+      "to": "      (k) => !r.keyed.has(k) && !blankPreamble(k, l.keyed),\n",
+      "expect": ["H20"]
+    },
+    "M12b_remote_base_key_counts_as_added": {
+      "from": "      (k) => !b.keyed.has(k) && !l.keyed.has(k) && !blankPreamble(k, r.keyed),\n",
+      "to": "      (k) => !l.keyed.has(k) && !blankPreamble(k, r.keyed),\n",
+      "expect": ["H21"]
+    },
+    "M13_any_preamble_excluded": {
+      "_note": "Type-preserving: the preamble test keeps its shape, only the blank-text half is made always true.",
+      "from": "    k === \"\\u00000\" && (m.get(k)?.text ?? \"\").trim() === \"\";\n",
+      "to": "    k === \"\\u00000\" && (m.get(k)?.text ?? \"\").length >= 0;\n",
+      "expect": ["H22", "H25"]
+    },
+    "M14_reason_names_two_keys": {
+      "from": "          .slice(0, 3)\n",
+      "to": "          .slice(0, 2)\n",
+      "expect": ["H23"]
+    },
+    "M15_reason_reverses_order": {
+      "from": "        keys\n          .slice(0, 3)\n",
+      "to": "        [...keys]\n          .reverse()\n          .slice(0, 3)\n",
+      "expect": ["H23", "H24"]
+    },
+    "M16_preamble_label_dropped": {
+      "from": "          .map((k) => `\"${k.slice(0, k.lastIndexOf(\"\\u0000\")) || \"(preamble)\"}\"`)\n",
+      "to": "          .map((k) => `\"${k.slice(0, k.lastIndexOf(\"\\u0000\")) || \"\"}\"`)\n",
+      "expect": ["H22"]
+    },
+    "M17_blank_base_preamble_treated_as_absent": {
+      "_note": "The alternative from review round 2 (local side only - H26 needs nothing more): a blank base preamble and a blank preamble on the other side count as absent when judging whether a local key is new. Rejected: it widens the price; H26 pins the chosen asymmetry.",
+      "from": "      (k) => !b.keyed.has(k) && !r.keyed.has(k) && !blankPreamble(k, l.keyed),\n",
+      "to": "      (k) =>\n        !(b.keyed.has(k) && !blankPreamble(k, b.keyed)) &&\n        !(r.keyed.has(k) && !blankPreamble(k, r.keyed)) &&\n        !blankPreamble(k, l.keyed),\n",
+      "expect": ["H26"]
+    },
+    "M18_reason_reverses_local_group": {
+      "from": "(local ${names(localOnly)}, remote ${names(remoteOnly)})",
+      "to": "(local ${names([...localOnly].reverse())}, remote ${names(remoteOnly)})",
+      "expect": ["H24"]
+    }
+  }
+}
