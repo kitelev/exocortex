@@ -15,7 +15,9 @@
  *  - **Body** — structured section merge (D21, explicitly NOT last-write-
  *    wins). Sections split at ATX headings (fence-aware); per-section 3-way;
  *    a section modified on both sides falls back to paragraph-level diff3;
- *    overlapping paragraph edits are a CONFLICT.
+ *    overlapping paragraph edits are a CONFLICT. A heading renamed
+ *    differently on both sides is a CONFLICT too (heading keys cannot pair a
+ *    rename — ems__Bug 1fdfd7fb).
  *  - Any CONFLICT outcome is handed to quarantine by the caller (D17) —
  *    this module never guesses.
  *
@@ -456,6 +458,39 @@ function mergeBody(base: string, local: string, remote: string): BodyMergeResult
   const b = keySections(bSecs);
   const l = keySections(lSecs);
   const r = keySections(rSecs);
+
+  // Divergent-rename guard (ems__Bug 1fdfd7fb). Sections are keyed by heading
+  // text, so a heading renamed on BOTH sides to different texts reads as
+  // "removed on both sides" + "local-only addition" + "remote-only addition";
+  // each branch below keeps its side and the merge holds the section twice.
+  // Heading keys cannot tell such a rename from an unrelated delete + add,
+  // so this module refuses instead of guessing (D17). A blank preamble is
+  // whitespace before the first heading, not a section: writers differ on the
+  // blank line after the frontmatter, so it neither vanishes nor appears here.
+  const blankPreamble = (k: string, m: KeyedSections): boolean =>
+    k === "\u00000" && (m.get(k)?.text ?? "").trim() === "";
+  const removedOnBoth = b.order.filter(
+    (k) => !l.keyed.has(k) && !r.keyed.has(k) && !blankPreamble(k, b.keyed),
+  );
+  if (removedOnBoth.length > 0) {
+    const localOnly = l.order.filter(
+      (k) => !b.keyed.has(k) && !r.keyed.has(k) && !blankPreamble(k, l.keyed),
+    );
+    const remoteOnly = r.order.filter(
+      (k) => !b.keyed.has(k) && !l.keyed.has(k) && !blankPreamble(k, r.keyed),
+    );
+    if (localOnly.length > 0 && remoteOnly.length > 0) {
+      const names = (keys: string[]): string =>
+        keys
+          .slice(0, 3)
+          .map((k) => `"${k.slice(0, k.lastIndexOf("\u0000")) || "(preamble)"}"`)
+          .join(", ") + (keys.length > 3 ? ` and ${keys.length - 3} more` : "");
+      return {
+        ok: false,
+        reason: `sections removed on both sides ${names(removedOnBoth)} while each side added its own (local ${names(localOnly)}, remote ${names(remoteOnly)}) — a heading renamed differently on each side cannot be told from an unrelated delete + add, refusing to keep both`,
+      };
+    }
+  }
 
   // Per-key 3-way membership + content.
   const mergedByKey = new Map<string, string>();

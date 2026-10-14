@@ -1,0 +1,82 @@
+{
+  "_doc": "Revert-verify for ems__Bug 1fdfd7fb (ExoSync body merge kept a section TWICE when its heading was renamed differently on both sides), subject = StructuredMerger.ts, guard \"Divergent-rename guard\" in mergeBody. Axes H* in packages/core/tests/unit/services/sync/StructuredMerger.heading-rename.test.ts. H3 is a regression control no mutant locks: the guard takes no part in a one-sided rename. H7 and H11 are the named prices (an unrelated delete-and-add on both sides; the SAME rename on both sides plus an addition on each side) and flip together with the fix. M6 (additions condition weakened to \"either side added\") is locked by H12-H15: a convergent rename next to a one-sided addition and a blank preamble must merge under ANY design. Hence the separate ems__Bug 96a86732 (rename on one side vs delete on the other resurrects the section) cannot be fixed by the plain M6 shape — its guard must also discount convergent additions and blank preambles, or these axes go red. No axis here asserts that resurrection either way: it belongs to that ticket. Incidental overlap, named: a rename-vs-delete where the DELETING side also added a section already conflicts through this guard (the reason does not claim a rename). Run: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/StructuredMerger.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../..\" && node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/services/sync/StructuredMerger.heading-rename.test.ts 2>&1",
+  "red_re": "› (H\\d+) ",
+  "mutants": {
+    "M1_guard_never_fires": {
+      "_note": "The pre-fix behaviour. H7 and H11 redden too, as expected: they are the named prices of the guard.",
+      "from": "  if (removedOnBoth.length > 0) {\n",
+      "to": "  if (removedOnBoth.length < 0) {\n",
+      "expect": ["H1", "H10", "H11", "H16", "H2", "H7", "H9"]
+    },
+    "M3a_local_convergent_addition_counts": {
+      "_note": "A heading added on BOTH sides (the same rename) must not count as a local-only addition.",
+      "from": "      (k) => !b.keyed.has(k) && !r.keyed.has(k) && !blankPreamble(k, l.keyed),\n",
+      "to": "      (k) => !b.keyed.has(k) && !blankPreamble(k, l.keyed),\n",
+      "expect": ["H12"]
+    },
+    "M3b_remote_convergent_addition_counts": {
+      "_note": "Mirror of M3a on the remote side.",
+      "from": "      (k) => !b.keyed.has(k) && !l.keyed.has(k) && !blankPreamble(k, r.keyed),\n",
+      "to": "      (k) => !b.keyed.has(k) && !blankPreamble(k, r.keyed),\n",
+      "expect": ["H13"]
+    },
+    "M4_removed_on_either_side": {
+      "from": "    (k) => !l.keyed.has(k) && !r.keyed.has(k) && !blankPreamble(k, b.keyed),\n",
+      "to": "    (k) => (!l.keyed.has(k) || !r.keyed.has(k)) && !blankPreamble(k, b.keyed),\n",
+      "expect": ["H5"]
+    },
+    "M5_additions_not_required": {
+      "from": "    if (localOnly.length > 0 && remoteOnly.length > 0) {\n",
+      "to": "    if (localOnly.length >= 0 && remoteOnly.length >= 0) {\n",
+      "expect": ["H12", "H13", "H14", "H15", "H4", "H8"]
+    },
+    "M6_either_side_added": {
+      "_note": "The plain shape of a rename-vs-delete guard (ems__Bug 96a86732): it would quarantine merges that must stay merges.",
+      "from": "    if (localOnly.length > 0 && remoteOnly.length > 0) {\n",
+      "to": "    if (localOnly.length > 0 || remoteOnly.length > 0) {\n",
+      "expect": ["H12", "H13", "H14", "H15"]
+    },
+    "M7_reason_swaps_sides": {
+      "_note": "The reason reaches the user as `warn: quarantined <path>: <reason>` in `exosync sync` and in the plugin's warning log; naming the sides the wrong way round sends them to the wrong version.",
+      "from": "(local ${names(localOnly)}, remote ${names(remoteOnly)})",
+      "to": "(local ${names(remoteOnly)}, remote ${names(localOnly)})",
+      "expect": ["H1"]
+    },
+    "M8_exactly_one_local_addition": {
+      "_note": "H9 is the only axis where one side adds TWO keys (a new section next to the renamed one).",
+      "from": "    if (localOnly.length > 0 && remoteOnly.length > 0) {\n",
+      "to": "    if (localOnly.length === 1 && remoteOnly.length > 0) {\n",
+      "expect": ["H16", "H9"]
+    },
+    "M9_reason_names_first_key_only": {
+      "from": "          .slice(0, 3)\n",
+      "to": "          .slice(0, 1)\n",
+      "expect": ["H16"]
+    },
+    "M10a_blank_base_preamble_counts_as_removed": {
+      "from": "    (k) => !l.keyed.has(k) && !r.keyed.has(k) && !blankPreamble(k, b.keyed),\n",
+      "to": "    (k) => !l.keyed.has(k) && !r.keyed.has(k),\n",
+      "expect": ["H17"]
+    },
+    "M10b_blank_local_preamble_counts_as_added": {
+      "from": "      (k) => !b.keyed.has(k) && !r.keyed.has(k) && !blankPreamble(k, l.keyed),\n",
+      "to": "      (k) => !b.keyed.has(k) && !r.keyed.has(k),\n",
+      "expect": ["H14"]
+    },
+    "M10c_blank_remote_preamble_counts_as_added": {
+      "from": "      (k) => !b.keyed.has(k) && !l.keyed.has(k) && !blankPreamble(k, r.keyed),\n",
+      "to": "      (k) => !b.keyed.has(k) && !l.keyed.has(k),\n",
+      "expect": ["H15"]
+    }
+  }
+}
