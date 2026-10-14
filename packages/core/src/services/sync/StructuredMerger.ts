@@ -15,9 +15,11 @@
  *  - **Body** — structured section merge (D21, explicitly NOT last-write-
  *    wins). Sections split at ATX headings (fence-aware); per-section 3-way;
  *    a section modified on both sides falls back to paragraph-level diff3;
- *    overlapping paragraph edits are a CONFLICT. A heading renamed
- *    differently on both sides is a CONFLICT too (heading keys cannot pair a
- *    rename — ems__Bug 1fdfd7fb).
+ *    overlapping paragraph edits are a CONFLICT. A section whose heading
+ *    vanished on both sides while each side has a new heading of its own
+ *    (absent from the base) is a CONFLICT too — heading keys cannot pair a
+ *    rename (ems__Bug 1fdfd7fb). A rename onto a heading the base already
+ *    has (e.g. renumbering) is NOT detected (ems__Bug 96a86732).
  *  - Any CONFLICT outcome is handed to quarantine by the caller (D17) —
  *    this module never guesses.
  *
@@ -464,7 +466,10 @@ function mergeBody(base: string, local: string, remote: string): BodyMergeResult
   // "removed on both sides" + "local-only addition" + "remote-only addition";
   // each branch below keeps its side and the merge holds the section twice.
   // Heading keys cannot tell such a rename from an unrelated delete + add,
-  // so this module refuses instead of guessing (D17). A blank preamble is
+  // so this module refuses instead of guessing (D17). ANY one-sided new
+  // heading counts — an added section, a one-sided rename, a level change —
+  // so a section gone from both sides next to such an edit on each side
+  // conflicts as well (named prices, tests H7/H11/H18). A blank preamble is
   // whitespace before the first heading, not a section: writers differ on the
   // blank line after the frontmatter, so it neither vanishes nor appears here.
   const blankPreamble = (k: string, m: KeyedSections): boolean =>

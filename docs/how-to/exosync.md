@@ -203,7 +203,11 @@ consumed silently. Real conflicts go through `GatedStructuredMerger`:
   body splits at ATX headings (code-fence-aware); per-section 3-way; a
   section modified on both sides falls back to paragraph-level `diff3`, then
   line-level `diff3` (git's granularity). Overlapping edits of the same
-  region are a conflict.
+  region are a conflict. A section whose heading disappeared on both sides
+  while each side has a new heading of its own is a conflict too: sections
+  are matched by heading text, so a heading renamed differently on each side
+  cannot be told from an unrelated delete + add, and keeping both would hold
+  the section twice.
 - **SHACL merge-gate** (`MergeShaclGate`) — validates the merged candidate
   with the existing SHACL-lite validator before it may ship: intrinsic
   violations (minCount/maxCount/datatype) always gate; `sh:class` range

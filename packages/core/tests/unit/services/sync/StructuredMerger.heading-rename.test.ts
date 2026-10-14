@@ -7,12 +7,16 @@ import { StructuredMerger, type YamlCodec } from "../../../../src/services/sync/
  * on BOTH sides to DIFFERENT texts used to read as "removed on both sides" +
  * "local-only addition" + "remote-only addition", and the merge kept the
  * section twice (exoas-aiknow@17ca903). Axes H1/H2/H9/H10 pin the conflict;
- * H3/H4/H5/H8 are controls that must keep merging; H7 is the named price
- * (an unrelated delete-and-add on both sides now conflicts as well), H11 the
- * second price (the SAME rename on both sides plus an addition on each side).
+ * H3/H4/H5/H8 are controls that must keep merging. H7, H11 and H18 are the
+ * named prices: the guard counts ANY one-sided new heading (an added section,
+ * a one-sided rename, a level change), so a base section gone from both sides
+ * next to such an edit on each side conflicts — an unrelated delete-and-add
+ * (H7), the SAME rename plus an addition on each side (H11), the SAME rename
+ * plus a one-sided rename on each side (H18).
  * H12/H13 keep a one-sided addition next to a convergent rename merging,
- * H14/H15/H17 keep a blank preamble out of the guard, H16 pins a reason that
- * names every key it judged.
+ * H14/H15/H17 keep a blank preamble out of the guard and H22 keeps a non-blank
+ * one in it, H19-H21 pin each conjunct of the guard's key sets, H16/H23/H24 pin
+ * a reason that names every key it judged, in document order, three per group.
  */
 
 const codec: YamlCodec = {
@@ -248,5 +252,90 @@ describe("StructuredMerger — heading renamed on both sides (ems__Bug 1fdfd7fb)
     if (r.status === "merged") {
       expect([...headingsOf(r.content)].sort()).toEqual(["## Local notes", "## Remote notes"]);
     }
+  });
+
+  it("H18 price: the SAME rename on both sides + a one-sided rename of a DIFFERENT section on each side → conflict", () => {
+    expect(
+      merger.mergeAsset({
+        path: "a.md",
+        base: bodied(`## A\n\nx\n\n${counter(94)}\n\n## B\n\nb`),
+        local: bodied(`## A2\n\nx\n\n${counter(95)}\n\n## B\n\nb`),
+        remote: bodied(`## A\n\nx\n\n${counter(95)}\n\n## B2\n\nb`),
+      }).status,
+    ).toBe("conflict");
+  });
+
+  it("H19 control (mirror of H5): local adds a section, remote renames → merged, both land", () => {
+    const r = merger.mergeAsset({
+      path: "a.md",
+      base: bodied(`## A\n\nx\n\n${counter(94)}`),
+      local: bodied(`## A\n\nx\n\n${counter(94)}\n\n## New\n\nnew L`),
+      remote: bodied(`## A\n\nx\n\n${counter(95)}`),
+    });
+    expect(r.status).toBe("merged");
+    if (r.status === "merged") {
+      expect(headingsOf(r.content)).toEqual([
+        "## A",
+        "## Счётчик рецидивов (**95 задокументированных повторов**)",
+        "## New",
+      ]);
+    }
+  });
+
+  it("H20 control: both drop X, remote also drops Y the local kept, remote adds N → merged", () => {
+    const r = merger.mergeAsset({
+      path: "a.md",
+      base: bodied("## A\n\na\n\n## X\n\nx\n\n## Y\n\ny"),
+      local: bodied("## A\n\na\n\n## Y\n\ny"),
+      remote: bodied("## A\n\na\n\n## N\n\nn"),
+    });
+    expect(r.status).toBe("merged");
+    if (r.status === "merged") expect(headingsOf(r.content)).toEqual(["## A", "## N"]);
+  });
+
+  it("H21 control: both drop X, local also drops Y the remote kept, local adds N → merged", () => {
+    const r = merger.mergeAsset({
+      path: "a.md",
+      base: bodied("## A\n\na\n\n## X\n\nx\n\n## Y\n\ny"),
+      local: bodied("## A\n\na\n\n## N\n\nn"),
+      remote: bodied("## A\n\na\n\n## Y\n\ny"),
+    });
+    expect(r.status).toBe("merged");
+    if (r.status === "merged") expect(headingsOf(r.content)).toEqual(["## A", "## N"]);
+  });
+
+  it("H22 a NON-blank preamble takes part: each side puts its own heading over it → conflict, never the text twice", () => {
+    expect(
+      merger.mergeAsset({
+        path: "a.md",
+        base: `${FM}intro text\n\n## A\n\na\n`,
+        local: `${FM}## L\n\nintro text\n\n## A\n\na\n`,
+        remote: `${FM}## R\n\nintro text\n\n## A\n\na\n`,
+      }).status,
+    ).toBe("conflict");
+  });
+
+  it("H23 the reason names the first three keys of a group in document order, then counts the rest", () => {
+    const r = merger.mergeAsset({
+      path: "a.md",
+      base: bodied("## K1\n\n1\n\n## K2\n\n2\n\n## K3\n\n3\n\n## K4\n\n4\n\n## K5\n\n5\n\n## Z\n\nz"),
+      local: bodied("## L1\n\nl\n\n## Z\n\nz"),
+      remote: bodied("## Z\n\nz\n\n## R1\n\nr"),
+    });
+    expect(r.status).toBe("conflict");
+    if (r.status === "conflict") {
+      expect(r.reason).toContain('sections removed on both sides "## K1", "## K2", "## K3" and 2 more while');
+    }
+  });
+
+  it("H24 the reason keeps a side's keys in document order", () => {
+    const r = merger.mergeAsset({
+      path: "a.md",
+      base: bodied("## A\n\na\n\n## Old\n\nold"),
+      local: bodied("## A\n\na\n\n## L1\n\nl"),
+      remote: bodied("## A\n\na\n\n## R1\n\nr1\n\n## R2\n\nr2"),
+    });
+    expect(r.status).toBe("conflict");
+    if (r.status === "conflict") expect(r.reason).toContain('remote "## R1", "## R2")');
   });
 });
