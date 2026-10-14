@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify for ems__Bug 1fdfd7fb (ExoSync body merge kept a section TWICE when its heading was renamed differently on both sides), subject = StructuredMerger.ts, guard \"Divergent-rename guard\" in mergeBody. Axes H* in packages/core/tests/unit/services/sync/StructuredMerger.heading-rename.test.ts. H3 is a regression control no mutant locks: the guard takes no part in a one-sided rename. H7, H11 and H18 are the named prices: the guard counts ANY one-sided new heading (an added section, a one-sided rename, a level change), so a base section gone from both sides next to such an edit on each side conflicts - an unrelated delete-and-add (H7), the SAME rename plus an addition on each side (H11), the SAME rename plus a one-sided rename on each side (H18); they flip together with the fix. H22 locks that a NON-blank preamble takes part (its text would otherwise land twice). M6 (additions condition weakened to \"either side added\") is locked by H12-H15, H20 and H21. Note for ems__Bug 96a86732 (rename on one side vs delete on the other resurrects the section): at the level of heading keys H14/H15 (a convergent delete plus a one-sided addition) are the same input as rename-vs-delete, so ANY guard for that ticket that judges keys alone turns H14/H15 red - it has to look at section content, or H14/H15 must be re-judged as prices. No axis here asserts the resurrection either way. Known misses that belong to 96a86732, not here: a rename onto a heading the base already has (renumbering), and different headings put over the preamble text when a blank line follows the frontmatter - both still keep text twice. Incidental overlap, named: a rename-vs-delete where the DELETING side also added a section, and different headings put over the preamble text with no blank line after the frontmatter (H22), already conflict through this guard (the reason does not claim a rename). Run: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
+  "_doc": "Revert-verify for ems__Bug 1fdfd7fb (ExoSync body merge kept a section TWICE when its heading was renamed differently on both sides), subject = StructuredMerger.ts, guard \"Divergent-rename guard\" in mergeBody. Axes H* in packages/core/tests/unit/services/sync/StructuredMerger.heading-rename.test.ts. H3 is a regression control no mutant locks: the guard takes no part in a one-sided rename. H7, H11, H18 and H25 are the named prices: the guard counts ANY one-sided new key (an added section, a one-sided rename, a level change, text put before the first heading when the base has no preamble), so a base section gone from both sides next to such an edit on each side conflicts - an unrelated delete-and-add (H7), the SAME rename plus an addition on each side (H11), the SAME rename plus a one-sided rename on each side (H18), new preamble text against an addition (H25); they flip together with the fix. The verdict on new preamble text depends on the blank line after the BASE frontmatter: with it the base has a (blank) preamble key and the same edit merges - H26 pins that choice, M17 is the rejected alternative (a blank base preamble treated as absent), which would make the verdict independent of the blank line but widen the price. H22 locks that a NON-blank preamble takes part (its text would otherwise land twice). M6 (additions condition weakened to \"either side added\") is locked by H12-H15, H20, H21 and H26. Note for ems__Bug 96a86732 (rename on one side vs delete on the other resurrects the section): at the level of heading keys H14/H15 (a convergent delete plus a one-sided addition) are the same input as rename-vs-delete, so ANY guard for that ticket that judges keys alone turns H14/H15 red - it has to look at section content, or H14/H15 must be re-judged as prices. No axis here asserts the resurrection either way. Known misses that belong to 96a86732, not here - each still keeps text twice: a rename onto a heading the base already has (renumbering); different headings put over the preamble text when a blank line follows the frontmatter; a heading line dropped on one side (its text becomes preamble) while the other side renames that heading, with a blank line after the frontmatter. Incidental overlap, named: a rename-vs-delete where the DELETING side also added a section, and the two preamble forms above WITHOUT a blank line after the frontmatter (H22), already conflict through this guard (the reason does not claim a rename). Run: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting `tree` and `subject` to YOUR checkout.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/StructuredMerger.ts",
   "symlink_node_modules": [
@@ -26,6 +26,7 @@
         "H22",
         "H23",
         "H24",
+        "H25",
         "H7",
         "H9"
       ]
@@ -50,13 +51,13 @@
     "M5_additions_not_required": {
       "from": "    if (localOnly.length > 0 && remoteOnly.length > 0) {\n",
       "to": "    if (localOnly.length >= 0 && remoteOnly.length >= 0) {\n",
-      "expect": ["H12", "H13", "H14", "H15", "H20", "H21", "H4", "H8"]
+      "expect": ["H12", "H13", "H14", "H15", "H20", "H21", "H26", "H4", "H8"]
     },
     "M6_either_side_added": {
       "_note": "The plain shape of a rename-vs-delete guard (ems__Bug 96a86732): it would quarantine merges that must stay merges.",
       "from": "    if (localOnly.length > 0 && remoteOnly.length > 0) {\n",
       "to": "    if (localOnly.length > 0 || remoteOnly.length > 0) {\n",
-      "expect": ["H12", "H13", "H14", "H15", "H20", "H21"]
+      "expect": ["H12", "H13", "H14", "H15", "H20", "H21", "H26"]
     },
     "M7_reason_swaps_sides": {
       "_note": "The reason reaches the user as `warn: quarantined <path>: <reason>` in `exosync sync` and in the plugin's warning log; naming the sides the wrong way round sends them to the wrong version.",
@@ -65,10 +66,10 @@
       "expect": ["H1", "H24"]
     },
     "M8_exactly_one_local_addition": {
-      "_note": "H9 is the only axis where one side adds TWO keys (a new section next to the renamed one).",
+      "_note": "Locked by the axes where the LOCAL side adds two keys: H9, H16, H24.",
       "from": "    if (localOnly.length > 0 && remoteOnly.length > 0) {\n",
       "to": "    if (localOnly.length === 1 && remoteOnly.length > 0) {\n",
-      "expect": ["H16", "H9"]
+      "expect": ["H16", "H24", "H9"]
     },
     "M9_reason_names_first_key_only": {
       "from": "          .slice(0, 3)\n",
@@ -116,7 +117,7 @@
       "_note": "Type-preserving: the preamble test keeps its shape, only the blank-text half is made always true.",
       "from": "    k === \"\\u00000\" && (m.get(k)?.text ?? \"\").trim() === \"\";\n",
       "to": "    k === \"\\u00000\" && (m.get(k)?.text ?? \"\").length >= 0;\n",
-      "expect": ["H22"]
+      "expect": ["H22", "H25"]
     },
     "M14_reason_names_two_keys": {
       "from": "          .slice(0, 3)\n",
@@ -127,6 +128,22 @@
       "from": "        keys\n          .slice(0, 3)\n",
       "to": "        [...keys]\n          .reverse()\n          .slice(0, 3)\n",
       "expect": ["H23", "H24"]
+    },
+    "M16_preamble_label_dropped": {
+      "from": "          .map((k) => `\"${k.slice(0, k.lastIndexOf(\"\\u0000\")) || \"(preamble)\"}\"`)\n",
+      "to": "          .map((k) => `\"${k.slice(0, k.lastIndexOf(\"\\u0000\")) || \"\"}\"`)\n",
+      "expect": ["H22"]
+    },
+    "M17_blank_base_preamble_treated_as_absent": {
+      "_note": "The alternative from review round 2 (local side only - H26 needs nothing more): a blank base preamble and a blank preamble on the other side count as absent when judging whether a local key is new. Rejected: it widens the price; H26 pins the chosen asymmetry.",
+      "from": "      (k) => !b.keyed.has(k) && !r.keyed.has(k) && !blankPreamble(k, l.keyed),\n",
+      "to": "      (k) =>\n        !(b.keyed.has(k) && !blankPreamble(k, b.keyed)) &&\n        !(r.keyed.has(k) && !blankPreamble(k, r.keyed)) &&\n        !blankPreamble(k, l.keyed),\n",
+      "expect": ["H26"]
+    },
+    "M18_reason_reverses_local_group": {
+      "from": "(local ${names(localOnly)}, remote ${names(remoteOnly)})",
+      "to": "(local ${names([...localOnly].reverse())}, remote ${names(remoteOnly)})",
+      "expect": ["H24"]
     }
   }
 }

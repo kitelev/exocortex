@@ -466,12 +466,15 @@ function mergeBody(base: string, local: string, remote: string): BodyMergeResult
   // "removed on both sides" + "local-only addition" + "remote-only addition";
   // each branch below keeps its side and the merge holds the section twice.
   // Heading keys cannot tell such a rename from an unrelated delete + add,
-  // so this module refuses instead of guessing (D17). ANY one-sided new
-  // heading counts — an added section, a one-sided rename, a level change —
-  // so a section gone from both sides next to such an edit on each side
-  // conflicts as well (named prices, tests H7/H11/H18). A blank preamble is
-  // whitespace before the first heading, not a section: writers differ on the
-  // blank line after the frontmatter, so it neither vanishes nor appears here.
+  // so this module refuses instead of guessing (D17). ANY one-sided new key
+  // counts — an added section, a one-sided rename, a level change, or text
+  // put before the first heading when the base has no preamble — so a section
+  // gone from both sides next to such an edit on each side conflicts as well
+  // (named prices, tests H7/H11/H18/H25). A blank preamble is whitespace
+  // before the first heading, not a section: writers differ on the blank line
+  // after the frontmatter, so it neither vanishes nor appears here. When that
+  // blank line IS in the base, the base has a preamble key, so the same text
+  // is a preamble edit, not a new key, and merges (H26).
   const blankPreamble = (k: string, m: KeyedSections): boolean =>
     k === "\u00000" && (m.get(k)?.text ?? "").trim() === "";
   const removedOnBoth = b.order.filter(

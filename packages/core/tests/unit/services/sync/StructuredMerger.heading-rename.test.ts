@@ -7,16 +7,20 @@ import { StructuredMerger, type YamlCodec } from "../../../../src/services/sync/
  * on BOTH sides to DIFFERENT texts used to read as "removed on both sides" +
  * "local-only addition" + "remote-only addition", and the merge kept the
  * section twice (exoas-aiknow@17ca903). Axes H1/H2/H9/H10 pin the conflict;
- * H3/H4/H5/H8 are controls that must keep merging. H7, H11 and H18 are the
- * named prices: the guard counts ANY one-sided new heading (an added section,
- * a one-sided rename, a level change), so a base section gone from both sides
- * next to such an edit on each side conflicts — an unrelated delete-and-add
- * (H7), the SAME rename plus an addition on each side (H11), the SAME rename
- * plus a one-sided rename on each side (H18).
+ * H3/H4/H5/H8 are controls that must keep merging. H7, H11, H18 and H25 are
+ * the named prices: the guard counts ANY one-sided new key (an added section,
+ * a one-sided rename, a level change, text put before the first heading when
+ * the base has no preamble), so a base section gone from both sides next to
+ * such an edit on each side conflicts — an unrelated delete-and-add (H7), the
+ * SAME rename plus an addition on each side (H11), the SAME rename plus a
+ * one-sided rename on each side (H18), new preamble text against an addition
+ * (H25). H26 is its control: with a blank line after the base frontmatter the
+ * same text is a preamble edit and merges.
  * H12/H13 keep a one-sided addition next to a convergent rename merging,
  * H14/H15/H17 keep a blank preamble out of the guard and H22 keeps a non-blank
- * one in it, H19-H21 pin each conjunct of the guard's key sets, H16/H23/H24 pin
- * a reason that names every key it judged, in document order, three per group.
+ * one in it, H19-H21 pin each conjunct of the guard's key sets, H16/H22/H23/H24
+ * pin the reason: the preamble label, the first three keys of each group in
+ * document order, then the count of the rest.
  */
 
 const codec: YamlCodec = {
@@ -305,14 +309,14 @@ describe("StructuredMerger — heading renamed on both sides (ems__Bug 1fdfd7fb)
   });
 
   it("H22 a NON-blank preamble takes part: each side puts its own heading over it → conflict, never the text twice", () => {
-    expect(
-      merger.mergeAsset({
-        path: "a.md",
-        base: `${FM}intro text\n\n## A\n\na\n`,
-        local: `${FM}## L\n\nintro text\n\n## A\n\na\n`,
-        remote: `${FM}## R\n\nintro text\n\n## A\n\na\n`,
-      }).status,
-    ).toBe("conflict");
+    const r = merger.mergeAsset({
+      path: "a.md",
+      base: `${FM}intro text\n\n## A\n\na\n`,
+      local: `${FM}## L\n\nintro text\n\n## A\n\na\n`,
+      remote: `${FM}## R\n\nintro text\n\n## A\n\na\n`,
+    });
+    expect(r.status).toBe("conflict");
+    if (r.status === "conflict") expect(r.reason).toContain('removed on both sides "(preamble)" while');
   });
 
   it("H23 the reason names the first three keys of a group in document order, then counts the rest", () => {
@@ -328,14 +332,40 @@ describe("StructuredMerger — heading renamed on both sides (ems__Bug 1fdfd7fb)
     }
   });
 
-  it("H24 the reason keeps a side's keys in document order", () => {
+  it("H24 the reason keeps each side's keys in document order", () => {
     const r = merger.mergeAsset({
       path: "a.md",
       base: bodied("## A\n\na\n\n## Old\n\nold"),
-      local: bodied("## A\n\na\n\n## L1\n\nl"),
+      local: bodied("## A\n\na\n\n## L1\n\nl1\n\n## L2\n\nl2"),
       remote: bodied("## A\n\na\n\n## R1\n\nr1\n\n## R2\n\nr2"),
     });
     expect(r.status).toBe("conflict");
-    if (r.status === "conflict") expect(r.reason).toContain('remote "## R1", "## R2")');
+    if (r.status === "conflict") {
+      expect(r.reason).toContain('(local "## L1", "## L2", remote "## R1", "## R2")');
+    }
+  });
+
+  it("H25 price: new text before the first heading (base without a blank line after the frontmatter) against an addition → conflict", () => {
+    const r = merger.mergeAsset({
+      path: "a.md",
+      base: `${FM}## A\n\na\n\n## Old\n\nold\n`,
+      local: `${FM}intro L\n\n## A\n\na\n`,
+      remote: `${FM}## A\n\na\n\n## R\n\nr\n`,
+    });
+    expect(r.status).toBe("conflict");
+  });
+
+  it("H26 control: the same edits with a blank line after the base frontmatter → merged, the text once", () => {
+    const r = merger.mergeAsset({
+      path: "a.md",
+      base: `${FM}\n## A\n\na\n\n## Old\n\nold\n`,
+      local: `${FM}\nintro L\n\n## A\n\na\n`,
+      remote: `${FM}\n## A\n\na\n\n## R\n\nr\n`,
+    });
+    expect(r.status).toBe("merged");
+    if (r.status === "merged") {
+      expect(headingsOf(r.content)).toEqual(["## A", "## R"]);
+      expect(r.content.split("intro L").length - 1).toBe(1);
+    }
   });
 });
