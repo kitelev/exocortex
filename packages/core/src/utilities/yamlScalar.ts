@@ -518,9 +518,10 @@ export function decodeYamlSequenceItem(raw: string): string {
  *   `from === to` refusal compares bytes);
  * - appending the second form of a target already present is skipped even
  *   when only that form would type the asset correctly — e.g. a bot appending
- *   the bare `[[<uid>]]` next to a stored wrong alias (`[[<uid>|ems__OffineMeeting]]`,
- *   4 live items in vault-my and vault-bot-kitelev, 2026-10-15). The repair
- *   there is `replace` from the stored form to the bare link;
+ *   the bare `[[<uid>]]` next to a stored wrong alias such as
+ *   `[[<uid>|ems__OffineMeeting]]` (class items whose alias disagrees with the
+ *   target's label: 4 in vault-my and vault-bot-kitelev, 2026-10-15). The
+ *   repair there is `replace` from the stored form to the bare link;
  * - a `replace` whose `to` already stands in another form keeps the STORED
  *   form and drops `from` (`[O, [[T|a]]]`, O → `[[T]]` gives `[[[T|a]]]`).
  * In `aliases`, `[[Foo|Bar]]` and `[[Foo]]` match the same way.

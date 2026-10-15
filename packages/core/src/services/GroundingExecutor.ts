@@ -4086,20 +4086,23 @@ export class GroundingExecutor {
       };
     }
 
-    // ems__Bug 530f895d (review round 2 of PR #4563) — the same #4432 no-op
+    // ems__Bug 530f895d (review rounds 2–3 of PR #4563) — the #4432 class
     // reached through the identity lookup: `from` matched a stored item by link
-    // target, and that stored item already IS `to`. The map branch would rewrite
-    // it with itself and report a replacement on a byte-identical file. With an
-    // exact `from` match `fromStored === fromPlain`, so this fires only on the
-    // identity fallback — the case main refused as "is not a value of".
+    // target, and that stored item already IS `to`, so the request asks to put
+    // back what is already there. Without this guard the command would still
+    // report a replacement: the map branch rewrites the item with itself (or
+    // merely re-quotes it), or the idempotent branch collapses the list onto a
+    // form the caller did not name. With an exact `from` match
+    // `fromStored === fromPlain`, so this fires only on the identity fallback —
+    // inputs main refused as "is not a value of".
     if (fromStored === toPlain) {
       return {
         success: false,
         error:
           `property_replace: "${fromPlain}" matched the stored value "${fromStored}" ` +
-          `of <${grounding.targetProperty}> by link target, and it already equals ` +
-          `replaceToExpression — this can only leave the list unchanged, and ` +
-          `reporting a no-op as a replacement would hide that`,
+          `of <${grounding.targetProperty}> by link target, and that stored value ` +
+          `already equals replaceToExpression — there is nothing to replace; to ` +
+          `rewrite another form of that link target, pass it as replaceFromExpression`,
       };
     }
 

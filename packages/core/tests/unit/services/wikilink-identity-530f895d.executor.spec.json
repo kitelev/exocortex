@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for ems__Bug 530f895d — the comparison sites of property_append / property_replace go through `listItemIdentity` (a wikilink is identified by its link target), the #4432 no-op refusal stays BYTE-based, and the write side stays verbatim. One mutant per decision, each must redden exactly its axes. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). Sibling spec `wikilink-identity-530f895d.identity.spec.json` mutates the identity function itself (subject yamlScalar.ts — the driver takes one subject per spec). M1/M2/M4 put one comparison site back on whole-string comparison; M3 puts the refusal on identity (the StageSpecification design rejected in review of PR #4563); M8 removes the byte refusal (#4432); M5/M6/M11 lock the WRITE side (`to`, the appended value and the co-values are written as passed / as stored); M7 locks identity on BOTH sides of the `to` comparison; M9 locks the exact-match-first `from` lookup; M10 locks the `i !== fromIndex` exclusion; M12 locks the identity no-op refusal (a `from` found by link target whose stored item already equals `to`); M13 locks the refusal text naming the stored form.",
+  "_doc": "Revert-verify mutants for ems__Bug 530f895d — the comparison sites of property_append / property_replace go through `listItemIdentity` (a wikilink is identified by its link target), the #4432 no-op refusal stays BYTE-based, and the write side stays verbatim. One mutant per decision, each must redden exactly its axes. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). Sibling spec `wikilink-identity-530f895d.identity.spec.json` mutates the identity function itself (subject yamlScalar.ts — the driver takes one subject per spec). M1/M2/M4 put one comparison site back on whole-string comparison; M3 puts the refusal on identity (the StageSpecification design rejected in review of PR #4563); M8 removes the byte refusal (#4432); M5/M6/M11 lock the WRITE side (`to`, the appended value and the co-values are written as passed / as stored); M7 locks identity on BOTH sides of the `to` comparison; M9 locks the exact-match-first `from` lookup; M10 locks the `i !== fromIndex` exclusion; M12 locks the identity no-op refusal (a `from` found by link target whose stored item already equals `to`); M13/M14 lock both sides of the refusal-text choice (the stored form is named only when it differs from `from`).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -90,6 +90,12 @@
       "from": "          fromStored === fromPlain",
       "to": "          fromStored.length >= 0",
       "expect": ["K28"]
+    },
+    "M14_link_target_wording_always": {
+      "_note": "Review round 3 of PR #4563 (LOW-1) — the opposite side of the refusal-text ternary: the link-target wording is used for EVERY byte-identical pair, so a plain #4432 `from === to` (stored item = `from`) is told to pass the stored form, i.e. to repeat the same request.",
+      "from": "          fromStored === fromPlain",
+      "to": "          fromStored.length < 0",
+      "expect": ["K21"]
     }
   }
 }

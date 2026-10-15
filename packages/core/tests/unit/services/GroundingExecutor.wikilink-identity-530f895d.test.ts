@@ -391,6 +391,10 @@ describe("GroundingExecutor — list items compared by link target (ems__Bug 530
     );
     expect(r.success).toBe(false);
     expect(r.error).toMatch(/both resolved to/);
+    // The plain #4432 wording, not the link-target one: the stored item IS
+    // `from`, so advising to pass the stored form would repeat the request.
+    expect(r.error).toContain("can only leave <exo__Instance_class> unchanged");
+    expect(r.error).not.toMatch(/only by link target/);
     expect(writer.updateFile).not.toHaveBeenCalled();
   });
 
