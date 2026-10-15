@@ -29,6 +29,7 @@ import {
   decodeYamlSequenceItem,
   isCompleteDoubleQuotedScalar,
   isUnquotedWikilink,
+  listItemIdentity,
   quoteYamlString,
   scalarTypingForRange,
   serializeYamlScalar,
@@ -3866,9 +3867,11 @@ export class GroundingExecutor {
       };
     }
 
-    const seen = new Set(existing.map(decodeYamlSequenceItem));
+    const seen = new Set(
+      existing.map((item) => listItemIdentity(decodeYamlSequenceItem(item))),
+    );
     let merged: string[];
-    if (seen.has(plain)) {
+    if (seen.has(listItemIdentity(plain))) {
       merged = existing;
     } else {
       // Ticket 4f226028 — ONE writer for label and aliases. `updateProperty`
@@ -3932,7 +3935,11 @@ export class GroundingExecutor {
    *
    * Comparison is on DECODED forms (as in `executePropertyAppend`): `existing`
    * holds the raw on-disk items, so a stored `"Say \"hi\""` matches a plain
-   * `Say "hi"`.
+   * `Say "hi"`. All three comparisons (`from` lookup, `from === to`, `to`
+   * already present) go through {@link listItemIdentity}: a wikilink is its
+   * link target, so `[[<uid>|ems__Task]]` and `[[<uid>]]` are one value
+   * (ems__Bug 530f895d). The `from` lookup prefers the item spelled exactly
+   * like `from`; `to` is written exactly as passed.
    */
   private async executePropertyReplace(
     grounding: GroundingDefinition,
@@ -4004,9 +4011,22 @@ export class GroundingExecutor {
       };
     }
 
-    const fromIndex = existing.findIndex(
+    const fromKey = listItemIdentity(fromPlain);
+    const toKey = listItemIdentity(toPlain);
+    // The item NAMED by `from` wins over another form of the same link target:
+    // with `[[<uid>|ems__Task]]` and `[[<uid>]]` both on disk, `from` =
+    // `[[<uid>]]` replaces that exact item, as it did before identity
+    // comparison existed (ems__Bug 530f895d).
+    const fromExact = existing.findIndex(
       (item) => decodeYamlSequenceItem(item) === fromPlain,
     );
+    const fromIndex =
+      fromExact !== -1
+        ? fromExact
+        : existing.findIndex(
+            (item) =>
+              listItemIdentity(decodeYamlSequenceItem(item)) === fromKey,
+          );
     if (fromIndex === -1) {
       return {
         success: false,
@@ -4038,21 +4058,36 @@ export class GroundingExecutor {
     //
     // Refusing is safe here: a sweep of `~/.claude/bin`, `~/dotfiles/scripts`
     // and this repo found no caller relying on an idempotent `from === to`.
-    if (fromPlain === toPlain) {
-      return {
-        success: false,
-        error:
-          `property_replace: replaceFromExpression and replaceToExpression both ` +
-          `resolved to "${fromPlain}" — this can only leave <${grounding.targetProperty}> ` +
-          `unchanged, and reporting a no-op as a replacement would hide that`,
-      };
-    }
-
+    //
+    // ems__Bug 530f895d — `from` and `to` in two forms of ONE link target
+    // (`[[<uid>|ems__Task]]` → `[[<uid>]]`) are the same no-op, unless ANOTHER
+    // form of that target is also in the list: then the request is a real change
+    // — it drops the duplicate (the very shape the old string comparison wrote).
+    // Byte-identical `from === to` stays refused unconditionally, as in #4432.
+    //
     // Idempotence: when `to` is ALREADY present elsewhere in the list, drop the
     // `from` item instead of writing a duplicate.
     const toIndexElsewhere = existing.findIndex(
-      (item, i) => i !== fromIndex && decodeYamlSequenceItem(item) === toPlain,
+      (item, i) =>
+        i !== fromIndex &&
+        listItemIdentity(decodeYamlSequenceItem(item)) === toKey,
     );
+    const sameValue =
+      fromPlain === toPlain || (fromKey === toKey && toIndexElsewhere === -1);
+    if (sameValue) {
+      return {
+        success: false,
+        error:
+          fromPlain === toPlain
+            ? `property_replace: replaceFromExpression and replaceToExpression both ` +
+              `resolved to "${fromPlain}" — this can only leave <${grounding.targetProperty}> ` +
+              `unchanged, and reporting a no-op as a replacement would hide that`
+            : `property_replace: "${fromPlain}" and "${toPlain}" name one link target, ` +
+              `and <${grounding.targetProperty}> holds no other form of it — the ` +
+              `replacement would only re-alias that value, not replace it`,
+      };
+    }
+
     const merged =
       toIndexElsewhere === -1
         ? existing.map((item, i) =>

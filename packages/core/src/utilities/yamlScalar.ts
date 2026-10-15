@@ -496,6 +496,44 @@ export function decodeYamlSequenceItem(raw: string): string {
 }
 
 /**
+ * The comparison IDENTITY of a DECODED list item (ems__Bug 530f895d): what
+ * `property_append`'s dedup and `property_replace`'s three comparisons
+ * (`from` lookup, `from === to` refusal, `to` already present) compare.
+ *
+ * A value that is exactly ONE wikilink is identified by its link target:
+ * `[[<uid>|ems__Task]]` and `[[<uid>]]` point at the same asset, and the alias is
+ * display-only (req 9e84c833). Comparing the whole string made `replace` refuse
+ * a class written with an alias and made `append` / `replace` write the same
+ * class a second time in the other form.
+ *
+ * Only forms that EVERY reader of the value takes for the same target are
+ * merged; anything else is its own identity, byte for byte. Measured on
+ * `exo__Instance_class` (2026-10-15), the readers disagree outside that set:
+ * - whitespace around the link or around its target (` [[<uid>]]`,
+ *   `[[ <uid> ]]`, `[[<uid> | Custom]]`) — `NoteToRDFConverter` emits a LITERAL
+ *   and no `rdf:type`, while `extractAssetReference` trims and resolves it.
+ *   Hence no `.trim()` here: trimming would let a value the graph cannot read
+ *   swallow the working link next to it;
+ * - a bare `<uid>` with no brackets — the converter resolves it as the class,
+ *   `FileSpaceDiscovery` reads wikilinks only. Hence the identity of a link
+ *   keeps the link FORM (`[[<target>]]`), never the bare target.
+ *
+ * ⛔ A pipe in a PLAIN value is text, not an alias separator: `aliases` holds
+ * labels such as `Foo | Bar` (16 live items in vault-exodev, 2026-10-15), and
+ * splitting them would make `Foo | Bar` and `Foo` the same alias.
+ *
+ * ⛔ Not a vault lookup: the label form `[[ems__Task]]` and the UID form
+ * `[[<uid of ems__Task>]]` stay DIFFERENT identities — recognising them as one
+ * value needs the vault, which this pure helper does not have (ems__Bug bf192739).
+ */
+export function listItemIdentity(decoded: string): string {
+  const single = /^\[\[([^[\]]+)\]\]$/.exec(decoded);
+  if (!single) return decoded;
+  const target = single[1].split("|")[0] ?? "";
+  return target === "" ? decoded : `[[${target}]]`;
+}
+
+/**
  * The raw text of a SCALAR block scalar, re-indented to stand as a LIST ITEM
  * (`  - <item>`): every body line moves two columns right (issue #4379).
  *

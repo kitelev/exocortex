@@ -1,0 +1,89 @@
+{
+  "_doc": "Revert-verify mutants for ems__Bug 530f895d — the comparison sites of property_append / property_replace go through `listItemIdentity` (a wikilink is identified by its link target), and the write side stays verbatim. One mutant per decision, each must redden exactly its axes. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). Sibling spec `wikilink-identity-530f895d.identity.spec.json` mutates the identity function itself (subject yamlScalar.ts — the driver takes one subject per spec). M1–M4 put one comparison site back on whole-string comparison; M5/M6/M12 lock the WRITE side (`to`, the appended value and the co-values are written as passed / as stored); M7/M8 lock the other direction of the `to` comparisons (identity on BOTH sides); M9 locks the exact-match-first `from` lookup; M10/M11 lock the two clauses of the no-op refusal (a two-form duplicate is collapsible; byte-identical from === to is refused even with a duplicate on disk).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› (K\\d+) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/GroundingExecutor.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/services/GroundingExecutor.wikilink-identity-530f895d.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_append_dedup_by_string": {
+      "_note": "property_append dedup compares whole strings again: the class present in the other form is written a second time.",
+      "from": "    const seen = new Set(\n      existing.map((item) => listItemIdentity(decodeYamlSequenceItem(item))),\n    );\n    let merged: string[];\n    if (seen.has(listItemIdentity(plain))) {",
+      "to": "    const seen = new Set(existing.map((item) => decodeYamlSequenceItem(item)));\n    let merged: string[];\n    if (seen.has(plain)) {",
+      "expect": ["K5", "K6"]
+    },
+    "M2_replace_from_by_string": {
+      "_note": "property_replace looks `from` up by whole string again (the identity fallback degenerates to the exact lookup) — the reported defect: refusal on the aliased form.",
+      "from": "              listItemIdentity(decodeYamlSequenceItem(item)) === fromKey,",
+      "to": "              decodeYamlSequenceItem(item) === fromPlain,",
+      "expect": ["K1", "K2"]
+    },
+    "M3_same_value_by_string": {
+      "_note": "the no-op refusal compares whole strings only: `[[uid|alias]]` ↔ `[[uid]]` on a single form is reported as a replacement.",
+      "from": "      fromPlain === toPlain || (fromKey === toKey && toIndexElsewhere === -1);",
+      "to": "      fromPlain === toPlain;",
+      "expect": ["K4", "K14"]
+    },
+    "M4_replace_to_present_by_string": {
+      "_note": "property_replace does not see `to` already present in the other form — writes the class a second time (grooming facet (a)).",
+      "from": "        listItemIdentity(decodeYamlSequenceItem(item)) === toKey,",
+      "to": "        decodeYamlSequenceItem(item) === toPlain,",
+      "expect": ["K3", "K13"]
+    },
+    "M5_replace_writes_identity": {
+      "_note": "D3 — property_replace writes the IDENTITY of `to` instead of `to` as passed: an aliased `to` loses its alias on disk.",
+      "from": "            i === fromIndex ? quoteYamlString(toPlain) : item,",
+      "to": "            i === fromIndex ? quoteYamlString(listItemIdentity(toPlain)) : item,",
+      "expect": ["K12"]
+    },
+    "M6_append_writes_identity": {
+      "_note": "D3 — property_append writes the IDENTITY of the value instead of the value as passed: an aliased class loses its alias on disk.",
+      "from": "      merged = [...existing, quoteYamlString(plain)];",
+      "to": "      merged = [...existing, quoteYamlString(listItemIdentity(plain))];",
+      "expect": ["K9"]
+    },
+    "M7_to_present_vs_raw_to": {
+      "_note": "`to already present` compares the item's identity with the RAW `to`: an aliased `to` misses its plain form on disk (and a two-form duplicate is no longer collapsible).",
+      "from": "        listItemIdentity(decodeYamlSequenceItem(item)) === toKey,",
+      "to": "        listItemIdentity(decodeYamlSequenceItem(item)) === toPlain,",
+      "expect": ["K13", "K19"]
+    },
+    "M8_same_value_vs_raw_to": {
+      "_note": "the no-op refusal compares `from`'s identity with the RAW `to`: plain `from` → aliased `to` of the same target is reported as a replacement.",
+      "from": "(fromKey === toKey && toIndexElsewhere === -1)",
+      "to": "(fromKey === toPlain && toIndexElsewhere === -1)",
+      "expect": ["K14"]
+    },
+    "M9_no_exact_first": {
+      "_note": "the exact-spelling lookup of `from` is skipped: the FIRST form of the target is replaced instead of the item `from` names.",
+      "from": "      fromExact !== -1",
+      "to": "      fromExact < -1",
+      "expect": ["K19", "K20"]
+    },
+    "M10_same_value_ignores_duplicates": {
+      "_note": "the no-op refusal ignores another form already on disk: a two-form duplicate can no longer be collapsed by one replace (review MEDIUM-2).",
+      "from": "      fromPlain === toPlain || (fromKey === toKey && toIndexElsewhere === -1);",
+      "to": "      fromPlain === toPlain || fromKey === toKey;",
+      "expect": ["K19"]
+    },
+    "M11_byte_identical_clause_removed": {
+      "_note": "#4432 byte-identical `from === to` is accepted when the list holds that value twice — it silently drops one copy and reports a replacement.",
+      "from": "      fromPlain === toPlain || (fromKey === toKey && toIndexElsewhere === -1);",
+      "to": "      fromKey === toKey && toIndexElsewhere === -1;",
+      "expect": ["K21"]
+    },
+    "M12_replace_rewrites_co_values": {
+      "_note": "D3 — property_replace rewrites the co-values into their identity form: their aliases are stripped on disk.",
+      "from": "            i === fromIndex ? quoteYamlString(toPlain) : item,",
+      "to": "            i === fromIndex ? quoteYamlString(toPlain) : quoteYamlString(listItemIdentity(decodeYamlSequenceItem(item))),",
+      "expect": ["K15", "K20"]
+    }
+  }
+}
