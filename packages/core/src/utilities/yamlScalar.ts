@@ -496,6 +496,66 @@ export function decodeYamlSequenceItem(raw: string): string {
 }
 
 /**
+ * The comparison IDENTITY of a DECODED list item (ems__Bug 530f895d): what
+ * `property_append`'s dedup and `property_replace`'s `from` lookup and
+ * "`to` already present" check compare. (`property_replace`'s `from === to`
+ * refusal stays byte-based on purpose — see there.)
+ *
+ * A value that is exactly ONE wikilink is identified by its link target, so
+ * `[[<uid>|ems__Task]]` and `[[<uid>]]` match: the UID decides which asset is
+ * meant, as it does for exocmd command resolution (req 9e84c833) and per the
+ * founder's decision on this bug (2026-10-11: compare a class by its UID, not
+ * by the aliased string). Comparing the whole string made `replace` refuse a
+ * class written with an alias and made `append` / `replace` write the same
+ * class a second time in the other form.
+ *
+ * ⛔ The alias is NOT display-only for every reader: `NoteToRDFConverter`
+ * reads it BEFORE the link target (#2742). When the alias disagrees with the
+ * target's label, or the target does not resolve in this vault, the two forms
+ * carry different `rdf:type`s — matching them by target is then a choice of
+ * the UID reading over the converter's. The visible consequences:
+ * - rewriting one target's alias is a real replacement (the reason the
+ *   `from === to` refusal compares bytes);
+ * - appending the second form of a target already present is skipped even
+ *   when only that form would type the asset correctly — e.g. a bot appending
+ *   the bare `[[<uid>]]` next to a stored wrong alias such as
+ *   `[[<uid>|ems__OffineMeeting]]` (class items whose alias disagrees with the
+ *   target's label: 4 in vault-my and vault-bot-kitelev, 2026-10-15). The
+ *   repair there is `replace` from the stored form to the bare link;
+ * - a `replace` whose `to` already stands in another form keeps the STORED
+ *   form and drops `from` (`[O, [[T|a]]]`, O → `[[T]]` gives `[[[T|a]]]`).
+ * In `aliases`, `[[Foo|Bar]]` and `[[Foo]]` match the same way.
+ *
+ * Anything that is not exactly one wikilink is its own identity, byte for
+ * byte. Measured on `exo__Instance_class` (2026-10-15), the readers disagree
+ * on these forms beyond the alias, so they are NOT merged:
+ * - whitespace around the link or around its target (` [[<uid>]]`,
+ *   `[[<uid>]] `, `[[ <uid> ]]`, `[[<uid> | Custom]]`) — `NoteToRDFConverter`
+ *   emits a LITERAL and no `rdf:type`, while `extractAssetReference` trims and
+ *   resolves it. Hence no `.trim()` and an anchored match: either would let a
+ *   value the graph cannot read swallow the working link next to it;
+ * - a value holding more than one link (`[[a|x]] and [[b]]`) — it is text,
+ *   not a link to `a`;
+ * - a bare `<uid>` with no brackets — the converter resolves it as the class,
+ *   `FileSpaceDiscovery` reads wikilinks only. Hence the identity of a link
+ *   keeps the link FORM (`[[<target>]]`), never the bare target.
+ *
+ * ⛔ A pipe in a PLAIN value is text, not an alias separator: `aliases` holds
+ * labels such as `Foo | Bar` (16 live items in vault-exodev, 2026-10-15), and
+ * splitting them would make `Foo | Bar` and `Foo` the same alias.
+ *
+ * ⛔ Not a vault lookup: the label form `[[ems__Task]]` and the UID form
+ * `[[<uid of ems__Task>]]` stay DIFFERENT identities — recognising them as one
+ * value needs the vault, which this pure helper does not have (ems__Bug bf192739).
+ */
+export function listItemIdentity(decoded: string): string {
+  const single = /^\[\[([^[\]]+)\]\]$/.exec(decoded);
+  if (!single) return decoded;
+  const target = single[1].split("|")[0] ?? "";
+  return target === "" ? decoded : `[[${target}]]`;
+}
+
+/**
  * The raw text of a SCALAR block scalar, re-indented to stand as a LIST ITEM
  * (`  - <item>`): every body line moves two columns right (issue #4379).
  *

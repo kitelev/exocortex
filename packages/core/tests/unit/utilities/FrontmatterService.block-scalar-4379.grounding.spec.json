@@ -26,21 +26,21 @@
       "expect": ["I1"]
     },
     "M15_append_dedup_raw_blocks": {
-      "_note": "property_append compares block-scalar list items by their RAW text again — the item's text is appended a second time (review MEDIUM-1).",
-      "from": "    const seen = new Set(existing.map(decodeYamlSequenceItem));",
-      "to": "    const seen = new Set(existing.map((x) => (/^[|>]/.test(x) ? x : decodeYamlSequenceItem(x))));",
+      "_note": "property_append compares block-scalar list items by their RAW text again — the item's text is appended a second time (review MEDIUM-1). ⛤ ems__Bug 530f895d: re-anchored — the comparison now goes through `listItemIdentity` (a wikilink is its link target); the mutation still strips only the block-scalar DECODE, which is what this axis locks.",
+      "from": "      existing.map((item) => listItemIdentity(decodeYamlSequenceItem(item))),",
+      "to": "      existing.map((item) => listItemIdentity(/^[|>]/.test(item) ? item : decodeYamlSequenceItem(item))),",
       "expect": ["W3"]
     },
     "M16_replace_from_raw_blocks": {
-      "_note": "property_replace matches `from` against the RAW text of block-scalar items — refuses a value that is on disk (review MEDIUM-1).",
-      "from": "      (item) => decodeYamlSequenceItem(item) === fromPlain,",
-      "to": "      (item) => (/^[|>]/.test(item) ? item : decodeYamlSequenceItem(item)) === fromPlain,",
+      "_note": "property_replace matches `from` against the RAW text of block-scalar items — refuses a value that is on disk (review MEDIUM-1). ⛤ ems__Bug 530f895d: re-anchored — the comparison now goes through `listItemIdentity` (a wikilink is its link target); the mutation still strips only the block-scalar DECODE, which is what this axis locks. Both `from` lookups (exact spelling first, then identity) are mutated together: one alone would leave the other decoding the block.",
+      "from": "    const fromExact = existing.findIndex(\n      (item) => decodeYamlSequenceItem(item) === fromPlain,\n    );\n    const fromIndex =\n      fromExact !== -1\n        ? fromExact\n        : existing.findIndex(\n            (item) =>\n              listItemIdentity(decodeYamlSequenceItem(item)) === fromKey,\n          );",
+      "to": "    const fromExact = existing.findIndex(\n      (item) => (/^[|>]/.test(item) ? item : decodeYamlSequenceItem(item)) === fromPlain,\n    );\n    const fromIndex =\n      fromExact !== -1\n        ? fromExact\n        : existing.findIndex(\n            (item) =>\n              listItemIdentity((/^[|>]/.test(item) ? item : decodeYamlSequenceItem(item))) === fromKey,\n          );",
       "expect": ["R1"]
     },
     "M17_replace_to_raw_blocks": {
-      "_note": "property_replace does not see `to` already present as a block-scalar item — writes a duplicate (review MEDIUM-1).",
-      "from": "      (item, i) => i !== fromIndex && decodeYamlSequenceItem(item) === toPlain,",
-      "to": "      (item, i) => i !== fromIndex && (/^[|>]/.test(item) ? item : decodeYamlSequenceItem(item)) === toPlain,",
+      "_note": "property_replace does not see `to` already present as a block-scalar item — writes a duplicate (review MEDIUM-1). ⛤ ems__Bug 530f895d: re-anchored — the comparison now goes through `listItemIdentity` (a wikilink is its link target); the mutation still strips only the block-scalar DECODE, which is what this axis locks.",
+      "from": "        listItemIdentity(decodeYamlSequenceItem(item)) === toKey,",
+      "to": "        listItemIdentity((/^[|>]/.test(item) ? item : decodeYamlSequenceItem(item))) === toKey,",
       "expect": ["R2"]
     }
   }

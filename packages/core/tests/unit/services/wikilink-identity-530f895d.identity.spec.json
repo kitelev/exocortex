@@ -1,0 +1,95 @@
+{
+  "_doc": "Revert-verify mutants for ems__Bug 530f895d — the identity function `listItemIdentity` itself (subject yamlScalar.ts). Sibling spec `wikilink-identity-530f895d.executor.spec.json` mutates the call sites. M2–M9 lock the BOUNDARIES the call-site mutants cannot reach: identity is the link TARGET, never the display alias (K7, K9); only a value that is exactly ONE wikilink is unwrapped — a pipe in a plain alias is text (K8), a value holding two links is text (K23); the identity of a link keeps the LINK FORM, so a bare uid is a different value (K10, K11); whitespace before/after the link or around its target is not trimmed, because the RDF converter reads such a value as a literal (K16, K17, K22); an empty target is its own value (K18). Mutants are type-preserving (no `if (false)`), per integration-test-revert-verify §A36. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› (K\\d+) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/utilities/yamlScalar.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/services/GroundingExecutor.wikilink-identity-530f895d.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_identity_off": {
+      "_note": "Nothing is ever recognised as a wikilink — identity degenerates to the whole string at the three identity sites at once (the byte-based #4432 refusal is unaffected).",
+      "from": "  const single = /^\\[\\[([^[\\]]+)\\]\\]$/.exec(decoded);",
+      "to": "  const single = /^\\[\\[([^[\\]]+)\\]\\]$/.exec(\"\");",
+      "expect": [
+        "K1",
+        "K2",
+        "K3",
+        "K5",
+        "K6",
+        "K13",
+        "K25",
+        "K26",
+        "K27",
+        "K28"
+      ]
+    },
+    "M2_identity_is_alias": {
+      "_note": "The display ALIAS is taken as identity instead of the target: two different classes sharing the alias `ems__Task` become one value (K7, K9) and the aliased/plain pairs stop matching.",
+      "from": "  const target = single[1].split(\"|\")[0] ?? \"\";",
+      "to": "  const target = single[1].split(\"|\").pop() ?? \"\";",
+      "expect": [
+        "K1",
+        "K2",
+        "K3",
+        "K5",
+        "K6",
+        "K7",
+        "K9",
+        "K13",
+        "K25",
+        "K26",
+        "K27",
+        "K28"
+      ]
+    },
+    "M3_any_pipe_is_alias": {
+      "_note": "A pipe in ANY value is read as an alias separator — the `aliases` label `Foo | Bar` collapses onto `Foo`. Only pipe-bearing values are touched, so the mutant has one concern (no trimming of other plain values).",
+      "from": "  if (!single) return decoded;",
+      "to": "  if (!single) return decoded.includes(\"|\") ? (decoded.split(\"|\")[0] ?? \"\").trim() : decoded;",
+      "expect": ["K8"]
+    },
+    "M4_identity_is_bare_target": {
+      "_note": "The identity of a link is the BARE target instead of the link form: a bare uid (no brackets) collides with the link — a bare `from` replaces the link (K10) and append skips the link next to the bare uid (K11). This was the shape of the planning-stage prototype (ems__Bug 530f895d, StageSpecification).",
+      "from": "  return target === \"\" ? decoded : `[[${target}]]`;",
+      "to": "  return target === \"\" ? decoded : target;",
+      "expect": ["K10", "K11"]
+    },
+    "M5_outer_whitespace_trimmed": {
+      "_note": "Whitespace AROUND the value is trimmed before matching: ` [[uid]]` / `[[uid]] ` (literals for the RDF converter) swallow the working link appended next to them (review MEDIUM-1 of the spec stage).",
+      "from": "  const single = /^\\[\\[([^[\\]]+)\\]\\]$/.exec(decoded);",
+      "to": "  const single = /^\\[\\[([^[\\]]+)\\]\\]$/.exec(decoded.trim());",
+      "expect": ["K16", "K22"]
+    },
+    "M6_target_whitespace_trimmed": {
+      "_note": "Whitespace around the link TARGET is trimmed: `[[ uid ]]` (a literal for the RDF converter) swallows the working link appended next to it (review MEDIUM-1).",
+      "from": "  const target = single[1].split(\"|\")[0] ?? \"\";",
+      "to": "  const target = (single[1].split(\"|\")[0] ?? \"\").trim();",
+      "expect": ["K17"]
+    },
+    "M7_empty_target_merged": {
+      "_note": "The empty-target guard is dropped: `[[|x]]` and `[[|y]]` both become `[[]]` and the second is never written.",
+      "from": "  return target === \"\" ? decoded : `[[${target}]]`;",
+      "to": "  return `[[${target}]]`;",
+      "expect": ["K18"]
+    },
+    "M8_more_than_one_link_is_a_link": {
+      "_note": "The target class `[^[\\]]+` is widened to `.+`: a value holding two links (`[[a|x]] and [[b]]`) is read as ONE link to `a` and swallows `[[a]]` (review LOW-4 of PR #4563).",
+      "from": "  const single = /^\\[\\[([^[\\]]+)\\]\\]$/.exec(decoded);",
+      "to": "  const single = /^\\[\\[(.+)\\]\\]$/.exec(decoded);",
+      "expect": ["K23"]
+    },
+    "M9_unanchored_end": {
+      "_note": "The `$` anchor is dropped: anything AFTER a leading link is ignored — `[[uid]] ` (a literal for the RDF converter) and `[[a|x]] and [[b]]` swallow the working link appended next to them (review LOW-4 of PR #4563).",
+      "from": "  const single = /^\\[\\[([^[\\]]+)\\]\\]$/.exec(decoded);",
+      "to": "  const single = /^\\[\\[([^[\\]]+)\\]\\]/.exec(decoded);",
+      "expect": ["K22", "K23"]
+    }
+  }
+}

@@ -29,6 +29,7 @@ import {
   decodeYamlSequenceItem,
   isCompleteDoubleQuotedScalar,
   isUnquotedWikilink,
+  listItemIdentity,
   quoteYamlString,
   scalarTypingForRange,
   serializeYamlScalar,
@@ -3866,9 +3867,11 @@ export class GroundingExecutor {
       };
     }
 
-    const seen = new Set(existing.map(decodeYamlSequenceItem));
+    const seen = new Set(
+      existing.map((item) => listItemIdentity(decodeYamlSequenceItem(item))),
+    );
     let merged: string[];
-    if (seen.has(plain)) {
+    if (seen.has(listItemIdentity(plain))) {
       merged = existing;
     } else {
       // Ticket 4f226028 — ONE writer for label and aliases. `updateProperty`
@@ -3932,7 +3935,14 @@ export class GroundingExecutor {
    *
    * Comparison is on DECODED forms (as in `executePropertyAppend`): `existing`
    * holds the raw on-disk items, so a stored `"Say \"hi\""` matches a plain
-   * `Say "hi"`.
+   * `Say "hi"`. The `from` lookup and the "`to` already present" check go
+   * through {@link listItemIdentity}: a wikilink is matched by its link target,
+   * so `[[<uid>|ems__Task]]` and `[[<uid>]]` find each other (ems__Bug
+   * 530f895d). The `from` lookup prefers the item spelled exactly like `from`.
+   * The `from === to` refusal stays byte-based (see there); a `from` found by
+   * identity whose stored item already equals `to` is refused as the same
+   * no-op. When `to` is written, it is written exactly as passed; when it is
+   * already present, the stored form is kept.
    */
   private async executePropertyReplace(
     grounding: GroundingDefinition,
@@ -4004,9 +4014,22 @@ export class GroundingExecutor {
       };
     }
 
-    const fromIndex = existing.findIndex(
+    const fromKey = listItemIdentity(fromPlain);
+    const toKey = listItemIdentity(toPlain);
+    // The item NAMED by `from` wins over another form of the same link target:
+    // with `[[<uid>|ems__Task]]` and `[[<uid>]]` both on disk, `from` =
+    // `[[<uid>]]` replaces that exact item, as it did before identity
+    // comparison existed (ems__Bug 530f895d).
+    const fromExact = existing.findIndex(
       (item) => decodeYamlSequenceItem(item) === fromPlain,
     );
+    const fromIndex =
+      fromExact !== -1
+        ? fromExact
+        : existing.findIndex(
+            (item) =>
+              listItemIdentity(decodeYamlSequenceItem(item)) === fromKey,
+          );
     if (fromIndex === -1) {
       return {
         success: false,
@@ -4038,20 +4061,60 @@ export class GroundingExecutor {
     //
     // Refusing is safe here: a sweep of `~/.claude/bin`, `~/dotfiles/scripts`
     // and this repo found no caller relying on an idempotent `from === to`.
+    //
+    // ⛔ ems__Bug 530f895d: this refusal stays a BYTE comparison, not a
+    // `listItemIdentity` one. `from` and `to` that are two forms of ONE link
+    // target (`[[<uid>|ems__Task]]` → `[[<uid>]]`) are a real change whenever
+    // the STORED item differs from `to` (the guard below covers the case where
+    // it does not): the file changes, and so can the graph —
+    // `NoteToRDFConverter.valueToClassURI` reads the alias BEFORE the link
+    // target (#2742), so rewriting a wrong alias re-types the asset. Refusing it
+    // would block that repair, which worked before this fix (review of PR #4563).
+    const fromStored = decodeYamlSequenceItem(existing[fromIndex]);
     if (fromPlain === toPlain) {
       return {
         success: false,
         error:
-          `property_replace: replaceFromExpression and replaceToExpression both ` +
-          `resolved to "${fromPlain}" — this can only leave <${grounding.targetProperty}> ` +
-          `unchanged, and reporting a no-op as a replacement would hide that`,
+          fromStored === fromPlain
+            ? `property_replace: replaceFromExpression and replaceToExpression both ` +
+              `resolved to "${fromPlain}" — this can only leave <${grounding.targetProperty}> ` +
+              `unchanged, and reporting a no-op as a replacement would hide that`
+            : `property_replace: replaceFromExpression and replaceToExpression both ` +
+              `resolved to "${fromPlain}", which matches the stored "${fromStored}" of ` +
+              `<${grounding.targetProperty}> only by link target — to rewrite the stored ` +
+              `form, pass it as replaceFromExpression`,
       };
     }
 
-    // Idempotence: when `to` is ALREADY present elsewhere in the list, drop the
-    // `from` item instead of writing a duplicate.
+    // ems__Bug 530f895d (review rounds 2–3 of PR #4563) — the #4432 class
+    // reached through the identity lookup: `from` matched a stored item by link
+    // target, and that stored item already IS `to`, so the request asks to put
+    // back what is already there. Without this guard the command would still
+    // report a replacement: the map branch rewrites the item with itself (or
+    // merely re-quotes it), or the idempotent branch collapses the list onto a
+    // form the caller did not name. With an exact `from` match
+    // `fromStored === fromPlain`, so this fires only on the identity fallback —
+    // inputs main refused as "is not a value of".
+    if (fromStored === toPlain) {
+      return {
+        success: false,
+        error:
+          `property_replace: "${fromPlain}" matched the stored value "${fromStored}" ` +
+          `of <${grounding.targetProperty}> by link target, and that stored value ` +
+          `already equals replaceToExpression — there is nothing to replace; to ` +
+          `rewrite another form of that link target, pass it as replaceFromExpression`,
+      };
+    }
+
+    // Idempotence: when `to` is ALREADY present elsewhere in the list — in any
+    // form of its link target — drop the `from` item instead of writing a
+    // duplicate. Excluding `fromIndex` is load-bearing: rewriting one target's
+    // alias would otherwise find `from` itself as "`to` already present" and
+    // delete the value.
     const toIndexElsewhere = existing.findIndex(
-      (item, i) => i !== fromIndex && decodeYamlSequenceItem(item) === toPlain,
+      (item, i) =>
+        i !== fromIndex &&
+        listItemIdentity(decodeYamlSequenceItem(item)) === toKey,
     );
     const merged =
       toIndexElsewhere === -1
