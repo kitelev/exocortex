@@ -17,13 +17,37 @@
       "_note": "Nothing is ever recognised as a wikilink — identity degenerates to the whole string at the three identity sites at once (the byte-based #4432 refusal is unaffected).",
       "from": "  const single = /^\\[\\[([^[\\]]+)\\]\\]$/.exec(decoded);",
       "to": "  const single = /^\\[\\[([^[\\]]+)\\]\\]$/.exec(\"\");",
-      "expect": ["K1", "K2", "K3", "K5", "K6", "K13"]
+      "expect": [
+        "K1",
+        "K2",
+        "K3",
+        "K5",
+        "K6",
+        "K13",
+        "K25",
+        "K26",
+        "K27",
+        "K28"
+      ]
     },
     "M2_identity_is_alias": {
       "_note": "The display ALIAS is taken as identity instead of the target: two different classes sharing the alias `ems__Task` become one value (K7, K9) and the aliased/plain pairs stop matching.",
       "from": "  const target = single[1].split(\"|\")[0] ?? \"\";",
       "to": "  const target = single[1].split(\"|\").pop() ?? \"\";",
-      "expect": ["K1", "K2", "K3", "K5", "K6", "K7", "K9", "K13"]
+      "expect": [
+        "K1",
+        "K2",
+        "K3",
+        "K5",
+        "K6",
+        "K7",
+        "K9",
+        "K13",
+        "K25",
+        "K26",
+        "K27",
+        "K28"
+      ]
     },
     "M3_any_pipe_is_alias": {
       "_note": "A pipe in ANY value is read as an alias separator — the `aliases` label `Foo | Bar` collapses onto `Foo`. Only pipe-bearing values are touched, so the mutant has one concern (no trimming of other plain values).",

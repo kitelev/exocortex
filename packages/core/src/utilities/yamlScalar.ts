@@ -513,12 +513,17 @@ export function decodeYamlSequenceItem(raw: string): string {
  * reads it BEFORE the link target (#2742). When the alias disagrees with the
  * target's label, or the target does not resolve in this vault, the two forms
  * carry different `rdf:type`s — matching them by target is then a choice of
- * the UID reading over the converter's. The visible consequences: rewriting
- * one target's alias is a real replacement (the reason the `from === to`
- * refusal compares bytes), and appending the second form of a target already
- * present is skipped even when only that form would type the asset (the bots'
- * recipe passes the bare link, so it reaches this only by hand). In `aliases`,
- * `[[Foo|Bar]]` and `[[Foo]]` match the same way.
+ * the UID reading over the converter's. The visible consequences:
+ * - rewriting one target's alias is a real replacement (the reason the
+ *   `from === to` refusal compares bytes);
+ * - appending the second form of a target already present is skipped even
+ *   when only that form would type the asset correctly — e.g. a bot appending
+ *   the bare `[[<uid>]]` next to a stored wrong alias (`[[<uid>|ems__OffineMeeting]]`,
+ *   4 live items in vault-my and vault-bot-kitelev, 2026-10-15). The repair
+ *   there is `replace` from the stored form to the bare link;
+ * - a `replace` whose `to` already stands in another form keeps the STORED
+ *   form and drops `from` (`[O, [[T|a]]]`, O → `[[T]]` gives `[[[T|a]]]`).
+ * In `aliases`, `[[Foo|Bar]]` and `[[Foo]]` match the same way.
  *
  * Anything that is not exactly one wikilink is its own identity, byte for
  * byte. Measured on `exo__Instance_class` (2026-10-15), the readers disagree

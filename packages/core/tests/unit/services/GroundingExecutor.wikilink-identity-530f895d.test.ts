@@ -16,9 +16,13 @@
  *   append dedup (K5, K6, K9) · replace `from` lookup (K1, K2, K7, K20) ·
  *   replace `to` already present (K3, K13, K19).
  * The fourth comparison — the #4432 `from === to` refusal — stays BYTE-based
- * (K4, K14, K21, K24): two forms of one target are a real change, because
- * NoteToRDFConverter reads the alias BEFORE the link target (#2742), so
- * rewriting an alias can re-type the asset (review of PR #4563).
+ * (K4, K14, K21, K24): two forms of one target are a real change when the
+ * stored item differs from `to`, because NoteToRDFConverter reads the alias
+ * BEFORE the link target (#2742), so rewriting an alias can re-type the asset
+ * (review round 1 of PR #4563). A `from` found by identity whose STORED item
+ * already equals `to` is the same no-op and is refused (K25–K27, review
+ * round 2); a byte-identical pair that matched only by link target says so
+ * (K28).
  *
  * ⛔ Boundaries this file locks on purpose (they must stay GREEN before and after):
  *   - K7 / K9: the SAME alias on DIFFERENT targets is two values — identity is the
@@ -426,5 +430,59 @@ describe("GroundingExecutor — list items compared by link target (ems__Bug 530
     );
     expect(r).toEqual({ success: true });
     expect(listOnDisk(writer, input, IC)).toEqual([`[[${PROJECT}]]`]);
+  });
+
+  it("K25 replace: a plain `from` found by link target whose STORED item already equals `to` is a no-op — refused, nothing written", async () => {
+    const input = asset(IC, [`[[${TASK}|ems__Task]]`, `[[${OTHER}]]`]);
+    const { executor, writer } = makeExecutor(input);
+    const r = await executor.execute(
+      replace(`[[${TASK}]]`, `[[${TASK}|ems__Task]]`),
+      IRI,
+      PATH,
+    );
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/already equals replaceToExpression/);
+    expect(writer.updateFile).not.toHaveBeenCalled();
+  });
+
+  it("K26 replace: re-running the alias-drop repair on an already-bare class is a no-op — refused, nothing written", async () => {
+    const input = asset(IC, [`[[${TASK}]]`]);
+    const { executor, writer } = makeExecutor(input);
+    const r = await executor.execute(
+      replace(`[[${TASK}|ems__Task]]`, `[[${TASK}]]`),
+      IRI,
+      PATH,
+    );
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/already equals replaceToExpression/);
+    expect(writer.updateFile).not.toHaveBeenCalled();
+  });
+
+  it("K27 replace: an unknown alias in `from` resolving to the item that already equals `to` — refused, nothing written", async () => {
+    const input = asset(IC, [`[[${TASK}|ems__Task]]`]);
+    const { executor, writer } = makeExecutor(input);
+    const r = await executor.execute(
+      replace(`[[${TASK}|zzz]]`, `[[${TASK}|ems__Task]]`),
+      IRI,
+      PATH,
+    );
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/already equals replaceToExpression/);
+    expect(writer.updateFile).not.toHaveBeenCalled();
+  });
+
+  it("K28 replace: byte-identical `from === to` matching the stored item only by link target is refused and NAMES the stored form", async () => {
+    const input = asset(IC, [`[[${TASK}|ems__Task]]`]);
+    const { executor, writer } = makeExecutor(input);
+    const r = await executor.execute(
+      replace(`[[${TASK}]]`, `[[${TASK}]]`),
+      IRI,
+      PATH,
+    );
+    expect(r.success).toBe(false);
+    expect(r.error).toContain(
+      `matches the stored "[[${TASK}|ems__Task]]" of <exo__Instance_class> only by link target`,
+    );
+    expect(writer.updateFile).not.toHaveBeenCalled();
   });
 });

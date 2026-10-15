@@ -3939,9 +3939,10 @@ export class GroundingExecutor {
    * through {@link listItemIdentity}: a wikilink is matched by its link target,
    * so `[[<uid>|ems__Task]]` and `[[<uid>]]` find each other (ems__Bug
    * 530f895d). The `from` lookup prefers the item spelled exactly like `from`.
-   * The `from === to` refusal stays byte-based (see there). When `to` is
-   * written, it is written exactly as passed; when it is already present, the
-   * stored form is kept.
+   * The `from === to` refusal stays byte-based (see there); a `from` found by
+   * identity whose stored item already equals `to` is refused as the same
+   * no-op. When `to` is written, it is written exactly as passed; when it is
+   * already present, the stored form is kept.
    */
   private async executePropertyReplace(
     grounding: GroundingDefinition,
@@ -4063,18 +4064,42 @@ export class GroundingExecutor {
     //
     // ⛔ ems__Bug 530f895d: this refusal stays a BYTE comparison, not a
     // `listItemIdentity` one. `from` and `to` that are two forms of ONE link
-    // target (`[[<uid>|ems__Task]]` → `[[<uid>]]`) are a real change: the file
-    // changes, and so can the graph — `NoteToRDFConverter.valueToClassURI`
-    // reads the alias BEFORE the link target (#2742), so rewriting a wrong alias
-    // re-types the asset. Refusing it would block that repair, which worked
-    // before this fix (review of PR #4563).
+    // target (`[[<uid>|ems__Task]]` → `[[<uid>]]`) are a real change whenever
+    // the STORED item differs from `to` (the guard below covers the case where
+    // it does not): the file changes, and so can the graph —
+    // `NoteToRDFConverter.valueToClassURI` reads the alias BEFORE the link
+    // target (#2742), so rewriting a wrong alias re-types the asset. Refusing it
+    // would block that repair, which worked before this fix (review of PR #4563).
+    const fromStored = decodeYamlSequenceItem(existing[fromIndex]);
     if (fromPlain === toPlain) {
       return {
         success: false,
         error:
-          `property_replace: replaceFromExpression and replaceToExpression both ` +
-          `resolved to "${fromPlain}" — this can only leave <${grounding.targetProperty}> ` +
-          `unchanged, and reporting a no-op as a replacement would hide that`,
+          fromStored === fromPlain
+            ? `property_replace: replaceFromExpression and replaceToExpression both ` +
+              `resolved to "${fromPlain}" — this can only leave <${grounding.targetProperty}> ` +
+              `unchanged, and reporting a no-op as a replacement would hide that`
+            : `property_replace: replaceFromExpression and replaceToExpression both ` +
+              `resolved to "${fromPlain}", which matches the stored "${fromStored}" of ` +
+              `<${grounding.targetProperty}> only by link target — to rewrite the stored ` +
+              `form, pass it as replaceFromExpression`,
+      };
+    }
+
+    // ems__Bug 530f895d (review round 2 of PR #4563) — the same #4432 no-op
+    // reached through the identity lookup: `from` matched a stored item by link
+    // target, and that stored item already IS `to`. The map branch would rewrite
+    // it with itself and report a replacement on a byte-identical file. With an
+    // exact `from` match `fromStored === fromPlain`, so this fires only on the
+    // identity fallback — the case main refused as "is not a value of".
+    if (fromStored === toPlain) {
+      return {
+        success: false,
+        error:
+          `property_replace: "${fromPlain}" matched the stored value "${fromStored}" ` +
+          `of <${grounding.targetProperty}> by link target, and it already equals ` +
+          `replaceToExpression — this can only leave the list unchanged, and ` +
+          `reporting a no-op as a replacement would hide that`,
       };
     }
 
