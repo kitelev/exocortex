@@ -12,10 +12,13 @@
  *   - `replace` likewise kept `to` twice when it was already present in the other
  *     form.
  *
- * Four comparison sites, one identity (`listItemIdentity`):
+ * Three comparison sites, one identity (`listItemIdentity`):
  *   append dedup (K5, K6, K9) · replace `from` lookup (K1, K2, K7, K20) ·
- *   replace `from === to` refusal (K4, K14, K19, K21) ·
- *   replace `to` already present (K3, K13).
+ *   replace `to` already present (K3, K13, K19).
+ * The fourth comparison — the #4432 `from === to` refusal — stays BYTE-based
+ * (K4, K14, K21, K24): two forms of one target are a real change, because
+ * NoteToRDFConverter reads the alias BEFORE the link target (#2742), so
+ * rewriting an alias can re-type the asset (review of PR #4563).
  *
  * ⛔ Boundaries this file locks on purpose (they must stay GREEN before and after):
  *   - K7 / K9: the SAME alias on DIFFERENT targets is two values — identity is the
@@ -25,9 +28,10 @@
  *   - K10 / K11: a bare `<uid>` with no brackets is NOT merged with `[[<uid>]]`
  *     — readers disagree on it (the RDF converter resolves it as the class,
  *     FileSpaceDiscovery reads wikilinks only), so it keeps byte comparison;
- *   - K16 / K17: whitespace around the link or its target is NOT trimmed —
- *     the converter emits such a value as a literal (no rdf:type), so it must
- *     not swallow the working link next to it;
+ *   - K16 / K17 / K22: whitespace before or after the link, or around its
+ *     target, is NOT trimmed — the converter emits such a value as a literal
+ *     (no rdf:type), so it must not swallow the working link next to it;
+ *   - K23: a value holding MORE than one link is text, not a link to the first;
  *   - K18: an empty link target (`[[|x]]`) is its own value;
  *   - K12 / K15: `to` and the co-values are written exactly as passed / as
  *     stored — identity drives the comparisons, never the write;
@@ -162,7 +166,7 @@ describe("GroundingExecutor — list items compared by link target (ems__Bug 530
     ]);
   });
 
-  it("K4 replace: `from` and `to` naming ONE target in two forms is refused as a no-op, nothing written", async () => {
+  it("K4 replace: dropping the alias of ONE target is a real replacement — the value stays, written as `to`", async () => {
     const input = asset(IC, [`[[${TASK}|ems__Task]]`, `[[${OTHER}]]`]);
     const { executor, writer } = makeExecutor(input);
     const r = await executor.execute(
@@ -170,9 +174,11 @@ describe("GroundingExecutor — list items compared by link target (ems__Bug 530
       IRI,
       PATH,
     );
-    expect(r.success).toBe(false);
-    expect(r.error).toMatch(/one link target/);
-    expect(writer.updateFile).not.toHaveBeenCalled();
+    expect(r).toEqual({ success: true });
+    expect(listOnDisk(writer, input, IC)).toEqual([
+      `[[${TASK}]]`,
+      `[[${OTHER}]]`,
+    ]);
   });
 
   it("K5 append: a plain class already present WITH an alias is not written a second time", async () => {
@@ -279,7 +285,7 @@ describe("GroundingExecutor — list items compared by link target (ems__Bug 530
     expect(listOnDisk(writer, input, IC)).toEqual([`[[${PROJECT}]]`]);
   });
 
-  it("K14 replace: a plain `from` → the aliased form of the SAME target is refused as a no-op, nothing written", async () => {
+  it("K14 replace: adding an alias to ONE target is a real replacement — the value stays, written as `to`", async () => {
     const input = asset(IC, [`[[${TASK}]]`, `[[${OTHER}]]`]);
     const { executor, writer } = makeExecutor(input);
     const r = await executor.execute(
@@ -287,9 +293,11 @@ describe("GroundingExecutor — list items compared by link target (ems__Bug 530
       IRI,
       PATH,
     );
-    expect(r.success).toBe(false);
-    expect(r.error).toMatch(/one link target/);
-    expect(writer.updateFile).not.toHaveBeenCalled();
+    expect(r).toEqual({ success: true });
+    expect(listOnDisk(writer, input, IC)).toEqual([
+      `[[${TASK}|ems__Task]]`,
+      `[[${OTHER}]]`,
+    ]);
   });
 
   it("K15 replace: co-values are kept exactly as stored, aliases included", async () => {
@@ -380,5 +388,43 @@ describe("GroundingExecutor — list items compared by link target (ems__Bug 530
     expect(r.success).toBe(false);
     expect(r.error).toMatch(/both resolved to/);
     expect(writer.updateFile).not.toHaveBeenCalled();
+  });
+
+  it("K22 boundary: whitespace AFTER a link is not trimmed — the link is appended next to `[[uid]] `", async () => {
+    const input = asset(IC, [`[[${TASK}]] `]);
+    const { executor, writer } = makeExecutor(input);
+    const r = await executor.execute(append(IC, `[[${TASK}]]`), IRI, PATH);
+    expect(r.success).toBe(true);
+    expect(listOnDisk(writer, input, IC)).toEqual([
+      `[[${TASK}]] `,
+      `[[${TASK}]]`,
+    ]);
+  });
+
+  it("K23 boundary: a value holding TWO links is text, not a link to the first — `[[a]]` is appended next to `[[a|x]] and [[b]]`", async () => {
+    const input = asset("aliases", [`[[${TASK}|x]] and [[${OTHER}]]`]);
+    const { executor, writer } = makeExecutor(input);
+    const r = await executor.execute(
+      append("aliases", `[[${TASK}]]`),
+      IRI,
+      PATH,
+    );
+    expect(r.success).toBe(true);
+    expect(listOnDisk(writer, input, "aliases")).toEqual([
+      `[[${TASK}|x]] and [[${OTHER}]]`,
+      `[[${TASK}]]`,
+    ]);
+  });
+
+  it("K24 replace: a WRONG alias on the only class is repairable — `[[uid|ems__Task]]` → `[[uid]]` writes the bare link (the converter reads the alias first)", async () => {
+    const input = asset(IC, [`[[${PROJECT}|ems__Task]]`]);
+    const { executor, writer } = makeExecutor(input);
+    const r = await executor.execute(
+      replace(`[[${PROJECT}|ems__Task]]`, `[[${PROJECT}]]`),
+      IRI,
+      PATH,
+    );
+    expect(r).toEqual({ success: true });
+    expect(listOnDisk(writer, input, IC)).toEqual([`[[${PROJECT}]]`]);
   });
 });

@@ -82,9 +82,9 @@
       "expect": ["R10", "R11"]
     },
     "M10_same_value_guard_removed": {
-      "_note": "#4432 — the degenerate `from === to` request is accepted again: the map branch rewrites the element with itself, the file stays byte-identical and the command still reports a replacement. ⛤ ems__Bug 530f895d: re-anchored — the guard is `sameValue` (byte-identical `from === to`, or one link target with no other form of it in the list); the mutation still removes the whole guard; same axis.",
-      "from": "    if (sameValue) {",
-      "to": "    if (sameValue && fromKey.length < 0) {",
+      "_note": "#4432 — the degenerate `from === to` request is accepted again: the map branch rewrites the element with itself, the file stays byte-identical and the command still reports a replacement.",
+      "from": "    if (fromPlain === toPlain) {",
+      "to": "    if (fromPlain === toPlain && fromPlain.length < 0) {",
       "expect": ["R13"]
     }
   }

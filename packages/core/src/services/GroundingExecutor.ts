@@ -3935,11 +3935,13 @@ export class GroundingExecutor {
    *
    * Comparison is on DECODED forms (as in `executePropertyAppend`): `existing`
    * holds the raw on-disk items, so a stored `"Say \"hi\""` matches a plain
-   * `Say "hi"`. All three comparisons (`from` lookup, `from === to`, `to`
-   * already present) go through {@link listItemIdentity}: a wikilink is its
-   * link target, so `[[<uid>|ems__Task]]` and `[[<uid>]]` are one value
-   * (ems__Bug 530f895d). The `from` lookup prefers the item spelled exactly
-   * like `from`; `to` is written exactly as passed.
+   * `Say "hi"`. The `from` lookup and the "`to` already present" check go
+   * through {@link listItemIdentity}: a wikilink is matched by its link target,
+   * so `[[<uid>|ems__Task]]` and `[[<uid>]]` find each other (ems__Bug
+   * 530f895d). The `from` lookup prefers the item spelled exactly like `from`.
+   * The `from === to` refusal stays byte-based (see there). When `to` is
+   * written, it is written exactly as passed; when it is already present, the
+   * stored form is kept.
    */
   private async executePropertyReplace(
     grounding: GroundingDefinition,
@@ -4059,35 +4061,33 @@ export class GroundingExecutor {
     // Refusing is safe here: a sweep of `~/.claude/bin`, `~/dotfiles/scripts`
     // and this repo found no caller relying on an idempotent `from === to`.
     //
-    // ems__Bug 530f895d — `from` and `to` in two forms of ONE link target
-    // (`[[<uid>|ems__Task]]` → `[[<uid>]]`) are the same no-op, unless ANOTHER
-    // form of that target is also in the list: then the request is a real change
-    // — it drops the duplicate (the very shape the old string comparison wrote).
-    // Byte-identical `from === to` stays refused unconditionally, as in #4432.
-    //
-    // Idempotence: when `to` is ALREADY present elsewhere in the list, drop the
-    // `from` item instead of writing a duplicate.
+    // ⛔ ems__Bug 530f895d: this refusal stays a BYTE comparison, not a
+    // `listItemIdentity` one. `from` and `to` that are two forms of ONE link
+    // target (`[[<uid>|ems__Task]]` → `[[<uid>]]`) are a real change: the file
+    // changes, and so can the graph — `NoteToRDFConverter.valueToClassURI`
+    // reads the alias BEFORE the link target (#2742), so rewriting a wrong alias
+    // re-types the asset. Refusing it would block that repair, which worked
+    // before this fix (review of PR #4563).
+    if (fromPlain === toPlain) {
+      return {
+        success: false,
+        error:
+          `property_replace: replaceFromExpression and replaceToExpression both ` +
+          `resolved to "${fromPlain}" — this can only leave <${grounding.targetProperty}> ` +
+          `unchanged, and reporting a no-op as a replacement would hide that`,
+      };
+    }
+
+    // Idempotence: when `to` is ALREADY present elsewhere in the list — in any
+    // form of its link target — drop the `from` item instead of writing a
+    // duplicate. Excluding `fromIndex` is load-bearing: rewriting one target's
+    // alias would otherwise find `from` itself as "`to` already present" and
+    // delete the value.
     const toIndexElsewhere = existing.findIndex(
       (item, i) =>
         i !== fromIndex &&
         listItemIdentity(decodeYamlSequenceItem(item)) === toKey,
     );
-    const sameValue =
-      fromPlain === toPlain || (fromKey === toKey && toIndexElsewhere === -1);
-    if (sameValue) {
-      return {
-        success: false,
-        error:
-          fromPlain === toPlain
-            ? `property_replace: replaceFromExpression and replaceToExpression both ` +
-              `resolved to "${fromPlain}" — this can only leave <${grounding.targetProperty}> ` +
-              `unchanged, and reporting a no-op as a replacement would hide that`
-            : `property_replace: "${fromPlain}" and "${toPlain}" name one link target, ` +
-              `and <${grounding.targetProperty}> holds no other form of it — the ` +
-              `replacement would only re-alias that value, not replace it`,
-      };
-    }
-
     const merged =
       toIndexElsewhere === -1
         ? existing.map((item, i) =>

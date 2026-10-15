@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for ems__Bug 530f895d — the comparison sites of property_append / property_replace go through `listItemIdentity` (a wikilink is identified by its link target), and the write side stays verbatim. One mutant per decision, each must redden exactly its axes. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). Sibling spec `wikilink-identity-530f895d.identity.spec.json` mutates the identity function itself (subject yamlScalar.ts — the driver takes one subject per spec). M1–M4 put one comparison site back on whole-string comparison; M5/M6/M12 lock the WRITE side (`to`, the appended value and the co-values are written as passed / as stored); M7/M8 lock the other direction of the `to` comparisons (identity on BOTH sides); M9 locks the exact-match-first `from` lookup; M10/M11 lock the two clauses of the no-op refusal (a two-form duplicate is collapsible; byte-identical from === to is refused even with a duplicate on disk).",
+  "_doc": "Revert-verify mutants for ems__Bug 530f895d — the comparison sites of property_append / property_replace go through `listItemIdentity` (a wikilink is identified by its link target), the #4432 no-op refusal stays BYTE-based, and the write side stays verbatim. One mutant per decision, each must redden exactly its axes. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). Sibling spec `wikilink-identity-530f895d.identity.spec.json` mutates the identity function itself (subject yamlScalar.ts — the driver takes one subject per spec). M1/M2/M4 put one comparison site back on whole-string comparison; M3 puts the refusal on identity (the StageSpecification design rejected in review of PR #4563); M8 removes the byte refusal (#4432); M5/M6/M11 lock the WRITE side (`to`, the appended value and the co-values are written as passed / as stored); M7 locks identity on BOTH sides of the `to` comparison; M9 locks the exact-match-first `from` lookup; M10 locks the `i !== fromIndex` exclusion.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -25,11 +25,11 @@
       "to": "              decodeYamlSequenceItem(item) === fromPlain,",
       "expect": ["K1", "K2"]
     },
-    "M3_same_value_by_string": {
-      "_note": "the no-op refusal compares whole strings only: `[[uid|alias]]` ↔ `[[uid]]` on a single form is reported as a replacement.",
-      "from": "      fromPlain === toPlain || (fromKey === toKey && toIndexElsewhere === -1);",
-      "to": "      fromPlain === toPlain;",
-      "expect": ["K4", "K14"]
+    "M3_same_value_by_identity": {
+      "_note": "The #4432 no-op refusal compares link-target identities instead of bytes (the StageSpecification design): rewriting ONE target's alias is refused, so a wrong alias can no longer be repaired (review MEDIUM-1 of PR #4563 — NoteToRDFConverter reads the alias first, so the rewrite is a real change) and a two-form duplicate cannot be collapsed.",
+      "from": "    if (fromPlain === toPlain) {",
+      "to": "    if (listItemIdentity(fromPlain) === listItemIdentity(toPlain)) {",
+      "expect": ["K4", "K14", "K19", "K24"]
     },
     "M4_replace_to_present_by_string": {
       "_note": "property_replace does not see `to` already present in the other form — writes the class a second time (grooming facet (a)).",
@@ -41,7 +41,7 @@
       "_note": "D3 — property_replace writes the IDENTITY of `to` instead of `to` as passed: an aliased `to` loses its alias on disk.",
       "from": "            i === fromIndex ? quoteYamlString(toPlain) : item,",
       "to": "            i === fromIndex ? quoteYamlString(listItemIdentity(toPlain)) : item,",
-      "expect": ["K12"]
+      "expect": ["K12", "K14"]
     },
     "M6_append_writes_identity": {
       "_note": "D3 — property_append writes the IDENTITY of the value instead of the value as passed: an aliased class loses its alias on disk.",
@@ -55,11 +55,11 @@
       "to": "        listItemIdentity(decodeYamlSequenceItem(item)) === toPlain,",
       "expect": ["K13", "K19"]
     },
-    "M8_same_value_vs_raw_to": {
-      "_note": "the no-op refusal compares `from`'s identity with the RAW `to`: plain `from` → aliased `to` of the same target is reported as a replacement.",
-      "from": "(fromKey === toKey && toIndexElsewhere === -1)",
-      "to": "(fromKey === toPlain && toIndexElsewhere === -1)",
-      "expect": ["K14"]
+    "M8_byte_identical_refusal_removed": {
+      "_note": "#4432 — byte-identical `from === to` is accepted again: with the value twice in the list it silently drops one copy and reports a replacement (K21). Same mutation as M10 of property-replace-02de55a4.executor.spec.json, locked here on this suite's own axis.",
+      "from": "    if (fromPlain === toPlain) {",
+      "to": "    if (fromPlain === toPlain && fromPlain.length < 0) {",
+      "expect": ["K21"]
     },
     "M9_no_exact_first": {
       "_note": "the exact-spelling lookup of `from` is skipped: the FIRST form of the target is replaced instead of the item `from` names.",
@@ -67,19 +67,13 @@
       "to": "      fromExact < -1",
       "expect": ["K19", "K20"]
     },
-    "M10_same_value_ignores_duplicates": {
-      "_note": "the no-op refusal ignores another form already on disk: a two-form duplicate can no longer be collapsed by one replace (review MEDIUM-2).",
-      "from": "      fromPlain === toPlain || (fromKey === toKey && toIndexElsewhere === -1);",
-      "to": "      fromPlain === toPlain || fromKey === toKey;",
-      "expect": ["K19"]
+    "M10_to_present_includes_from": {
+      "_note": "`to already present` no longer excludes the `from` item: rewriting one target's alias finds `from` itself as `to` and DELETES the value (review LOW-4 of PR #4563 — the term became load-bearing with identity comparison). Type-preserving: `i` stays used.",
+      "from": "        i !== fromIndex &&\n        listItemIdentity(decodeYamlSequenceItem(item)) === toKey,",
+      "to": "        i !== -1 &&\n        listItemIdentity(decodeYamlSequenceItem(item)) === toKey,",
+      "expect": ["K4", "K14", "K24"]
     },
-    "M11_byte_identical_clause_removed": {
-      "_note": "#4432 byte-identical `from === to` is accepted when the list holds that value twice — it silently drops one copy and reports a replacement.",
-      "from": "      fromPlain === toPlain || (fromKey === toKey && toIndexElsewhere === -1);",
-      "to": "      fromKey === toKey && toIndexElsewhere === -1;",
-      "expect": ["K21"]
-    },
-    "M12_replace_rewrites_co_values": {
+    "M11_replace_rewrites_co_values": {
       "_note": "D3 — property_replace rewrites the co-values into their identity form: their aliases are stripped on disk.",
       "from": "            i === fromIndex ? quoteYamlString(toPlain) : item,",
       "to": "            i === fromIndex ? quoteYamlString(toPlain) : quoteYamlString(listItemIdentity(decodeYamlSequenceItem(item))),",
