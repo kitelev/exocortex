@@ -168,11 +168,6 @@
       "count": 1
     },
     {
-      "file": "packages/obsidian-plugin/src/presentation/properties/PropertiesLabelPatch.ts",
-      "rule": "no-console",
-      "count": 1
-    },
-    {
       "file": "packages/obsidian-plugin/src/presentation/properties/PropertiesLinkPatch.ts",
       "rule": "eslint-comments/no-restricted-disable",
       "count": 1

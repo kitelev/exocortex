@@ -164,8 +164,10 @@ export class ExocortexSettingTab extends PluginSettingTab {
       .setName("Replace predicate names with display labels")
       .setDesc(
         "In the Properties block, replace raw predicate keys " +
-          "(e.g. ems__Effort_area) with a clickable label resolved from the " +
-          "property's exo__Property_displayName (fallback exo__Asset_label). " +
+          "(e.g. ems__Effort_area) with a clickable short name — the " +
+          "property's exo__Property_displayName, else exo__Property_localName, " +
+          "else the local part of its label (area). Keys of one note that " +
+          "would read the same get their class name (Effort.status). " +
           "Clicking the label opens the property-definition asset. When " +
           "disabled, predicate keys render as raw frontmatter names.",
       )

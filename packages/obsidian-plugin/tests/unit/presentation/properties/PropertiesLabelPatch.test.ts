@@ -2,6 +2,10 @@ import {
   PropertiesLabelPatch,
   unwrapWikilinkUid,
   normalizeClassList,
+  labelLocalPart,
+  labelClassSegment,
+  classNameFromLabel,
+  disambiguateBlockLabels,
 } from "../../../../src/presentation/properties/PropertiesLabelPatch";
 
 jest.mock("obsidian", () => ({
@@ -668,7 +672,7 @@ describe("PropertiesLabelPatch", () => {
   // RFC-030 §3.2 — displayName → label fallback
   // ============================================================
   describe("RFC-030 displayName fallback", () => {
-    it("falls back to exo__Asset_label when displayName is missing", () => {
+    it("L7 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 falls back to the label local part when displayName and localName are missing", () => {
       const row = createPropertyRow({ inputValue: "ems__Tag_field" });
       mockMetadataContainer.appendChild(row);
 
@@ -676,12 +680,13 @@ describe("PropertiesLabelPatch", () => {
 
       const span = row.querySelector<HTMLSpanElement>(".exo-label-display")!;
       expect(span).toBeTruthy();
-      // FILE_NO_DISPLAYNAME has label "ems__Tag_field" and no
-      // exo__Property_displayName, so display falls back to the label itself.
-      expect(span.textContent).toBe("ems__Tag_field");
+      // FILE_NO_DISPLAYNAME has label "ems__Tag_field" and neither
+      // exo__Property_displayName nor exo__Property_localName, so display falls
+      // back to the label's local part (issue #4568), not the raw label.
+      expect(span.textContent).toBe("field");
     });
 
-    it("falls back when displayName is empty string", () => {
+    it("L7b @req:0a85d233-f084-4652-bff0-418e18fcb9e0 falls back to the label local part when displayName is empty string", () => {
       // Patch a property asset to have an empty-string displayName
       const tempFile: FakeFile = {
         path: "tmp/empty-dn.md",
@@ -715,10 +720,10 @@ describe("PropertiesLabelPatch", () => {
       patch.enable();
 
       const span = row.querySelector<HTMLSpanElement>(".exo-label-display")!;
-      expect(span.textContent).toBe("ems__Empty_dn");
+      expect(span.textContent).toBe("dn");
     });
 
-    it("falls back when displayName is whitespace-only", () => {
+    it("L7c @req:0a85d233-f084-4652-bff0-418e18fcb9e0 falls back to the label local part when displayName is whitespace-only", () => {
       const tempFile: FakeFile = {
         path: "tmp/ws-dn.md",
         basename: "ws-dn",
@@ -752,7 +757,7 @@ describe("PropertiesLabelPatch", () => {
       patch.enable();
 
       const span = row.querySelector<HTMLSpanElement>(".exo-label-display")!;
-      expect(span.textContent).toBe("ems__Ws_dn");
+      expect(span.textContent).toBe("dn");
     });
 
     it("skips assets entirely when exo__Asset_label is missing", () => {
@@ -931,7 +936,7 @@ describe("PropertiesLabelPatch", () => {
         ]);
 
       const warnSpy = jest
-        .spyOn(console, "warn")
+        .spyOn(console, "info")
         .mockImplementation(() => undefined);
 
       const row = createPropertyRow({ inputValue: "exo__Asset_updatedAt" });
@@ -969,7 +974,7 @@ describe("PropertiesLabelPatch", () => {
         ]);
 
       const warnSpy = jest
-        .spyOn(console, "warn")
+        .spyOn(console, "info")
         .mockImplementation(() => undefined);
 
       patch.enable();
@@ -979,6 +984,487 @@ describe("PropertiesLabelPatch", () => {
       expect(warnSpy).not.toHaveBeenCalled();
 
       warnSpy.mockRestore();
+    });
+  });
+
+  // ============================================================
+  // Issue #4568 — short names + ClassName. disambiguation per block
+  // (req 0a85d233-f084-4652-bff0-418e18fcb9e0). Axis id is the FIRST token of
+  // every title — the mutant driver reads it; the @req token follows it.
+  // ============================================================
+  describe("issue #4568: short name and per-block ClassName. disambiguation", () => {
+    const UID_EFFORT = "c1a55000-0000-4000-8000-000000000001";
+    const UID_TASK = "c1a55000-0000-4000-8000-000000000002";
+    // A domain UID that names no asset in the vault.
+    const UID_GHOST = "c1a55000-0000-4000-8000-0000000000ff";
+
+    // Class assets a property's exo__Property_domain may point at. Effort carries
+    // an exo__Class_localName DIFFERENT from its label, so an axis can tell
+    // which of the two produced the ClassName.
+    const CLASS_EFFORT = {
+      exo__Asset_uid: UID_EFFORT,
+      exo__Asset_label: "ems__Effort",
+      exo__Class_localName: "Work",
+    };
+    const CLASS_TASK = {
+      exo__Asset_uid: UID_TASK,
+      exo__Asset_label: "ems__Task",
+    };
+
+    let nextUid = 0;
+    function prop(
+      label: string,
+      extra: Record<string, unknown> = {}
+    ): Record<string, unknown> {
+      nextUid += 1;
+      return {
+        exo__Asset_uid: `70000000-0000-4000-8000-${String(nextUid).padStart(12, "0")}`,
+        exo__Asset_label: label,
+        exo__Instance_class: [`[[${EXO_PROPERTY_UID}]]`],
+        ...extra,
+      };
+    }
+
+    function useVault(frontmatters: Record<string, Record<string, unknown>>): void {
+      const files: FakeFile[] = Object.keys(frontmatters).map((path) => ({
+        path,
+        basename: path.replace(/^.*\//, "").replace(/\.md$/, ""),
+        extension: "md",
+      }));
+      mockApp.vault.getMarkdownFiles = jest.fn().mockReturnValue(files);
+      mockApp.metadataCache.getFileCache = jest
+        .fn()
+        .mockImplementation((file: FakeFile) => {
+          const fm = frontmatters[file.path];
+          return fm ? { frontmatter: fm } : null;
+        });
+    }
+
+    // DOM access goes through untyped helpers: the test type-check program
+    // carries two DOM declarations (HTMLElement vs Node), and typed calls here
+    // would add diagnostics to this file's ratchet (scripts/check-test-types.mjs).
+    function attach(block: any, row: any): void {
+      block.appendChild(row);
+    }
+
+    function addRows(block: any, ...keys: string[]): any[] {
+      return keys.map((key) => {
+        const row: any = createPropertyRow({ inputValue: key });
+        attach(block, row);
+        return row;
+      });
+    }
+
+    function spanOf(row: any): any {
+      return row.querySelector(".exo-label-display");
+    }
+
+    function textOf(row: any): string | null {
+      return spanOf(row)?.textContent ?? null;
+    }
+
+    function inputOf(row: any): any {
+      return row.querySelector("input");
+    }
+
+    function changedCallback(): () => void {
+      const cb = mockApp.metadataCache.on.mock.calls.find(
+        (c: any[]) => c[0] === "changed"
+      )?.[1];
+      if (typeof cb !== "function") {
+        throw new Error("metadataCache 'changed' handler is not registered");
+      }
+      return cb;
+    }
+
+    // ---------------- pure helpers ----------------
+
+    it("L1 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 the label local part is everything after the class segment", () => {
+      expect(labelLocalPart("concept__Concept_genus")).toBe("genus");
+      expect(labelLocalPart("ems__Effort_status")).toBe("status");
+      // The case the issue names: a compound local part stays whole.
+      expect(labelLocalPart("tbank__Task_planned_start_timestamp")).toBe(
+        "planned_start_timestamp"
+      );
+      expect(labelLocalPart("rdfs__seeAlso")).toBe("seeAlso");
+      expect(labelLocalPart("aliases")).toBe("aliases");
+    });
+
+    it("L1b @req:0a85d233-f084-4652-bff0-418e18fcb9e0 a label with an empty local part reads the class segment and its underscore, never an empty name", () => {
+      expect(labelLocalPart("ems__Effort_")).toBe("Effort_");
+    });
+
+    it("L1c @req:0a85d233-f084-4652-bff0-418e18fcb9e0 a label with nothing after __ reads the whole label, never an empty name", () => {
+      expect(labelLocalPart("ems__")).toBe("ems__");
+    });
+
+    it("L2 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 class names come from the label class segment and from a class label after __", () => {
+      expect(labelClassSegment("ems__Effort_status")).toBe("Effort");
+      expect(labelClassSegment("tbank__Task_planned_start_timestamp")).toBe("Task");
+      expect(labelClassSegment("rdfs__seeAlso")).toBeNull();
+      expect(labelClassSegment("aliases")).toBeNull();
+      expect(classNameFromLabel("concept__Concept")).toBe("Concept");
+      expect(classNameFromLabel("Person")).toBe("Person");
+      expect(classNameFromLabel("ems__")).toBeNull();
+    });
+
+    it("L3 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 equal short names of one block get ClassName., a unique one keeps its short name", () => {
+      const texts = disambiguateBlockLabels([
+        { key: "ems__Effort_status", shortName: "status", className: "Effort" },
+        { key: "ems__Task_status", shortName: "status", className: "Task" },
+        { key: "ems__Effort_area", shortName: "area", className: "Effort" },
+      ]);
+      expect(texts.get("ems__Effort_status")).toBe("Effort.status");
+      expect(texts.get("ems__Task_status")).toBe("Task.status");
+      expect(texts.get("ems__Effort_area")).toBe("area");
+    });
+
+    it("L4 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 a prefixed text that still collides, or a missing ClassName, falls back to the raw predicate", () => {
+      const texts = disambiguateBlockLabels([
+        { key: "exo__Asset_label", shortName: "label", className: "Asset" },
+        { key: "foo__Asset_label", shortName: "label", className: "Asset" },
+        { key: "ems__Effort_parent", shortName: "parent", className: null },
+        { key: "ems__Task_parent", shortName: "parent", className: "Task" },
+      ]);
+      expect(texts.get("exo__Asset_label")).toBe("exo__Asset_label");
+      expect(texts.get("foo__Asset_label")).toBe("foo__Asset_label");
+      expect(texts.get("ems__Effort_parent")).toBe("ems__Effort_parent");
+      expect(texts.get("ems__Task_parent")).toBe("Task.parent");
+    });
+
+    it("L5 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 a key without a definition takes part in the collision but is not re-texted", () => {
+      const texts = disambiguateBlockLabels([
+        { key: "status", shortName: null, className: null },
+        { key: "ems__Effort_status", shortName: "status", className: "Effort" },
+      ]);
+      expect(texts.get("ems__Effort_status")).toBe("Effort.status");
+      expect(texts.has("status")).toBe(false);
+    });
+
+    it("L5b @req:0a85d233-f084-4652-bff0-418e18fcb9e0 a prefixed text equal to the raw text of a key without a definition falls back to the raw predicate", () => {
+      const texts = disambiguateBlockLabels([
+        { key: "Effort.status", shortName: null, className: null },
+        { key: "ems__Effort_status", shortName: "status", className: "Effort" },
+        { key: "ems__Task_status", shortName: "status", className: "Task" },
+      ]);
+      expect(texts.get("ems__Effort_status")).toBe("ems__Effort_status");
+      expect(texts.get("ems__Task_status")).toBe("Task.status");
+    });
+
+    it("L6 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 the decision is order-independent; a unique short name wins over an equal prefixed text", () => {
+      const keys = [
+        { key: "a__X_status", shortName: "status", className: "X" },
+        { key: "b__Y_status", shortName: "status", className: "Y" },
+        // A defined key whose OWN short name equals a's prefixed text.
+        { key: "c__Z_note", shortName: "X.status", className: "Z" },
+      ];
+      const expected = new Map([
+        ["a__X_status", "a__X_status"],
+        ["b__Y_status", "Y.status"],
+        ["c__Z_note", "X.status"],
+      ]);
+      expect(disambiguateBlockLabels(keys)).toEqual(expected);
+      expect(disambiguateBlockLabels([...keys].reverse())).toEqual(expected);
+    });
+
+    // ---------------- through the real patch on a DOM block ----------------
+
+    it("L8 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 the short name chain: displayName, then exo__Property_localName, then the label local part", () => {
+      useVault({
+        "p/start.md": prop("tbank__Task_planned_start_timestamp", {
+          exo__Property_localName: "plannedStart",
+        }),
+        "p/due.md": prop("tbank__Task_due_date"),
+        "p/owner.md": prop("tbank__Task_owner", {
+          exo__Property_localName: "ownerLocal",
+          exo__Property_displayName: "Owner",
+        }),
+        "p/blank.md": prop("tbank__Task_note", {
+          exo__Property_localName: "   ",
+        }),
+      });
+      const [start, due, owner, blank] = addRows(
+        mockMetadataContainer,
+        "tbank__Task_planned_start_timestamp",
+        "tbank__Task_due_date",
+        "tbank__Task_owner",
+        "tbank__Task_note"
+      );
+
+      patch.enable();
+
+      expect(textOf(start)).toBe("plannedStart");
+      expect(textOf(due)).toBe("due_date");
+      expect(textOf(owner)).toBe("Owner");
+      // A whitespace-only localName counts as missing.
+      expect(textOf(blank)).toBe("note");
+    });
+
+    it("L9 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 a same-block collision prefixes the domain class name — exo__Class_localName first, else the class label after __", () => {
+      useVault({
+        "c/effort.md": CLASS_EFFORT,
+        "c/task.md": CLASS_TASK,
+        "p/es.md": prop("ems__Effort_status", {
+          exo__Property_domain: `[[${UID_EFFORT}]]`,
+        }),
+        // The label class segment (Other) differs from the domain (Task): the
+        // axis shows the domain wins.
+        "p/os.md": prop("zz__Other_status", {
+          exo__Property_domain: `[[${UID_TASK}|ems__Task]]`,
+        }),
+        "p/area.md": prop("ems__Effort_area", {
+          exo__Property_domain: `[[${UID_EFFORT}]]`,
+        }),
+      });
+      const [es, os, area] = addRows(
+        mockMetadataContainer,
+        "ems__Effort_status",
+        "zz__Other_status",
+        "ems__Effort_area"
+      );
+
+      patch.enable();
+
+      expect(textOf(es)).toBe("Work.status");
+      expect(textOf(os)).toBe("Task.status");
+      expect(textOf(area)).toBe("area");
+      // The native key editor is untouched — no frontmatter rename.
+      expect(inputOf(es).value).toBe("ems__Effort_status");
+    });
+
+    it("L10 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 without a domain the ClassName is the class segment of the property label", () => {
+      useVault({
+        "p/es.md": prop("ems__Effort_status"),
+        "p/ts.md": prop("ems__Task_status"),
+      });
+      const [es, ts] = addRows(mockMetadataContainer, "ems__Effort_status", "ems__Task_status");
+
+      patch.enable();
+
+      expect(textOf(es)).toBe("Effort.status");
+      expect(textOf(ts)).toBe("Task.status");
+    });
+
+    it("L11 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 a symbolic domain is read by its label", () => {
+      useVault({
+        "p/a.md": prop("zz__A_name", { exo__Property_domain: "[[person__Person]]" }),
+        "p/b.md": prop("zz__B_name", { exo__Property_domain: "org__Company" }),
+      });
+      const [a, b] = addRows(mockMetadataContainer, "zz__A_name", "zz__B_name");
+
+      patch.enable();
+
+      expect(textOf(a)).toBe("Person.name");
+      expect(textOf(b)).toBe("Company.name");
+    });
+
+    it("L11b @req:0a85d233-f084-4652-bff0-418e18fcb9e0 the first RESOLVABLE domain entry wins — an unknown UID is skipped, not final", () => {
+      useVault({
+        "c/task.md": CLASS_TASK,
+        "p/a.md": prop("zz__A_name", {
+          exo__Property_domain: [`[[${UID_GHOST}]]`, `[[${UID_TASK}]]`],
+        }),
+        "p/b.md": prop("zz__B_name"),
+      });
+      const [a, b] = addRows(mockMetadataContainer, "zz__A_name", "zz__B_name");
+
+      patch.enable();
+
+      expect(textOf(a)).toBe("Task.name");
+      expect(textOf(b)).toBe("B.name");
+    });
+
+    it("L11c @req:0a85d233-f084-4652-bff0-418e18fcb9e0 a domain class with neither label nor localName is skipped, not read as its UID", () => {
+      useVault({
+        "c/bare.md": { exo__Asset_uid: UID_EFFORT },
+        "p/a.md": prop("ems__Effort_status", { exo__Property_domain: `[[${UID_EFFORT}]]` }),
+        "p/b.md": prop("ems__Task_status"),
+      });
+      const [a, b] = addRows(mockMetadataContainer, "ems__Effort_status", "ems__Task_status");
+
+      patch.enable();
+
+      expect(textOf(a)).toBe("Effort.status");
+      expect(textOf(b)).toBe("Task.status");
+    });
+
+    it("L12 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 the context is ONE block: the same pair split across two notes keeps short names", () => {
+      useVault({
+        "p/es.md": prop("ems__Effort_status"),
+        "p/ts.md": prop("ems__Task_status"),
+      });
+      const otherContainer: any = document.createElement("div");
+      const otherBlock: any = document.createElement("div");
+      otherBlock.className = "metadata-container";
+      attach(otherContainer, otherBlock);
+      attach(document.body, otherContainer);
+      mockApp.workspace.getLeavesOfType = jest
+        .fn()
+        .mockReturnValue([mockWorkspaceLeaf, { view: { containerEl: otherContainer } }]);
+      try {
+        const [es] = addRows(mockMetadataContainer, "ems__Effort_status");
+        const [ts] = addRows(otherBlock, "ems__Task_status");
+
+        patch.enable();
+
+        expect(textOf(es)).toBe("status");
+        expect(textOf(ts)).toBe("status");
+      } finally {
+        otherContainer.remove();
+      }
+    });
+
+    it("L13 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 a key added later re-texts the already patched key of its block", async () => {
+      useVault({
+        "p/es.md": prop("ems__Effort_status"),
+        "p/ts.md": prop("ems__Task_status"),
+      });
+      const [es] = addRows(mockMetadataContainer, "ems__Effort_status");
+      patch.enable();
+      expect(textOf(es)).toBe("status");
+
+      const [ts] = addRows(mockMetadataContainer, "ems__Task_status");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(textOf(es)).toBe("Effort.status");
+      expect(textOf(ts)).toBe("Task.status");
+      expect(es.querySelectorAll(".exo-label-display").length).toBe(1);
+      expect(spanOf(es).getAttribute("aria-label")).toBe(
+        "Open definition: Effort.status (ems__Effort_status)"
+      );
+    });
+
+    it("L14 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 when the collision disappears the next re-render returns the short name", () => {
+      useVault({
+        "p/es.md": prop("ems__Effort_status"),
+        "p/ts.md": prop("ems__Task_status"),
+      });
+      const [es, ts] = addRows(mockMetadataContainer, "ems__Effort_status", "ems__Task_status");
+      patch.enable();
+      expect(textOf(es)).toBe("Effort.status");
+
+      ts.remove();
+      changedCallback()();
+
+      expect(textOf(es)).toBe("status");
+    });
+
+    it("L15 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 a key without a definition collides too, and is left as it is", () => {
+      useVault({ "p/es.md": prop("ems__Effort_status") });
+      const [raw, es] = addRows(mockMetadataContainer, "status", "ems__Effort_status");
+
+      patch.enable();
+
+      expect(textOf(raw)).toBeNull();
+      expect(inputOf(raw).classList.contains("exo-label-hidden-input")).toBe(false);
+      expect(textOf(es)).toBe("Effort.status");
+    });
+
+    it("L16 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 keys whose prefixed texts are still equal read their raw predicates", () => {
+      useVault({
+        "p/a.md": prop("exo__Asset_label"),
+        "p/b.md": prop("foo__Asset_label"),
+      });
+      const [a, b] = addRows(mockMetadataContainer, "exo__Asset_label", "foo__Asset_label");
+
+      patch.enable();
+
+      expect(textOf(a)).toBe("exo__Asset_label");
+      expect(textOf(b)).toBe("foo__Asset_label");
+    });
+
+    it("L17 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 an explicit displayName collision is disambiguated the same way", () => {
+      useVault({
+        "p/es.md": prop("ems__Effort_status", { exo__Property_displayName: "Status" }),
+        "p/ts.md": prop("ems__Task_status", { exo__Property_displayName: "Status" }),
+      });
+      const [es, ts] = addRows(mockMetadataContainer, "ems__Effort_status", "ems__Task_status");
+
+      patch.enable();
+
+      expect(textOf(es)).toBe("Effort.Status");
+      expect(textOf(ts)).toBe("Task.Status");
+    });
+
+    it("L18 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 a patched TEXT-node key is re-texted by its predicate, not by the text it now shows", async () => {
+      useVault({
+        "p/es.md": prop("ems__Effort_status"),
+        "p/ts.md": prop("ems__Task_status"),
+      });
+      const es: any = createPropertyRowTextKey("ems__Effort_status");
+      attach(mockMetadataContainer, es);
+      patch.enable();
+      expect(textOf(es)).toBe("status");
+
+      const ts: any = createPropertyRowTextKey("ems__Task_status");
+      attach(mockMetadataContainer, ts);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(textOf(es)).toBe("Effort.status");
+      expect(textOf(ts)).toBe("Task.status");
+    });
+
+    it("L18b @req:0a85d233-f084-4652-bff0-418e18fcb9e0 a patched TEXT-node key that falls back to raw reads its predicate, not the text it showed", async () => {
+      useVault({
+        "p/a.md": prop("exo__Asset_label"),
+        "p/b.md": prop("foo__Asset_label"),
+      });
+      const a: any = createPropertyRowTextKey("exo__Asset_label");
+      attach(mockMetadataContainer, a);
+      patch.enable();
+      expect(textOf(a)).toBe("label");
+
+      const b: any = createPropertyRowTextKey("foo__Asset_label");
+      attach(mockMetadataContainer, b);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(textOf(a)).toBe("exo__Asset_label");
+      expect(textOf(b)).toBe("foo__Asset_label");
+    });
+
+    it("L19 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 a patched key is re-texted from the resolution it was patched with, not from the index", () => {
+      useVault({ "p/es.md": prop("ems__Effort_status") });
+      const [es] = addRows(mockMetadataContainer, "ems__Effort_status");
+      patch.enable();
+      expect(textOf(es)).toBe("status");
+
+      // The index no longer knows ems__Effort_status; ems__Task_status arrives.
+      useVault({ "p/ts.md": prop("ems__Task_status") });
+      const [ts] = addRows(mockMetadataContainer, "ems__Task_status");
+      changedCallback()();
+
+      expect(textOf(es)).toBe("Effort.status");
+      expect(textOf(ts)).toBe("Task.status");
+    });
+
+    it("L20 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 metadataCache changes on a fully patched block do not rebuild the whole-vault index", () => {
+      useVault({
+        "p/es.md": prop("ems__Effort_status"),
+        "p/ts.md": prop("ems__Task_status"),
+      });
+      addRows(mockMetadataContainer, "ems__Effort_status", "ems__Task_status");
+      patch.enable();
+      const scansAfterEnable = mockApp.vault.getMarkdownFiles.mock.calls.length;
+      expect(scansAfterEnable).toBe(1);
+
+      const changed = changedCallback();
+      for (let i = 0; i < 20; i++) changed();
+
+      expect(mockApp.vault.getMarkdownFiles.mock.calls.length).toBe(scansAfterEnable);
+    });
+
+    it("L20b @req:0a85d233-f084-4652-bff0-418e18fcb9e0 two rows of the same key in one block (a transient re-render) read the short name, not a collision", () => {
+      useVault({ "p/es.md": prop("ems__Effort_status") });
+      const [first, second] = addRows(
+        mockMetadataContainer,
+        "ems__Effort_status",
+        "ems__Effort_status"
+      );
+
+      patch.enable();
+
+      expect(textOf(first)).toBe("status");
+      expect(textOf(second)).toBe("status");
     });
   });
 

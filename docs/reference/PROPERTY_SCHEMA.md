@@ -1095,8 +1095,16 @@ clicking opens the property-definition asset. Resolution details:
   are indexed.
 - The matching key is the asset's `exo__Asset_label` (TBox convention: label
   equals the raw predicate name).
-- Fallback when `exo__Property_displayName` is absent: `exo__Asset_label`
-  (visually a no-op until a display name is authored).
+- Short name (issue #4568): `exo__Property_displayName`, else
+  `exo__Property_localName`, else the local part of `exo__Asset_label` —
+  everything after the class segment (`concept__Concept_genus` → `genus`,
+  `tbank__Task_planned_start_timestamp` → `planned_start_timestamp`).
+- Disambiguation per Properties block: keys of ONE note whose short names are
+  equal (or equal to the raw text of a key without a definition) read
+  `<ClassName>.<short name>` — ClassName is `exo__Class_localName` of the first
+  resolvable `exo__Property_domain` class, else that class's label after `__`,
+  else the class segment of the property's own label (`ems__Effort_status` →
+  `Effort`). Still equal, or no class name → the raw predicate.
 - Controlled by the `enablePropertiesLabelPatch` plugin setting (default
   `true`, hot-toggleable).
 
@@ -1105,6 +1113,50 @@ clicking opens the property-definition asset. Resolution details:
 ```yaml
 exo__Asset_label: ems__Effort_area
 exo__Property_displayName: "Area"
+```
+
+---
+
+### exo\_\_Property_localName
+
+**Technical short name of a property (issue #4568)**
+
+| Attribute    | Value                                                            |
+| ------------ | ---------------------------------------------------------------- |
+| **Type**     | String                                                           |
+| **Required** | No (0..1)                                                        |
+| **Domain**   | Property-definition assets (class descends from `exo__Property`) |
+| **Purpose**  | Short name in the Properties block when no displayName is set    |
+
+Second step of the short-name chain of `PropertiesLabelPatch`
+(`exo__Property_displayName` → `exo__Property_localName` → the label's local
+part). Set it when the label's local part is not the name you want.
+
+```yaml
+exo__Asset_label: tbank__Task_planned_start_timestamp
+exo__Property_localName: plannedStart
+```
+
+---
+
+### exo\_\_Class_localName
+
+**Technical short name of a class (issue #4568)**
+
+| Attribute    | Value                                                         |
+| ------------ | ------------------------------------------------------------- |
+| **Type**     | String                                                        |
+| **Required** | No (0..1)                                                     |
+| **Domain**   | Class-definition assets                                       |
+| **Purpose**  | `ClassName` in `<ClassName>.<short name>` in Properties block |
+
+When two keys of one note would read the same short name, `PropertiesLabelPatch`
+prefixes each with the class name of its `exo__Property_domain`: this property,
+else the part of the class label after `__` (`concept__Concept` → `Concept`).
+
+```yaml
+exo__Asset_label: ems__Effort
+exo__Class_localName: Effort
 ```
 
 ---

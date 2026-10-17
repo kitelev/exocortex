@@ -1,5 +1,6 @@
 import { Keymap, Plugin, TFile } from "obsidian";
 import type { PaneType } from "obsidian";
+import { LoggerFactory } from "@plugin/adapters/logging/LoggerFactory";
 
 /**
  * PropertiesLabelPatch - Patches Obsidian's Properties block to show human-readable
@@ -14,11 +15,17 @@ import type { PaneType } from "obsidian";
  *     against label-collision shadowing from ABox concepts.
  *  3. Matching key for cache: `exo__Asset_label` (TBox convention: label of a
  *     property asset equals the raw predicate name, e.g. "ems__Effort_area").
- *  4. Display text: `exo__Property_displayName` if present (non-empty), else
- *     fallback to `exo__Asset_label` (i.e. the raw predicate name itself, which
- *     keeps the patch a no-op visually until a displayName is authored).
- *  5. Collision handling: first-write-wins + `console.warn` (deterministic by
- *     `vault.getMarkdownFiles()` enumeration order). Data-side collisions are
+ *  4. Short name (issue #4568): the first non-empty of `exo__Property_displayName`,
+ *     `exo__Property_localName`, the local part of `exo__Asset_label` (everything
+ *     after the class segment: `concept__Concept_genus` → `genus`,
+ *     `tbank__Task_planned_start_timestamp` → `planned_start_timestamp`).
+ *  5. Display text is decided per Properties BLOCK, not per key: a key whose short
+ *     name is unique in its block reads the short name; keys of one block that
+ *     would read the same read `<ClassName>.<short name>` (ClassName = local name
+ *     of the property's domain class); still equal or no class name → the raw
+ *     predicate, which is unique in the block. See `disambiguateBlockLabels`.
+ *  6. Index collision handling: first-write-wins + `console.warn` (deterministic
+ *     by `vault.getMarkdownFiles()` enumeration order). Data-side collisions are
  *     surfaced but not auto-resolved.
  *
  * Behavior changes from pre-RFC-030 mechanic:
@@ -51,11 +58,23 @@ const UUID_REGEX =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 interface ResolvedPredicate {
-  label: string;
+  /** Short name of the property (displayName → localName → label local part). */
+  shortName: string;
+  /** Local name of the property's class, used as `<ClassName>.` on a block collision. */
+  className: string | null;
   file: TFile;
 }
 
+/** What the index needs to know about any asset that a domain reference may name. */
+interface AssetNames {
+  label: string | null;
+  classLocalName: string | null;
+}
+
 interface PatchRecord {
+  predicate: string;
+  /** Resolution the row was patched with — re-texting never consults the index. */
+  resolved: ResolvedPredicate;
   propertyEl: HTMLElement;
   keyEl: HTMLElement;
   input: HTMLInputElement | null;
@@ -121,6 +140,148 @@ export function normalizeClassList(value: unknown): string[] {
   return out;
 }
 
+/** Trimmed non-empty string, or null. */
+function nonEmptyString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * Split a predicate label `<prefix>__<Class>_<local>` into its class segment and
+ * local part. The class segment ends at the FIRST `_` after `__`, so a local part
+ * that itself contains `_` stays whole (`planned_start_timestamp`). A label
+ * without `__` has neither (`aliases`); a label without a class segment has only
+ * a local part (`rdfs__seeAlso` → `seeAlso`).
+ */
+function splitPredicateLabel(label: string): {
+  classSegment: string | null;
+  local: string;
+} {
+  const trimmed = label.trim();
+  const sep = trimmed.indexOf("__");
+  if (sep < 0) return { classSegment: null, local: trimmed };
+  const rest = trimmed.slice(sep + 2);
+  const underscore = rest.indexOf("_");
+  if (underscore <= 0) return { classSegment: null, local: rest || trimmed };
+  const local = rest.slice(underscore + 1);
+  return {
+    classSegment: rest.slice(0, underscore),
+    local: local.length > 0 ? local : rest,
+  };
+}
+
+/**
+ * Local part of a predicate label — the short name a property reads when it has
+ * neither `exo__Property_displayName` nor `exo__Property_localName`.
+ *   "concept__Concept_genus"              → "genus"
+ *   "tbank__Task_planned_start_timestamp" → "planned_start_timestamp"
+ *   "rdfs__seeAlso"                       → "seeAlso"
+ *   "aliases"                             → "aliases"
+ *
+ * Exported for unit testing.
+ */
+export function labelLocalPart(label: string): string {
+  return splitPredicateLabel(label).local;
+}
+
+/**
+ * Class segment of a predicate label (`ems__Effort_status` → `Effort`), or null
+ * when the label has none. Last-resort class name for a property without a
+ * resolvable domain.
+ *
+ * Exported for unit testing.
+ */
+export function labelClassSegment(label: string): string | null {
+  return splitPredicateLabel(label).classSegment;
+}
+
+/**
+ * Local name of a class from its label: the part after `__`
+ * (`concept__Concept` → `Concept`); a label without `__` is taken whole.
+ *
+ * Exported for unit testing.
+ */
+export function classNameFromLabel(label: string): string | null {
+  const trimmed = label.trim();
+  const sep = trimmed.indexOf("__");
+  const name = sep >= 0 ? trimmed.slice(sep + 2) : trimmed;
+  return name.length > 0 ? name : null;
+}
+
+/**
+ * Text of a non-UID domain reference: `[[person__Person]]` / `[[person__Person|P]]`
+ * / bare `person__Person` → `person__Person`; anything else → null.
+ */
+function symbolicReference(value: unknown): string | null {
+  const trimmed = nonEmptyString(value);
+  if (!trimmed) return null;
+  const wlMatch = trimmed.match(/^\[\[([^\]|]+)(?:\|[^\]]*)?\]\]$/);
+  const inner = wlMatch ? wlMatch[1].trim() : trimmed;
+  const lastSegment = inner.split("/").pop()?.trim() ?? "";
+  return lastSegment.length > 0 ? lastSegment : null;
+}
+
+/** One key of a Properties block, as the disambiguation sees it. */
+export interface BlockKey {
+  /**
+   * The text the key reads natively — the raw frontmatter key. For a key without
+   * a property definition this is also what it keeps reading.
+   */
+  key: string;
+  /** Short name when the key has a property definition; null = key is not patched. */
+  shortName: string | null;
+  /** Local name of the property's class; null = no `<ClassName>.` form exists. */
+  className: string | null;
+}
+
+/**
+ * Decide the text of every DEFINED key of ONE Properties block (issue #4568):
+ *  1. a short name no other key of the block reads → the short name;
+ *  2. a short name another key of the block also reads (a defined key's short
+ *     name or an undefined key's raw text) → `<ClassName>.<short name>`;
+ *  3. that text still equal to another key's text, or no ClassName → the raw
+ *     predicate (frontmatter keys are unique in a block).
+ * Order-independent: the result does not depend on the order of `keys`.
+ * Returns a map raw key → text for defined keys only.
+ *
+ * Exported for unit testing.
+ */
+export function disambiguateBlockLabels(keys: BlockKey[]): Map<string, string> {
+  const countTexts = (texts: Array<string | null>): Map<string, number> => {
+    const counts = new Map<string, number>();
+    for (const text of texts) {
+      if (text === null) continue;
+      counts.set(text, (counts.get(text) ?? 0) + 1);
+    }
+    return counts;
+  };
+
+  const firstTexts = keys.map((k) => k.shortName ?? k.key);
+  const firstCounts = countTexts(firstTexts);
+
+  // null = the key needs its raw predicate (prefix impossible).
+  const secondTexts: Array<string | null> = keys.map((k) => {
+    if (k.shortName === null) return k.key;
+    if ((firstCounts.get(k.shortName) ?? 0) <= 1) return k.shortName;
+    return k.className ? `${k.className}.${k.shortName}` : null;
+  });
+  const secondCounts = countTexts(secondTexts);
+
+  const result = new Map<string, string>();
+  keys.forEach((k, i) => {
+    if (k.shortName === null) return;
+    const text = secondTexts[i];
+    const wasPrefixed = text !== k.shortName;
+    if (text === null || (wasPrefixed && (secondCounts.get(text) ?? 0) > 1)) {
+      result.set(k.key, k.key);
+      return;
+    }
+    result.set(k.key, text);
+  });
+  return result;
+}
+
 export class PropertiesLabelPatch {
   private app: Plugin["app"];
   private plugin: Plugin;
@@ -128,8 +289,11 @@ export class PropertiesLabelPatch {
   private enabled = false;
   private resolveCache: Map<string, ResolvedPredicate> = new Map();
   private propertyClassUids: Set<string> = new Set();
+  private assetNamesByUid: Map<string, AssetNames> = new Map();
   private indexBuilt = false;
   private patched: PatchRecord[] = [];
+  private recordsByEl: WeakMap<HTMLElement, PatchRecord> = new WeakMap();
+  private readonly logger = LoggerFactory.create("PropertiesLabelPatch");
 
   constructor(plugin: Plugin) {
     this.plugin = plugin;
@@ -167,13 +331,13 @@ export class PropertiesLabelPatch {
 
     this.plugin.registerEvent(
       this.app.workspace.on("layout-change", () => {
-        setTimeout(() => this.patchAllPropertiesBlocks(), 100);
+        window.setTimeout(() => this.patchAllPropertiesBlocks(), 100);
       })
     );
 
     this.plugin.registerEvent(
       this.app.workspace.on("active-leaf-change", () => {
-        setTimeout(() => this.patchAllPropertiesBlocks(), 100);
+        window.setTimeout(() => this.patchAllPropertiesBlocks(), 100);
       })
     );
   }
@@ -198,6 +362,7 @@ export class PropertiesLabelPatch {
     this.indexBuilt = false;
     this.resolveCache.clear();
     this.propertyClassUids.clear();
+    this.assetNamesByUid.clear();
   }
 
   /**
@@ -209,6 +374,11 @@ export class PropertiesLabelPatch {
    * BFS fixpoint: starting from `EXO_PROPERTY_ROOT_UID`, repeatedly include any
    * class whose `exo__Class_superClass` contains an already-included UID, until
    * no additions in a pass.
+   *
+   * The same pass records every asset's label and `exo__Class_localName` into
+   * `assetNamesByUid` — the class names a property's `exo__Property_domain` may
+   * point at (issue #4568). One walk instead of two: the index is invalidated
+   * on every metadataCache change and rebuilt on the next unpatched key.
    */
   private resolvePropertyClassUids(files: TFile[]): Set<string> {
     // childUid → Set<parentUid> from frontmatter exo__Class_superClass
@@ -223,6 +393,11 @@ export class PropertiesLabelPatch {
       if (typeof uidRaw !== "string") continue;
       const uid = uidRaw.trim();
       if (!uid) continue;
+
+      this.assetNamesByUid.set(uid, {
+        label: nonEmptyString(fm["exo__Asset_label"]),
+        classLocalName: nonEmptyString(fm["exo__Class_localName"]),
+      });
 
       const supers = normalizeClassList(fm["exo__Class_superClass"]);
       // Include root with empty parents too so a vault containing
@@ -259,8 +434,12 @@ export class PropertiesLabelPatch {
   ): void {
     const existing = this.resolveCache.get(key);
     if (existing && existing.file.path !== value.file.path) {
-      console.warn(
-        `[PropertiesLabelPatch] Label collision for key "${key}": ` +
+      // INFO, not WARN: the warn level routes to an Obsidian Notice by default
+      // (DEFAULT_LOG_CHANNELS), and the index can be rebuilt after every
+      // metadataCache change — a data-side collision would toast on every
+      // edit. INFO keeps the former console-only surfacing.
+      this.logger.info(
+        `Label collision for key "${key}": ` +
           `keeping ${existing.file.path}, ignoring ${value.file.path}`
       );
       return;
@@ -272,6 +451,7 @@ export class PropertiesLabelPatch {
     if (this.indexBuilt) return;
     this.resolveCache.clear();
     this.propertyClassUids.clear();
+    this.assetNamesByUid.clear();
 
     let files: TFile[] = [];
     if (typeof this.app.vault.getMarkdownFiles === "function") {
@@ -303,18 +483,48 @@ export class PropertiesLabelPatch {
       if (classUids.length === 0) continue;
       if (!classUids.some((uid) => this.propertyClassUids.has(uid))) continue;
 
-      // Display source: displayName > label fallback. Empty/whitespace-only
-      // displayName triggers fallback (same as missing displayName).
-      const displayNameRaw = fm["exo__Property_displayName"];
-      const displayText =
-        typeof displayNameRaw === "string" && displayNameRaw.trim().length > 0
-          ? displayNameRaw.trim()
-          : label;
+      // Short name: displayName > localName > label local part. Empty or
+      // whitespace-only values count as missing (issue #4568).
+      const shortName =
+        nonEmptyString(fm["exo__Property_displayName"]) ??
+        nonEmptyString(fm["exo__Property_localName"]) ??
+        labelLocalPart(label);
 
-      this.setWithCollisionGuard(label, { label: displayText, file });
+      this.setWithCollisionGuard(label, {
+        shortName,
+        className: this.resolveClassName(fm["exo__Property_domain"], label),
+        file,
+      });
     }
 
     this.indexBuilt = true;
+  }
+
+  /**
+   * ClassName for `<ClassName>.<short name>` (issue #4568): the first resolvable
+   * class of `exo__Property_domain` — its `exo__Class_localName`, else the part of
+   * its label after `__`; a symbolic domain (`[[person__Person]]`) is read the
+   * same way. No resolvable domain → the class segment of the property's own
+   * label (`ems__Effort_status` → `Effort`); none → null.
+   */
+  private resolveClassName(domain: unknown, propertyLabel: string): string | null {
+    const entries = Array.isArray(domain) ? domain : domain == null ? [] : [domain];
+    for (const entry of entries) {
+      const uid = unwrapWikilinkUid(entry);
+      if (uid) {
+        const names = this.assetNamesByUid.get(uid);
+        if (!names) continue;
+        const name =
+          names.classLocalName ??
+          (names.label ? classNameFromLabel(names.label) : null);
+        if (name) return name;
+        continue;
+      }
+      const symbolic = symbolicReference(entry);
+      const name = symbolic ? classNameFromLabel(symbolic) : null;
+      if (name) return name;
+    }
+    return labelClassSegment(propertyLabel);
   }
 
   private resolvePredicate(predicate: string): ResolvedPredicate | null {
@@ -340,21 +550,81 @@ export class PropertiesLabelPatch {
   private patchPropertiesBlock(container: HTMLElement): void {
     const metadataContainer = container.querySelector<HTMLElement>(".metadata-container");
     if (!metadataContainer) return;
+    this.patchBlock(metadataContainer);
+  }
 
-    const properties = metadataContainer.querySelectorAll<HTMLElement>(".metadata-property");
-    for (const prop of Array.from(properties)) {
-      this.patchProperty(prop);
+  /** Patch every key of one Properties block — the disambiguation context. */
+  private patchBlock(metadataContainer: HTMLElement): void {
+    const rows = metadataContainer.querySelectorAll<HTMLElement>(".metadata-property");
+    this.patchRows(Array.from(rows));
+  }
+
+  /**
+   * Decide the text of every key of one block together (issue #4568), then patch
+   * the unpatched rows and re-text the already patched ones — a key added later
+   * may turn an earlier unique short name into a collision, and a removed one
+   * may undo it.
+   */
+  private patchRows(rows: HTMLElement[]): void {
+    const entries: Array<{
+      row: HTMLElement;
+      predicate: string;
+      resolved: ResolvedPredicate | null;
+    }> = [];
+    // One key per predicate: a block transiently holding two rows of the same
+    // key (re-render) must not read that key as colliding with itself.
+    const blockKeys = new Map<string, BlockKey>();
+
+    for (const row of rows) {
+      const record = this.recordsByEl.get(row);
+      // A patched text-node key no longer holds the predicate in its text, so
+      // the predicate of a patched row comes from its record.
+      const predicate = record ? record.predicate : this.extractPredicate(row);
+      if (!predicate) continue;
+      // A patched row keeps the resolution it was patched with. Resolving it
+      // again would rebuild the whole-vault index after EVERY metadataCache
+      // change even when every key of the block is already patched — the
+      // index is only invalidated there, and origin behaviour was to skip
+      // patched rows before resolving (review of #4568, HIGH).
+      const resolved = record ? record.resolved : this.resolvePredicate(predicate);
+      entries.push({ row, predicate, resolved });
+      blockKeys.set(predicate, {
+        key: predicate,
+        shortName: resolved ? resolved.shortName : null,
+        className: resolved ? resolved.className : null,
+      });
+    }
+
+    const texts = disambiguateBlockLabels(Array.from(blockKeys.values()));
+
+    for (const { row, predicate, resolved } of entries) {
+      if (!resolved) continue;
+      const text = texts.get(predicate) ?? resolved.shortName;
+      const record = this.recordsByEl.get(row);
+      if (record) {
+        this.retextRecord(record, text);
+      } else {
+        this.patchProperty(row, predicate, resolved, text);
+      }
     }
   }
 
-  private patchProperty(propertyEl: HTMLElement): void {
+  private retextRecord(record: PatchRecord, text: string): void {
+    if (record.displaySpan.textContent === text) return;
+    record.displaySpan.textContent = text;
+    record.displaySpan.setAttribute(
+      "aria-label",
+      `Open definition: ${text} (${record.predicate})`
+    );
+  }
+
+  private patchProperty(
+    propertyEl: HTMLElement,
+    predicate: string,
+    resolved: ResolvedPredicate,
+    text: string
+  ): void {
     if (propertyEl.getAttribute(PATCHED_ATTR) === "true") return;
-
-    const predicate = this.extractPredicate(propertyEl);
-    if (!predicate) return;
-
-    const resolved = this.resolvePredicate(predicate);
-    if (!resolved) return;
 
     const keyEl = propertyEl.querySelector<HTMLElement>(".metadata-property-key");
     if (!keyEl) return;
@@ -366,14 +636,14 @@ export class PropertiesLabelPatch {
     // keep the original input intact, hide it, and insert a sibling span that
     // displays the readable label and owns the click handler.
     const input = keyEl.querySelector<HTMLInputElement>("input");
-    const displaySpan = document.createElement("span");
+    const displaySpan = keyEl.ownerDocument.createElement("span");
     displaySpan.className = `${DISPLAY_SPAN_CLASS} ${CLICKABLE_CLASS}`;
-    displaySpan.textContent = resolved.label;
+    displaySpan.textContent = text;
     displaySpan.setAttribute("role", "link");
     displaySpan.setAttribute("tabindex", "0");
     displaySpan.setAttribute(
       "aria-label",
-      `Open definition: ${resolved.label} (${predicate})`
+      `Open definition: ${text} (${predicate})`
     );
     displaySpan.setAttribute("data-exo-predicate", predicate);
 
@@ -417,7 +687,9 @@ export class PropertiesLabelPatch {
 
     keyEl.classList.add(CLICKABLE_CLASS);
     propertyEl.setAttribute(PATCHED_ATTR, "true");
-    this.patched.push({
+    const record: PatchRecord = {
+      predicate,
+      resolved,
       propertyEl,
       keyEl,
       input,
@@ -426,7 +698,9 @@ export class PropertiesLabelPatch {
       originalTextContent,
       clickHandler,
       auxClickHandler,
-    });
+    };
+    this.patched.push(record);
+    this.recordsByEl.set(propertyEl, record);
   }
 
   private extractPredicate(propertyEl: HTMLElement): string | null {
@@ -495,22 +769,21 @@ export class PropertiesLabelPatch {
 
       for (const mutation of mutations) {
         for (const node of Array.from(mutation.addedNodes)) {
-          if (!(node instanceof HTMLElement)) continue;
+          if (node.nodeType !== Node.ELEMENT_NODE) continue;
+          // nodeType, not `instanceof HTMLElement` / Obsidian's `instanceOf`:
+          // the latter is absent from the jsdom suites that drive the plugin.
+          const el = node as HTMLElement;
 
-          if (node.classList?.contains("metadata-container")) {
-            this.patchPropertiesBlock(node.parentElement || node);
-          } else if (node.querySelector?.(".metadata-container")) {
-            this.patchPropertiesBlock(node);
-          } else if (node.classList?.contains("metadata-property")) {
-            this.patchProperty(node);
-          } else {
-            const mc = node.querySelector?.(".metadata-container") as HTMLElement | null;
-            if (mc) {
-              const props = mc.querySelectorAll<HTMLElement>(".metadata-property");
-              for (const prop of Array.from(props)) {
-                this.patchProperty(prop);
-              }
-            }
+          if (el.classList?.contains("metadata-container")) {
+            this.patchPropertiesBlock(el.parentElement || el);
+          } else if (el.querySelector?.(".metadata-container")) {
+            this.patchPropertiesBlock(el);
+          } else if (el.classList?.contains("metadata-property")) {
+            // A key added to a block re-decides the whole block: it may collide
+            // with keys already patched (issue #4568).
+            const block = el.closest<HTMLElement>(".metadata-container");
+            if (block) this.patchBlock(block);
+            else this.patchRows([el]);
           }
         }
       }
@@ -542,5 +815,6 @@ export class PropertiesLabelPatch {
       }
     }
     this.patched = [];
+    this.recordsByEl = new WeakMap();
   }
 }

@@ -1861,9 +1861,11 @@ export default class ExocortexPlugin extends Plugin {
       );
 
       // Initialize Properties readable-label patch (RFC-030).
-      // Replaces raw predicate names (e.g. ems__Effort_area) with human-readable
-      // labels resolved from property definition assets' exo__Property_displayName
-      // (fallback exo__Asset_label). Gated by settings.enablePropertiesLabelPatch
+      // Replaces raw predicate names (e.g. ems__Effort_area) with short names
+      // resolved from property definition assets (exo__Property_displayName →
+      // exo__Property_localName → label local part), prefixed with the class
+      // name where two keys of one block would read the same (issue #4568).
+      // Gated by settings.enablePropertiesLabelPatch
       // (default true; user-toggleable for users who prefer native predicate
       // rendering or who hit edge cases with custom TBox conventions).
       this.propertiesLabelPatch = new PropertiesLabelPatch(this);

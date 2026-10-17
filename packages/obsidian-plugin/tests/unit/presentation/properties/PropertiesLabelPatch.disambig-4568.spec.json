@@ -1,0 +1,235 @@
+{
+  "_doc": "Revert-verify mutants for issue #4568 / req 0a85d233-f084-4652-bff0-418e18fcb9e0 — PropertiesLabelPatch short names and per-block ClassName. disambiguation. Run from a COPY with the path placeholders replaced: python3 -I ~/.claude/bin/mutant-driver.py <this file>. Axis names are L<N>[a-z], the FIRST token of each test title (L1-L19 in PropertiesLabelPatch.test.ts, issue #4568 block + the three L7 fallback axes).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/presentation/properties/PropertiesLabelPatch.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../..\" && node node_modules/jest/bin/jest.js --config packages/obsidian-plugin/jest.config.js packages/obsidian-plugin/tests/unit/presentation/properties/PropertiesLabelPatch.test.ts --verbose 2>&1",
+  "red_re": "›\\s+(L\\d+[a-z]?)\\s",
+  "mutants": {
+    "M1_short_name_falls_back_to_the_raw_label": {
+      "from": "        nonEmptyString(fm[\"exo__Property_localName\"]) ??\n        labelLocalPart(label);",
+      "to": "        label;",
+      "expect": [
+        "L7",
+        "L7b",
+        "L7c",
+        "L8",
+        "L9",
+        "L10",
+        "L11",
+        "L11b",
+        "L11c",
+        "L12",
+        "L13",
+        "L14",
+        "L15",
+        "L18",
+        "L18b",
+        "L19",
+        "L20b"
+      ]
+    },
+    "M2_drops_the_localName_tier": {
+      "from": "        nonEmptyString(fm[\"exo__Property_localName\"]) ??\n",
+      "to": "",
+      "expect": ["L8"]
+    },
+    "M3_local_part_after_the_LAST_underscore": {
+      "from": "  return splitPredicateLabel(label).local;",
+      "to": "  return label.trim().split(\"_\").pop() || label.trim();",
+      "expect": ["L1", "L1b", "L8"]
+    },
+    "M4_no_block_disambiguation": {
+      "from": "    const texts = disambiguateBlockLabels(Array.from(blockKeys.values()));",
+      "to": "    const texts = new Map<string, string>(blockKeys.size < 0 ? [[\"\", \"\"]] : []);",
+      "expect": [
+        "L9",
+        "L10",
+        "L11",
+        "L11b",
+        "L11c",
+        "L13",
+        "L14",
+        "L15",
+        "L16",
+        "L17",
+        "L18",
+        "L18b",
+        "L19"
+      ]
+    },
+    "M5_undefined_keys_do_not_collide": {
+      "from": "  const firstTexts = keys.map((k) => k.shortName ?? k.key);",
+      "to": "  const firstTexts = keys.map((k) => k.shortName);",
+      "expect": ["L5", "L15"]
+    },
+    "M6_prefixed_collision_keeps_the_prefix": {
+      "from": "    if (text === null || (wasPrefixed && (secondCounts.get(text) ?? 0) > 1)) {",
+      "to": "    if (text === null || (wasPrefixed && (secondCounts.get(text) ?? 0) > 99)) {",
+      "expect": ["L4", "L5b", "L6", "L16", "L18b"]
+    },
+    "M7_missing_class_name_keeps_the_bare_short_name": {
+      "from": "    return k.className ? `${k.className}.${k.shortName}` : null;",
+      "to": "    return k.className ? `${k.className}.${k.shortName}` : k.shortName;",
+      "expect": ["L4"]
+    },
+    "M8_class_localName_ignored": {
+      "from": "          names.classLocalName ??\n",
+      "to": "",
+      "expect": ["L9"]
+    },
+    "M9_domain_ignored": {
+      "from": "    const entries = Array.isArray(domain) ? domain : domain == null ? [] : [domain];",
+      "to": "    const entries: unknown[] = domain === domain ? [] : [domain];",
+      "expect": ["L9", "L11", "L11b"]
+    },
+    "M10_unresolvable_domain_uid_stops_the_search": {
+      "from": "        if (!names) continue;",
+      "to": "        if (!names) return labelClassSegment(propertyLabel);",
+      "expect": ["L11b"]
+    },
+    "M11_symbolic_domain_ignored": {
+      "from": "      const symbolic = symbolicReference(entry);",
+      "to": "      const symbolic = symbolicReference(entry) && null;",
+      "expect": ["L11"]
+    },
+    "M12_patched_rows_not_retexted": {
+      "from": "        this.retextRecord(record, text);",
+      "to": "        void record;",
+      "expect": ["L13", "L14", "L18", "L18b", "L19"]
+    },
+    "M13_patched_predicate_read_from_the_dom": {
+      "from": "      const predicate = record ? record.predicate : this.extractPredicate(row);",
+      "to": "      const predicate = record ? this.extractPredicate(row) : this.extractPredicate(row);",
+      "expect": ["L18b"]
+    },
+    "M14_observer_patches_a_single_row": {
+      "from": "            if (block) this.patchBlock(block);",
+      "to": "            if (block) this.patchRows([node]);",
+      "expect": ["L13", "L18", "L18b"]
+    },
+    "M15_aria_label_not_updated_on_retext": {
+      "from": "    record.displaySpan.textContent = text;\n    record.displaySpan.setAttribute(\n      \"aria-label\",",
+      "to": "    record.displaySpan.textContent = text;\n    record.displaySpan.setAttribute(\n      \"data-exo-stale-aria\",",
+      "expect": ["L13"]
+    },
+    "M16_one_context_for_all_blocks": {
+      "from": "    const rows = metadataContainer.querySelectorAll<HTMLElement>(\".metadata-property\");",
+      "to": "    const rows = (metadataContainer.ownerDocument ?? document).querySelectorAll<HTMLElement>(\".metadata-property\");",
+      "expect": ["L12"]
+    },
+    "M17_patched_rows_resolved_through_the_index": {
+      "from": "      const resolved = record ? record.resolved : this.resolvePredicate(predicate);",
+      "to": "      const resolved = record ? this.resolvePredicate(predicate) : this.resolvePredicate(predicate);",
+      "expect": ["L19", "L20"]
+    },
+    "M18_blank_values_count_as_present": {
+      "from": "  return trimmed.length > 0 ? trimmed : null;\n}\n\n/**\n * Split",
+      "to": "  return trimmed.length >= 0 ? trimmed : null;\n}\n\n/**\n * Split",
+      "expect": ["L7b", "L7c", "L8"]
+    },
+    "M19_no_label_class_segment_fallback": {
+      "from": "    return labelClassSegment(propertyLabel);\n  }",
+      "to": "    return propertyLabel === propertyLabel ? null : labelClassSegment(propertyLabel);\n  }",
+      "expect": [
+        "L10",
+        "L11b",
+        "L11c",
+        "L13",
+        "L14",
+        "L15",
+        "L17",
+        "L18",
+        "L19"
+      ]
+    },
+    "M20_empty_local_part_kept": {
+      "from": "    local: local.length > 0 ? local : rest,",
+      "to": "    local: local.length > 0 ? local : local,",
+      "expect": ["L1b"]
+    },
+    "M21_empty_rest_kept": {
+      "from": "  if (underscore <= 0) return { classSegment: null, local: rest || trimmed };",
+      "to": "  if (underscore <= 0) return { classSegment: null, local: rest || rest };",
+      "expect": ["L1c"]
+    },
+    "M22_empty_class_name_kept": {
+      "from": "  return name.length > 0 ? name : null;",
+      "to": "  return name.length >= 0 ? name : null;",
+      "expect": ["L2"]
+    },
+    "M23_every_short_name_counts_as_unique": {
+      "from": "    if ((firstCounts.get(k.shortName) ?? 0) <= 1) return k.shortName;",
+      "to": "    if ((firstCounts.get(k.shortName) ?? 0) <= 99) return k.shortName;",
+      "expect": [
+        "L3",
+        "L4",
+        "L5",
+        "L5b",
+        "L6",
+        "L9",
+        "L10",
+        "L11",
+        "L11b",
+        "L11c",
+        "L13",
+        "L14",
+        "L15",
+        "L16",
+        "L17",
+        "L18",
+        "L18b",
+        "L19"
+      ]
+    },
+    "M24_class_segment_keeps_its_underscore": {
+      "from": "    classSegment: rest.slice(0, underscore),",
+      "to": "    classSegment: rest.slice(0, underscore + 1),",
+      "expect": [
+        "L2",
+        "L10",
+        "L11b",
+        "L11c",
+        "L13",
+        "L14",
+        "L15",
+        "L17",
+        "L18",
+        "L19"
+      ]
+    },
+    "M25_a_unique_short_name_loses_to_an_equal_prefixed_text": {
+      "from": "    const wasPrefixed = text !== k.shortName;",
+      "to": "    const wasPrefixed = text !== k.shortName || k.key !== \"\";",
+      "expect": ["L6"]
+    },
+    "M26_undefined_keys_left_out_of_the_second_count": {
+      "from": "  const secondCounts = countTexts(secondTexts);",
+      "to": "  const secondCounts = countTexts(secondTexts.map((t, i) => (keys[i].shortName === null ? null : t)));",
+      "expect": ["L5b"]
+    },
+    "M27_domain_class_without_names_falls_into_the_symbolic_branch": {
+      "from": "        if (name) return name;\n        continue;\n      }",
+      "to": "        if (name) return name;\n      }",
+      "expect": ["L11c"]
+    },
+    "M28_patched_rows_re_resolve_with_record_fallback": {
+      "from": "      const resolved = record ? record.resolved : this.resolvePredicate(predicate);",
+      "to": "      const resolved = record ? this.resolvePredicate(predicate) ?? record.resolved : this.resolvePredicate(predicate);",
+      "expect": ["L20"]
+    },
+    "M29_duplicate_rows_counted_twice": {
+      "from": "    const texts = disambiguateBlockLabels(Array.from(blockKeys.values()));",
+      "to": "    const texts = disambiguateBlockLabels(\n      entries.map((e) => ({\n        key: e.predicate,\n        shortName: e.resolved ? e.resolved.shortName : null,\n        className: e.resolved ? e.resolved.className : null,\n      })),\n    );",
+      "expect": ["L20b"]
+    }
+  },
+  "_note_expect": "expect filled from the driver's completed run on the final tree (control 0); no two mutants share a red set (checked by tuple(sorted(expect))). M1+M4 together are the origin/main behaviour (raw-label fallback, no block disambiguation) — the base flip as mutants, since the new exports do not exist on origin/main and the suite would fail structurally there (§A83). M17/M28 are the review-round-1 HIGH (re-resolving already patched rows rebuilds the whole-vault index on every metadataCache change): L20 counts getMarkdownFiles calls across 20 change events on a fully patched block. M4 and M29 share an anchor on purpose — the driver applies each mutant to the untouched source. The `text === null` term of the tier-3 guard carries no own mutant: dropping it breaks type-narrowing (string|null into Map<string,string>), i.e. BROKEN, not behavioural (§A36); M7/L4 pin its behaviour."
+}
