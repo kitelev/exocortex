@@ -104,6 +104,8 @@ interface RunOutcome {
   err: string[];
   /** `METHOD url` of every request, in order. */
   requests: string[];
+  /** Both sinks in write order — what a caller merging `2>&1` reads (ticket 0b24c5d1). */
+  both: string[];
 }
 
 function routingTransport(fx: Fixture, requests: string[]): RestCommitTransport {
@@ -124,17 +126,24 @@ async function sync(
   const requests: string[] = [];
   const out: string[] = [];
   const err: string[] = [];
+  const both: string[] = [];
   const code = await runExosyncSync(
     direction,
     { vault: fx.vault, token: FAKE_PAT, ...extra },
     {
       transportFactory: () => routingTransport(fx, requests),
-      out: (l: string) => out.push(l),
-      err: (l: string) => err.push(l),
+      out: (l: string) => {
+        out.push(l);
+        both.push(l);
+      },
+      err: (l: string) => {
+        err.push(l);
+        both.push(l);
+      },
       env: {},
     },
   );
-  return { code, out, err, requests };
+  return { code, out, err, requests, both };
 }
 
 async function parity(fx: Fixture, json: boolean): Promise<RunOutcome> {
@@ -150,7 +159,7 @@ async function parity(fx: Fixture, json: boolean): Promise<RunOutcome> {
       env: {},
     },
   );
-  return { code, out, err, requests };
+  return { code, out, err, requests, both: [] };
 }
 
 const touched = (requests: string[], repo: string): string[] =>
@@ -210,11 +219,18 @@ describe("exosync pull-only repos (req c0810b83)", () => {
       rmSync(localPath(fx.vault, "bot", "assets/b.md"));
       const r = await sync(fx, "pull", { json: true });
       expect(r.code).toBe(0);
+      // ticket 0b24c5d1 — under --json stderr also carries the run header,
+      // and it comes first: everything diagnostic precedes the JSON array.
       expect(r.err).toEqual([
+        `ExoSync pull: 2 repo(s), vault ${path.resolve(fx.vault)}`,
         `[ExoSync pull-only] ${OWNER}/bot: restored assets/a.md`,
         `[ExoSync pull-only] ${OWNER}/bot: added assets/b.md`,
         `[ExoSync pull-only] ${OWNER}/bot: removed assets/injected.md`,
       ]);
+      // The array is the LAST write: the mirrored paths go before it.
+      expect(r.out).toHaveLength(1);
+      expect(r.both[r.both.length - 1]).toBe(r.out[0]);
+      expect(Array.isArray(JSON.parse(r.out[0]))).toBe(true);
     } finally {
       fx.cleanup();
     }
@@ -303,7 +319,11 @@ describe("exosync pull-only repos (req c0810b83)", () => {
       const p = await parity(fx, true);
       expect(p.code).toBe(2);
       expect(p.requests).toEqual([]);
-      expect(p.out.join("\n")).toContain(MALFORMED_TEXT);
+      // ticket 0b24c5d1 — under --json the refusal is stderr-only: stdout
+      // carries a JSON document or nothing. (That the refusal still reaches
+      // stderr under --json is P14's subject, kept there on purpose: one
+      // axis per guarantee, so the mutants of the two stay distinguishable.)
+      expect(p.out).toEqual([]);
     } finally {
       fx.cleanup();
     }
@@ -317,6 +337,9 @@ describe("exosync pull-only repos (req c0810b83)", () => {
       expect(r.err.join("\n")).toContain(MALFORMED_TEXT);
       const p = await parity(fx, false);
       expect(p.err.join("\n")).toContain(MALFORMED_TEXT);
+      // ticket 0b24c5d1 — under --json stderr is the ONLY carrier of the refusal.
+      const pj = await parity(fx, true);
+      expect(pj.err.join("\n")).toContain(MALFORMED_TEXT);
     } finally {
       fx.cleanup();
     }
@@ -330,8 +353,8 @@ describe("exosync pull-only repos (req c0810b83)", () => {
       const pulled = await sync(fx, "pull", { json: true });
       expect(pulled.code).toBe(0);
       expect(readLocal(fx.vault, "bot", "assets/a.md")).toBe(edit);
-      expect(pulled.err).toEqual([]);
-      const results = JSON.parse(pulled.out.find((l) => l.startsWith("["))!);
+      expect(pulled.err).toEqual([`ExoSync pull: 2 repo(s), vault ${path.resolve(fx.vault)}`]);
+      const results = JSON.parse(pulled.out.join("\n"));
       for (const res of results) {
         expect(res).not.toHaveProperty("pullOnly");
         expect(res).not.toHaveProperty("mirrored");

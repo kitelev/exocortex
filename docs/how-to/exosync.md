@@ -59,6 +59,15 @@ base. Exit codes: `0` all clean · `1` at least one repo unresolved/errored ·
 `2` vacuous (no materialized AssetSpaces found). For a read-only divergence
 check without writing, use `exosync-parity`.
 
+With `--json` (`exosync sync|pull|push` and `exosync-parity` alike) the result —
+the per-repo array or the round record — is the **only** thing on stdout, so a
+caller can read stdout whole (`json.load`, `jq .`). Every diagnostic line (run
+header, `warn:` lines, `--repo:` lines, refusals, `[ExoSync …]` telemetry) goes
+to stderr, written before the document; a refused run leaves stdout empty. Read
+the two streams separately: a caller merging them (`2>&1`) gets the document
+in one piece only while the stderr written before it fits the pipe buffer
+(64 KiB); a larger stderr may interleave with it.
+
 > ⚠ The engine's D11 in-flight guard is per-process: do NOT run the CLI sync
 > while the plugin is mid-sync on the same vault (watermark write is
 > last-writer-wins across processes).
@@ -111,7 +120,8 @@ restored …; added …; removed …`) and, one per line, on stderr
 A line that is not of the form `owner/repo` refuses the whole run with exit
 `2` before any request, naming the line number and its content — a broken list
 must never silently unprotect a repo. A listed repo that is not materialized on
-the device only produces a warning (on stdout and stderr). No file ⇒ behaviour
+the device only produces a warning (on stdout and stderr; under `--json` on
+stderr only). No file ⇒ behaviour
 exactly as before. The plugin's Sync / Pull / Push commands read the same file.
 
 Trust boundary and limits:
