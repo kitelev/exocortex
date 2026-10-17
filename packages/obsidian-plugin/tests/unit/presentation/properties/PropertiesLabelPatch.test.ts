@@ -1422,7 +1422,7 @@ describe("PropertiesLabelPatch", () => {
       expect(textOf(b)).toBe("foo__Asset_label");
     });
 
-    it("L19 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 a patched key is re-texted from the resolution it was patched with, not from the index", () => {
+    it("L19 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 a patched key, the only row of its key, is re-texted from the resolution it was patched with, not from the index", () => {
       useVault({ "p/es.md": prop("ems__Effort_status") });
       const [es] = addRows(mockMetadataContainer, "ems__Effort_status");
       patch.enable();
@@ -1465,6 +1465,38 @@ describe("PropertiesLabelPatch", () => {
 
       expect(textOf(first)).toBe("status");
       expect(textOf(second)).toBe("status");
+    });
+
+    it("L21 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 turning the patch off and on again on the same instance re-patches every key", () => {
+      useVault({
+        "p/es.md": prop("ems__Effort_status"),
+        "p/ts.md": prop("ems__Task_status"),
+      });
+      const [es, ts] = addRows(mockMetadataContainer, "ems__Effort_status", "ems__Task_status");
+      patch.enable();
+      expect(textOf(es)).toBe("Effort.status");
+
+      // The settings toggle reuses this object: disable() then enable().
+      patch.disable();
+      expect(textOf(es)).toBeNull();
+      patch.enable();
+
+      expect(textOf(es)).toBe("Effort.status");
+      expect(textOf(ts)).toBe("Task.status");
+    });
+
+    it("L22 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 a key row added outside any Properties block is patched on its own", async () => {
+      useVault({ "p/es.md": prop("ems__Effort_status") });
+      patch.enable();
+
+      const lone: any = createPropertyRow({ inputValue: "ems__Effort_status" });
+      attach(document.body, lone);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(textOf(lone)).toBe("status");
+      } finally {
+        lone.remove();
+      }
     });
   });
 

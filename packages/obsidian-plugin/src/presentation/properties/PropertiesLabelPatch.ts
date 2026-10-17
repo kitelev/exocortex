@@ -24,9 +24,12 @@ import { LoggerFactory } from "@plugin/adapters/logging/LoggerFactory";
  *     would read the same read `<ClassName>.<short name>` (ClassName = local name
  *     of the property's domain class); still equal or no class name → the raw
  *     predicate, which is unique in the block. See `disambiguateBlockLabels`.
- *  6. Index collision handling: first-write-wins + `console.warn` (deterministic
+ *  6. Index collision handling: first-write-wins + an INFO log line (deterministic
  *     by `vault.getMarkdownFiles()` enumeration order). Data-side collisions are
  *     surfaced but not auto-resolved.
+ *  7. An already patched key keeps the resolution it was patched with until
+ *     Obsidian re-renders its row: metadataCache changes on a fully patched block
+ *     never rebuild the whole-vault index (same laziness as before #4568).
  *
  * Behavior changes from pre-RFC-030 mechanic:
  *  - aliases-array matching removed (was secondary fallback). For property

@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for issue #4568 / req 0a85d233-f084-4652-bff0-418e18fcb9e0 — PropertiesLabelPatch short names and per-block ClassName. disambiguation. Run from a COPY with the path placeholders replaced: python3 -I ~/.claude/bin/mutant-driver.py <this file>. Axis names are L<N>[a-z], the FIRST token of each test title (L1-L19 in PropertiesLabelPatch.test.ts, issue #4568 block + the three L7 fallback axes).",
+  "_doc": "Revert-verify mutants for issue #4568 / req 0a85d233-f084-4652-bff0-418e18fcb9e0 — PropertiesLabelPatch short names and per-block ClassName. disambiguation. Run from a COPY with the path placeholders replaced: python3 -I ~/.claude/bin/mutant-driver.py <this file>. Axis names are L<N>[a-z], the FIRST token of each test title (L1-L22 with b/c variants in PropertiesLabelPatch.test.ts — the issue #4568 block plus the three L7 fallback axes).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/presentation/properties/PropertiesLabelPatch.ts",
   "symlink_node_modules": [
@@ -229,6 +229,16 @@
       "from": "    const texts = disambiguateBlockLabels(Array.from(blockKeys.values()));",
       "to": "    const texts = disambiguateBlockLabels(\n      entries.map((e) => ({\n        key: e.predicate,\n        shortName: e.resolved ? e.resolved.shortName : null,\n        className: e.resolved ? e.resolved.className : null,\n      })),\n    );",
       "expect": ["L20b"]
+    },
+    "M30_records_survive_disable": {
+      "from": "    this.recordsByEl = new WeakMap();",
+      "to": "    this.recordsByEl = this.recordsByEl;",
+      "expect": ["L21"]
+    },
+    "M31_lone_row_outside_a_block_ignored": {
+      "from": "            else this.patchRows([el]);",
+      "to": "            else void el;",
+      "expect": ["L22"]
     }
   },
   "_note_expect": "expect filled from the driver's completed run on the final tree (control 0); no two mutants share a red set (checked by tuple(sorted(expect))). M1+M4 together are the origin/main behaviour (raw-label fallback, no block disambiguation) — the base flip as mutants, since the new exports do not exist on origin/main and the suite would fail structurally there (§A83). M17/M28 are the review-round-1 HIGH (re-resolving already patched rows rebuilds the whole-vault index on every metadataCache change): L20 counts getMarkdownFiles calls across 20 change events on a fully patched block. M4 and M29 share an anchor on purpose — the driver applies each mutant to the untouched source. The `text === null` term of the tier-3 guard carries no own mutant: dropping it breaks type-narrowing (string|null into Map<string,string>), i.e. BROKEN, not behavioural (§A36); M7/L4 pin its behaviour."
