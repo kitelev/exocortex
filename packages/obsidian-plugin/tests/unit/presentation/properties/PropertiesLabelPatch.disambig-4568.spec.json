@@ -33,7 +33,9 @@
         "L18",
         "L18b",
         "L19",
-        "L20b"
+        "L20b",
+        "L21",
+        "L22"
       ]
     },
     "M2_drops_the_localName_tier": {
@@ -62,7 +64,8 @@
         "L17",
         "L18",
         "L18b",
-        "L19"
+        "L19",
+        "L21"
       ]
     },
     "M5_undefined_keys_do_not_collide": {
@@ -147,7 +150,8 @@
         "L15",
         "L17",
         "L18",
-        "L19"
+        "L19",
+        "L21"
       ]
     },
     "M20_empty_local_part_kept": {
@@ -186,7 +190,8 @@
         "L17",
         "L18",
         "L18b",
-        "L19"
+        "L19",
+        "L21"
       ]
     },
     "M24_class_segment_keeps_its_underscore": {
@@ -202,7 +207,8 @@
         "L15",
         "L17",
         "L18",
-        "L19"
+        "L19",
+        "L21"
       ]
     },
     "M25_a_unique_short_name_loses_to_an_equal_prefixed_text": {
@@ -241,5 +247,6 @@
       "expect": ["L22"]
     }
   },
-  "_note_expect": "expect filled from the driver's completed run on the final tree (control 0); no two mutants share a red set (checked by tuple(sorted(expect))). M1+M4 together are the origin/main behaviour (raw-label fallback, no block disambiguation) — the base flip as mutants, since the new exports do not exist on origin/main and the suite would fail structurally there (§A83). M17/M28 are the review-round-1 HIGH (re-resolving already patched rows rebuilds the whole-vault index on every metadataCache change): L20 counts getMarkdownFiles calls across 20 change events on a fully patched block. M4 and M29 share an anchor on purpose — the driver applies each mutant to the untouched source. The `text === null` term of the tier-3 guard carries no own mutant: dropping it breaks type-narrowing (string|null into Map<string,string>), i.e. BROKEN, not behavioural (§A36); M7/L4 pin its behaviour."
+  "_note_expect": "expect filled from the driver's completed run on the final tree (control 0); no two mutants share a red set (checked by tuple(sorted(expect))). M1+M4 together are the origin/main behaviour (raw-label fallback, no block disambiguation) — the base flip as mutants, since the new exports do not exist on origin/main and the suite would fail structurally there (§A83). M17/M28 are the review-round-1 HIGH (re-resolving already patched rows rebuilds the whole-vault index on every metadataCache change): L20 counts getMarkdownFiles calls across 20 change events on a fully patched block. M4 and M29 share an anchor on purpose — the driver applies each mutant to the untouched source. The `text === null` term of the tier-3 guard carries no own mutant: dropping it breaks type-narrowing (string|null into Map<string,string>), i.e. BROKEN, not behavioural (§A36); M7/L4 pin its behaviour.",
+  "_note_expect_l21_l22": "L21/L22 were added after the expect sets were filled, and the driver checks expect only one way (declared within observed), so five mutants under-declared them (measured on origin/main 64900113 and on the ems__Bug cc7df026 tree alike). L21 re-enables the patch and asserts the disambiguated texts Effort.status / Task.status, so every mutant that breaks short names, ClassName or block disambiguation reds it (M1, M4, M19, M23, M24). L22 asserts the short name `status` of a lone row, so M1 (raw-label fallback) reds it."
 }

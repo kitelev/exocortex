@@ -277,6 +277,7 @@ describe("PropertiesLabelPatch", () => {
 
   afterEach(() => {
     patch.cleanup();
+    jest.useRealTimers();
     jest.clearAllMocks();
     if (mockContainer.parentNode) {
       mockContainer.parentNode.removeChild(mockContainer);
@@ -1077,6 +1078,12 @@ describe("PropertiesLabelPatch", () => {
       return cb;
     }
 
+    // The "changed" handler refreshes after a trailing debounce (ems__Bug cc7df026):
+    // axes that fire it switch to fake timers BEFORE enable() and flush the refresh.
+    function flushRefresh(): void {
+      jest.runOnlyPendingTimers();
+    }
+
     // ---------------- pure helpers ----------------
 
     it("L1 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 the label local part is everything after the class segment", () => {
@@ -1335,6 +1342,7 @@ describe("PropertiesLabelPatch", () => {
     });
 
     it("L14 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 when the collision disappears the next re-render returns the short name", () => {
+      jest.useFakeTimers();
       useVault({
         "p/es.md": prop("ems__Effort_status"),
         "p/ts.md": prop("ems__Task_status"),
@@ -1345,6 +1353,7 @@ describe("PropertiesLabelPatch", () => {
 
       ts.remove();
       changedCallback()();
+      flushRefresh();
 
       expect(textOf(es)).toBe("status");
     });
@@ -1423,6 +1432,7 @@ describe("PropertiesLabelPatch", () => {
     });
 
     it("L19 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 a patched key, the only row of its key, is re-texted from the resolution it was patched with, not from the index", () => {
+      jest.useFakeTimers();
       useVault({ "p/es.md": prop("ems__Effort_status") });
       const [es] = addRows(mockMetadataContainer, "ems__Effort_status");
       patch.enable();
@@ -1432,12 +1442,14 @@ describe("PropertiesLabelPatch", () => {
       useVault({ "p/ts.md": prop("ems__Task_status") });
       const [ts] = addRows(mockMetadataContainer, "ems__Task_status");
       changedCallback()();
+      flushRefresh();
 
       expect(textOf(es)).toBe("Effort.status");
       expect(textOf(ts)).toBe("Task.status");
     });
 
     it("L20 @req:0a85d233-f084-4652-bff0-418e18fcb9e0 metadataCache changes on a fully patched block do not rebuild the whole-vault index", () => {
+      jest.useFakeTimers();
       useVault({
         "p/es.md": prop("ems__Effort_status"),
         "p/ts.md": prop("ems__Task_status"),
@@ -1448,7 +1460,12 @@ describe("PropertiesLabelPatch", () => {
       expect(scansAfterEnable).toBe(1);
 
       const changed = changedCallback();
-      for (let i = 0; i < 20; i++) changed();
+      for (let i = 0; i < 20; i++) {
+        changed();
+        // Flush every event on its own, so every event's re-patch runs: M17/M28
+        // (re-resolving patched rows) then rebuild 20 times, not once.
+        flushRefresh();
+      }
 
       expect(mockApp.vault.getMarkdownFiles.mock.calls.length).toBe(scansAfterEnable);
     });
@@ -1569,6 +1586,7 @@ describe("PropertiesLabelPatch", () => {
   // ============================================================
   describe("index invalidation", () => {
     it("re-patches on metadataCache changed event", () => {
+      jest.useFakeTimers();
       const row = createPropertyRow({ inputValue: "ems__Effort_area" });
       mockMetadataContainer.appendChild(row);
 
@@ -1582,6 +1600,7 @@ describe("PropertiesLabelPatch", () => {
       expect(typeof changedCb).toBe("function");
 
       changedCb();
+      jest.runOnlyPendingTimers();
 
       // Still exactly one span (idempotent on patched rows)
       const spansAfter = row.querySelectorAll(".exo-label-display");
@@ -1609,6 +1628,7 @@ describe("PropertiesLabelPatch", () => {
     // Without the fix this test FAILS: span is null because resolvePredicate
     // returned null at enable() time and there was no signal to retry.
     it("recovers when metadataCache is empty at enable() and resolves later (Finding 4)", () => {
+      jest.useFakeTimers();
       // Arrange: metadataCache is not yet resolved — every getFileCache call
       // returns null (Obsidian's actual behavior during fresh vault startup).
       const lateFrontmatters: Record<string, any> = { ...FRONTMATTERS };
@@ -1638,10 +1658,165 @@ describe("PropertiesLabelPatch", () => {
       )?.[1];
       expect(typeof resolvedCb).toBe("function");
       resolvedCb();
+      jest.runOnlyPendingTimers();
 
       // Assert: the row now carries the readable label.
       const span = row.querySelector<HTMLSpanElement>(".exo-label-display");
       expect(span?.textContent).toBe("Effort Area");
+    });
+  });
+
+  // ============================================================
+  // ems__Bug cc7df026: debounced index refresh
+  // ============================================================
+  // A row whose key has no property definition (`tags`) stays unpatched, so every
+  // re-patch resolves it and rebuilds the whole-vault index — one getMarkdownFiles
+  // call per rebuild. The index itself is invalidated at once on every event; only
+  // the re-patch is debounced. Mutants: PropertiesLabelPatch.debounce-cc7df026.spec.json.
+  describe("ems__Bug cc7df026: metadataCache bursts refresh the index once", () => {
+    function handler(name: "changed" | "resolved"): () => void {
+      const cb = mockApp.metadataCache.on.mock.calls.find(
+        (c: any[]) => c[0] === name
+      )?.[1];
+      if (typeof cb !== "function") {
+        throw new Error(`metadataCache '${name}' handler is not registered`);
+      }
+      return cb;
+    }
+
+    function addRow(block: any, key: string): any {
+      const row: any = createPropertyRow({ inputValue: key });
+      block.appendChild(row);
+      return row;
+    }
+
+    function scans(): number {
+      return mockApp.vault.getMarkdownFiles.mock.calls.length;
+    }
+
+    it("D1 fifty changed events on a block with an undefined key rebuild the whole-vault index once, after the burst", () => {
+      jest.useFakeTimers();
+      addRow(mockMetadataContainer, "ems__Effort_area");
+      addRow(mockMetadataContainer, "tags");
+      patch.enable();
+      expect(scans()).toBe(1);
+
+      const changed = handler("changed");
+      for (let i = 0; i < 50; i++) changed();
+      expect(scans()).toBe(1);
+
+      jest.runOnlyPendingTimers();
+      expect(scans()).toBe(2);
+    });
+
+    it("D2 the refresh after a burst sees a property definition that appeared during it", () => {
+      jest.useFakeTimers();
+      const row = addRow(mockMetadataContainer, "ems__Brand_new");
+      patch.enable();
+      expect(row.querySelector(".exo-label-display")).toBeNull();
+
+      const brandNew: FakeFile = {
+        path: "ems/brand-new.md",
+        basename: "brand-new",
+        extension: "md",
+      };
+      FRONTMATTERS[brandNew.path] = {
+        exo__Asset_uid: "d2000000-0000-4000-8000-000000000001",
+        exo__Asset_label: "ems__Brand_new",
+        exo__Instance_class: [`[[${EXO_PROPERTY_UID}]]`],
+      };
+      const files = mockApp.vault.getMarkdownFiles();
+      mockApp.vault.getMarkdownFiles.mockReturnValue([...files, brandNew]);
+      try {
+        const changed = handler("changed");
+        for (let i = 0; i < 3; i++) changed();
+        jest.runOnlyPendingTimers();
+
+        expect(row.querySelector(".exo-label-display")?.textContent).toBe("new");
+      } finally {
+        delete FRONTMATTERS[brandNew.path];
+      }
+    });
+
+    it("D3 each edit's changed+resolved pair shares one refresh", () => {
+      jest.useFakeTimers();
+      addRow(mockMetadataContainer, "tags");
+      patch.enable();
+      expect(scans()).toBe(1);
+
+      const changed = handler("changed");
+      const resolved = handler("resolved");
+      for (let i = 0; i < 10; i++) {
+        changed();
+        resolved();
+      }
+      jest.runOnlyPendingTimers();
+
+      expect(scans()).toBe(2);
+    });
+
+    it("D4 disable() cancels a pending refresh", () => {
+      jest.useFakeTimers();
+      addRow(mockMetadataContainer, "tags");
+      patch.enable();
+      handler("changed")();
+
+      patch.disable();
+
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
+    // Changes the displayName of ems__Effort_area for the duration of `body`.
+    async function withRenamedEffortArea(body: () => Promise<void> | void): Promise<void> {
+      const fm = FRONTMATTERS["ems/ab1b5cc2.md"];
+      const before = fm.exo__Property_displayName;
+      fm.exo__Property_displayName = "NEW AREA";
+      try {
+        await body();
+      } finally {
+        fm.exo__Property_displayName = before;
+      }
+    }
+
+    it("D5 a row Obsidian re-renders right after a definition change reads the new label before the re-patch fires", async () => {
+      const old = addRow(mockMetadataContainer, "ems__Effort_area");
+      patch.enable();
+      expect(old.querySelector(".exo-label-display")?.textContent).toBe("Effort Area");
+
+      await withRenamedEffortArea(async () => {
+        handler("changed")();
+        // Obsidian re-renders the Properties block of the edited note: the observer
+        // patches the new row at once, well inside the 300ms re-patch window.
+        old.remove();
+        const rerendered = addRow(mockMetadataContainer, "ems__Effort_area");
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        expect(rerendered.querySelector(".exo-label-display")?.textContent).toBe("NEW AREA");
+      });
+    });
+
+    it("D6 an event received while disabled schedules nothing", () => {
+      jest.useFakeTimers();
+      addRow(mockMetadataContainer, "tags");
+      patch.enable();
+      patch.disable();
+
+      handler("changed")();
+
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
+    it("D7 re-enabling right after an event received while disabled reads the new label", async () => {
+      const row = addRow(mockMetadataContainer, "ems__Effort_area");
+      patch.enable();
+      patch.disable();
+
+      await withRenamedEffortArea(() => {
+        handler("changed")();
+        patch.enable();
+
+        expect(row.querySelector(".exo-label-display")?.textContent).toBe("NEW AREA");
+      });
     });
   });
 
