@@ -321,9 +321,10 @@ export function readPullOnlyListText(vaultPath: string): string | null {
 /**
  * Collect the sync units for a command, turning a malformed pull-only list
  * into a printed refusal (req c0810b83). Returns `null` after printing the
- * refusal to stdout AND stderr — the caller exits 2 before any REST request.
- * Any other collection error propagates unchanged. On success the pull-only
- * list warnings are repeated on stderr as `warn: …` lines.
+ * refusal to `out` AND `err` — the caller exits 2 before any REST request
+ * (under --json the callers pass a no-op `out`, so stderr carries it alone,
+ * req e312155b). Any other collection error propagates unchanged. On success
+ * the pull-only list warnings are written to `err` as `warn: …` lines.
  */
 export function collectVaultSpecsOrRefuse(
   vaultPath: string,

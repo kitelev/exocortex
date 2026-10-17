@@ -537,6 +537,27 @@ describe("parked AssetSpaces report their staleness @req:75dba148-15c4-401e-a7b5
       fx.cleanup();
     }
   });
+
+  it("J8 @req:e312155b-b14b-4a3b-9320-ccdc4dfe65fd without --json the all-parked path prints no JSON document — the human report only", async () => {
+    // Locks the `opts.json === true` conjunct of the all-parked document
+    // write: without it the human report would end with `{"parked": …}`.
+    const fx = makeVault({
+      parkedFiles: { [FILE_A]: CONTENT_A },
+      watermarkFiles: {},
+      watermarkSha: "d".repeat(40),
+    });
+    try {
+      const { code, lines, errLines } = await run(fx.vault, {
+        [FILE_A]: CONTENT_A,
+      });
+      expect(code).toBe(2);
+      expect(lines.join("\n")).toMatch(/Nothing to check/);
+      expect(lines.filter((l) => l.startsWith("{"))).toEqual([]);
+      expect(errLines).toEqual([]);
+    } finally {
+      fx.cleanup();
+    }
+  });
 });
 
 describe("runExosyncParity", () => {

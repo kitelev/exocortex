@@ -248,4 +248,20 @@ describe("exosync --json keeps stdout machine-readable (ticket 0b24c5d1)", () =>
       fx.cleanup();
     }
   });
+
+  it("K10 @req:e312155b-b14b-4a3b-9320-ccdc4dfe65fd parity WITHOUT --json: a malformed pull-only list still refuses on stdout (human mode unchanged)", async () => {
+    // The --json side passes a no-op stdout sink to the collector; this axis
+    // locks the other side of that ternary — the human refusal stays on
+    // stdout. (sync's human side is P6's loop over pull/push/sync.)
+    const fx = makeVault({ malformedList: true });
+    try {
+      const p = await runParity(fx.vault, false);
+      expect(p.code).toBe(2);
+      expect(p.out.join("\n")).toMatch(
+        /invalid pull-only list \.exocortex\/exosync-pull-only line 1/,
+      );
+    } finally {
+      fx.cleanup();
+    }
+  });
 });

@@ -62,8 +62,10 @@ check without writing, use `exosync-parity`.
 With `--json` (`exosync sync|pull|push` and `exosync-parity` alike) the result —
 the per-repo array or the round record — is the **only** thing on stdout, so a
 caller can read stdout whole (`json.load`, `jq .`). Every diagnostic line (run
-header, `warn:` lines, `--repo:` lines, refusals, `[ExoSync …]` telemetry) goes
-to stderr, written before the document; a refused run leaves stdout empty. Read
+header, `warn:` lines, `--repo:` lines, refusals, and — `exosync-parity` only —
+the `[ExoSync …]` telemetry) goes to stderr, written before the document;
+`exosync sync|pull|push --json` print no telemetry at all. A refused run leaves
+stdout empty. Read
 the two streams separately: a caller merging them (`2>&1`) gets the document
 in one piece only while the stderr written before it fits the pipe buffer
 (64 KiB); a larger stderr may interleave with it.
