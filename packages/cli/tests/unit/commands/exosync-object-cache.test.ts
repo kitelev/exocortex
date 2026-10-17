@@ -398,6 +398,28 @@ describe("the SAME wiring is pinned at every call site @req:086df113-16bb-4912-b
     expect(report).toMatch(/[1-9]\d* served from cache/);
   });
 
+  it("J6 @req:e312155b-b14b-4a3b-9320-ccdc4dfe65fd --json: the [ExoSync objects] line goes to stderr, stdout is the bare document (ticket 0b24c5d1)", async () => {
+    const remote = countingRemote({ [FILE_A]: CONTENT_A });
+    await runExosyncParity(
+      { vault: fixture.vault, token: FAKE_PAT },
+      { transportFactory: () => remote, out: () => undefined, env: {} },
+    );
+    const lines: string[] = [];
+    const errLines: string[] = [];
+    await runExosyncParity(
+      { vault: fixture.vault, token: FAKE_PAT, json: true },
+      {
+        transportFactory: () => remote,
+        out: (l) => lines.push(l),
+        err: (l) => errLines.push(l),
+        env: {},
+      },
+    );
+    expect(errLines.some((l) => l.startsWith("[ExoSync objects]"))).toBe(true);
+    expect(lines).toHaveLength(1);
+    JSON.parse(lines[0]);
+  });
+
   it("B13 a tampered cache entry fails the repo's cycle loudly instead of being applied", async () => {
     const remote = countingRemote({ [FILE_A]: CONTENT_A });
     await runExosyncParity(

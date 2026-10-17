@@ -321,9 +321,10 @@ export function readPullOnlyListText(vaultPath: string): string | null {
 /**
  * Collect the sync units for a command, turning a malformed pull-only list
  * into a printed refusal (req c0810b83). Returns `null` after printing the
- * refusal to stdout AND stderr — the caller exits 2 before any REST request.
- * Any other collection error propagates unchanged. On success the pull-only
- * list warnings are repeated on stderr as `warn: …` lines.
+ * refusal to `out` AND `err` — the caller exits 2 before any REST request
+ * (under --json the callers pass a no-op `out`, so stderr carries it alone,
+ * req e312155b). Any other collection error propagates unchanged. On success
+ * the pull-only list warnings are written to `err` as `warn: …` lines.
  */
 export function collectVaultSpecsOrRefuse(
   vaultPath: string,
@@ -340,7 +341,8 @@ export function collectVaultSpecsOrRefuse(
     err(line);
     return null;
   }
-  // stdout gets these through `warnings` (the caller prints `warn:` lines).
+  // In human mode the caller prints these again on stdout through `warnings`;
+  // under --json it skips them, so this stderr copy is the only one.
   for (const w of collected.pullOnlyWarnings) err(`warn: ${w}`);
   return collected;
 }
@@ -427,6 +429,10 @@ async function runExosyncParityUnsettled(
 ): Promise<number> {
   const out = deps.out ?? ((line: string): void => console.log(line));
   const errOut = deps.err ?? ((line: string): void => console.error(line));
+  // ticket 0b24c5d1 — under --json stdout carries ONLY the JSON document, so a
+  // caller can read it whole (`json.load`, `jq .`). Every diagnostic line —
+  // header, `warn:`, telemetry, "Nothing to check" — goes to stderr instead.
+  const diag = opts.json === true ? errOut : out;
   const vaultPath = path.resolve(opts.vault);
   if (!existsSync(vaultPath)) {
     throw new Error(`Vault path does not exist: ${vaultPath}`);
@@ -443,7 +449,13 @@ async function runExosyncParityUnsettled(
   const configDir = opts.configDir ?? ".obsidian";
   // req c0810b83 — a malformed pull-only list refuses the run (exit 2) before
   // any REST request; the refusal names the line and its content.
-  const collected = collectVaultSpecsOrRefuse(vaultPath, out, errOut);
+  // Under --json the refusal is printed on stderr only: the helper mirrors it
+  // there already, and a second copy on stdout would be a non-JSON stdout.
+  const collected = collectVaultSpecsOrRefuse(
+    vaultPath,
+    opts.json === true ? () => undefined : out,
+    errOut,
+  );
   if (collected === null) {
     await appendSyncRunLog(
       runLogPathFor(vaultPath, configDir),
@@ -458,7 +470,11 @@ async function runExosyncParityUnsettled(
     return 2;
   }
   const { specs, parked, warnings } = collected;
-  for (const w of warnings) out(`warn: ${w}`);
+  for (const w of warnings) {
+    // The helper has already put the pull-only warnings on stderr.
+    if (opts.json === true && collected.pullOnlyWarnings.includes(w)) continue;
+    diag(`warn: ${w}`);
+  }
 
   const watermarkPath = path.join(
     vaultPath,
@@ -521,7 +537,7 @@ async function runExosyncParityUnsettled(
   // skips those understates the day's spending.
   const reportQuota = (): void => {
     const t = runTimer.snapshot();
-    out(`[ExoSync quota] ${t.counts.restCalls} REST | ${formatQuota(t.quota)}`);
+    diag(`[ExoSync quota] ${t.counts.restCalls} REST | ${formatQuota(t.quota)}`);
   };
 
   const journalRun = async (exitCode: number): Promise<void> => {
@@ -570,15 +586,18 @@ async function runExosyncParityUnsettled(
   if (opts.json !== true) printParkedSection(parkedVerdicts, out);
 
   if (specs.length === 0) {
-    if (opts.json === true && parkedVerdicts.length > 0) {
-      out(JSON.stringify({ parked: parkedVerdicts }, null, 2));
-    }
-    out(
+    diag(
       "Nothing to check — no materialized AssetSpaces with a GitHub source found in this vault.",
     );
     // Parked-staleness above may already have spent requests — report and
     // journal them. An early exit is still a run that touched the budget.
     reportQuota();
+    // ⛔ The JSON document is the LAST write of the run: a caller that merges
+    // the streams (`2>&1`) would otherwise get a stderr line spliced into a
+    // document larger than the pipe buffer (see the end of the round below).
+    if (opts.json === true && parkedVerdicts.length > 0) {
+      out(JSON.stringify({ parked: parkedVerdicts }, null, 2));
+    }
     await journalRun(2);
     return 2;
   }
@@ -596,11 +615,11 @@ async function runExosyncParityUnsettled(
     ...(opts.apiBase !== undefined ? { baseURL: opts.apiBase } : {}),
   });
 
-  out(`ExoSync parity check: ${specs.length} repo(s), vault ${vaultPath}`);
+  diag(`ExoSync parity check: ${specs.length} repo(s), vault ${vaultPath}`);
   const reportObjectCache = (): void => {
     const stats = objectCache?.stats();
     if (stats === undefined || stats.hits + stats.stores === 0) return;
-    out(
+    diag(
       `[ExoSync objects] ${stats.hits} served from cache, ${stats.misses} fetched, ${stats.stores} stored${stats.evictions > 0 ? `, ${stats.evictions} evicted` : ""}`,
     );
   };
@@ -611,25 +630,31 @@ async function runExosyncParityUnsettled(
   const reportConditional = (): void => {
     const stats = conditionalCache?.stats();
     if (stats === undefined || stats.conditional + stats.stored === 0) return;
-    out(
+    diag(
       `[ExoSync conditional] ${stats.notModified} not modified (304 — primary quota not spent) of ${stats.conditional} validated, ${stats.stored} validator(s) stored`,
     );
   };
   const record = await validator.runRound(specs, { trigger: "standalone" });
 
-  if (opts.json === true) {
-    // Additive key — the round record's own shape is untouched, so existing
-    // consumers keep reading `version`/`ok`/`repos` exactly as before.
-    out(JSON.stringify({ ...record, parked: parkedVerdicts }, null, 2));
-  } else {
-    printHumanReport(record, out);
-  }
+  if (opts.json !== true) printHumanReport(record, out);
 
   reportObjectCache();
   reportConditional();
   reportQuota();
 
   const exitCode = record.vacuous ? 2 : record.ok ? 0 : 1;
+  if (opts.json === true) {
+    // ⛔ The document goes LAST, after every stderr line. Node writes a pipe
+    // asynchronously on macOS: a document larger than the pipe buffer (64 KiB)
+    // is sent in parts, and a stderr line written meanwhile lands BETWEEN them
+    // for a caller that merges the streams (`2>&1`, the bot quarantine watch).
+    // That guarantees the WRITE order only: a large stderr written just before
+    // the document may still reach a lagging merging reader after the
+    // document's first bytes — read the two streams separately.
+    // Additive key — the round record's own shape is untouched, so existing
+    // consumers keep reading `version`/`ok`/`repos` exactly as before.
+    out(JSON.stringify({ ...record, parked: parkedVerdicts }, null, 2));
+  }
   await journalRun(exitCode);
   return exitCode;
 }
@@ -645,7 +670,10 @@ export function exosyncParityCommand(): Command {
       "Obsidian config dir name (watermark location)",
       ".obsidian",
     )
-    .option("--json", "Print the full round record as JSON")
+    .option(
+      "--json",
+      "Print the full round record as JSON — the only thing on stdout; diagnostics go to stderr",
+    )
     .option(
       "--token <pat>",
       "GitHub PAT (or env GITHUB_TOKEN / GH_TOKEN). Prefer --token-from-gh.",

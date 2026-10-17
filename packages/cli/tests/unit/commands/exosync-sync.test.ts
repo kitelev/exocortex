@@ -175,6 +175,24 @@ function makeVault(mountFiles: Record<string, string>): {
 }
 
 describe("runExosyncSync — wiring", () => {
+  it("K9 @req:e312155b-b14b-4a3b-9320-ccdc4dfe65fd --json on an empty vault: stdout empty, 'Nothing to sync' on stderr (ticket 0b24c5d1)", async () => {
+    const vault = mkTmp("exosync-empty-json-");
+    const lines: string[] = [];
+    const errLines: string[] = [];
+    try {
+      const code = await runExosyncSync(
+        "sync",
+        { vault, token: FAKE_PAT, json: true },
+        { out: (l) => lines.push(l), err: (l) => errLines.push(l), env: {} },
+      );
+      expect(code).toBe(2);
+      expect(lines).toEqual([]);
+      expect(errLines.join("\n")).toMatch(/Nothing to sync/);
+    } finally {
+      rmSync(vault, { recursive: true, force: true });
+    }
+  });
+
   it("returns 2 (vacuous) when no materialized AssetSpaces are present", async () => {
     const vault = mkTmp("exosync-empty-");
     const lines: string[] = [];

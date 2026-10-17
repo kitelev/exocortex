@@ -530,6 +530,10 @@ async function runExosyncSyncUnsettled(
 ): Promise<number> {
   const out = deps.out ?? ((line: string): void => console.log(line));
   const errOut = deps.err ?? ((line: string): void => console.error(line));
+  // ticket 0b24c5d1 — under --json stdout carries ONLY the result array; every
+  // diagnostic line (header, `warn:`, `--repo:`, refusals) goes to stderr, and
+  // all of them are written before the array (it stays the last write).
+  const diag = opts.json === true ? errOut : out;
   const vaultPath = path.resolve(opts.vault);
   if (!existsSync(vaultPath)) {
     throw new Error(`Vault path does not exist: ${vaultPath}`);
@@ -546,7 +550,11 @@ async function runExosyncSyncUnsettled(
   // req c0810b83 — a malformed pull-only list refuses the run (exit 2) before
   // any REST request: a line meant to protect a repo that does not parse must
   // never leave that repo silently two-way (its local edits would be pushed).
-  const collected = collectVaultSpecsOrRefuse(vaultPath, out, errOut);
+  const collected = collectVaultSpecsOrRefuse(
+    vaultPath,
+    opts.json === true ? () => undefined : out,
+    errOut,
+  );
   if (collected === null) {
     // A distinct local on purpose: the vacuous-exit journal block below is a
     // mutant anchor of exosync-sync.quota-journal.spec.json and must stay
@@ -565,9 +573,13 @@ async function runExosyncSyncUnsettled(
     return 2;
   }
   const { specs: allSpecs, warnings } = collected;
-  for (const w of warnings) out(`warn: ${w}`);
+  for (const w of warnings) {
+    // The helper has already put the pull-only warnings on stderr.
+    if (opts.json === true && collected.pullOnlyWarnings.includes(w)) continue;
+    diag(`warn: ${w}`);
+  }
   if (allSpecs.length === 0) {
-    out(
+    diag(
       "Nothing to sync — no materialized AssetSpaces with a GitHub source found in this vault.",
     );
     // req e5e45283 — a finished run is journalled even when it did nothing.
@@ -594,7 +606,7 @@ async function runExosyncSyncUnsettled(
   const configDir = opts.configDir ?? ".obsidian";
   const selection = selectReposForRun(allSpecs, opts.repo);
   if (selection.unknown.length > 0) {
-    out(
+    diag(
       `❌ --repo: not among the ${allSpecs.length} materialized repo(s): ${selection.unknown.map((n) => JSON.stringify(n)).join(", ")}. Available: ${allSpecs
         .map((s) => s.repoKey.split("#")[0])
         .join(", ")}`,
@@ -716,7 +728,7 @@ async function runExosyncSyncUnsettled(
     ...(opts.apiBase !== undefined ? { baseURL: opts.apiBase } : {}),
   });
 
-  out(
+  diag(
     `ExoSync ${direction}: ${specs.length} repo(s), vault ${vaultPath}`,
   );
   // req 84033d13 — a filtered run says what it LEFT OUT. A pending delta of an
@@ -728,7 +740,7 @@ async function runExosyncSyncUnsettled(
     const left = allSpecs
       .filter((s) => !specs.includes(s))
       .map((s) => s.repoKey.split("#")[0]);
-    out(
+    diag(
       `--repo: ${specs.length} of ${allSpecs.length} materialized repo(s) in this run; not in this run (their pending delta is NOT sent): ${left.join(", ")}`,
     );
   }
@@ -849,7 +861,10 @@ function withSyncOptions(cmd: Command): Command {
       "GitHub PAT (or env GITHUB_TOKEN / GH_TOKEN). Prefer --token-from-gh.",
     )
     .option("--token-from-gh", "Resolve the PAT via `gh auth token`")
-    .option("--json", "Print the full per-repo result array as JSON")
+    .option(
+      "--json",
+      "Print the full per-repo result array as JSON — the only thing on stdout; diagnostics go to stderr",
+    )
     .option("--api-base <url>", "GitHub API base (testing)")
     .option(
       "--no-conditional-requests",

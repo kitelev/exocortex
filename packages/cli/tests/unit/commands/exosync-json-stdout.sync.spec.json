@@ -1,0 +1,71 @@
+{
+  "_doc": "Revert-verify for ticket 0b24c5d1 (under --json stdout is the result array only; header, --repo lines, warnings and refusals go to stderr, BEFORE the array), subject = packages/cli/src/commands/exosync-sync.ts. Axes: J1-J5, J8 in exosync-parity.test.ts, J6 in exosync-object-cache.test.ts, J7 in exosync-conditional-requests.test.ts, K1-K8, K10 in exosync-json-stdout.test.ts, K9 in exosync-sync.test.ts, P* in exosync-sync.pull-only.test.ts. expect = output of a finished mutant-driver run.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-sync.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-parity.test.ts tests/unit/commands/exosync-json-stdout.test.ts tests/unit/commands/exosync-sync.pull-only.test.ts tests/unit/commands/exosync-object-cache.test.ts tests/unit/commands/exosync-conditional-requests.test.ts tests/unit/commands/exosync-sync.test.ts 2>&1",
+  "red_re": "› ([JKP]\\d+\\w*) ",
+  "mutants": {
+    "Q3_diag_is_stdout": {
+      "from": "const diag = opts.json === true ? errOut : out;",
+      "to": "const diag = opts.json === true ? out : out;",
+      "expect": ["K1", "K2", "K4", "K8", "K9", "P15", "P7"]
+    },
+    "Q4_refusal_on_stdout": {
+      "from": "opts.json === true ? () => undefined : out,",
+      "to": "opts.json === true ? out : out,",
+      "expect": ["K7"]
+    },
+    "Q5_pull_only_warning_twice": {
+      "from": "if (opts.json === true && collected.pullOnlyWarnings.includes(w)) continue;",
+      "to": "if (opts.json === true && collected.pullOnlyWarnings.includes(`${w} `)) continue;",
+      "expect": ["K4"]
+    },
+    "Q6_skip_not_json_gated": {
+      "from": "if (opts.json === true && collected.pullOnlyWarnings.includes(w)) continue;",
+      "to": "if (collected.pullOnlyWarnings.includes(w)) continue;",
+      "expect": ["K6", "P10"]
+    },
+    "Q7_header_on_stdout": {
+      "from": "  diag(\n    `ExoSync ${direction}:",
+      "to": "  out(\n    `ExoSync ${direction}:",
+      "expect": ["K1", "K4", "K8", "P15", "P7"]
+    },
+    "Q8_scope_line_on_stdout": {
+      "from": "    diag(\n      `--repo: ${specs.length} of",
+      "to": "    out(\n      `--repo: ${specs.length} of",
+      "expect": ["K1"]
+    },
+    "Q9_unknown_repo_refusal_on_stdout": {
+      "from": "    diag(\n      `❌ --repo: not among",
+      "to": "    out(\n      `❌ --repo: not among",
+      "expect": ["K2"]
+    },
+    "Q10_mirror_paths_after_array": {
+      "from": "  reportMirroredPaths(results, errOut);\n\n  if (opts.json === true) {\n    out(JSON.stringify(results, null, 2));\n  } else {",
+      "to": "  if (opts.json === true) {\n    out(JSON.stringify(results, null, 2));\n    reportMirroredPaths(results, errOut);\n  } else {\n    reportMirroredPaths(results, errOut);",
+      "expect": ["P15"]
+    },
+    "Q3b_human_mode_diag_to_stderr": {
+      "from": "const diag = opts.json === true ? errOut : out;",
+      "to": "const diag = opts.json === true ? errOut : errOut;",
+      "expect": ["K3", "K6", "P10"]
+    },
+    "Q11_collector_warning_on_stdout": {
+      "from": "    diag(`warn: ${w}`);",
+      "to": "    out(`warn: ${w}`);",
+      "expect": ["K8"]
+    },
+    "Q12_nothing_to_sync_on_stdout": {
+      "from": "    diag(\n      \"Nothing to sync",
+      "to": "    out(\n      \"Nothing to sync",
+      "expect": ["K9"]
+    }
+  }
+}

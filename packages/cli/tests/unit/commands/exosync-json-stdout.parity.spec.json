@@ -1,0 +1,89 @@
+{
+  "_doc": "Revert-verify for ticket 0b24c5d1 (under --json stdout is ONE JSON document or nothing; diagnostics go to stderr, BEFORE the document), subject = packages/cli/src/commands/exosync-parity.ts. Axes: J1-J5, J8 in exosync-parity.test.ts, J6 in exosync-object-cache.test.ts, J7 in exosync-conditional-requests.test.ts, K1-K8, K10 in exosync-json-stdout.test.ts, K9 in exosync-sync.test.ts, P* in exosync-sync.pull-only.test.ts. expect = output of a finished mutant-driver run.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/exosync-parity.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/commands/exosync-parity.test.ts tests/unit/commands/exosync-json-stdout.test.ts tests/unit/commands/exosync-sync.pull-only.test.ts tests/unit/commands/exosync-object-cache.test.ts tests/unit/commands/exosync-conditional-requests.test.ts tests/unit/commands/exosync-sync.test.ts 2>&1",
+  "red_re": "› ([JKP]\\d+\\w*) ",
+  "mutants": {
+    "Q1_document_before_telemetry": {
+      "from": "  if (opts.json !== true) printHumanReport(record, out);\n\n  reportObjectCache();\n  reportConditional();\n  reportQuota();\n\n  const exitCode = record.vacuous ? 2 : record.ok ? 0 : 1;\n  if (opts.json === true) {",
+      "to": "  if (opts.json !== true) printHumanReport(record, out);\n  if (opts.json === true) out(JSON.stringify({ ...record, parked: parkedVerdicts }, null, 2));\n\n  reportObjectCache();\n  reportConditional();\n  reportQuota();\n\n  const exitCode = record.vacuous ? 2 : record.ok ? 0 : 1;\n  if (opts.json === true && record.version < 0) {",
+      "expect": ["J2"]
+    },
+    "Q1b_parked_document_before_diagnostics": {
+      "from": "  if (specs.length === 0) {\n    diag(",
+      "to": "  if (specs.length === 0) {\n    if (opts.json === true && parkedVerdicts.length > 0) {\n      out(JSON.stringify({ parked: parkedVerdicts }, null, 2));\n      parkedVerdicts.length = 0;\n    }\n    diag(",
+      "expect": ["J5"]
+    },
+    "Q4_refusal_on_stdout": {
+      "from": "opts.json === true ? () => undefined : out,",
+      "to": "opts.json === true ? out : out,",
+      "expect": ["P6"]
+    },
+    "Q5_pull_only_warning_twice": {
+      "from": "if (opts.json === true && collected.pullOnlyWarnings.includes(w)) continue;",
+      "to": "if (opts.json === true && collected.pullOnlyWarnings.includes(`${w} `)) continue;",
+      "expect": ["K5"]
+    },
+    "Q6_skip_not_json_gated": {
+      "from": "if (opts.json === true && collected.pullOnlyWarnings.includes(w)) continue;",
+      "to": "if (collected.pullOnlyWarnings.includes(w)) continue;",
+      "expect": ["K6"]
+    },
+    "Q7_quota_line_on_stdout": {
+      "from": "diag(`[ExoSync quota] ${t.counts.restCalls} REST",
+      "to": "out(`[ExoSync quota] ${t.counts.restCalls} REST",
+      "expect": ["J1", "J4", "J5", "J6", "J7", "K5", "K8"]
+    },
+    "Q8_header_on_stdout": {
+      "from": "diag(`ExoSync parity check: ${specs.length}",
+      "to": "out(`ExoSync parity check: ${specs.length}",
+      "expect": ["J1", "J6", "J7", "K5", "K8"]
+    },
+    "Q9_nothing_to_check_on_stdout": {
+      "from": "    diag(\n      \"Nothing to check",
+      "to": "    out(\n      \"Nothing to check",
+      "expect": ["J4", "J5"]
+    },
+    "Q2_human_mode_diag_to_stderr": {
+      "from": "const diag = opts.json === true ? errOut : out;",
+      "to": "const diag = opts.json === true ? errOut : errOut;",
+      "_note": "J8 (added in the implementation round) also reds: it asserts the human all-parked run leaves stderr empty.",
+      "expect": ["J3", "J8", "K6"]
+    },
+    "Q10_collector_warning_on_stdout": {
+      "from": "    diag(`warn: ${w}`);",
+      "to": "    out(`warn: ${w}`);",
+      "expect": ["K8"]
+    },
+    "Q11_objects_line_on_stdout": {
+      "from": "    diag(\n      `[ExoSync objects] ${stats.hits}",
+      "to": "    out(\n      `[ExoSync objects] ${stats.hits}",
+      "expect": ["J6"]
+    },
+    "Q12_conditional_line_on_stdout": {
+      "from": "    diag(\n      `[ExoSync conditional] ${stats.notModified}",
+      "to": "    out(\n      `[ExoSync conditional] ${stats.notModified}",
+      "expect": ["J7"]
+    },
+    "Q4b_human_refusal_dropped": {
+      "_note": "Review round of the implementation (MEDIUM): the human side of the collector-sink ternary was locked by no axis — P6 now judges parity only under --json, P14 reads stderr only. K10 locks it. Same `from` as Q4 on purpose: the driver applies each mutant to the untouched subject, so a shared anchor is legal.",
+      "from": "opts.json === true ? () => undefined : out,",
+      "to": "opts.json === true ? () => undefined : () => undefined,",
+      "expect": ["K10"]
+    },
+    "Q13_parked_document_not_json_gated": {
+      "_note": "The `opts.json === true` conjunct of the all-parked document write (moved by this change, unlocked before it too) — J8 locks it.",
+      "from": "    if (opts.json === true && parkedVerdicts.length > 0) {",
+      "to": "    if (parkedVerdicts.length > 0) {",
+      "expect": ["J8"]
+    }
+  }
+}

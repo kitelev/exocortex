@@ -172,16 +172,27 @@ function run(
   remoteFiles: Record<string, string>,
   over: Partial<ExosyncParityOptions> = {},
   transport?: RestCommitTransport,
-): Promise<{ code: number; lines: string[] }> {
+): Promise<{ code: number; lines: string[]; errLines: string[]; both: string[] }> {
   const lines: string[] = [];
+  const errLines: string[] = [];
+  // Both sinks in the order they were written — what a caller merging the
+  // streams (`2>&1`) reads (ticket 0b24c5d1).
+  const both: string[] = [];
   return runExosyncParity(
     { vault, token: FAKE_PAT, ...over },
     {
       transportFactory: () => transport ?? fakeTransport(remoteFiles),
-      out: (l) => lines.push(l),
+      out: (l) => {
+        lines.push(l);
+        both.push(l);
+      },
+      err: (l) => {
+        errLines.push(l);
+        both.push(l);
+      },
       env: {},
     },
-  ).then((code) => ({ code, lines }));
+  ).then((code) => ({ code, lines, errLines, both }));
 }
 
 /**
@@ -480,41 +491,69 @@ describe("parked AssetSpaces report their staleness @req:75dba148-15c4-401e-a7b5
     }
   });
 
-  it("--json stays byte-identical to the old empty-vault path when nothing is parked", async () => {
+  it("J4 --json prints no document on the empty-vault path when nothing is parked", async () => {
     // Locks the `parkedVerdicts.length > 0` guard: without it this path would
     // start emitting `{"parked": []}`, which the pre-parked CLI never printed.
+    // ticket 0b24c5d1 — "Nothing to check" is a diagnostic: stderr, not stdout.
     const fx = makeVault({ declaration: false });
     try {
-      const { code, lines } = await run(fx.vault, {}, { json: true });
+      const { code, lines, errLines } = await run(fx.vault, {}, { json: true });
       expect(code).toBe(2);
-      expect(lines.filter((l) => l.startsWith("{"))).toEqual([]);
-      expect(lines.join("\n")).toMatch(/Nothing to check/);
+      expect(lines).toEqual([]);
+      expect(errLines.join("\n")).toMatch(/Nothing to check/);
     } finally {
       fx.cleanup();
     }
   });
 
-  it("--json carries the parked verdicts on the all-parked path too", async () => {
+  it("J5 --json carries the parked verdicts on the all-parked path too — the document alone on stdout, after the diagnostics", async () => {
+    // ticket 0b24c5d1 — the all-parked branch has its own write of the
+    // document; "Nothing to check" and the quota line go to stderr BEFORE it.
     const fx = makeVault({
       parkedFiles: { [FILE_A]: CONTENT_A },
       watermarkFiles: {},
       watermarkSha: "d".repeat(40),
     });
     try {
-      const { code, lines } = await run(
+      const { code, lines, errLines, both } = await run(
         fx.vault,
         { [FILE_A]: CONTENT_A },
         { json: true },
       );
       expect(code).toBe(2);
-      const json = JSON.parse(
-        lines.filter((l) => l.startsWith("{")).join("\n"),
-      ) as { parked: { repoKey: string; freshness: string }[] };
+      expect(lines).toHaveLength(1);
+      expect(errLines.join("\n")).toMatch(/Nothing to check/);
+      expect(errLines.some((l) => l.startsWith("[ExoSync quota] "))).toBe(true);
+      expect(both[both.length - 1]).toBe(lines[0]);
+      const json = JSON.parse(lines.join("\n")) as {
+        parked: { repoKey: string; freshness: string }[];
+      };
       expect(json.parked).toHaveLength(1);
       expect(json.parked[0]).toMatchObject({
         repoKey: `${OWNER}/${REPO}#main`,
         freshness: "behind",
       });
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("J8 @req:e312155b-b14b-4a3b-9320-ccdc4dfe65fd without --json the all-parked path prints no JSON document — the human report only", async () => {
+    // Locks the `opts.json === true` conjunct of the all-parked document
+    // write: without it the human report would end with `{"parked": …}`.
+    const fx = makeVault({
+      parkedFiles: { [FILE_A]: CONTENT_A },
+      watermarkFiles: {},
+      watermarkSha: "d".repeat(40),
+    });
+    try {
+      const { code, lines, errLines } = await run(fx.vault, {
+        [FILE_A]: CONTENT_A,
+      });
+      expect(code).toBe(2);
+      expect(lines.join("\n")).toMatch(/Nothing to check/);
+      expect(lines.filter((l) => l.startsWith("{"))).toEqual([]);
+      expect(errLines).toEqual([]);
     } finally {
       fx.cleanup();
     }
@@ -590,6 +629,58 @@ describe("runExosyncParity", () => {
       ) as { version: number; ok: boolean };
       expect(json.version).toBe(1);
       expect(json.ok).toBe(true);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("J1 @req:e312155b-b14b-4a3b-9320-ccdc4dfe65fd --json: stdout is the document and nothing else; header and quota go to stderr", async () => {
+    const fx = makeVault({
+      mountFiles: { [FILE_A]: CONTENT_A },
+      watermarkFiles: { [FILE_A]: CONTENT_A },
+    });
+    try {
+      const { code, lines, errLines } = await run(
+        fx.vault,
+        { [FILE_A]: CONTENT_A },
+        { json: true },
+      );
+      expect(code).toBe(0);
+      // The WHOLE stdout parses — not "the line that starts with {".
+      expect(lines).toHaveLength(1);
+      expect((JSON.parse(lines.join("\n")) as { ok: boolean }).ok).toBe(true);
+      expect(errLines.some((l) => l.startsWith("ExoSync parity check: 1 repo(s)"))).toBe(true);
+      expect(errLines.some((l) => l.startsWith("[ExoSync quota] "))).toBe(true);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("J2 @req:e312155b-b14b-4a3b-9320-ccdc4dfe65fd --json: the document is the LAST write of the run (a `2>&1` caller gets it whole)", async () => {
+    const fx = makeVault({
+      mountFiles: { [FILE_A]: CONTENT_A },
+      watermarkFiles: { [FILE_A]: CONTENT_A },
+    });
+    try {
+      const { both } = await run(fx.vault, { [FILE_A]: CONTENT_A }, { json: true });
+      expect(both.length).toBeGreaterThan(1);
+      expect(both[both.length - 1]).toMatch(/^\{/);
+      expect(both.slice(0, -1).filter((l) => l.startsWith("{"))).toEqual([]);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("J3 @req:e312155b-b14b-4a3b-9320-ccdc4dfe65fd without --json the human report keeps stdout and its order", async () => {
+    const fx = makeVault({
+      mountFiles: { [FILE_A]: CONTENT_A },
+      watermarkFiles: { [FILE_A]: CONTENT_A },
+    });
+    try {
+      const { lines, errLines } = await run(fx.vault, { [FILE_A]: CONTENT_A });
+      expect(errLines).toEqual([]);
+      expect(lines[0]).toMatch(/^ExoSync parity check: 1 repo\(s\)/);
+      expect(lines[lines.length - 1]).toMatch(/^\[ExoSync quota\] /);
     } finally {
       fx.cleanup();
     }

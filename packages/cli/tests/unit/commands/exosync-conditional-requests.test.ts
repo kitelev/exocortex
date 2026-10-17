@@ -238,6 +238,30 @@ describe("the wiring is pinned at the command level @req:af002ec4-ec4e-4482-b7b5
     expect(remote.notModified()).toBeGreaterThan(notModifiedAfterFirst);
   });
 
+  it("J7 @req:e312155b-b14b-4a3b-9320-ccdc4dfe65fd --json: the [ExoSync conditional] line goes to stderr, stdout is the bare document (ticket 0b24c5d1)", async () => {
+    const remote = conditionalRemote({ [FILE_A]: CONTENT_A });
+    await runExosyncParity(
+      { vault: fixture.vault, token: FAKE_PAT },
+      { transportFactory: () => remote, out: () => undefined, env: {} },
+    );
+    const lines: string[] = [];
+    const errLines: string[] = [];
+    await runExosyncParity(
+      { vault: fixture.vault, token: FAKE_PAT, json: true },
+      {
+        transportFactory: () => remote,
+        out: (l) => lines.push(l),
+        err: (l) => errLines.push(l),
+        env: {},
+      },
+    );
+    expect(errLines.some((l) => l.startsWith("[ExoSync conditional]"))).toBe(
+      true,
+    );
+    expect(lines).toHaveLength(1);
+    JSON.parse(lines[0]);
+  });
+
   it("D5 negative control — with --no-conditional-requests nothing is validated", async () => {
     const remote = conditionalRemote({ [FILE_A]: CONTENT_A });
     const parity = async (): Promise<number> =>
