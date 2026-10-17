@@ -1462,8 +1462,8 @@ describe("PropertiesLabelPatch", () => {
       const changed = changedCallback();
       for (let i = 0; i < 20; i++) {
         changed();
-        // Flush every event on its own: a single trailing refresh would leave
-        // M17/M28 (re-resolving patched rows) only one rebuild to show.
+        // Flush every event on its own, so every event's re-patch runs: M17/M28
+        // (re-resolving patched rows) then rebuild 20 times, not once.
         flushRefresh();
       }
 
@@ -1670,8 +1670,9 @@ describe("PropertiesLabelPatch", () => {
   // ems__Bug cc7df026: debounced index refresh
   // ============================================================
   // A row whose key has no property definition (`tags`) stays unpatched, so every
-  // refresh resolves it and rebuilds the whole-vault index — one getMarkdownFiles
-  // call per rebuild. Mutants: PropertiesLabelPatch.debounce-cc7df026.spec.json.
+  // re-patch resolves it and rebuilds the whole-vault index — one getMarkdownFiles
+  // call per rebuild. The index itself is invalidated at once on every event; only
+  // the re-patch is debounced. Mutants: PropertiesLabelPatch.debounce-cc7df026.spec.json.
   describe("ems__Bug cc7df026: metadataCache bursts refresh the index once", () => {
     function handler(name: "changed" | "resolved"): () => void {
       const cb = mockApp.metadataCache.on.mock.calls.find(
@@ -1763,6 +1764,59 @@ describe("PropertiesLabelPatch", () => {
       patch.disable();
 
       expect(jest.getTimerCount()).toBe(0);
+    });
+
+    // Changes the displayName of ems__Effort_area for the duration of `body`.
+    async function withRenamedEffortArea(body: () => Promise<void> | void): Promise<void> {
+      const fm = FRONTMATTERS["ems/ab1b5cc2.md"];
+      const before = fm.exo__Property_displayName;
+      fm.exo__Property_displayName = "NEW AREA";
+      try {
+        await body();
+      } finally {
+        fm.exo__Property_displayName = before;
+      }
+    }
+
+    it("D5 a row Obsidian re-renders right after a definition change reads the new label before the re-patch fires", async () => {
+      const old = addRow(mockMetadataContainer, "ems__Effort_area");
+      patch.enable();
+      expect(old.querySelector(".exo-label-display")?.textContent).toBe("Effort Area");
+
+      await withRenamedEffortArea(async () => {
+        handler("changed")();
+        // Obsidian re-renders the Properties block of the edited note: the observer
+        // patches the new row at once, well inside the 300ms re-patch window.
+        old.remove();
+        const rerendered = addRow(mockMetadataContainer, "ems__Effort_area");
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        expect(rerendered.querySelector(".exo-label-display")?.textContent).toBe("NEW AREA");
+      });
+    });
+
+    it("D6 an event received while disabled schedules nothing", () => {
+      jest.useFakeTimers();
+      addRow(mockMetadataContainer, "tags");
+      patch.enable();
+      patch.disable();
+
+      handler("changed")();
+
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
+    it("D7 re-enabling right after an event received while disabled reads the new label", async () => {
+      const row = addRow(mockMetadataContainer, "ems__Effort_area");
+      patch.enable();
+      patch.disable();
+
+      await withRenamedEffortArea(() => {
+        handler("changed")();
+        patch.enable();
+
+        expect(row.querySelector(".exo-label-display")?.textContent).toBe("NEW AREA");
+      });
     });
   });
 

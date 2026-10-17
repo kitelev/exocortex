@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for ems__Bug cc7df026 — PropertiesLabelPatch refreshes the index after a trailing debounce of the metadataCache \"changed\"/\"resolved\" handlers instead of rebuilding it on every event. Run from a COPY with the path placeholders replaced: python3 -I ~/.claude/bin/mutant-driver.py <this file>. Axis names are D<N> (this bug) and L<N>[a-z] (req 0a85d233), the FIRST token of each test title in PropertiesLabelPatch.test.ts.",
+  "_doc": "Revert-verify mutants for ems__Bug cc7df026 — PropertiesLabelPatch invalidates the label index at once on metadataCache \"changed\"/\"resolved\" but re-patches open blocks only after a 300ms trailing debounce, instead of re-patching (and so rebuilding the whole-vault index for every unpatched key) on every event. Run from a COPY with the path placeholders replaced: python3 -I ~/.claude/bin/mutant-driver.py <this file>. Axis names are D<N> (this bug) and L<N>[a-z] (req 0a85d233), the FIRST token of each test title in PropertiesLabelPatch.test.ts.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/presentation/properties/PropertiesLabelPatch.ts",
   "symlink_node_modules": [
@@ -14,26 +14,37 @@
   "red_re": "›\\s+([DL]\\d+[a-z]?)\\s",
   "mutants": {
     "M1_no_debounce": {
-      "from": "    this.refreshTimer = window.setTimeout(() => {\n      this.refreshTimer = null;\n      this.invalidateIndex();\n      this.patchAllPropertiesBlocks();\n    }, INDEX_REFRESH_DEBOUNCE_MS);",
-      "to": "    this.invalidateIndex();\n    this.patchAllPropertiesBlocks();",
+      "from": "    this.repatchTimer = window.setTimeout(() => {\n      this.repatchTimer = null;\n      this.patchAllPropertiesBlocks();\n    }, REPATCH_DEBOUNCE_MS);",
+      "to": "    this.patchAllPropertiesBlocks();",
       "expect": ["D1", "D3"],
-      "_note": "origin/main behaviour (every event rebuilds the index) — the base flip as a mutant."
+      "_note": "origin/main behaviour (every event re-patches, so every event rebuilds the index) — the base flip as a mutant."
     },
-    "M2_refresh_does_not_invalidate": {
-      "from": "      this.refreshTimer = null;\n      this.invalidateIndex();",
-      "to": "      this.refreshTimer = null;",
-      "expect": ["D1", "D2", "D3", "L19"],
-      "_note": "L19 reds too: its new row resolves only through a rebuilt index."
+    "M2_events_do_not_invalidate": {
+      "from": "    this.invalidateIndex();\n    this.scheduleRepatch();",
+      "to": "    this.scheduleRepatch();",
+      "expect": ["D1", "D2", "D3", "D5", "D7", "L19"],
+      "_note": "No event invalidates the index any more: every axis that needs fresh metadata reds, L19 too (its new row resolves only through a rebuilt index)."
     },
-    "M3_resolved_refreshes_immediately": {
-      "from": "      this.app.metadataCache.on(\"resolved\", () => this.scheduleRefresh())",
+    "M3_resolved_repatches_immediately": {
+      "from": "      this.app.metadataCache.on(\"resolved\", () => this.onMetadataChange())",
       "to": "      this.app.metadataCache.on(\"resolved\", () => {\n        this.invalidateIndex();\n        this.patchAllPropertiesBlocks();\n      })",
       "expect": ["D3"]
     },
-    "M4_disable_keeps_pending_refresh": {
-      "from": "    if (this.refreshTimer !== null) {\n      window.clearTimeout(this.refreshTimer);\n      this.refreshTimer = null;\n    }\n\n    this.restoreAll();",
+    "M4_disable_keeps_pending_repatch": {
+      "from": "    if (this.repatchTimer !== null) {\n      window.clearTimeout(this.repatchTimer);\n      this.repatchTimer = null;\n    }\n\n    this.restoreAll();",
       "to": "    this.restoreAll();",
       "expect": ["D4"]
+    },
+    "M5_invalidation_deferred_to_the_repatch": {
+      "from": "    this.invalidateIndex();\n    this.scheduleRepatch();",
+      "to": "    this.scheduleRepatch();\n    const pending = this.repatchTimer;\n    if (pending !== null) {\n      window.clearTimeout(pending);\n      this.repatchTimer = window.setTimeout(() => {\n        this.repatchTimer = null;\n        this.invalidateIndex();\n        this.patchAllPropertiesBlocks();\n      }, REPATCH_DEBOUNCE_MS);\n    }",
+      "expect": ["D5", "D7"],
+      "_note": "The first revision of this fix (review round 1, two MEDIUM): the index stayed stale for the whole window, so a row the observer patched during it, or a re-enable after an event received while disabled, read the old label."
+    },
+    "M6_schedules_while_disabled": {
+      "from": "    if (!this.enabled) return;\n    if (this.repatchTimer !== null) {",
+      "to": "    if (this.repatchTimer !== null) {",
+      "expect": ["D6"]
     }
   }
 }

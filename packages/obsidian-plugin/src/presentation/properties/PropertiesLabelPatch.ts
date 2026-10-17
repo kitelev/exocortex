@@ -58,14 +58,14 @@ const CLICKABLE_CLASS = "exo-label-clickable";
 const EXO_PROPERTY_ROOT_UID = "38277bfa-d7f9-4a75-b856-b23276ab0db3";
 
 /**
- * Trailing debounce for the metadataCache "changed"/"resolved" handlers (ems__Bug cc7df026).
- * Each event invalidates the index; the next unpatched key of an open block (a key without a
- * property definition, e.g. `tags`) then rebuilds it — two passes over every markdown file.
- * Un-debounced, a sync burst of K events meant K whole-vault rebuilds on the main thread, the
- * iPhone-Jetsam crash-loop class fixed for PrintNameRuleService and
- * ConceptDefinitionSpecService. 300ms trailing collapses the burst into one rebuild.
+ * Trailing debounce of the re-patch after metadataCache "changed"/"resolved" (ems__Bug cc7df026).
+ * Each event invalidates the index; the re-patch of open blocks then resolves every unpatched key
+ * (a key without a property definition, e.g. `tags`) and so rebuilds the index — two passes over
+ * every markdown file. Re-patching on every event meant K whole-vault rebuilds per sync burst of
+ * K events on the main thread, the iPhone-Jetsam crash-loop class fixed for PrintNameRuleService
+ * and ConceptDefinitionSpecService. 300ms trailing collapses the burst into one rebuild.
  */
-const INDEX_REFRESH_DEBOUNCE_MS = 300;
+const REPATCH_DEBOUNCE_MS = 300;
 
 const UUID_REGEX =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -306,7 +306,7 @@ export class PropertiesLabelPatch {
   private indexBuilt = false;
   private patched: PatchRecord[] = [];
   private recordsByEl: WeakMap<HTMLElement, PatchRecord> = new WeakMap();
-  private refreshTimer: number | null = null;
+  private repatchTimer: number | null = null;
   private readonly logger = LoggerFactory.create("PropertiesLabelPatch");
 
   constructor(plugin: Plugin) {
@@ -322,11 +322,10 @@ export class PropertiesLabelPatch {
     this.patchAllPropertiesBlocks();
     this.setupObserver();
 
-    // Debounced: a burst of "changed" events (a sync pull) refreshes the index ONCE,
-    // ~300ms after the last event (ems__Bug cc7df026). Rows Obsidian re-renders in the
-    // meantime are patched by the observer against the index built before the burst.
+    // A burst of "changed" events (a sync pull) re-patches open blocks ONCE, ~300ms after
+    // the last event (ems__Bug cc7df026); see onMetadataChange.
     this.plugin.registerEvent(
-      this.app.metadataCache.on("changed", () => this.scheduleRefresh())
+      this.app.metadataCache.on("changed", () => this.onMetadataChange())
     );
 
     // Obsidian fires "resolved" once the initial vault parse finishes. On a
@@ -336,11 +335,11 @@ export class PropertiesLabelPatch {
     // frontmatters for every property def file and readable labels never
     // appear. Subscribing here makes the feature work on the supported
     // starter-kit install path. Finding 4, UX audit 2026-04-14.
-    // "resolved" is debounced through the same timer as "changed": obsidian.d.ts says it
-    // "will be fired each time files get modified after the initial load", so every edit
-    // brings a changed+resolved pair — one timer makes the pair one rebuild.
+    // "resolved" shares the re-patch timer with "changed": obsidian.d.ts says it "will be
+    // fired each time files get modified after the initial load", so every edit brings a
+    // changed+resolved pair — one timer makes the pair one rebuild.
     this.plugin.registerEvent(
-      this.app.metadataCache.on("resolved", () => this.scheduleRefresh())
+      this.app.metadataCache.on("resolved", () => this.onMetadataChange())
     );
 
     this.plugin.registerEvent(
@@ -365,9 +364,9 @@ export class PropertiesLabelPatch {
       this.observer = null;
     }
 
-    if (this.refreshTimer !== null) {
-      window.clearTimeout(this.refreshTimer);
-      this.refreshTimer = null;
+    if (this.repatchTimer !== null) {
+      window.clearTimeout(this.repatchTimer);
+      this.repatchTimer = null;
     }
 
     this.restoreAll();
@@ -378,20 +377,32 @@ export class PropertiesLabelPatch {
   }
 
   /**
-   * Trailing debounce of "invalidate the index + re-patch open blocks": a burst of K
-   * metadataCache events becomes ONE refresh INDEX_REFRESH_DEBOUNCE_MS after the last one,
-   * instead of K whole-vault index rebuilds (ems__Bug cc7df026; same form as
-   * PrintNameRuleService.scheduleRefresh).
+   * metadataCache "changed"/"resolved" (ems__Bug cc7df026). The index is invalidated AT ONCE —
+   * that only clears maps and a flag, the rebuild stays lazy — so a row Obsidian re-renders
+   * during a burst, which the observer patches immediately, resolves against fresh metadata,
+   * and so does a re-enable right after an event received while disabled. Only the re-patch
+   * of open blocks, the step that rebuilds the index for every unpatched key, is debounced.
    */
-  private scheduleRefresh(): void {
-    if (this.refreshTimer !== null) {
-      window.clearTimeout(this.refreshTimer);
+  private onMetadataChange(): void {
+    this.invalidateIndex();
+    this.scheduleRepatch();
+  }
+
+  /**
+   * Trailing debounce of the re-patch: a burst of K metadataCache events becomes ONE re-patch
+   * REPATCH_DEBOUNCE_MS after the last one, instead of K whole-vault index rebuilds (same form
+   * as PrintNameRuleService.scheduleRefresh). While disabled nothing is scheduled — the
+   * re-patch would be a no-op, and enable() patches every block itself.
+   */
+  private scheduleRepatch(): void {
+    if (!this.enabled) return;
+    if (this.repatchTimer !== null) {
+      window.clearTimeout(this.repatchTimer);
     }
-    this.refreshTimer = window.setTimeout(() => {
-      this.refreshTimer = null;
-      this.invalidateIndex();
+    this.repatchTimer = window.setTimeout(() => {
+      this.repatchTimer = null;
       this.patchAllPropertiesBlocks();
-    }, INDEX_REFRESH_DEBOUNCE_MS);
+    }, REPATCH_DEBOUNCE_MS);
   }
 
   private invalidateIndex(): void {
