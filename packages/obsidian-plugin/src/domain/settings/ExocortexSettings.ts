@@ -94,7 +94,9 @@ export interface ExocortexSettings {
    * RFC-030 — enable the `PropertiesLabelPatch` which patches predicate keys
    * in Obsidian's Properties block (Reading Mode) to:
    * - Replace raw predicate name (e.g. `ems__Effort_area`) with clickable span
-   *   whose text is `exo__Property_displayName` (fallback to `exo__Asset_label`)
+   *   whose text is the property's short name — `exo__Property_displayName`,
+   *   else `exo__Property_localName`, else the label's local part (`area`) —
+   *   prefixed `<ClassName>.` where two keys of one block read the same (#4568)
    * - Open the property-definition asset on click
    *
    * Default `true`. When `false`, the Properties block renders native Obsidian
