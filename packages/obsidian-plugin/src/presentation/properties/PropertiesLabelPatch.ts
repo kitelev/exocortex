@@ -57,6 +57,16 @@ const CLICKABLE_CLASS = "exo-label-clickable";
 // exo__Class_superClass qualify as "property assets" for indexing.
 const EXO_PROPERTY_ROOT_UID = "38277bfa-d7f9-4a75-b856-b23276ab0db3";
 
+/**
+ * Trailing debounce for the metadataCache "changed"/"resolved" handlers (ems__Bug cc7df026).
+ * Each event invalidates the index; the next unpatched key of an open block (a key without a
+ * property definition, e.g. `tags`) then rebuilds it — two passes over every markdown file.
+ * Un-debounced, a sync burst of K events meant K whole-vault rebuilds on the main thread, the
+ * iPhone-Jetsam crash-loop class fixed for PrintNameRuleService and
+ * ConceptDefinitionSpecService. 300ms trailing collapses the burst into one rebuild.
+ */
+const INDEX_REFRESH_DEBOUNCE_MS = 300;
+
 const UUID_REGEX =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
@@ -296,6 +306,7 @@ export class PropertiesLabelPatch {
   private indexBuilt = false;
   private patched: PatchRecord[] = [];
   private recordsByEl: WeakMap<HTMLElement, PatchRecord> = new WeakMap();
+  private refreshTimer: number | null = null;
   private readonly logger = LoggerFactory.create("PropertiesLabelPatch");
 
   constructor(plugin: Plugin) {
@@ -311,11 +322,11 @@ export class PropertiesLabelPatch {
     this.patchAllPropertiesBlocks();
     this.setupObserver();
 
+    // Debounced: a burst of "changed" events (a sync pull) refreshes the index ONCE,
+    // ~300ms after the last event (ems__Bug cc7df026). Rows Obsidian re-renders in the
+    // meantime are patched by the observer against the index built before the burst.
     this.plugin.registerEvent(
-      this.app.metadataCache.on("changed", () => {
-        this.invalidateIndex();
-        this.patchAllPropertiesBlocks();
-      })
+      this.app.metadataCache.on("changed", () => this.scheduleRefresh())
     );
 
     // Obsidian fires "resolved" once the initial vault parse finishes. On a
@@ -325,11 +336,11 @@ export class PropertiesLabelPatch {
     // frontmatters for every property def file and readable labels never
     // appear. Subscribing here makes the feature work on the supported
     // starter-kit install path. Finding 4, UX audit 2026-04-14.
+    // "resolved" is debounced through the same timer as "changed": obsidian.d.ts says it
+    // "will be fired each time files get modified after the initial load", so every edit
+    // brings a changed+resolved pair — one timer makes the pair one rebuild.
     this.plugin.registerEvent(
-      this.app.metadataCache.on("resolved", () => {
-        this.invalidateIndex();
-        this.patchAllPropertiesBlocks();
-      })
+      this.app.metadataCache.on("resolved", () => this.scheduleRefresh())
     );
 
     this.plugin.registerEvent(
@@ -354,11 +365,33 @@ export class PropertiesLabelPatch {
       this.observer = null;
     }
 
+    if (this.refreshTimer !== null) {
+      window.clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+
     this.restoreAll();
   }
 
   cleanup(): void {
     this.disable();
+  }
+
+  /**
+   * Trailing debounce of "invalidate the index + re-patch open blocks": a burst of K
+   * metadataCache events becomes ONE refresh INDEX_REFRESH_DEBOUNCE_MS after the last one,
+   * instead of K whole-vault index rebuilds (ems__Bug cc7df026; same form as
+   * PrintNameRuleService.scheduleRefresh).
+   */
+  private scheduleRefresh(): void {
+    if (this.refreshTimer !== null) {
+      window.clearTimeout(this.refreshTimer);
+    }
+    this.refreshTimer = window.setTimeout(() => {
+      this.refreshTimer = null;
+      this.invalidateIndex();
+      this.patchAllPropertiesBlocks();
+    }, INDEX_REFRESH_DEBOUNCE_MS);
   }
 
   private invalidateIndex(): void {
@@ -381,7 +414,7 @@ export class PropertiesLabelPatch {
    * The same pass records every asset's label and `exo__Class_localName` into
    * `assetNamesByUid` — the class names a property's `exo__Property_domain` may
    * point at (issue #4568). One walk instead of two: the index is invalidated
-   * on every metadataCache change and rebuilt on the next unpatched key.
+   * after every burst of metadataCache changes and rebuilt on the next unpatched key.
    */
   private resolvePropertyClassUids(files: TFile[]): Set<string> {
     // childUid → Set<parentUid> from frontmatter exo__Class_superClass

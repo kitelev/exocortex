@@ -1,0 +1,39 @@
+{
+  "_doc": "Revert-verify mutants for ems__Bug cc7df026 — PropertiesLabelPatch refreshes the index after a trailing debounce of the metadataCache \"changed\"/\"resolved\" handlers instead of rebuilding it on every event. Run from a COPY with the path placeholders replaced: python3 -I ~/.claude/bin/mutant-driver.py <this file>. Axis names are D<N> (this bug) and L<N>[a-z] (req 0a85d233), the FIRST token of each test title in PropertiesLabelPatch.test.ts.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/presentation/properties/PropertiesLabelPatch.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../..\" && node node_modules/jest/bin/jest.js --config packages/obsidian-plugin/jest.config.js packages/obsidian-plugin/tests/unit/presentation/properties/PropertiesLabelPatch.test.ts --verbose 2>&1",
+  "red_re": "›\\s+([DL]\\d+[a-z]?)\\s",
+  "mutants": {
+    "M1_no_debounce": {
+      "from": "    this.refreshTimer = window.setTimeout(() => {\n      this.refreshTimer = null;\n      this.invalidateIndex();\n      this.patchAllPropertiesBlocks();\n    }, INDEX_REFRESH_DEBOUNCE_MS);",
+      "to": "    this.invalidateIndex();\n    this.patchAllPropertiesBlocks();",
+      "expect": ["D1", "D3"],
+      "_note": "origin/main behaviour (every event rebuilds the index) — the base flip as a mutant."
+    },
+    "M2_refresh_does_not_invalidate": {
+      "from": "      this.refreshTimer = null;\n      this.invalidateIndex();",
+      "to": "      this.refreshTimer = null;",
+      "expect": ["D1", "D2", "D3", "L19"],
+      "_note": "L19 reds too: its new row resolves only through a rebuilt index."
+    },
+    "M3_resolved_refreshes_immediately": {
+      "from": "      this.app.metadataCache.on(\"resolved\", () => this.scheduleRefresh())",
+      "to": "      this.app.metadataCache.on(\"resolved\", () => {\n        this.invalidateIndex();\n        this.patchAllPropertiesBlocks();\n      })",
+      "expect": ["D3"]
+    },
+    "M4_disable_keeps_pending_refresh": {
+      "from": "    if (this.refreshTimer !== null) {\n      window.clearTimeout(this.refreshTimer);\n      this.refreshTimer = null;\n    }\n\n    this.restoreAll();",
+      "to": "    this.restoreAll();",
+      "expect": ["D4"]
+    }
+  }
+}
