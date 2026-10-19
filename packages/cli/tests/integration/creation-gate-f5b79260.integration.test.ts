@@ -33,6 +33,10 @@ const { PlanningFsAdapter } = await import("../../src/adapters/PlanningFsAdapter
 const { createFsPolicySource, isCreationGateClassObject } = await import(
   "../../src/services/CreationGateCli.js"
 );
+const { NodeFsAdapter } = await import("../../src/adapters/NodeFsAdapter.js");
+const { CreationGateSession, CREATION_GATE_CLASS_UID, CREATION_GATE_CLASS_LABEL } = await import(
+  "@kitelev/exocortex-core"
+);
 
 const REQ = "@req:f5b79260-f87c-4e73-8a34-19da341c7ec9";
 
@@ -635,5 +639,558 @@ describe("creation gate at the CLI write points (req f5b79260)", () => {
       "utf-8",
     );
     expect(source).not.toMatch(/CreationGate|withCreationGate/);
+  });
+
+  // ── a7181947: the gate's price while the cache cannot narrow ────────────
+  //
+  // `create` paid ~+1.5 s on vault-exodev whenever the triple cache was stale
+  // (any edit after the last `index`): the rule parser looks each of the
+  // rule's nine keys up BY LABEL, and with no index every lookup cloned the
+  // frontmatter of every file (`PlanningFsAdapter.getFileMetadata` hands out a
+  // `structuredClone`). Counted, not timed — a wall-clock bound in CI flakes
+  // (`perf-tests-dont-hard-gate-ci`), a call count does not.
+
+  /** Typed ABox noise — what an un-narrowed lookup has to walk past. */
+  function addNoise(v: string, count: number): void {
+    for (let i = 0; i < count; i++) {
+      writeAsset(v, `abox/noise-${i}.md`, {
+        exo__Asset_uid: `cccc1000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+        exo__Asset_label: `"Шум ${i}"`,
+        exo__Instance_class: [link(C.task)],
+        ems__Effort_parent: link(PRJ_OK),
+      });
+    }
+  }
+
+  /**
+   * The three ways the cache cannot narrow, each a separate route to the same
+   * un-narrowed scan: never indexed · edited after `index` (C8 of #4291) ·
+   * indexed, but more files than `MAX_UNKNOWN_PATHS` carry no triples.
+   */
+  type CacheState = "absent" | "stale" | "dirty";
+  const CACHE_STATES: CacheState[] = ["absent", "stale", "dirty"];
+
+  async function unnarrowedVault(state: CacheState): Promise<string> {
+    const v = vault();
+    addNoise(v, 60);
+    if (state === "dirty") {
+      for (let i = 0; i <= PlanningFsAdapter.MAX_UNKNOWN_PATHS; i++) {
+        // converter-skipped (an empty `updatedAt`, C7 of #4291): no triples ⇒ an unknown path
+        const uid = `ffff0000-0000-4000-8000-${String(i).padStart(12, "0")}`;
+        const file = path.join(v, "skipped", `${uid}.md`);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(
+          file,
+          `---\nexo__Asset_uid: ${uid}\nexo__Asset_label: "Пропуск ${i}"\nexo__Asset_updatedAt:\n---\n`,
+          "utf-8",
+        );
+      }
+    }
+    if (state !== "absent") await new CacheManager(v).buildCache();
+    if (state === "stale") {
+      writeAsset(v, "abox/late-arrival.md", {
+        exo__Asset_uid: "cccc2000-0000-4000-8000-000000000001",
+        exo__Asset_label: '"Пришёл после index"',
+      });
+    }
+    // The state is what the axis claims it is (otherwise a narrowed run would
+    // make the price axes vacuous).
+    const narrowing = await new CacheManager(v).instanceClassPaths(isCreationGateClassObject);
+    if (state === "dirty") {
+      expect(narrowing?.unknownPaths.length ?? 0).toBeGreaterThan(PlanningFsAdapter.MAX_UNKNOWN_PATHS);
+    } else {
+      expect(narrowing).toBeNull();
+    }
+    return v;
+  }
+
+  /**
+   * What `create` spent INSIDE the gate (`assertAllowed`), by call count: the
+   * planning adapter's cloning metadata reader, `structuredClone` itself, and
+   * the BASE reader — every call to it is a fresh parse of a file's text
+   * (`PlanningFsAdapter`'s memo loads through it).
+   */
+  async function gateSpend(
+    v: string,
+    args: string[],
+  ): Promise<{ run: Run; metadata: number; clones: number; parses: number }> {
+    const spent = { metadata: 0, clones: 0, parses: 0 };
+    let inGate = false;
+    // ⛔ Restored before returning: a second spyOn on a still-spied method
+    // returns THE SAME mock, so its "original" would be the mock itself.
+    const spies: { mockRestore(): void }[] = [];
+    const clone = globalThis.structuredClone;
+    const cloneSpy = jest.spyOn(globalThis, "structuredClone");
+    spies.push(cloneSpy);
+    cloneSpy.mockImplementation(((value: unknown, options?: unknown) => {
+      if (inGate) spent.clones += 1;
+      return clone(value, options as never);
+    }) as never);
+    const metadata = PlanningFsAdapter.prototype.getFileMetadata;
+    const metadataSpy = jest.spyOn(PlanningFsAdapter.prototype, "getFileMetadata");
+    spies.push(metadataSpy);
+    metadataSpy.mockImplementation(function (
+      this: InstanceType<typeof PlanningFsAdapter>,
+      file: string,
+    ) {
+      if (inGate) spent.metadata += 1;
+      return metadata.call(this, file);
+    });
+    const parse = NodeFsAdapter.prototype.getFileMetadata;
+    const parseSpy = jest.spyOn(NodeFsAdapter.prototype, "getFileMetadata");
+    spies.push(parseSpy);
+    parseSpy.mockImplementation(function (this: InstanceType<typeof NodeFsAdapter>, file: string) {
+      if (inGate) spent.parses += 1;
+      return parse.call(this, file);
+    });
+    const assertAllowed = CreationGateSession.prototype.assertAllowed;
+    const gateSpy = jest.spyOn(CreationGateSession.prototype, "assertAllowed");
+    spies.push(gateSpy);
+    gateSpy.mockImplementation(async function (
+      this: InstanceType<typeof CreationGateSession>,
+      file: string,
+      content: string,
+    ) {
+      inGate = true;
+      try {
+        return await assertAllowed.call(this, file, content);
+      } finally {
+        inGate = false;
+      }
+    });
+    try {
+      const run = await runCreate(v, args);
+      return { run, ...spent };
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  }
+
+  const underApproved = [
+    "--class",
+    "ems__Task",
+    "--label",
+    "Задача под одобренным",
+    "--property",
+    `ems__Effort_parent=[[${PRJ_OK}]]`,
+    "--dry-run",
+  ];
+
+  /**
+   * The measured `create` (under the approved project) succeeds, and the rule
+   * is IN FORCE on the same vault — a parentless task is refused. Without the
+   * second half a vault where the rule went unparsed would pass every price
+   * axis for free. (Deliberately not "the lookups walked the whole vault":
+   * a future label index would be a legitimate way not to.)
+   */
+  async function expectGateWorks(state: CacheState, v: string, spent: { run: Run }): Promise<void> {
+    expect({ state, exit: spent.run.exit, stderr: spent.run.exit.length > 0 ? spent.run.stderr : "" }).toEqual({
+      state,
+      exit: [],
+      stderr: "",
+    });
+    const refused = await runCreate(v, ["--class", "ems__Task", "--label", "Задача без родителя", "--dry-run"]);
+    expect({ state, refusedWith4: refused.exit.includes(4) && refused.stderr.includes("CREATION_GATE_REFUSED:") }).toEqual({
+      state,
+      refusedWith4: true,
+    });
+  }
+
+  it(`S13 ${REQ} with the cache unable to narrow and every rule key resolving by label, the gate makes no full pass through the cloning metadata reader`, async () => {
+    for (const state of CACHE_STATES) {
+      const v = await unnarrowedVault(state);
+      const files = listMd(v).length;
+      const spent = await gateSpend(v, underApproved);
+      await expectGateWorks(state, v, spent);
+      expect({ state, fullPass: spent.metadata >= files }).toEqual({ state, fullPass: false });
+    }
+  });
+
+  it(`S13b ${REQ} …nor any full cloning pass at all (structuredClone)`, async () => {
+    for (const state of CACHE_STATES) {
+      const v = await unnarrowedVault(state);
+      const files = listMd(v).length;
+      const spent = await gateSpend(v, underApproved);
+      await expectGateWorks(state, v, spent);
+      expect({ state, cloningPass: spent.clones >= files }).toEqual({ state, cloningPass: false });
+    }
+  });
+
+  it(`S13c ${REQ} …nor more than one full pass of fresh parses (the scan reads the memoised frontmatter, not a fresh parse per lookup)`, async () => {
+    for (const state of CACHE_STATES) {
+      const v = await unnarrowedVault(state);
+      const files = listMd(v).length;
+      const spent = await gateSpend(v, underApproved);
+      await expectGateWorks(state, v, spent);
+      // "More than one pass", not "a pass": today the planning has parsed every
+      // file before the gate runs, but if it stops doing so (ems__Bug de7a7592)
+      // the gate's FIRST label lookup legitimately parses each file once into
+      // the memo. A re-parse per lookup (M106) is nine passes.
+      expect({ state, parsingPasses: spent.parses > files }).toEqual({ state, parsingPasses: false });
+    }
+  });
+
+  // ── a7181947 Е1: the un-narrowed scan answers exactly what the base scan does
+  function lookupVault(): string {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cli-gate-a7181947-")));
+    vaults.push(root);
+    const put = (rel: string, text: string): void => {
+      fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
+      fs.writeFileSync(path.join(root, rel), text, "utf-8");
+    };
+    const typed = `exo__Instance_class:\n  - "[[5e000000-0000-4000-8000-0000000000c1]]"\n`;
+    put("a/dup-1.md", `---\nexo__Asset_uid: 5e000000-0000-4000-8000-000000000001\nexo__Asset_label: Дубль\n---\n`);
+    put("b/dup-2.md", `---\nexo__Asset_uid: 5e000000-0000-4000-8000-000000000002\nexo__Asset_label: "Дубль"\n${typed}---\n`);
+    put("c/array.md", `---\nexo__Asset_uid: 5e000000-0000-4000-8000-000000000003\nexo__Asset_label:\n  - Первый\n  - Дубль\n---\n`);
+    put("d/quoted-link.md", `---\nexo__Asset_uid: 5e000000-0000-4000-8000-000000000004\nexo__Asset_label: "[[Метка-ссылка]]"\n---\n`);
+    put("e/broken-yaml.md", `---\nexo__Asset_label: Дубль\nexo__Asset_uid: [unclosed\n---\n`);
+    put("f/no-frontmatter.md", `exo__Asset_label: Дубль\n`);
+    put("g/unreadable.md", `---\nexo__Asset_uid: 5e000000-0000-4000-8000-000000000007\nexo__Asset_label: Единственная\n---\n`);
+    put("h/after.md", `---\nexo__Asset_uid: 5e000000-0000-4000-8000-000000000008\nexo__Asset_label: Единственная\n${typed}---\n`);
+    return root;
+  }
+
+  it(`S14 ${REQ} without an index, findFilesByMetadata answers the base scan's files in the base scan's order`, async () => {
+    const root = lookupVault();
+    const queries: Record<string, string>[] = [
+      { exo__Asset_label: "Дубль" },
+      { exo__Asset_label: "Метка-ссылка" },
+      { exo__Asset_uid: "5e000000-0000-4000-8000-000000000003" },
+      { exo__Asset_label: "Дубль", exo__Instance_class: "[[5e000000-0000-4000-8000-0000000000c1]]" },
+      { exo__Asset_label: "Такой метки нет" },
+    ];
+    const planning = new PlanningFsAdapter(root); // one adapter: the memo is shared, as in `create`
+    for (const query of queries) {
+      expect({ query, found: await planning.findFilesByMetadata(query) }).toEqual({
+        query,
+        found: await new NodeFsAdapter(root).findFilesByMetadata(query),
+      });
+    }
+    // Non-vacuous: the duplicate lookup really returns several files, in path order.
+    expect((await planning.findFilesByMetadata({ exo__Asset_label: "Дубль" })).slice(0, 3)).toEqual([
+      "a/dup-1.md",
+      "b/dup-2.md",
+      "c/array.md",
+    ]);
+  });
+
+  it(`S14b ${REQ} an unreadable file is skipped by the un-narrowed scan, and the files after it are still found`, async () => {
+    const root = lookupVault();
+    const read = NodeFsAdapter.prototype.readFile;
+    jest.spyOn(NodeFsAdapter.prototype, "readFile").mockImplementation(function (
+      this: InstanceType<typeof NodeFsAdapter>,
+      file: string,
+    ) {
+      if (file.replace(/\\/g, "/") === "g/unreadable.md") return Promise.reject(new Error("EACCES (test)"));
+      return read.call(this, file);
+    });
+    const query = { exo__Asset_label: "Единственная" };
+    const found = await new PlanningFsAdapter(root).findFilesByMetadata(query);
+    expect(found).toEqual(await new NodeFsAdapter(root).findFilesByMetadata(query));
+    expect(found).toEqual(["h/after.md"]);
+  });
+
+  it(`S14c ${REQ} a caller mutating the metadata it was handed does not change what the scan finds`, async () => {
+    const root = lookupVault();
+    const planning = new PlanningFsAdapter(root);
+    const handed = await planning.getFileMetadata("a/dup-1.md");
+    handed.exo__Asset_label = "Подменённая";
+    expect(await planning.findFilesByMetadata({ exo__Asset_label: "Подменённая" })).toEqual([]);
+    expect(await planning.findFilesByMetadata({ exo__Asset_label: "Дубль" })).toContain("a/dup-1.md");
+  });
+
+  // ── a7181947 Е2: rule candidates = files mentioning the class, any case ─
+  const MENTIONS: Record<string, string> = {
+    "mentions/uid-upper.md": `UID класса верхним регистром: ${CREATION_GATE_CLASS_UID.toUpperCase()}`,
+    "mentions/label-upper.md": `метка класса верхним регистром: ${CREATION_GATE_CLASS_LABEL.toUpperCase()}`,
+    "mentions/label-mixed.md": `смешанный регистр: ${CREATION_GATE_CLASS_LABEL.replace(/^e/, "E").replace(/Gate$/, "GATE")}`,
+    "mentions/uid-only.md": `только UID: ${CREATION_GATE_CLASS_UID}`,
+    "mentions/label-only.md": `только метка: ${CREATION_GATE_CLASS_LABEL}`,
+    "mentions/neither.md": "про гейт создания, но без иглы: creation gate",
+  };
+
+  function mentionsVault(): string {
+    const v = vault();
+    let n = 0;
+    for (const [rel, body] of Object.entries(MENTIONS)) {
+      n += 1;
+      writeAsset(v, rel, {
+        exo__Asset_uid: `cccc3000-0000-4000-8000-${String(n).padStart(12, "0")}`,
+        exo__Asset_label: `"Упоминание ${n}"`,
+      }, body);
+    }
+    return v;
+  }
+
+  async function candidatePaths(v: string): Promise<string[]> {
+    return (await createFsPolicySource(new PlanningFsAdapter(v)).candidates()).map((c) => c.path).sort();
+  }
+
+  it(`S15 ${REQ} the un-narrowed candidate set equals "the lowered text includes the class UID or label"`, async () => {
+    const v = mentionsVault();
+    const reference = listMd(v)
+      .filter((full) => {
+        const lower = fs.readFileSync(full, "utf-8").toLowerCase();
+        return lower.includes(CREATION_GATE_CLASS_UID.toLowerCase()) || lower.includes(CREATION_GATE_CLASS_LABEL.toLowerCase());
+      })
+      .map((full) => path.relative(v, full))
+      .sort();
+    // Non-vacuous: every case variant is in the reference, the needle-less file is not.
+    for (const rel of Object.keys(MENTIONS)) {
+      expect({ rel, inReference: reference.includes(rel) }).toEqual({ rel, inReference: rel !== "mentions/neither.md" });
+    }
+    expect(await candidatePaths(v)).toEqual(reference);
+  });
+
+  it(`S15b ${REQ} the class LABEL alone makes a file a candidate`, async () => {
+    expect(await candidatePaths(mentionsVault())).toContain("mentions/label-only.md");
+  });
+
+  it(`S15c ${REQ} the class UID alone makes a file a candidate`, async () => {
+    expect(await candidatePaths(mentionsVault())).toContain("mentions/uid-only.md");
+  });
+
+  it(`S18 ${REQ} the un-narrowed candidate pass does not case-change a copy of every file`, async () => {
+    const v = vault();
+    addNoise(v, 20);
+    const texts = new Set(listMd(v).map((full) => fs.readFileSync(full, "utf-8")));
+    let lowered = 0;
+    // Every case-changing copy, not only `toLowerCase`: `toUpperCase` & co.
+    // would copy each file just the same.
+    const caseMethods = ["toLowerCase", "toUpperCase", "toLocaleLowerCase", "toLocaleUpperCase"] as const;
+    for (const name of caseMethods) {
+      const original = String.prototype[name] as (this: string) => string;
+      jest.spyOn(String.prototype, name).mockImplementation(function (this: string) {
+        if (texts.has(String(this))) lowered += 1;
+        return original.call(this);
+      });
+    }
+    // Canary: the spies see a whole file's text being case-changed, by every method.
+    const sample = [...texts][0];
+    void [sample.toLowerCase(), sample.toUpperCase(), sample.toLocaleLowerCase(), sample.toLocaleUpperCase()];
+    expect(lowered).toBe(4);
+    lowered = 0;
+    const candidates = await createFsPolicySource(new PlanningFsAdapter(v)).candidates();
+    expect(candidates.map((c) => c.path)).toContain(prj(RULE));
+    expect(lowered).toBe(0);
+  });
+
+  // ── a7181947 Е3: the gate's own time in the debug output ───────────────
+  type GateLine = { kind: string; data: Record<string, unknown> };
+
+  /** Every `creation gate:` line of a stream, parsed (an unparsable one fails loud). */
+  function gateLines(text: string): GateLine[] {
+    return text
+      .split("\n")
+      .filter((line) => line.includes("creation gate:"))
+      .map((line) => {
+        const m = /^\[[a-z]+\] creation gate: (rule candidates|rules|verdict) (\{.*\})$/.exec(line);
+        if (!m) throw new Error(`unparsable creation-gate line: ${line}`);
+        return { kind: m[1], data: JSON.parse(m[2]) as Record<string, unknown> };
+      });
+  }
+  const ofKind = (lines: GateLine[], kind: string): Record<string, unknown>[] =>
+    lines.filter((l) => l.kind === kind).map((l) => l.data);
+
+  /**
+   * A clock that advances 7 ms per read from a large origin: every measured
+   * span is a positive multiple of 7, so "sum of spans" relations are exact and
+   * a zero means "not counted", never "too fast to see"; and a CLOCK READING
+   * printed where a duration belongs is ≥ CLOCK_ORIGIN, so it cannot pass for
+   * one (the self-consistency checks alone hold for any additive quantity).
+   */
+  const CLOCK_ORIGIN = 1e9;
+  function tickingClock(): void {
+    let now = CLOCK_ORIGIN;
+    jest.spyOn(performance, "now").mockImplementation(() => (now += 7));
+  }
+  /** A logged `ms` that is a duration of this clock: a positive integer far below a reading. */
+  const isDuration = (ms: unknown): boolean =>
+    Number.isInteger(ms) && (ms as number) >= 7 && (ms as number) < CLOCK_ORIGIN / 1000;
+
+  async function debugged<T>(on: boolean, body: () => Promise<T>): Promise<T> {
+    const before = process.env.EXOCORTEX_DEBUG;
+    if (on) process.env.EXOCORTEX_DEBUG = "1";
+    else delete process.env.EXOCORTEX_DEBUG;
+    try {
+      return await body();
+    } finally {
+      if (before === undefined) delete process.env.EXOCORTEX_DEBUG;
+      else process.env.EXOCORTEX_DEBUG = before;
+    }
+  }
+
+  it(`S16 ${REQ} create with EXOCORTEX_DEBUG: one verdict line carrying the gate's own time, one candidates line`, async () => {
+    const v = vault();
+    tickingClock();
+    const run = await debugged(true, () => runCreate(v, underApproved));
+    expectNaturalExit(run.exit);
+    const lines = gateLines(run.stderr);
+    const verdicts = ofKind(lines, "verdict");
+    expect(verdicts).toHaveLength(1);
+    const [verdict] = verdicts;
+    expect(verdict.allowed).toBe(true);
+    expect(Number.isInteger(verdict.ms) && (verdict.ms as number) >= 7).toBe(true);
+    expect(verdict.sessionMs).toBe(verdict.ms);
+    // The judged file: a vault-relative markdown path in the folder the asset
+    // is created in (the gate builds its own candidate, so its uid differs
+    // from the one in stdout — the folder does not).
+    const created = JSON.parse(run.stdout.trim()) as { path: string };
+    const judged = String(verdict.path);
+    expect({ md: judged.endsWith(".md"), folder: path.dirname(judged) }).toEqual({
+      md: true,
+      folder: path.dirname(created.path),
+    });
+    const candidates = ofKind(lines, "rule candidates");
+    expect(candidates).toHaveLength(1);
+    expect(typeof candidates[0].narrowed).toBe("boolean");
+    expect((candidates[0].scanned as number) >= (candidates[0].candidates as number)).toBe(true);
+    expect(candidates[0].candidates as number).toBeGreaterThanOrEqual(1);
+  });
+
+  it(`S16b ${REQ} without EXOCORTEX_DEBUG the gate prints nothing, and with it nothing reaches stdout`, async () => {
+    const v = vault();
+    const quiet = await debugged(false, () => runCreate(v, underApproved));
+    expectNaturalExit(quiet.exit);
+    expect(`${quiet.stdout}${quiet.stderr}`).not.toContain("creation gate:");
+    const loud = await debugged(true, () => runCreate(v, underApproved));
+    expect(loud.stdout).not.toContain("creation gate:");
+    expect(gateLines(loud.stderr).length).toBeGreaterThan(0);
+  });
+
+  it(`S16c ${REQ} create's rule load is timed inside its verdict — no separate rules line`, async () => {
+    const v = vault();
+    tickingClock();
+    const run = await debugged(true, () => runCreate(v, underApproved));
+    expectNaturalExit(run.exit);
+    const lines = gateLines(run.stderr);
+    expect(ofKind(lines, "rules")).toEqual([]);
+    // …and not because the gate went quiet: its verdict line is there.
+    expect(ofKind(lines, "verdict")).toHaveLength(1);
+  });
+
+  it(`S16d ${REQ} create's verdict line reports a duration, not a clock reading`, async () => {
+    const v = vault();
+    tickingClock();
+    const run = await debugged(true, () => runCreate(v, underApproved));
+    expectNaturalExit(run.exit);
+    const [verdict] = ofKind(gateLines(run.stderr), "verdict");
+    expect({ ms: verdict.ms, duration: isDuration(verdict.ms) }).toEqual({ ms: verdict.ms, duration: true });
+    expect(isDuration(verdict.sessionMs)).toBe(true);
+  });
+
+  it(`S16e ${REQ} the rule-candidates line tells the truth: narrowed or not, how many files were scanned, how many mention the class`, async () => {
+    // Without a cache: the whole listing is scanned.
+    const v = vault();
+    const mentioning = listMd(v).filter((full) => {
+      const lower = fs.readFileSync(full, "utf-8").toLowerCase();
+      return lower.includes(CREATION_GATE_CLASS_UID.toLowerCase()) || lower.includes(CREATION_GATE_CLASS_LABEL.toLowerCase());
+    }).length;
+    tickingClock();
+    const walked = await debugged(true, () => runCreate(v, underApproved));
+    expectNaturalExit(walked.exit);
+    const [cold] = ofKind(gateLines(walked.stderr), "rule candidates");
+    expect(cold).toEqual({
+      narrowed: false,
+      scanned: listMd(v).length,
+      candidates: mentioning,
+      ms: cold.ms,
+    });
+    expect(isDuration(cold.ms)).toBe(true);
+    // With a valid cache: narrowed to fewer files, the rule still among the candidates.
+    await new CacheManager(v).buildCache();
+    const narrowedRun = await debugged(true, () => runCreate(v, underApproved));
+    expectNaturalExit(narrowedRun.exit);
+    const [warm] = ofKind(gateLines(narrowedRun.stderr), "rule candidates");
+    expect(warm.narrowed).toBe(true);
+    expect(warm.scanned as number).toBeLessThan(listMd(v).length);
+    expect(warm.candidates as number).toBeGreaterThanOrEqual(1);
+  });
+
+  it(`S17 ${REQ} create-batch: one rules line, a verdict per item, and the session total is their exact sum; apply: one verdict`, async () => {
+    const v = vault();
+    tickingClock();
+    const batch = await debugged(true, () =>
+      runBatch(v, [
+        { class: "ems__Task", label: "Первая", properties: { ems__Effort_parent: `[[${PRJ_OK}]]` } },
+        { class: "ems__Task", label: "Вторая", properties: { ems__Effort_parent: `[[${PRJ_OK}]]` } },
+      ]),
+    );
+    expect(batch.exit).toEqual([0]);
+    const lines = gateLines(batch.stderr);
+    const rules = ofKind(lines, "rules");
+    const verdicts = ofKind(lines, "verdict");
+    expect(rules).toHaveLength(1);
+    expect(verdicts).toHaveLength(2);
+    expect(rules[0].ms as number).toBeGreaterThanOrEqual(7);
+    const sum = (rules[0].ms as number) + verdicts.reduce((acc, d) => acc + (d.ms as number), 0);
+    expect(verdicts[1].sessionMs).toBe(sum);
+
+    const applied = await debugged(true, () =>
+      runApply(v, CMD.createTask, prj(PRJ_OK), { label: "Задача из apply" }),
+    );
+    expectNaturalExit(applied.exit);
+    const applyLines = gateLines(applied.stderr);
+    expect(ofKind(applyLines, "verdict")).toHaveLength(1);
+    expect(ofKind(applyLines, "rules")).toEqual([]);
+  });
+
+  it(`S17c ${REQ} create-batch's rules line reports the rules it loaded and a duration, not a clock reading`, async () => {
+    const v = vault();
+    tickingClock();
+    const batch = await debugged(true, () =>
+      runBatch(v, [{ class: "ems__Task", label: "Единственная", properties: { ems__Effort_parent: `[[${PRJ_OK}]]` } }]),
+    );
+    expect(batch.exit).toEqual([0]);
+    const [rules] = ofKind(gateLines(batch.stderr), "rules");
+    expect({ policies: rules.policies, duration: isDuration(rules.ms), sessionDuration: isDuration(rules.sessionMs) }).toEqual({
+      policies: 1,
+      duration: true,
+      sessionDuration: true,
+    });
+  });
+
+  it(`S17b ${REQ} a refusal is reported as allowed:false; with no rule, create-batch reports 0 rules and judges nothing`, async () => {
+    const v = vault();
+    const refused = await debugged(true, () =>
+      runCreate(v, ["--class", "ems__Task", "--label", "Задача без родителя", "--dry-run"]),
+    );
+    expect(refused.exit).toContain(4);
+    expect(ofKind(gateLines(refused.stderr), "verdict").map((d) => d.allowed)).toEqual([false]);
+
+    const bare = vault({ rule: false });
+    const batch = await debugged(true, () =>
+      runBatch(bare, [{ class: "ems__Task", label: "Без правила" }]),
+    );
+    expect(batch.exit).toEqual([0]);
+    const lines = gateLines(batch.stderr);
+    expect(ofKind(lines, "rules").map((d) => d.policies)).toEqual([0]);
+    expect(ofKind(lines, "verdict")).toEqual([]);
+  });
+
+  // a7181947 (independent review of the implementation, MEDIUM): the `rules`
+  // line exists only on create-batch, so S16b — which runs `create` — cannot
+  // see it leak past EXOCORTEX_DEBUG.
+  it(`S16f ${REQ} create-batch without EXOCORTEX_DEBUG prints no gate line, and its stdout stays the JSON result`, async () => {
+    const v = vault();
+    const items = [
+      { class: "ems__Task", label: "Тихая первая", properties: { ems__Effort_parent: `[[${PRJ_OK}]]` } },
+      { class: "ems__Task", label: "Тихая вторая", properties: { ems__Effort_parent: `[[${PRJ_OK}]]` } },
+    ];
+    const quiet = await debugged(false, () => runBatch(v, items));
+    expect(quiet.exit).toEqual([0]);
+    expect(`${quiet.stdout}${quiet.stderr}`).not.toContain("creation gate:");
+    expect((JSON.parse(quiet.stdout.trim()) as unknown[]).length).toBe(2);
+    // …and not because create-batch never reaches the gate: with the variable
+    // the same batch prints its rules line and a verdict per item.
+    const loud = await debugged(true, () =>
+      runBatch(v, items.map((item) => ({ ...item, label: `${item.label} (громко)` }))),
+    );
+    expect(loud.exit).toEqual([0]);
+    const lines = gateLines(loud.stderr);
+    expect({ rules: ofKind(lines, "rules").length, verdicts: ofKind(lines, "verdict").length }).toEqual({
+      rules: 1,
+      verdicts: 2,
+    });
   });
 });

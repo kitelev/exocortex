@@ -1,0 +1,48 @@
+{
+  "_doc": "Revert-verify mutants for a7181947 (req f5b79260-f87c-4e73-8a34-19da341c7ec9 — P1 of the T4 spec §5, the gate's price while the triple cache cannot narrow): the un-narrowed findFilesByMetadata scan reads the metadata memo without a per-file structuredClone (S13/S13b), and still answers exactly what the base class's scan answers — same files, same order, an unreadable file skipped (S14/S14b) — while getFileMetadata keeps handing callers a clone (S14c). Harness = the creation-gate harness (its S13–S14c axes). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/adapters/PlanningFsAdapter.ts",
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/creation-gate-f5b79260.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "M90_unnarrowed_scan_back_to_the_cloning_base_scan": {
+      "from": "          return this.scanUncloned(query);",
+      "to": "          return super.findFilesByMetadata(query);",
+      "expect": ["S13", "S13b"]
+    },
+    "M91_unnarrowed_scan_clones_every_file": {
+      "from": "        const metadata = await this.memo(this.metadata, file, () =>\n          super.getFileMetadata(file),\n        );\n        if (this.matchesQuery(metadata, query)) found.push(file);",
+      "to": "        const metadata = structuredClone(await this.memo(this.metadata, file, () =>\n          super.getFileMetadata(file),\n        ));\n        if (this.matchesQuery(metadata, query)) found.push(file);",
+      "expect": ["S13b"]
+    },
+    "M92_unnarrowed_scan_reverses_the_base_order": {
+      "from": "        if (this.matchesQuery(metadata, query)) found.push(file);",
+      "to": "        if (this.matchesQuery(metadata, query)) found.unshift(file);",
+      "expect": ["S14"]
+    },
+    "M93_an_unreadable_file_ends_the_unnarrowed_scan": {
+      "from": "      } catch {\n        continue;\n      }\n    }\n    return found;\n  }",
+      "to": "      } catch {\n        break;\n      }\n    }\n    return found;\n  }",
+      "expect": ["S14b"]
+    },
+    "M94_handed_metadata_is_the_memo_itself": {
+      "from": "    return structuredClone(parsed);",
+      "to": "    return parsed;",
+      "expect": ["S14c"]
+    },
+    "M106_unnarrowed_scan_parses_every_file_again": {
+      "from": "        const metadata = await this.memo(this.metadata, file, () =>\n          super.getFileMetadata(file),\n        );",
+      "to": "        const metadata = await super.getFileMetadata(file);",
+      "expect": ["S13c"],
+      "_note": "no clone, but every label lookup re-parses every file: on 3 009 files, 9 lookups — 27 081 parses, 404 ms against 31 ms (independent review, 20.10). Only S13c counts parses; S13/S13b stay green by construction."
+    }
+  }
+}

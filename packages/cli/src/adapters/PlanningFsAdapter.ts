@@ -28,11 +28,14 @@ import type { AssetLookupIndex } from "../cache/CacheManager.js";
  * Semantics are the base class's: every override memoises the INHERITED
  * implementation per argument rather than re-implementing it, so a lookup
  * answers exactly what `NodeFsAdapter` would have answered the first time.
- * The one exception is {@link findFileByUidFilename}: memoising per uid would
- * still walk the vault once per DISTINCT uid — a batch linking to 6,500
+ * There are two exceptions. The first is {@link findFileByUidFilename}:
+ * memoising per uid would still walk the vault once per DISTINCT uid — a batch linking to 6,500
  * different existing assets would walk it 6,500 times — so it walks once,
  * keeps every markdown filename in the base walk's order, and answers each uid
- * with the base walk's own predicate over that list.
+ * with the base walk's own predicate over that list. The second is the
+ * un-narrowed {@link findFilesByMetadata} scan ({@link scanUncloned}): it runs
+ * the base scan's walk, order and predicate itself so that it can read the
+ * metadata memo WITHOUT the per-call clone (a7181947).
  *
  * A failed load is not memoised: the next caller retries it, as it would have
  * with `NodeFsAdapter`, instead of a one-off I/O hiccup pinning a file as
@@ -308,7 +311,7 @@ export class PlanningFsAdapter extends NodeFsAdapter {
             ? null
             : await this.narrowedCandidates(narrowable.key, narrowable.value);
         if (candidates === null) {
-          return super.findFilesByMetadata(query);
+          return this.scanUncloned(query);
         }
         const found: string[] = [];
         for (const file of candidates) {
@@ -325,6 +328,31 @@ export class PlanningFsAdapter extends NodeFsAdapter {
       },
     );
     return matches.slice();
+  }
+
+  /**
+   * a7181947 — the un-narrowed scan, as the base class runs it (every file in
+   * `getMarkdownFiles()` order, the same predicate, an unreadable file
+   * skipped), but over the MEMOISED frontmatter itself. `getFileMetadata`
+   * hands every caller a structuredClone (a caller may mutate it); the base
+   * scan reached it once per vault file per query — on vault-exodev (48 499
+   * files, measured 2026-10-19) 48 499 clones, ~137 ms, for EACH label lookup
+   * while the cache cannot narrow (stale / absent). The predicate only reads,
+   * so no clone is needed here.
+   */
+  private async scanUncloned(query: Record<string, any>): Promise<string[]> {
+    const found: string[] = [];
+    for (const file of await this.getMarkdownFiles()) {
+      try {
+        const metadata = await this.memo(this.metadata, file, () =>
+          super.getFileMetadata(file),
+        );
+        if (this.matchesQuery(metadata, query)) found.push(file);
+      } catch {
+        continue;
+      }
+    }
+    return found;
   }
 
   /** Drop every memo — a write makes all of them potentially stale. */

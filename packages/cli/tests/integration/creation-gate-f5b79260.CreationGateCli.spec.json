@@ -21,12 +21,103 @@
     "M38_the_symbolic_class_form_is_not_recognised": {
       "from": "  return value.toLowerCase().includes(CREATION_GATE_CLASS_UID) || value.endsWith(symbolicTail);",
       "to": "  return value.toLowerCase().includes(CREATION_GATE_CLASS_UID) || value.endsWith(symbolicTail + \"-\");",
-      "expect": ["S10", "S12", "S7", "S8", "S8b", "S9"]
+      "expect": ["S10", "S12", "S16e", "S7", "S8", "S8b", "S9"],
+      "_note": "a7181947: S16e too — on the cache-narrowed path the rule is typed in the symbolic form, so the narrowed candidate list loses it (warm `candidates` 0)."
     },
     "M47_the_cache_narrowing_is_ignored": {
       "from": "          if (narrowed && narrowed.unknownPaths.length <= MAX_UNKNOWN_PATHS) {",
       "to": "          if (narrowed && narrowed.unknownPaths.length < 0) {",
-      "expect": ["S12"]
+      "expect": ["S12", "S16e"],
+      "_note": "a7181947: S16e too — it reads `narrowed: true` after `buildCache`, which this mutant turns false."
+    },
+    "M95_rule_mention_is_case_sensitive": {
+      "from": "  \"i\",\n);",
+      "to": "  \"\",\n);",
+      "expect": ["S15"]
+    },
+    "M96_rule_mention_by_uid_alone": {
+      "from": "  `${escapeRegExp(CREATION_GATE_CLASS_UID)}|${escapeRegExp(CREATION_GATE_CLASS_LABEL)}`,",
+      "to": "  `${escapeRegExp(CREATION_GATE_CLASS_UID)}`,",
+      "expect": ["S15", "S15b", "S16e"],
+      "_note": "a7181947: S16e too — files that mention only the class LABEL (the property defs) drop out of the un-narrowed candidate count."
+    },
+    "M97_rule_mention_by_label_alone": {
+      "from": "  `${escapeRegExp(CREATION_GATE_CLASS_UID)}|${escapeRegExp(CREATION_GATE_CLASS_LABEL)}`,",
+      "to": "  `${escapeRegExp(CREATION_GATE_CLASS_LABEL)}`,",
+      "expect": ["S15", "S15c"]
+    },
+    "M98_every_file_text_lowered_again": {
+      "from": "        if (!RULE_CLASS_MENTION.test(text)) continue;",
+      "to": "        const lower = text.toLowerCase();\n        void RULE_CLASS_MENTION;\n        if (\n          !lower.includes(CREATION_GATE_CLASS_UID) &&\n          !lower.includes(CREATION_GATE_CLASS_LABEL.toLowerCase())\n        ) {\n          continue;\n        }",
+      "expect": ["S18"]
+    },
+    "M99_rule_load_inside_a_verdict_logged_and_counted_again": {
+      "from": "    if (this.judging > 0) return super.policies();",
+      "to": "    if (this.judging < 0) return super.policies();",
+      "expect": ["S16", "S16c", "S16f", "S17"],
+      "_note": "a7181947: S16f too — its loud create-batch run expects exactly one rules line; each verdict then logs another."
+    },
+    "M100_no_verdict_line": {
+      "from": "      StderrLogger.debug(\"creation gate: verdict\", {",
+      "to": "      ((_message: string, _context: Record<string, unknown>) => undefined)(\"creation gate: verdict\", {",
+      "expect": ["S16", "S16c", "S16d", "S16f", "S17", "S17b"],
+      "_note": "a7181947: S16c (its positive half: one verdict line), S16d (reads the verdict line's ms) and S16f (a verdict per create-batch item) too."
+    },
+    "M101_verdict_line_not_gated_by_EXOCORTEX_DEBUG": {
+      "from": "      StderrLogger.debug(\"creation gate: verdict\", {",
+      "to": "      StderrLogger.info(\"creation gate: verdict\", {",
+      "expect": ["S16b", "S16f"],
+      "_note": "a7181947: S16f too — the quiet create-batch run then prints its verdict lines."
+    },
+    "M102_rule_load_left_out_of_the_session_total": {
+      "from": "      const ms = performance.now() - started;\n      this.spentMs += ms;\n      StderrLogger.debug(\"creation gate: rules\", {",
+      "to": "      const ms = performance.now() - started;\n      StderrLogger.debug(\"creation gate: rules\", {",
+      "expect": ["S17", "S17c"],
+      "_note": "a7181947: S17c too — the rules line's sessionMs stays 0, which is not a duration."
+    },
+    "M103_verdict_left_out_of_the_session_total": {
+      "from": "      const ms = performance.now() - started;\n      this.spentMs += ms;\n      StderrLogger.debug(\"creation gate: verdict\", {",
+      "to": "      const ms = performance.now() - started;\n      StderrLogger.debug(\"creation gate: verdict\", {",
+      "expect": ["S16", "S16d", "S17"],
+      "_note": "a7181947: S16d too — the verdict line's sessionMs stays 0, which is not a duration."
+    },
+    "M104_no_candidates_line": {
+      "from": "      StderrLogger.debug(\"creation gate: rule candidates\", {",
+      "to": "      ((_message: string, _context: Record<string, unknown>) => undefined)(\"creation gate: rule candidates\", {",
+      "expect": ["S16", "S16e"],
+      "_note": "a7181947: S16e too — it reads the candidates line."
+    },
+    "M105_verdict_line_always_says_allowed": {
+      "from": "        allowed: verdict?.allowed ?? null,",
+      "to": "        allowed: true as boolean | null,",
+      "expect": ["S17b"]
+    },
+    "M107_verdict_ms_is_a_clock_reading": {
+      "from": "      const ms = performance.now() - started;\n      this.spentMs += ms;\n      StderrLogger.debug(\"creation gate: verdict\", {",
+      "to": "      const ms = performance.now() - 0 * started;\n      this.spentMs += ms;\n      StderrLogger.debug(\"creation gate: verdict\", {",
+      "expect": ["S16d"]
+    },
+    "M108_rules_ms_is_a_clock_reading": {
+      "from": "      const ms = performance.now() - started;\n      this.spentMs += ms;\n      StderrLogger.debug(\"creation gate: rules\", {",
+      "to": "      const ms = performance.now() - 0 * started;\n      this.spentMs += ms;\n      StderrLogger.debug(\"creation gate: rules\", {",
+      "expect": ["S17c"]
+    },
+    "M109_narrowed_reported_inverted": {
+      "from": "      const narrowed = paths !== null;",
+      "to": "      const narrowed = paths === null;",
+      "expect": ["S16e"]
+    },
+    "M110_rules_line_not_gated_by_EXOCORTEX_DEBUG": {
+      "from": "      StderrLogger.debug(\"creation gate: rules\", {",
+      "to": "      StderrLogger.info(\"creation gate: rules\", {",
+      "expect": ["S16f"],
+      "_note": "a7181947 (independent review of the implementation, MEDIUM): the rules line exists only on create-batch, so S16b (create) cannot see it; S16f runs create-batch quietly."
+    },
+    "M111_verdict_line_names_no_file": {
+      "from": "        path,\n        allowed: verdict?.allowed ?? null,",
+      "to": "        path: \"\",\n        allowed: verdict?.allowed ?? null,",
+      "expect": ["S16"],
+      "_note": "a7181947 (independent review of the implementation, LOW): the verdict line's path was declared by the spec and checked by no axis."
     }
   }
 }

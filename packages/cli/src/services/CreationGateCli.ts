@@ -6,13 +6,16 @@ import {
   IRI,
   iriToVaultPath,
   isUuid,
+  type CreationGatePolicy,
   type CreationGatePolicySource,
+  type CreationGateVerdict,
   type FrontmatterByRef,
   type InMemoryTripleStore,
 } from "@kitelev/exocortex-core";
 import type { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { PlanningFsAdapter } from "../adapters/PlanningFsAdapter.js";
 import { CreationGateRefusedCliError } from "../utils/errors/index.js";
+import { StderrLogger } from "../infrastructure/StderrLogger.js";
 
 /**
  * req f5b79260 (ticket 316dd2be) — the CLI's side of the creation gate: where
@@ -130,6 +133,29 @@ export type CreationGateCacheNarrowing = () => Promise<
  */
 const MAX_UNKNOWN_PATHS = PlanningFsAdapter.MAX_UNKNOWN_PATHS;
 
+const escapeRegExp = (text: string): string =>
+  text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * a7181947 — "does this text mention the rule class", case-insensitively,
+ * WITHOUT lowering the whole text: the per-file `toLowerCase()` copied every
+ * file of the vault on the un-narrowed path (~230 ms on vault-exodev, 48 498
+ * files, measured 2026-10-19).
+ *
+ * Same files as `text.toLowerCase().includes(needle)`: both needles are ASCII
+ * and the pattern has no `u` flag, so `i` folds ASCII letters only and no
+ * non-ASCII code unit can match a needle character. The lowered text could
+ * gain ASCII only through `İ` → `i` + U+0307 and `K` (U+212A) → `k`: the
+ * needles hold no `k`, and their `i`s are never last, so the combining mark
+ * after a produced `i` always breaks the match. Measured: 3 870 024 inputs
+ * (every code unit in every needle position + 200 000 random strings), 0
+ * differences.
+ */
+const RULE_CLASS_MENTION = new RegExp(
+  `${escapeRegExp(CREATION_GATE_CLASS_UID)}|${escapeRegExp(CREATION_GATE_CLASS_LABEL)}`,
+  "i",
+);
+
 /**
  * Rule candidates for `create` / `create-batch`: every markdown file whose
  * text mentions the rule class (by UID or label), parsed.
@@ -140,6 +166,12 @@ const MAX_UNKNOWN_PATHS = PlanningFsAdapter.MAX_UNKNOWN_PATHS;
  * file is considered, through the adapter's read memo: the un-narrowed
  * planning already reads every file once, so that pass is a substring search,
  * not a second read of the vault.
+ *
+ * ⛤ a7181947: this pass was the SMALLER part of the un-narrowed price — on
+ * vault-exodev ~0.34 s of the gate's ~1.62 s, most of it the per-file
+ * `toLowerCase()` (see `RULE_CLASS_MENTION`). The bulk was the rule parser's
+ * per-key label lookups (`parseCreationGatePolicy`), each a full cloning scan
+ * of the vault's metadata — see `PlanningFsAdapter.scanUncloned`.
  */
 export function createFsPolicySource(
   fs: NodeFsAdapter,
@@ -147,6 +179,7 @@ export function createFsPolicySource(
 ): CreationGatePolicySource {
   return {
     async candidates() {
+      const started = performance.now();
       let paths: string[] | null = null;
       if (narrow) {
         try {
@@ -158,6 +191,7 @@ export function createFsPolicySource(
           paths = null; // fail-open to the walk: never a missed rule
         }
       }
+      const narrowed = paths !== null;
       paths ??= await fs.getMarkdownFiles();
       const out: { path: string; frontmatter: Record<string, unknown> }[] = [];
       for (const path of paths) {
@@ -168,13 +202,7 @@ export function createFsPolicySource(
           continue;
         }
         // case-insensitive, as `namesCreationGateClass` judges the class
-        const lower = text.toLowerCase();
-        if (
-          !lower.includes(CREATION_GATE_CLASS_UID) &&
-          !lower.includes(CREATION_GATE_CLASS_LABEL.toLowerCase())
-        ) {
-          continue;
-        }
+        if (!RULE_CLASS_MENTION.test(text)) continue;
         try {
           out.push({
             path,
@@ -184,6 +212,12 @@ export function createFsPolicySource(
           continue;
         }
       }
+      StderrLogger.debug("creation gate: rule candidates", {
+        narrowed,
+        scanned: paths.length,
+        candidates: out.length,
+        ms: Math.round(performance.now() - started),
+      });
       return out;
     },
   };
@@ -228,12 +262,64 @@ export function createTripleStorePolicySource(
   };
 }
 
+/**
+ * a7181947 (P1 of the T4 spec §5) — the gate's own time in the debug output
+ * (`EXOCORTEX_DEBUG`): one line per verdict, with the session's running total.
+ * `sessionMs` is a SUM of durations, not wall-clock: two verdicts awaiting the
+ * same first rule load would both count it (no caller runs verdicts
+ * concurrently today — create, create-batch and apply's writers are serial).
+ */
+class TimedCreationGateSession extends CreationGateSession {
+  private spentMs = 0;
+  /** >0 while a verdict runs: its own time already covers the rule load. */
+  private judging = 0;
+
+  override async policies(): Promise<CreationGatePolicy[]> {
+    if (this.judging > 0) return super.policies();
+    const started = performance.now();
+    let count: number | null = null;
+    try {
+      const policies = await super.policies();
+      count = policies.length;
+      return policies;
+    } finally {
+      const ms = performance.now() - started;
+      this.spentMs += ms;
+      StderrLogger.debug("creation gate: rules", {
+        policies: count,
+        ms: Math.round(ms),
+        sessionMs: Math.round(this.spentMs),
+      });
+    }
+  }
+
+  override async judge(path: string, content: string): Promise<CreationGateVerdict> {
+    const started = performance.now();
+    let verdict: CreationGateVerdict | undefined;
+    this.judging += 1;
+    try {
+      verdict = await super.judge(path, content);
+      return verdict;
+    } finally {
+      this.judging -= 1;
+      const ms = performance.now() - started;
+      this.spentMs += ms;
+      StderrLogger.debug("creation gate: verdict", {
+        path,
+        allowed: verdict?.allowed ?? null,
+        ms: Math.round(ms),
+        sessionMs: Math.round(this.spentMs),
+      });
+    }
+  }
+}
+
 /** A gate session over the command's own adapter. */
 export function createCliCreationGateSession(
   fs: NodeFsAdapter,
   source: CreationGatePolicySource = createFsPolicySource(fs),
 ): CreationGateSession {
-  return new CreationGateSession({ source, frontmatterByRef: createFsFrontmatterByRef(fs) });
+  return new TimedCreationGateSession({ source, frontmatterByRef: createFsFrontmatterByRef(fs) });
 }
 
 /** A core refusal as the CLI's typed error (exit code 4); anything else unchanged. */
