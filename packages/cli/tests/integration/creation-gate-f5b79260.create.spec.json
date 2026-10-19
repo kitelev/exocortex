@@ -16,7 +16,18 @@
     "M30_the_gate_is_removed_from_create": {
       "from": ").assertAllowed(\n            gateCandidate.path,",
       "to": ").judge(\n            gateCandidate.path,",
-      "expect": ["S1", "S12", "S1d", "S1m", "S6"]
+      "expect": [
+        "S1",
+        "S12",
+        "S13",
+        "S13b",
+        "S13c",
+        "S17b",
+        "S1d",
+        "S1m",
+        "S6"
+      ],
+      "_note": "a7181947: S13/S13b/S13c too (their non-vacuity check refuses a parentless task with exit 4 on the same vault — judge() does not refuse) and S17b (a refusal reported as allowed:false needs the refusal)."
     },
     "M31_the_main_class_is_lost_when_a_property_adds_classes": {
       "from": "        const gateCandidate = creationService.buildAsset(config);",
@@ -26,12 +37,25 @@
     "M36_the_written_properties_are_not_judged": {
       "from": "        const gateCandidate = creationService.buildAsset(config);",
       "to": "        const gateCandidate = creationService.buildAsset({ ...config, propertyValues: undefined });",
-      "expect": ["S2", "S4b"]
+      "expect": [
+        "S13",
+        "S13b",
+        "S13c",
+        "S16",
+        "S16b",
+        "S16c",
+        "S16d",
+        "S16e",
+        "S2",
+        "S4b"
+      ],
+      "_note": "a7181947: the price and timer axes measure a create UNDER the approved project; without its properties judged that create is refused, so all of them fail on the exit before measuring."
     },
     "M39_the_refusal_is_not_typed_so_create_exits_1": {
       "from": "          throw toCliCreationGateError(error);",
       "to": "          throw error;",
-      "expect": ["S1"]
+      "expect": ["S1", "S13", "S13b", "S13c", "S17b"],
+      "_note": "a7181947: S13/S13b/S13c (their non-vacuity check requires exit 4) and S17b (it asserts the refused create exits 4)."
     }
   }
 }

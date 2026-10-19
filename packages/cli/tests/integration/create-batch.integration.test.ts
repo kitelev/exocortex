@@ -743,10 +743,20 @@ describe("req 1848dff9: `cli create-batch` — many assets, one invocation", () 
         }));
       const lookups = async (n: number): Promise<number> => {
         const spy = jest.spyOn(PlanningFsAdapter.prototype, "getFileMetadata");
+        // a7181947 — the un-narrowed metadata scan reads the memo without
+        // `getFileMetadata` (no clone); the predicate it runs per file is what
+        // still shows a per-item re-scan.
+        const predicate = jest.spyOn(
+          NodeFsAdapter.prototype as unknown as {
+            matchesQuery: (m: Record<string, unknown>, q: Record<string, unknown>) => boolean;
+          },
+          "matchesQuery",
+        );
         const r = await runBatch(concepts(n), ["--dry-run"]);
         expect(r.exit).toEqual([0]);
-        const calls = spy.mock.calls.length;
+        const calls = spy.mock.calls.length + predicate.mock.calls.length;
         spy.mockRestore();
+        predicate.mockRestore();
         return calls;
       };
 

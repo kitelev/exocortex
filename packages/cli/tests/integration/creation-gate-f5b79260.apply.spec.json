@@ -16,7 +16,8 @@
     "M40_the_engine_writer_is_not_wrapped": {
       "from": "    nodeFsAdapter,\n    gatedFsAdapter,\n",
       "to": "    nodeFsAdapter,\n    nodeFsAdapter,\n",
-      "expect": ["S10", "S7"]
+      "expect": ["S10", "S17", "S7"],
+      "_note": "a7181947: S17 too — it expects one verdict line from `apply create-task`, which an unwrapped writer never judges."
     },
     "M41_GenericAssetCreationService_is_not_wrapped": {
       "from": "  const genericAssetCreationService = new GenericAssetCreationService(\n    gatedVaultAdapter,\n  )",

@@ -34,6 +34,11 @@
       "to": "    this.markdownNames = (async () => {",
       "expect": ["B6d"],
       "_note": "Review round 2 MEDIUM: B6d used to count calls of the base walk METHOD, which stays 0 however often the index is rebuilt; it now counts fs-extra readdir calls."
+    },
+    "A5_metadata_query_memo_defeated": {
+      "from": "      JSON.stringify(query),",
+      "to": "      JSON.stringify(query) + String(Math.random()),",
+      "expect": ["B6c"]
     }
   }
 }
