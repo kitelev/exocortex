@@ -27,6 +27,7 @@ import * as os from "os";
 import {
   InMemoryTripleStore,
   NoteToRDFConverter,
+  vaultPathToIRI,
 } from "@kitelev/exocortex-core";
 
 const { runQueryCommand } = await import("../../src/commands/run-query.js");
@@ -388,6 +389,281 @@ describe("req 2678df55 — run-query + homoiconic classes read-axis", () => {
         "00000000-0000-4000-8000-000000000000",
       );
       expect(result).toBeNull();
+    });
+  });
+
+  // ems__Bug 72cbd6fc — `NamedQueryRunner.substitute` handed the FORMATTED value
+  // to `String.replace` as a replacement STRING, so `$$`, `$&`, `` $` `` and `$'`
+  // inside a value were read as replacement patterns: `$'` pasted the rest of the
+  // query into the value (in an IRI — a parse error), `$&` pasted the token name
+  // (`$&x` was looked up as `$topicx` and FOUND that other record), `$$` collapsed
+  // to `$`.
+  // ⛔ On a pattern WITHOUT capture groups exactly these four forms corrupt —
+  // `$1`, `$01`, `$<x>`, `$s` and a lone `$` are inert (measured through the same
+  // regexp in grooming, 08.10) — so the axes carry only the four.
+  // Every axis drives the REAL CLI action (or the real runner) over a REAL temp
+  // vault. Mutants — `run-query-param-dollar-72cbd6fc.spec.json`: per `.replace`
+  // site of `substitute` — string replacement back (M1-M3), lazy formatting
+  // (M5-M7), first occurrence only (M8-M10) — plus partial `$&` escaping
+  // (M11, M12) and a control on C1 (M4).
+  describe("ems__Bug 72cbd6fc — a substituted value is inserted verbatim", () => {
+    const ECHO_UID = "e1000000-0000-4000-8000-0000000000e1";
+    const LABEL_UID = "e1000000-0000-4000-8000-0000000000e2";
+    const NODE_UID = "e1000000-0000-4000-8000-0000000000e3";
+    const CLASS_UID = "e1000000-0000-4000-8000-0000000000e4";
+    // The same token TWICE in one body — a replacement that stops at the first
+    // occurrence leaves `$topic` behind as an unbound SPARQL variable.
+    const ECHO2_UID = "e1000000-0000-4000-8000-0000000000e5";
+    const ASSET2_UID = "e1000000-0000-4000-8000-0000000000e6";
+    const CLASS2_UID = "e1000000-0000-4000-8000-0000000000e7";
+    const EXO_PREFIX = "PREFIX exo: <https://exocortex.my/ontology/exo#>";
+
+    function oddMd(uid: string, label: string): string {
+      return [
+        "---",
+        `exo__Asset_uid: ${uid}`,
+        `exo__Asset_label: "${label}"`,
+        "exo__Instance_class:",
+        '  - "[[test__Odd]]"',
+        "---",
+        `# ${label}`,
+        "",
+      ].join("\n");
+    }
+
+    /** A vault whose LABELS and PATHS carry the four corrupting forms, each next
+     *  to the DECOY the defect turns it into (`$&x`→`$topicx`, `a$$b`→`a$b`,
+     *  `e$$f.md`→`e$f.md`), so the defect shows as the WRONG record, not as
+     *  an empty answer. */
+    function buildDollarVault(): string {
+      const r = fs.mkdtempSync(path.join(os.tmpdir(), "exo-runquery-dollar-"));
+      const put = (rel: string, md: string) => {
+        fs.mkdirSync(path.dirname(path.join(r, rel)), { recursive: true });
+        fs.writeFileSync(path.join(r, rel), md, "utf-8");
+      };
+      put(`${ECHO_UID}.md`, queryMd(ECHO_UID, "echo topic", "SELECT ?k WHERE { BIND($topic AS ?k) }"));
+      put(
+        `${LABEL_UID}.md`,
+        queryMd(
+          LABEL_UID,
+          "asset by label",
+          `${EXO_PREFIX}\nSELECT ?s WHERE { ?s exo:Asset_label ?l . FILTER(?l = $topic) }`,
+        ),
+      );
+      // The three path-addressed queries read ONE predicate, so a hit counts
+      // exactly once (the converter emits a label under more than one predicate).
+      put(`${NODE_UID}.md`, queryMd(NODE_UID, "node label", `${EXO_PREFIX}\nSELECT ?o WHERE { $node exo:Asset_label ?o }`));
+      put(`${CLASS_UID}.md`, queryMd(CLASS_UID, "class label", `${EXO_PREFIX}\nSELECT ?o WHERE { $currentClass exo:Asset_label ?o }`));
+      put(CURRENT_UID + ".md", queryMd(CURRENT_UID, "current asset label", `${EXO_PREFIX}\nSELECT ?o WHERE { $currentAsset exo:Asset_label ?o }`));
+      put(`${ECHO2_UID}.md`, queryMd(ECHO2_UID, "echo topic twice", "SELECT ?a ?b WHERE { BIND($topic AS ?a) BIND($topic AS ?b) }"));
+      put(`${ASSET2_UID}.md`, queryMd(ASSET2_UID, "current asset twice", "SELECT ?a ?b WHERE { BIND(STR($currentAsset) AS ?a) BIND(STR($currentAsset) AS ?b) }"));
+      put(`${CLASS2_UID}.md`, queryMd(CLASS2_UID, "current class twice", "SELECT ?a ?b WHERE { BIND(STR($currentClass) AS ?a) BIND(STR($currentClass) AS ?b) }"));
+      // Label pairs: the value and the decoy the defect turns it into.
+      put("labels/l1.md", oddMd("e2000000-0000-4000-8000-000000000001", "$&x"));
+      put("labels/l2.md", oddMd("e2000000-0000-4000-8000-000000000002", "$topicx"));
+      put("labels/l3.md", oddMd("e2000000-0000-4000-8000-000000000003", "a$$b"));
+      put("labels/l4.md", oddMd("e2000000-0000-4000-8000-000000000004", "a$b"));
+      // Path pairs: `encodeURI` keeps `$`, `&`, `'` — so they reach the IRI.
+      put("odd/a$&b.md", oddMd("e3000000-0000-4000-8000-000000000001", "target-amp"));
+      put("odd/e$$f.md", oddMd("e3000000-0000-4000-8000-000000000002", "target-dollar"));
+      put("odd/e$f.md", oddMd("e3000000-0000-4000-8000-000000000003", "decoy-dollar"));
+      put("odd/c$'d.md", oddMd("e3000000-0000-4000-8000-000000000004", "target-quote"));
+      return r;
+    }
+
+    async function echo(value: string): Promise<string> {
+      root = buildDollarVault();
+      const out = await runCli(runQueryCommand(), [
+        ECHO_UID, "--param", `topic=${value}`, "--vault", root, "--format", "json",
+      ]);
+      return out;
+    }
+
+    async function rowsOf(args: string[]): Promise<string> {
+      root = buildDollarVault();
+      return runCli(runQueryCommand(), [...args, "--vault", root, "--format", "json"]);
+    }
+
+    /** How many result rows carry `needle` in a binding. ⛔ Count, not
+     *  presence: `$'` / `` $` `` COPY a part of the query into the value, so a
+     *  presence check (`toContain`) is blind to a duplicated hit. */
+    function rowsCarrying(out: string, needle: string): number {
+      const rows: Array<Record<string, string>> = JSON.parse(out).data.rows;
+      return rows.filter((r) => Object.values(r).some((v) => String(v).includes(needle))).length;
+    }
+
+    it(`S1 @req:${REQ} literal --param keeps $$ byte-identical`, async () => {
+      const out = await echo("a$$b");
+      expect(JSON.parse(out).data.rows).toEqual([{ k: "a$$b" }]);
+    });
+
+    it(`S2 @req:${REQ} literal --param keeps $& byte-identical`, async () => {
+      const out = await echo("a$&b");
+      expect(JSON.parse(out).data.rows).toEqual([{ k: "a$&b" }]);
+    });
+
+    it(`S3 @req:${REQ} literal --param keeps $\` byte-identical`, async () => {
+      const out = await echo("a$`b");
+      expect(JSON.parse(out).data.rows).toEqual([{ k: "a$`b" }]);
+    });
+
+    it(`S4 @req:${REQ} literal --param keeps $' byte-identical (no parse error)`, async () => {
+      const out = await echo("a$'b");
+      expect(JSON.parse(out).data.rows).toEqual([{ k: "a$'b" }]);
+    });
+
+    it(`S5 @req:${REQ} --param "$&x" finds the "$&x" record, not "$topicx"`, async () => {
+      const out = await rowsOf([LABEL_UID, "--param", "topic=$&x"]);
+      expect(JSON.parse(out).data.rows.map((r: { s: string }) => r.s)).toEqual([
+        expect.stringContaining("labels/l1.md"),
+      ]);
+    });
+
+    it(`S6 @req:${REQ} --param "a$$b" finds the "a$$b" record, not "a$b"`, async () => {
+      const out = await rowsOf([LABEL_UID, "--param", "topic=a$$b"]);
+      expect(JSON.parse(out).data.rows.map((r: { s: string }) => r.s)).toEqual([
+        expect.stringContaining("labels/l3.md"),
+      ]);
+    });
+
+    it(`S7 @req:${REQ} --param-iri keeps a path with $& verbatim`, async () => {
+      const out = await rowsOf([NODE_UID, "--param-iri", "node=odd/a$&b.md"]);
+      expect(rowsCarrying(out, "target-amp")).toBe(1);
+    });
+
+    it(`S8 @req:${REQ} --current-asset keeps a path with $& verbatim`, async () => {
+      const out = await rowsOf([CURRENT_UID, "--current-asset", "odd/a$&b.md"]);
+      expect(rowsCarrying(out, "target-amp")).toBe(1);
+    });
+
+    it(`S9 @req:${REQ} --current-asset "e$$f.md" reads e$$f.md, not the decoy e$f.md`, async () => {
+      const out = await rowsOf([CURRENT_UID, "--current-asset", "odd/e$$f.md"]);
+      expect(rowsCarrying(out, "target-dollar")).toBe(1);
+      expect(rowsCarrying(out, "decoy-dollar")).toBe(0);
+    });
+
+    it(`S10 @req:${REQ} --current-asset keeps a path with $' verbatim (no parse error)`, async () => {
+      const out = await rowsOf([CURRENT_UID, "--current-asset", "odd/c$'d.md"]);
+      expect(rowsCarrying(out, "target-quote")).toBe(1);
+    });
+
+    // `$currentClass` has no CLI flag and no production caller today — the
+    // runner's own contract is the only surface, so this axis drives the runner.
+    it(`S11 the runner keeps a $currentClass IRI with $& verbatim`, async () => {
+      root = buildDollarVault();
+      const runner = await buildRunner(root);
+      const result = await runner.run(CLASS_UID, {
+        currentClass: vaultPathToIRI("odd/a$&b.md"),
+      });
+      if (result?.kind !== "select") throw new Error("expected select");
+      const hits = result.rows.filter((r) => (r.get("o")?.toString() ?? "").includes("target-amp"));
+      expect(hits).toHaveLength(1);
+    });
+
+    // The fix keeps every value formatted BEFORE `.replace` (a function then
+    // returns the ready string). A lazy `() => formatIri(...)` would stop
+    // refusing a malformed IRI whose token the body never mentions — the
+    // refusal is the runner's own contract (`formatIri` docstring), so these
+    // axes drive the runner with a body that has no `$currentAsset`,
+    // `$currentClass` or `$node` token. Green on the base too: no regression.
+    const MALFORMED_IRI = "x> ?a ?b . ?evil <y";
+    const topicOnly = { topic: { value: "x", kind: "literal" as const } };
+
+    it(`S12 the runner refuses a malformed $currentAsset even when the body has no such token`, async () => {
+      root = buildDollarVault();
+      const runner = await buildRunner(root);
+      await expect(
+        runner.run(ECHO_UID, { currentAsset: MALFORMED_IRI, params: topicOnly }),
+      ).rejects.toThrow(/malformed IRI/);
+    });
+
+    it(`S13 the runner refuses a malformed $currentClass even when the body has no such token`, async () => {
+      root = buildDollarVault();
+      const runner = await buildRunner(root);
+      await expect(
+        runner.run(ECHO_UID, { currentClass: MALFORMED_IRI, params: topicOnly }),
+      ).rejects.toThrow(/malformed IRI/);
+    });
+
+    it(`S14 the runner refuses a malformed IRI param even when the body has no such token`, async () => {
+      root = buildDollarVault();
+      const runner = await buildRunner(root);
+      await expect(
+        runner.run(ECHO_UID, {
+          params: { ...topicOnly, node: { value: MALFORMED_IRI, kind: "iri" } },
+        }),
+      ).rejects.toThrow(/malformed IRI/);
+    });
+
+    // A token used TWICE: every occurrence is replaced, not only the first —
+    // a leftover `$topic` is a legal (unbound) SPARQL variable, so the miss is
+    // silent: the second binding is simply absent.
+    it(`S15 @req:${REQ} --param fills EVERY occurrence of its token`, async () => {
+      root = buildDollarVault();
+      const out = await runCli(runQueryCommand(), [
+        ECHO2_UID, "--param", "topic=a$&b", "--vault", root, "--format", "json",
+      ]);
+      expect(JSON.parse(out).data.rows).toEqual([{ a: "a$&b", b: "a$&b" }]);
+    });
+
+    it(`S16 @req:${REQ} --current-asset fills EVERY occurrence of $currentAsset`, async () => {
+      const out = await rowsOf([ASSET2_UID, "--current-asset", "odd/a$&b.md"]);
+      const rows: Array<{ a?: string; b?: string }> = JSON.parse(out).data.rows;
+      expect(rows).toHaveLength(1);
+      expect(rows[0].a).toContain("odd/a$&b.md");
+      expect(rows[0].b).toBe(rows[0].a);
+    });
+
+    it(`S17 the runner fills EVERY occurrence of $currentClass`, async () => {
+      root = buildDollarVault();
+      const runner = await buildRunner(root);
+      const result = await runner.run(CLASS2_UID, {
+        currentClass: vaultPathToIRI("odd/a$&b.md"),
+      });
+      if (result?.kind !== "select") throw new Error("expected select");
+      expect(result.rows).toHaveLength(1);
+      const a = result.rows[0].get("a")?.toString() ?? "";
+      expect(a).toContain("odd/a$&b.md");
+      expect(result.rows[0].get("b")?.toString()).toBe(a);
+    });
+
+    // `$$` and `$'` on the two surfaces S7 / S11 cover with `$&` only — an
+    // implementation escaping `$&` alone would otherwise pass them.
+    it(`S18 @req:${REQ} --param-iri "e$$f.md" reads e$$f.md, not the decoy e$f.md`, async () => {
+      const out = await rowsOf([NODE_UID, "--param-iri", "node=odd/e$$f.md"]);
+      expect(rowsCarrying(out, "target-dollar")).toBe(1);
+      expect(rowsCarrying(out, "decoy-dollar")).toBe(0);
+    });
+
+    it(`S19 @req:${REQ} --param-iri keeps a path with $' verbatim`, async () => {
+      const out = await rowsOf([NODE_UID, "--param-iri", "node=odd/c$'d.md"]);
+      expect(rowsCarrying(out, "target-quote")).toBe(1);
+    });
+
+    async function classLabels(relPath: string): Promise<string[]> {
+      root = buildDollarVault();
+      const runner = await buildRunner(root);
+      const result = await runner.run(CLASS_UID, {
+        currentClass: vaultPathToIRI(relPath),
+      });
+      if (result?.kind !== "select") throw new Error("expected select");
+      return result.rows.map((r) => r.get("o")?.toString() ?? "");
+    }
+
+    it(`S20 the runner reads $currentClass "e$$f.md", not the decoy e$f.md`, async () => {
+      const labels = await classLabels("odd/e$$f.md");
+      expect(labels.filter((l) => l.includes("target-dollar"))).toHaveLength(1);
+      expect(labels.filter((l) => l.includes("decoy-dollar"))).toHaveLength(0);
+    });
+
+    it(`S21 the runner keeps a $currentClass IRI with $' verbatim`, async () => {
+      const labels = await classLabels("odd/c$'d.md");
+      expect(labels.filter((l) => l.includes("target-quote"))).toHaveLength(1);
+    });
+
+    it(`C1 @req:${REQ} control — a value with " and \\ still round-trips byte-identical`, async () => {
+      const out = await echo('q"x\\y');
+      expect(JSON.parse(out).data.rows).toEqual([{ k: 'q"x\\y' }]);
     });
   });
 });

@@ -1,0 +1,89 @@
+{
+  "_doc": "Revert-verify mutants for ems__Bug 72cbd6fc — `NamedQueryRunner.substitute` must hand String.replace a FUNCTION, never the formatted value: a replacement STRING reads `$$`, `$&`, `$`-backtick and `$'` inside the value as patterns. ⛔ One mutant PER `.replace` site of `substitute` (params incl. --param-iri; $currentAsset; $currentClass), plus a control proving C1 is not vacuous, plus one LAZY-FORMAT mutant per site (M5-M7): the fix must keep formatting BEFORE the call, or a malformed IRI absent from the body stops being refused (axes S12-S14, green on the base too), plus one FIRST-OCCURRENCE-ONLY mutant per site (M8-M10: a token used twice must be filled twice — axes S15-S17), plus two partial-escape mutants (M11, M12: string replacement with only `$&` escaped — axes S18-S21). The other `.replace` in the same method (`name.replace(..., \"\\\\$&\")`) is a CONSTANT replacement that deliberately uses `$&` (regex-escape of the param name) and is NOT part of the class — not mutated. Axes live in packages/cli because the product path (run-query → buildNamedQueryRunner → NamedQueryRunner) is a CLI action; packages/cli/jest.config.js maps @kitelev/exocortex-core to SOURCE, so the mutation is seen. Set `tree`/`subject` to YOUR checkout before running.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/NamedQueryRunner.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/cli/jest.config.js packages/cli/tests/integration/run-query-namedquery.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_params_string_replacement": {
+      "_note": "THE defect at the params site, restored verbatim: the formatted literal / IRI goes back to being a replacement STRING. Reddens the four literal echo axes (S1-S4), the two wrong-record axes (S5 `$&x`→`$topicx`, S6 `a$$b`→`a$b`), the twice-token echo (S15) and --param-iri (S7, S18, S19) — --param and --param-iri share this one call.",
+      "from": "          () => formatted,\n        );\n",
+      "to": "          formatted,\n        );\n",
+      "expect": ["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S15", "S18", "S19"]
+    },
+    "M2_currentAsset_string_replacement": {
+      "_note": "The $currentAsset site restored to a string replacement: a vault path carrying `$&`, `$$` or `$'` (encodeURI keeps all three) reaches the IRI and expands — S8 (0 rows), S9 (the DECOY e$f.md answers), S10, and S16 (both occurrences carry the token name instead of the path).",
+      "from": "      out = out.replace(/\\$currentAsset\\b/g, () => formatted);\n",
+      "to": "      out = out.replace(/\\$currentAsset\\b/g, formatted);\n",
+      "expect": ["S8", "S9", "S10", "S16"]
+    },
+    "M3_currentClass_string_replacement": {
+      "_note": "The $currentClass site restored. No CLI flag and no production caller pass currentClass today, so S11/S17/S20/S21 drive the runner directly — the runner's own contract is the only surface.",
+      "from": "      out = out.replace(/\\$currentClass\\b/g, () => formatted);\n",
+      "to": "      out = out.replace(/\\$currentClass\\b/g, formatted);\n",
+      "expect": ["S11", "S17", "S20", "S21"]
+    },
+    "M4_literal_raw_interpolation": {
+      "_note": "Control on C1: the function returns the RAW literal (escapeLiteral bypassed). S1-S7 carry no quote or backslash and stay GREEN; only C1 (`q\"x\\\\y`) reddens — so C1 is not vacuous and the S-axes cannot be satisfied by skipping the escaping.",
+      "from": "          () => formatted,\n        );\n",
+      "to": "          () => (param.kind === \"iri\" ? formatted : `\"${param.value}\"`),\n        );\n",
+      "expect": ["C1"]
+    },
+    "M5_currentAsset_lazy_format": {
+      "_note": "The natural 'function' form at the $currentAsset site — `() => NamedQueryRunner.formatIri(...)` — makes the IRI check LAZY: a malformed IRI whose token the body never mentions stops being refused. Values that ARE substituted still go in verbatim, so S8-S10 stay GREEN; only S12 reddens.",
+      "from": "      const formatted = NamedQueryRunner.formatIri(context.currentAsset);\n      out = out.replace(/\\$currentAsset\\b/g, () => formatted);\n",
+      "to": "      const asset = context.currentAsset;\n      out = out.replace(/\\$currentAsset\\b/g, () =>\n        NamedQueryRunner.formatIri(asset),\n      );\n",
+      "expect": ["S12"]
+    },
+    "M6_currentClass_lazy_format": {
+      "_note": "The $currentClass twin of M5 — the IRI check moves inside the replacer function. S11 stays GREEN (the value still goes in verbatim); only S13 reddens.",
+      "from": "      const formatted = NamedQueryRunner.formatIri(context.currentClass);\n      out = out.replace(/\\$currentClass\\b/g, () => formatted);\n",
+      "to": "      const cls = context.currentClass;\n      out = out.replace(/\\$currentClass\\b/g, () =>\n        NamedQueryRunner.formatIri(cls),\n      );\n",
+      "expect": ["S13"]
+    },
+    "M7_params_lazy_format": {
+      "_note": "The params twin of M5: formatting moves into a closure called by the replacer, so a malformed IRI param absent from the body is no longer refused. Literal and IRI values that ARE substituted still go in verbatim (S1-S7, C1 GREEN); only S14 reddens.",
+      "from": "        const formatted =\n          param.kind === \"iri\"\n            ? NamedQueryRunner.formatIri(param.value)\n            : `\"${NamedQueryRunner.escapeLiteral(param.value)}\"`;\n        // Escape regex metachars in the param name (names are author-controlled\n        // but defensive — a `.` in a name must not act as a wildcard).\n        const safeName = name.replace(/[.*+?^${}()|[\\]\\\\]/g, \"\\\\$&\");\n        out = out.replace(\n          new RegExp(`\\\\$${safeName}\\\\b`, \"g\"),\n          () => formatted,\n        );\n",
+      "to": "        const format = (): string =>\n          param.kind === \"iri\"\n            ? NamedQueryRunner.formatIri(param.value)\n            : `\"${NamedQueryRunner.escapeLiteral(param.value)}\"`;\n        // Escape regex metachars in the param name (names are author-controlled\n        // but defensive — a `.` in a name must not act as a wildcard).\n        const safeName = name.replace(/[.*+?^${}()|[\\]\\\\]/g, \"\\\\$&\");\n        out = out.replace(\n          new RegExp(`\\\\$${safeName}\\\\b`, \"g\"),\n          () => format(),\n        );\n",
+      "expect": ["S14"]
+    },
+    "M8_params_first_occurrence_only": {
+      "_note": "A replacement that stops at the FIRST occurrence of a param token (the `g` flag dropped — equivalent to a splice-by-index): the second `$topic` stays an unbound SPARQL variable, so the miss is silent. Only the twice-token axis S15 sees it — every other body carries its token once.",
+      "from": "          new RegExp(`\\\\$${safeName}\\\\b`, \"g\"),\n",
+      "to": "          new RegExp(`\\\\$${safeName}\\\\b`),\n",
+      "expect": ["S15"]
+    },
+    "M9_currentAsset_first_occurrence_only": {
+      "_note": "The $currentAsset twin of M8: only the first `$currentAsset` is filled. Only S16 (the token twice) reddens.",
+      "from": "      out = out.replace(/\\$currentAsset\\b/g, () => formatted);\n",
+      "to": "      out = out.replace(/\\$currentAsset\\b/, () => formatted);\n",
+      "expect": ["S16"]
+    },
+    "M10_currentClass_first_occurrence_only": {
+      "_note": "The $currentClass twin of M8. Only S17 (the token twice) reddens.",
+      "from": "      out = out.replace(/\\$currentClass\\b/g, () => formatted);\n",
+      "to": "      out = out.replace(/\\$currentClass\\b/, () => formatted);\n",
+      "expect": ["S17"]
+    },
+    "M11_currentClass_escape_only_amp": {
+      "_note": "A rejected alternative that LOOKS right: keep the replacement STRING but escape only `$&` in it. `$&` now survives (S11, S17 stay GREEN) while `$$` and `$'` still expand — only S20 (the e$f.md decoy) and S21 redden. Proves S11 alone would not have caught it.",
+      "from": "      out = out.replace(/\\$currentClass\\b/g, () => formatted);\n",
+      "to": "      out = out.replace(/\\$currentClass\\b/g, formatted.replace(/\\$&/g, \"$$$$&\"));\n",
+      "expect": ["S20", "S21"]
+    },
+    "M12_params_escape_only_amp": {
+      "_note": "The params twin of M11: string replacement with only `$&` escaped. `$&` axes stay GREEN (S2, S5, S7, S15); `$$`, `$`-backtick and `$'` still expand — S1, S3, S4, S6, S18, S19 redden. Proves S7 alone would not have caught it on --param-iri.",
+      "from": "          () => formatted,\n        );\n",
+      "to": "          formatted.replace(/\\$&/g, \"$$$$&\"),\n        );\n",
+      "expect": ["S1", "S3", "S4", "S6", "S18", "S19"]
+    }
+  }
+}
