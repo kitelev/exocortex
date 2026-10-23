@@ -1,0 +1,42 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 37c80e59: an unbound SPARQL function argument is an evaluation error (SPARQL 1.1 §17.3), STR takes any expression, a BIND primitive is substituted into EXISTS / LATERAL but not into a join operand. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › <axis> ` (ITRV §A44/§A104). Anchors are CODE lines only — the fix's comments may be reworded freely. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Subject: AggregateExecutor — MIN / MAX of a group with no values, and the absent aggregate in the result row. Anchors are code lines of the shipped fix (ems__Bug 37c80e59, PR #4580): rewriting one of them means moving its anchor and re-taking every `expect` from a finished driver run — pairwise-distinct sets stay required.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/unbound-argument-37c80e59.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/executors/AggregateExecutor.ts",
+  "mutants": {
+    "M7_max_empty_literal": {
+      "_note": "MAX of no values builds Literal(\"\") again — it throws \"Literal value cannot be empty\" and fails the query.",
+      "from": "          return undefined;\n        }\n        return typeof max === \"number\"",
+      "to": "          return new Literal(\"\", XSD_STRING);\n        }\n        return typeof max === \"number\"",
+      "expect": ["U6"]
+    },
+    "M7m_min_empty_literal": {
+      "_note": "The MIN twin of M7.",
+      "from": "          return undefined;\n        }\n        return typeof min === \"number\"",
+      "to": "          return new Literal(\"\", XSD_STRING);\n        }\n        return typeof min === \"number\"",
+      "expect": ["U6b"]
+    },
+    "M7b_unbound_aggregate_kept_in_row": {
+      "_note": "An unbound aggregate is written into the row as undefined: the variable reads as bound and toJSON() throws in the CLI output. DEFENSIVE (ITRV §A35/§A135): the group row always reaches the output through Project, which drops an undefined value (`executeProject`: `if (value !== undefined)`) — so no axis can redden; the guard keeps the raw group row honest for any future consumer (has() / toJSON()).",
+      "from": "        if (value === undefined) continue;",
+      "to": "        if (value === null) continue;",
+      "expect": [],
+      "_canary": "M7_max_empty_literal"
+    },
+    "M16_empty_input_min_max_sample_literal": {
+      "_note": "MIN / MAX / SAMPLE over an EMPTY input with GROUP BY build Literal(\"\") again — \"Literal value cannot be empty\" fails the whole query.",
+      "from": "        case \"sample\":\n          break;\n",
+      "to": "        case \"sample\":\n          result.set(aggregate.variable, new Literal(\"\", XSD_STRING));\n          break;\n",
+      "expect": ["U9"]
+    }
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 37c80e59: an unbound SPARQL function argument is an evaluation error (SPARQL 1.1 §17.3), STR takes any expression, a BIND primitive is substituted into EXISTS / LATERAL but not into a join operand. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › <axis> ` (ITRV §A44/§A104). Anchors are CODE lines only — the fix's comments may be reworded freely. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Subject: FilterExecutor — the shared argument helpers, IN, the async function path, exo:byUUID. Anchors are code lines of the shipped fix (ems__Bug 37c80e59, PR #4580): rewriting one of them means moving its anchor and re-taking every `expect` from a finished driver run — pairwise-distinct sets stay required.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/unbound-argument-37c80e59.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/executors/FilterExecutor.ts",
+  "mutants": {
+    "M1_getStringValue_empty_string": {
+      "_note": "getStringValue turns an unbound argument back into \"\" (the defect, mechanism 1).",
+      "from": "\n      throw new FilterExecutorError(\"unbound argument\");\n    }\n",
+      "to": "\n      return \"\";\n    }\n",
+      "expect": ["J1", "U1", "U2", "U4", "U6", "U6b", "U7", "U7b", "U8", "U9"]
+    },
+    "M2_getTerm_nonvariable_undefined": {
+      "_note": "getTermFromExpression again sees only a variable: STR(\"ab\"), STR(LCASE(?l)) get nothing (the defect, mechanism 2).",
+      "from": "      ? solution.get(varExpr.name)\n      : this.evaluateExpression(expr, solution);\n",
+      "to": "      ? solution.get(varExpr.name)\n      : undefined;\n",
+      "expect": ["B1", "I1", "I2", "S1", "S2", "S3", "T1b"]
+    },
+    "M5_byUUID_no_unbound_check": {
+      "_note": "exo:byUUID loses its own contract and reaches the shared unbound error. Type-preserving: an impossible condition.",
+      "from": "    if (uuidArg === undefined || uuidArg === null) {\n",
+      "to": "    if (uuidArg === undefined && uuidArg === null) {\n",
+      "expect": ["U5"]
+    },
+    "M6_getTerm_unbound_passes": {
+      "_note": "An unbound variable reaches the term functions as undefined again: !isLiteral(?unbound) / sameTerm(?u1, ?u2) are true.",
+      "from": "    if (term === undefined || term === null) throw new FilterExecutorError(\"unbound argument\");\n",
+      "to": "    if (term === null) throw new FilterExecutorError(\"unbound argument\");\n",
+      "expect": ["T1", "T1b"]
+    },
+    "M8_in_sync_error_propagates": {
+      "_note": "Synchronous IN: an erroring element raises at once — a later match no longer absorbs it (§17.4.1.9).",
+      "from": "      } catch {\n        errored = true;\n      }\n    }\n    if (!found && errored) throw new FilterExecutorError(\"IN: an element raised and none matched\");\n\n",
+      "to": "      } catch {\n        throw new FilterExecutorError(\"IN element\");\n      }\n    }\n    if (!found && errored) throw new FilterExecutorError(\"IN: an element raised and none matched\");\n\n",
+      "expect": ["U7"]
+    },
+    "M9_in_async_error_propagates": {
+      "_note": "The async twin of M8 (an EXISTS in the IN list).",
+      "from": "      } catch {\n        errored = true;\n      }\n    }\n    if (!found && errored) throw new FilterExecutorError(\"IN: an element raised and none matched\");\n    return expr.negated",
+      "to": "      } catch {\n        throw new FilterExecutorError(\"IN element\");\n      }\n    }\n    if (!found && errored) throw new FilterExecutorError(\"IN: an element raised and none matched\");\n    return expr.negated",
+      "expect": ["U7b"]
+    },
+    "M10_wrap_unbound_as_empty": {
+      "_note": "The async function path turns an unbound argument into \"\" again (the async twin of M1).",
+      "from": "      return { type: \"literal\", value: undefined } as unknown as Expression;",
+      "to": "      return { type: \"literal\", value: \"\" } as unknown as Expression;",
+      "expect": ["U8"]
+    },
+    "M14_logical_sync_error_propagates": {
+      "_note": "PRE-EXISTING code, not the fix: `||` / `&&` lose their error tolerance (§17.4.1.5) on the synchronous path. Proves the no-regression axes U3 / T2 are not vacuous — the fix makes MORE operands raise, so a disjunction over an erroring operand is exactly what it must keep answering.",
+      "from": "        results.push(this.evaluateExpression(op, solution) as boolean);\n      } catch {\n        errored = true;\n      }\n",
+      "to": "        results.push(this.evaluateExpression(op, solution) as boolean);\n      } catch {\n        throw new FilterExecutorError(\"logical operand\");\n      }\n",
+      "expect": ["T2", "U3"]
+    },
+    "M15_no_iri_branch": {
+      "_note": "The substituted-IRI branch is gone: `{ type: \"iri\" }` raises \"Unsupported expression type\" again, and now that getTermFromExpression evaluates non-variable arguments, !isLiteral(?s) over a substituted ?s drops every row (the regression the review found).",
+      "from": "    if ((expr as { type: string }).type === \"iri\") {\n      return new IRI((expr as unknown as { value: string }).value);\n    }\n",
+      "to": "",
+      "expect": ["I1", "I2"]
+    },
+    "M18_getTerm_unbound_only_variable": {
+      "_note": "Only an unbound VARIABLE raises in getTermFromExpression; an unbound non-variable argument (COALESCE(?unbound)) reaches the term functions as undefined again.",
+      "from": "    if (term === undefined || term === null) throw new FilterExecutorError(\"unbound argument\");\n",
+      "to": "    if ((term === undefined || term === null) && varExpr.type === \"variable\") throw new FilterExecutorError(\"unbound argument\");\n",
+      "expect": ["T1b"]
+    },
+    "M19_logical_async_error_propagates": {
+      "_note": "PRE-EXISTING code, not the fix: the asynchronous `||` / `&&` (an EXISTS operand) lose their error tolerance (§17.4.1.5). Proves U3b is not vacuous — the async twin of M14.",
+      "from": "        results.push((await this.evaluateExpressionAsync(op, solution)) as boolean);\n      } catch {\n        errored = true;\n      }\n",
+      "to": "        results.push((await this.evaluateExpressionAsync(op, solution)) as boolean);\n      } catch {\n        throw new FilterExecutorError(\"logical operand\");\n      }\n",
+      "expect": ["U3b"]
+    }
+  }
+}

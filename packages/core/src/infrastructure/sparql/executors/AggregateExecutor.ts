@@ -74,6 +74,9 @@ export class AggregateExecutor {
         // `resultBindings` is `Map<string, unknown>`; the lazy `require`
         // previously typed the class as `any`, silently accepting these values.
         // Runtime behaviour is unchanged — cast to the set() param type.
+        // An unbound aggregate (MIN / MAX of no values) is absent from the row, not
+        // an `undefined` entry — otherwise it reads as bound (ems__Bug 37c80e59).
+        if (value === undefined) continue;
         result.set(key, value as Parameters<typeof result.set>[1]);
       }
       results.push(result);
@@ -134,7 +137,7 @@ export class AggregateExecutor {
   private computeAggregate(
     expr: AggregateExpression,
     solutions: SolutionMapping[]
-  ): Literal {
+  ): Literal | undefined {
     // Handle custom aggregates first
     if (isCustomAggregation(expr.aggregation)) {
       return this.computeCustomAggregate(expr, solutions);
@@ -162,7 +165,10 @@ export class AggregateExecutor {
       case "min": {
         const min = this.computeMin(values);
         if (min === undefined) {
-          return new Literal("", XSD_STRING);
+          // MIN of no values is unbound (SPARQL 1.1 §18.5.1.4). It used to build
+          // Literal(""), which throws "Literal value cannot be empty" and failed
+          // the whole query (ems__Bug 37c80e59).
+          return undefined;
         }
         return typeof min === "number"
           ? new Literal(String(min), XSD_DECIMAL)
@@ -172,7 +178,8 @@ export class AggregateExecutor {
       case "max": {
         const max = this.computeMax(values);
         if (max === undefined) {
-          return new Literal("", XSD_STRING);
+          // MAX of no values is unbound — see MIN above (ems__Bug 37c80e59).
+          return undefined;
         }
         return typeof max === "number"
           ? new Literal(String(max), XSD_DECIMAL)
@@ -480,10 +487,13 @@ export class AggregateExecutor {
         case "group_concat":
           result.set(aggregate.variable, new Literal(" ", XSD_STRING));
           break;
+        // MIN / MAX / SAMPLE of no values is unbound (SPARQL 1.1 §18.5.1), so the
+        // variable is left out. It used to build Literal(""), which throws "Literal
+        // value cannot be empty" and failed the whole query — reached far more often
+        // once a FILTER over an unbound parameter keeps no rows (ems__Bug 37c80e59).
         case "min":
         case "max":
         case "sample":
-          result.set(aggregate.variable, new Literal("", XSD_STRING));
           break;
         default:
           // Exhaustive check handled by TypeScript - unreachable for StandardAggregation

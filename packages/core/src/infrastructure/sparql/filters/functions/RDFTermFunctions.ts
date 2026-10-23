@@ -257,6 +257,13 @@ export class RDFTermFunctions {
       return false;
     }
 
+    // STR(...) / LCASE(...) reach sameTerm as JS primitives (string / number /
+    // boolean); two primitives are the same term iff type and value are equal
+    // (ems__Bug 37c80e59).
+    if (typeof term1 !== "object" && typeof term2 !== "object") {
+      return typeof term1 === typeof term2 && term1 === term2;
+    }
+
     // Different term types = different
     if (term1.constructor !== term2.constructor) {
       return false;

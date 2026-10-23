@@ -20,12 +20,18 @@ export class FilterExecutorError extends Error {
  * - boolean/number/string: Native JS values from comparisons, arithmetic, etc.
  * - undefined: Unbound variable or null result
  *
- * This uses `any` intentionally because expression evaluation crosses type boundaries
- * between RDF terms, native JS values, and domain objects. The dynamic nature of
- * SPARQL expression evaluation makes strict typing impractical at this boundary.
+ * Typed `unknown`: expression evaluation crosses type boundaries between RDF terms,
+ * native JS values and domain objects, so a consumer narrows the value (type guards
+ * such as `isDateValue`, `instanceof Literal`) before using it. It was `any` behind an
+ * inline eslint-disable that the lint config no longer allows (ems__Bug 37c80e59
+ * touched this file, so its eslint debt is paid here). Type-only: the emitted
+ * JavaScript differs in one place, `String(value)` in the "Cannot convert to
+ * number" message, which a template literal applies anyway.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ExpressionResult = any;
+export type ExpressionResult = unknown;
+
+/** An operand of `BuiltInFunctions.compare`, which itself handles mixed operands. */
+type CompareOperand = Parameters<typeof BuiltInFunctions.compare>[0];
 
 /**
  * Callback type for evaluating EXISTS patterns.
@@ -65,7 +71,7 @@ export class FilterExecutor {
 
     for await (const solution of inputSolutions) {
       try {
-        let result: boolean;
+        let result: ExpressionResult;
         if (hasExists) {
           result = await this.evaluateExpressionAsync(operation.expression, solution);
         } else {
@@ -178,6 +184,16 @@ export class FilterExecutor {
       }
     }
 
+    // A bound IRI that EXISTS / LATERAL / a bind join substituted into the
+    // expression (`QueryExecutor.termToAlgebraNode` → `{ type: "iri" }`) is the IRI
+    // term it stood for. Required since term functions evaluate non-variable
+    // arguments here (`getTermFromExpression`): without it `!isLiteral(?s)` over a
+    // substituted ?s raised and dropped every row. Checked before the switch because
+    // "iri" is not a member of the `Expression` union (ems__Bug 37c80e59).
+    if ((expr as { type: string }).type === "iri") {
+      return new IRI((expr as unknown as { value: string }).value);
+    }
+
     switch (expr.type) {
       case "comparison":
         return this.evaluateComparison(expr, solution);
@@ -242,7 +258,7 @@ export class FilterExecutor {
       const compExpr = expr as import("../algebra/AlgebraOperation").ComparisonExpression;
       const left = await this.evaluateExpressionAsync(compExpr.left, solution);
       const right = await this.evaluateExpressionAsync(compExpr.right, solution);
-      return BuiltInFunctions.compare(left, right, compExpr.operator);
+      return BuiltInFunctions.compare(left as CompareOperand, right as CompareOperand, compExpr.operator);
     }
 
     if (expr.type === "in") {
@@ -330,13 +346,20 @@ export class FilterExecutor {
   private async evaluateInAsync(expr: InExpression, solution: SolutionMapping): Promise<boolean> {
     const testValue = await this.evaluateExpressionAsync(expr.expression, solution);
     let found = false;
+    // Same error rules as the synchronous `evaluateIn` (SPARQL 1.1 §17.4.1.9).
+    let errored = false;
     for (const listItem of expr.list) {
-      const listValue = await this.evaluateExpressionAsync(listItem, solution);
-      if (BuiltInFunctions.compare(testValue, listValue, "=")) {
-        found = true;
-        break;
+      try {
+        const listValue = await this.evaluateExpressionAsync(listItem, solution);
+        if (BuiltInFunctions.compare(testValue as CompareOperand, listValue as CompareOperand, "=")) {
+          found = true;
+          break;
+        }
+      } catch {
+        errored = true;
       }
     }
+    if (!found && errored) throw new FilterExecutorError("IN: an element raised and none matched");
     return expr.negated ? !found : found;
   }
 
@@ -395,7 +418,11 @@ export class FilterExecutor {
    */
   private wrapAsLiteralExpression(value: unknown): Expression {
     if (value === undefined || value === null) {
-      return { type: "literal", value: "" } as unknown as Expression;
+      // An unbound argument stays unbound: a function that reads it through
+      // `getStringValue` / `getTermFromExpression` then raises an evaluation error.
+      // It used to become "" — the async twin of `getStringValue`'s old behaviour
+      // (ems__Bug 37c80e59).
+      return { type: "literal", value: undefined } as unknown as Expression;
     }
     if (typeof value === "object" && "termType" in value) {
       return value as unknown as Expression;
@@ -413,7 +440,7 @@ export class FilterExecutor {
     const left = this.evaluateExpression(expr.left, solution);
     const right = this.evaluateExpression(expr.right, solution);
 
-    return BuiltInFunctions.compare(left, right, expr.operator);
+    return BuiltInFunctions.compare(left as CompareOperand, right as CompareOperand, expr.operator);
   }
 
   private evaluateLogical(expr: import("../algebra/AlgebraOperation").LogicalExpression, solution: SolutionMapping): boolean {
@@ -458,11 +485,27 @@ export class FilterExecutor {
   private evaluateIn(expr: InExpression, solution: SolutionMapping): boolean {
     const testValue = this.evaluateExpression(expr.expression, solution);
 
-    // Check if testValue equals any value in the list
-    const found = expr.list.some((listItem) => {
-      const listValue = this.evaluateExpression(listItem, solution);
-      return BuiltInFunctions.compare(testValue, listValue, "=");
-    });
+    // SPARQL 1.1 §17.4.1.9: IN is a disjunction of `=` — a match absorbs an
+    // erroring element, no match plus an error is an error (ems__Bug 37c80e59).
+    let found = false;
+    let errored = false;
+    for (const listItem of expr.list) {
+      try {
+        if (
+          BuiltInFunctions.compare(
+            testValue as CompareOperand,
+            this.evaluateExpression(listItem, solution) as CompareOperand,
+            "="
+          )
+        ) {
+          found = true;
+          break;
+        }
+      } catch {
+        errored = true;
+      }
+    }
+    if (!found && errored) throw new FilterExecutorError("IN: an element raised and none matched");
 
     // For IN, return true if found; for NOT IN, return true if NOT found
     return expr.negated ? !found : found;
@@ -632,7 +675,7 @@ export class FilterExecutor {
   /**
    * Check if a value is an xsd:dayTimeDuration.
    */
-  private isDayTimeDurationValue(value: ExpressionResult): boolean {
+  private isDayTimeDurationValue(value: ExpressionResult): value is Literal {
     if (value instanceof Literal) {
       const datatypeValue = value.datatype?.value || "";
       return datatypeValue === "http://www.w3.org/2001/XMLSchema#dayTimeDuration";
@@ -643,7 +686,7 @@ export class FilterExecutor {
   /**
    * Check if a value is an xsd:yearMonthDuration.
    */
-  private isYearMonthDurationValue(value: ExpressionResult): boolean {
+  private isYearMonthDurationValue(value: ExpressionResult): value is Literal {
     if (value instanceof Literal) {
       const datatypeValue = value.datatype?.value || "";
       return datatypeValue === "http://www.w3.org/2001/XMLSchema#yearMonthDuration";
@@ -696,13 +739,13 @@ export class FilterExecutor {
       }
     }
 
-    throw new FilterExecutorError(`Cannot convert to number: ${value}`);
+    throw new FilterExecutorError(`Cannot convert to number: ${String(value)}`);
   }
 
   /**
    * Check if a value represents an xsd:dateTime or xsd:date.
    */
-  private isDateTimeValue(value: ExpressionResult): boolean {
+  private isDateTimeValue(value: ExpressionResult): value is Literal | string {
     if (value instanceof Literal) {
       const datatypeValue = value.datatype?.value || "";
       if (datatypeValue.includes("#dateTime") || datatypeValue.includes("#date")) {
@@ -723,7 +766,7 @@ export class FilterExecutor {
    * Check if a value represents a pure xsd:date (not xsd:dateTime).
    * Used to distinguish date-only subtraction from dateTime subtraction.
    */
-  private isDateValue(value: ExpressionResult): boolean {
+  private isDateValue(value: ExpressionResult): value is Literal {
     if (value instanceof Literal) {
       const datatypeValue = value.datatype?.value || "";
       // Only match xsd:date, NOT xsd:dateTime
@@ -736,7 +779,7 @@ export class FilterExecutor {
    * Check if a value represents an xsd:time.
    * Used for time subtraction (time - time = dayTimeDuration).
    */
-  private isTimeValue(value: ExpressionResult): boolean {
+  private isTimeValue(value: ExpressionResult): value is Literal {
     if (value instanceof Literal) {
       const datatypeValue = value.datatype?.value || "";
       return datatypeValue === "http://www.w3.org/2001/XMLSchema#time";
@@ -851,10 +894,15 @@ export class FilterExecutor {
 
   private getTermFromExpression(expr: Expression, solution: SolutionMapping): unknown {
     const varExpr = expr as { type: string; name?: string };
-    if (varExpr.type === "variable" && varExpr.name) {
-      return solution.get(varExpr.name);
-    }
-    return undefined;
+    // Any expression, not only a variable: STR("ab") and STR(LCASE(?l)) used to
+    // get undefined here and raise (ems__Bug 37c80e59).
+    const term = varExpr.type === "variable" && varExpr.name
+      ? solution.get(varExpr.name)
+      : this.evaluateExpression(expr, solution);
+    // An unbound argument of a term function is an evaluation error — otherwise
+    // !isLiteral(?unbound) and sameTerm(?u1, ?u2) are true for every row.
+    if (term === undefined || term === null) throw new FilterExecutorError("unbound argument");
+    return term;
   }
 
   /**
@@ -863,7 +911,11 @@ export class FilterExecutor {
    */
   private getStringValue(value: ExpressionResult): string {
     if (value === null || value === undefined) {
-      return "";
+      // An unbound argument is an evaluation error (SPARQL 1.1 §17.3), which drops
+      // the row in a FILTER. It used to become "", so the functions that read their
+      // argument here saw an empty string — CONTAINS(?x, ?unbound) was true for every
+      // row (ems__Bug 37c80e59).
+      throw new FilterExecutorError("unbound argument");
     }
     // If it's an RDF term with a value property, use that
     if (typeof value === "object" && "value" in value) {
@@ -946,6 +998,11 @@ export class FilterExecutor {
 
     // Get the UUID argument - evaluate in case it's a variable or expression
     const uuidArg = this.evaluateExpression(expr.args[0], solution);
+    // byUUID's own contract: no UUID ⇒ undefined, not the shared unbound-argument
+    // error `getStringValue` raises (ems__Bug 37c80e59).
+    if (uuidArg === undefined || uuidArg === null) {
+      return undefined;
+    }
     const uuid = this.getStringValue(uuidArg);
 
     if (!uuid) {

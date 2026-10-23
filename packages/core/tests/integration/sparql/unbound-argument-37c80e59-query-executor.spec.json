@@ -1,0 +1,47 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 37c80e59: an unbound SPARQL function argument is an evaluation error (SPARQL 1.1 §17.3), STR takes any expression, a BIND primitive is substituted into EXISTS / LATERAL but not into a join operand. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › <axis> ` (ITRV §A44/§A104). Anchors are CODE lines only — the fix's comments may be reworded freely. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Subject: QueryExecutor — HAVING, BIND-primitive substitution into EXISTS / LATERAL and its exclusion from a join operand. Anchors are code lines of the shipped fix (ems__Bug 37c80e59, PR #4580): rewriting one of them means moving its anchor and re-taking every `expect` from a finished driver run — pairwise-distinct sets stay required.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/unbound-argument-37c80e59.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/executors/QueryExecutor.ts",
+  "mutants": {
+    "M3_no_primitive_substitution": {
+      "_note": "A BIND primitive is not substituted into an EXISTS filter (the defect, mechanism 3).",
+      "from": "    const asTerm = this.termToAlgebraNode(bound) ?? this.primitiveToExpressionNode(bound);",
+      "to": "    const asTerm = this.termToAlgebraNode(bound);",
+      "expect": ["B1", "B2", "B3", "L1"]
+    },
+    "M4_having_error_fails_query": {
+      "_note": "HAVING without the guard: an erroring condition fails the whole query instead of dropping the group.",
+      "from": "          try {\n            return this.filterExecutor.evaluateExpression(expr, result) === true;\n          } catch {\n            return false;\n          }\n",
+      "to": "          return this.filterExecutor.evaluateExpression(expr, result) === true;\n",
+      "expect": ["U4"]
+    },
+    "M12_join_sees_bind_primitive": {
+      "_note": "The join lookup no longer hides BIND primitives: a group on the right of a join sees the value bound on the left (§18.5 says it must not).",
+      "from": "return this.isBindPrimitive(v) ? undefined : v; }",
+      "to": "return v; }",
+      "expect": ["J1"]
+    },
+    "M13_number_as_untyped_string": {
+      "_note": "A BIND number is substituted as an untyped string literal: does B2 distinguish the node's form?",
+      "from": "      return { type: 'literal', value, datatype: XSD + (Number.isInteger(value) ? \"integer\" : \"decimal\") };",
+      "to": "      return { type: 'literal', value: String(value) };",
+      "expect": ["B2"]
+    },
+    "M17_lateral_scope_join": {
+      "_note": "LATERAL substitutes the outer solution with the \"join\" scope: a BIND primitive is hidden from the LATERAL subquery, which is correlated by the standard (§18.6).",
+      "from": "      const substitutedPattern = this.substituteVariables(operation.right, outerSolution, \"correlated\");",
+      "to": "      const substitutedPattern = this.substituteVariables(operation.right, outerSolution, \"join\");",
+      "expect": ["L1"]
+    }
+  }
+}

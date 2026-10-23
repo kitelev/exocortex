@@ -575,8 +575,13 @@ export class ExoQLQueryExecutor {
       for (const result of results) {
         // All HAVING conditions must be true
         const passesHaving = operation.having.every((expr) => {
-          const value = this.filterExecutor.evaluateExpression(expr, result);
-          return value === true;
+          // HAVING is a filter over groups: an evaluation error drops the group
+          // instead of failing the whole query (ems__Bug 37c80e59).
+          try {
+            return this.filterExecutor.evaluateExpression(expr, result) === true;
+          } catch {
+            return false;
+          }
         });
         if (passesHaving) {
           yield result;
@@ -692,7 +697,14 @@ export class ExoQLQueryExecutor {
   ): AlgebraOperation {
     // Deep clone and substitute - using JSON for simplicity
     const cloned = JSON.parse(JSON.stringify(operation));
-    return this.substituteInOperation(cloned, bindings, scope);
+    // A BIND primitive is substituted only where the standard correlates (EXISTS,
+    // LATERAL). The bind join evaluates its operands independently (SPARQL 1.1
+    // §18.5): a group on the right must not see a value bound on the left
+    // (ems__Bug 37c80e59).
+    const lookup: BindingLookup = scope === "join"
+      ? { get: (variable: string) => { const v = bindings.get(variable); return this.isBindPrimitive(v) ? undefined : v; } }
+      : bindings;
+    return this.substituteInOperation(cloned, lookup, scope);
   }
 
   /**
@@ -818,7 +830,10 @@ export class ExoQLQueryExecutor {
     // bound to. Unbound variables are LEFT ALONE — they must stay variables so
     // the inner pattern can still bind them itself.
     if (expr.type === 'variable' && typeof expr.name === 'string') {
-      const asTerm = this.termToAlgebraNode(bindings.get(expr.name));
+      const bound = bindings.get(expr.name);
+      // A value a BIND computed is a JS primitive, not an RDF term — without the
+      // fallback it stayed unsubstituted inside EXISTS (ems__Bug 37c80e59).
+      const asTerm = this.termToAlgebraNode(bound) ?? this.primitiveToExpressionNode(bound);
       if (asTerm !== null) {
         delete expr.name;
         for (const [key, val] of Object.entries(asTerm)) {
@@ -896,6 +911,25 @@ export class ExoQLQueryExecutor {
       }
     }
     return element;
+  }
+
+  /**
+   * A value a BIND computed is a JS primitive (string / number / boolean), not an
+   * RDF term — as an EXPRESSION-position node it evaluates back to the very same
+   * primitive (a literal node carries its JS value). ems__Bug 37c80e59.
+   */
+  private isBindPrimitive(value: unknown): boolean {
+    return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+  }
+
+  private primitiveToExpressionNode(value: unknown): Record<string, unknown> | null {
+    const XSD = "http://www.w3.org/2001/XMLSchema#";
+    if (typeof value === "string") return { type: 'literal', value };
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return { type: 'literal', value, datatype: XSD + (Number.isInteger(value) ? "integer" : "decimal") };
+    }
+    if (typeof value === "boolean") return { type: 'literal', value, datatype: XSD + "boolean" };
+    return null;
   }
 
   /**
