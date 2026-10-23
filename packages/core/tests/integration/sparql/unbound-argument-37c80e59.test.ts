@@ -8,8 +8,9 @@
  * Three mechanisms produced an unbound value where a string was meant, and a fourth
  * turned it into "true":
  *
- * 1. `FilterExecutor.getStringValue(undefined)` returned `""`; every string, date,
- *    hash and numeric function takes its argument through it, so
+ * 1. `FilterExecutor.getStringValue(undefined)` returned `""`; most string, date,
+ *    hash and numeric functions read their argument through it (not every argument:
+ *    SUBSTR's start and length go through `Number(…)`), so
  *    `CONTAINS(?label, ?unbound)` — `"…".includes("")` — was TRUE for every row.
  *    A NamedQuery run without its `$param` returned the whole population.
  * 2. `FilterExecutor.getTermFromExpression` returned a value only for a variable:
@@ -425,6 +426,10 @@ describe(SUITE, () => {
   it("J1 a PRIMITIVE a BIND computed on the left of a join is unbound inside the right operand's own group (§18.5)", async () => {
     // ⚠ Narrow on purpose: a TERM value (BIND(?l AS ?k), VALUES) still leaks into the
     // right group's FILTER — a pre-existing defect of the bind join (ems__Bug f440b567).
+    // Since this fix an IRI term leaks the same way: before it a substituted IRI node
+    // raised in the expression (4e3ce943) and the row was dropped — the standard
+    // answer by accident. Stored queries with that shape: 0 of 811 parsed (sweep of
+    // the three vaults, 2026-10-23).
     // The inner group is evaluated on its own (SPARQL 1.1 §18.5): ?k is unbound there.
     expect(
       await pop(

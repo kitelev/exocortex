@@ -418,9 +418,10 @@ export class FilterExecutor {
    */
   private wrapAsLiteralExpression(value: unknown): Expression {
     if (value === undefined || value === null) {
-      // An unbound argument stays unbound, so the function it feeds raises an
-      // evaluation error. It used to become "" — the async twin of
-      // `getStringValue`'s old behaviour (ems__Bug 37c80e59).
+      // An unbound argument stays unbound: a function that reads it through
+      // `getStringValue` / `getTermFromExpression` then raises an evaluation error.
+      // It used to become "" — the async twin of `getStringValue`'s old behaviour
+      // (ems__Bug 37c80e59).
       return { type: "literal", value: undefined } as unknown as Expression;
     }
     if (typeof value === "object" && "termType" in value) {
@@ -911,8 +912,9 @@ export class FilterExecutor {
   private getStringValue(value: ExpressionResult): string {
     if (value === null || value === undefined) {
       // An unbound argument is an evaluation error (SPARQL 1.1 §17.3), which drops
-      // the row in a FILTER. It used to become "", so CONTAINS(?x, ?unbound) — and
-      // every function on this path — let every row through (ems__Bug 37c80e59).
+      // the row in a FILTER. It used to become "", so the functions that read their
+      // argument here saw an empty string — CONTAINS(?x, ?unbound) was true for every
+      // row (ems__Bug 37c80e59).
       throw new FilterExecutorError("unbound argument");
     }
     // If it's an RDF term with a value property, use that
