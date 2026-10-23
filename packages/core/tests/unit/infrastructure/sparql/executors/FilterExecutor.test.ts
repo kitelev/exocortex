@@ -1057,15 +1057,17 @@ describe("FilterExecutor", () => {
     const getWrap = (): WrapFn =>
       (executor as unknown as { wrapAsLiteralExpression: WrapFn }).wrapAsLiteralExpression.bind(executor);
 
-    it("should return empty literal for null without throwing", () => {
+    // ems__Bug 37c80e59: an unbound argument stays unbound (it used to become "",
+    // which made CONCAT(?unbound, IF(EXISTS…)) and friends see an empty string).
+    it("should keep null unbound without throwing", () => {
       const wrap = getWrap();
       expect(() => wrap(null)).not.toThrow();
-      expect(wrap(null)).toEqual({ type: "literal", value: "" });
+      expect(wrap(null)).toEqual({ type: "literal", value: undefined });
     });
 
-    it("should return empty literal for undefined", () => {
+    it("should keep undefined unbound", () => {
       const wrap = getWrap();
-      expect(wrap(undefined)).toEqual({ type: "literal", value: "" });
+      expect(wrap(undefined)).toEqual({ type: "literal", value: undefined });
     });
 
     it("should preserve RDF term-like objects with termType", () => {
@@ -1086,7 +1088,7 @@ describe("FilterExecutor", () => {
       // accidental "in" operator on null (TypeError) and CodeQL alert #303.
       const wrap = getWrap();
       const result = wrap(null);
-      expect(result).toEqual({ type: "literal", value: "" });
+      expect(result).toEqual({ type: "literal", value: undefined });
     });
   });
 

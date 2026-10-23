@@ -321,8 +321,9 @@ describe("BIND extends the group prefix at its position (req 60ed88e7, #4551)", 
 
   it("B7 @req:60ed88e7-5b71-4112-a4a5-a78e3204b0b7 the optimizer does not move a constrained later pattern ahead of the BIND", async () => {
     // A plain copy (not STR/CONCAT): unbound ?x leaves ?y unbound, a value a bind
-    // join substitutes into the expression binds it. STR(<substituted node>) errors
-    // and CONCAT accepts an unbound argument as "" — both would hide the overtaking.
+    // join substitutes into the expression binds it. STR(<substituted IRI node>)
+    // errors (ems__Bug 4e3ce943) and CONCAT of an unbound argument is an error
+    // (ems__Bug 37c80e59) — both would hide the overtaking.
     const q = `SELECT ?s ?y WHERE {
       BIND(?x AS ?y)
       ?s exo:Asset_label ?x .

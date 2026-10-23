@@ -1,0 +1,23 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 37c80e59: an unbound SPARQL function argument is an evaluation error (SPARQL 1.1 §17.3), STR takes any expression, a BIND primitive is substituted into EXISTS / LATERAL but not into a join operand. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › <axis> ` (ITRV §A44/§A104). Anchors are CODE lines only — the fix's comments may be reworded freely. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Subject: RDFTermFunctions — sameTerm over JS primitives (values STR/LCASE produce). ⚠ Anchors are the PROTOTYPE's code lines (vault-exodev 37c80e59 §Спецификация): an implementation that rewrites them must move the anchors and re-take every `expect` from a finished driver run — pairwise-distinct sets stay required.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/unbound-argument-37c80e59.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/filters/functions/RDFTermFunctions.ts",
+  "mutants": {
+    "M11_sameTerm_no_primitive_branch": {
+      "_note": "sameTerm loses the primitive branch: sameTerm(\"a\", \"a\") is false again once STR(...) reaches it.",
+      "from": "    if (typeof term1 !== \"object\" && typeof term2 !== \"object\") {\n      return typeof term1 === typeof term2 && term1 === term2;\n    }\n",
+      "to": "",
+      "expect": ["S3"]
+    }
+  }
+}
