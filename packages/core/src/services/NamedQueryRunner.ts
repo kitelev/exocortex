@@ -187,21 +187,28 @@ export class NamedQueryRunner implements NamedQueryRunnerPort {
    * `$currentClass`), then explicit params (longest name first so a shorter
    * param name is not a prefix of a longer one). Each substituted form is
    * engine-decided (`<iri>` or escaped `"literal"`), never raw interpolation.
+   *
+   * ⛔ Every `.replace` that inserts a VALUE takes a FUNCTION, never the
+   * formatted string (ems__Bug 72cbd6fc). A replacement STRING is a pattern:
+   * `$$`, `$&`, `` $` `` and `$'` inside the value were expanded — `$'` pasted
+   * the rest of the query into the value (in an IRI usually a parse error; an
+   * IRI-legal tail such as `)` silently addressed a different IRI), `$&`
+   * pasted the token name (`$&x` was looked up as `$topicx`), `$$` collapsed to
+   * `$`. A function's return value is inserted verbatim. The param-NAME escape
+   * below is a CONSTANT `"\\$&"` on purpose (regex-escape of the name) and stays
+   * a string. The value is still formatted BEFORE the call, so a malformed IRI
+   * is refused even when the body never mentions its token (unchanged).
    */
   private substitute(body: string, context: NamedQueryContext): string {
     let out = body;
 
     if (context.currentAsset) {
-      out = out.replace(
-        /\$currentAsset\b/g,
-        NamedQueryRunner.formatIri(context.currentAsset),
-      );
+      const formatted = NamedQueryRunner.formatIri(context.currentAsset);
+      out = out.replace(/\$currentAsset\b/g, () => formatted);
     }
     if (context.currentClass) {
-      out = out.replace(
-        /\$currentClass\b/g,
-        NamedQueryRunner.formatIri(context.currentClass),
-      );
+      const formatted = NamedQueryRunner.formatIri(context.currentClass);
+      out = out.replace(/\$currentClass\b/g, () => formatted);
     }
 
     const params = context.params;
@@ -216,7 +223,10 @@ export class NamedQueryRunner implements NamedQueryRunnerPort {
         // Escape regex metachars in the param name (names are author-controlled
         // but defensive — a `.` in a name must not act as a wildcard).
         const safeName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        out = out.replace(new RegExp(`\\$${safeName}\\b`, "g"), formatted);
+        out = out.replace(
+          new RegExp(`\\$${safeName}\\b`, "g"),
+          () => formatted,
+        );
       }
     }
 
