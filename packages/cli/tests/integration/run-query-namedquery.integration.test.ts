@@ -395,7 +395,8 @@ describe("req 2678df55 — run-query + homoiconic classes read-axis", () => {
   // ems__Bug 72cbd6fc — `NamedQueryRunner.substitute` handed the FORMATTED value
   // to `String.replace` as a replacement STRING, so `$$`, `$&`, `` $` `` and `$'`
   // inside a value were read as replacement patterns: `$'` pasted the rest of the
-  // query into the value (in an IRI — a parse error), `$&` pasted the token name
+  // query into the value (in an IRI usually a parse error; an IRI-legal tail such
+  // as `)` silently addressed a different IRI), `$&` pasted the token name
   // (`$&x` was looked up as `$topicx` and FOUND that other record), `$$` collapsed
   // to `$`.
   // ⛔ On a pattern WITHOUT capture groups exactly these four forms corrupt —

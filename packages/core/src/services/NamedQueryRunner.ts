@@ -191,7 +191,8 @@ export class NamedQueryRunner implements NamedQueryRunnerPort {
    * ⛔ Every `.replace` that inserts a VALUE takes a FUNCTION, never the
    * formatted string (ems__Bug 72cbd6fc). A replacement STRING is a pattern:
    * `$$`, `$&`, `` $` `` and `$'` inside the value were expanded — `$'` pasted
-   * the rest of the query into the value (in an IRI — a parse error), `$&`
+   * the rest of the query into the value (in an IRI usually a parse error; an
+   * IRI-legal tail such as `)` silently addressed a different IRI), `$&`
    * pasted the token name (`$&x` was looked up as `$topicx`), `$$` collapsed to
    * `$`. A function's return value is inserted verbatim. The param-NAME escape
    * below is a CONSTANT `"\\$&"` on purpose (regex-escape of the name) and stays
