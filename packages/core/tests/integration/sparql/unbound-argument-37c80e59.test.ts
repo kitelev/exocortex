@@ -426,10 +426,10 @@ describe(SUITE, () => {
   it("J1 a PRIMITIVE a BIND computed on the left of a join is unbound inside the right operand's own group (§18.5)", async () => {
     // ⚠ Narrow on purpose: a TERM value (BIND(?l AS ?k), VALUES) still leaks into the
     // right group's FILTER — a pre-existing defect of the bind join (ems__Bug f440b567).
-    // Since this fix an IRI term leaks the same way: before it a substituted IRI node
-    // raised in the expression (4e3ce943) and the row was dropped — the standard
-    // answer by accident. Stored queries with that shape: 0 of 811 parsed (sweep of
-    // the three vaults, 2026-10-23).
+    // Since this fix the leak is wider: a substituted IRI, and any term a term
+    // function reads (STR, sameTerm, isIRI …), now evaluates where it raised before
+    // (4e3ce943) and the row was dropped — the standard answer by accident. Probes
+    // and the measured exposure: ems__Bug f440b567, «Радиус шире после 37c80e59».
     // The inner group is evaluated on its own (SPARQL 1.1 §18.5): ?k is unbound there.
     expect(
       await pop(
