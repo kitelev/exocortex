@@ -15,28 +15,46 @@
   "harness": "cd \"$(dirname {subject})/../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/exoql/selectProjectionVariables.test.ts packages/core/tests/unit/exoql/evaluateWithExoEval.test.ts --verbose 2>&1",
   "mutants": {
     "VM1_binding_order": {
-      "_note": "`variables` taken from the rows (binding order) — exactly what the RFC rules out.",
+      "_note": "`variables` taken from the rows (binding order) — exactly what the RFC rules out. Also V8: in the alias-first GROUP BY query the row binds the group key ?s before the aggregate ?n, so binding order reads [s, n] against the declared [n, s].",
       "from": "    variables: declaredProjection(ast) ?? boundVariables(rows),\n",
       "to": "    variables: boundVariables(rows),\n",
-      "expect": ["V1", "V2", "V3"]
+      "expect": ["V1", "V2", "V3", "V8"]
     },
     "VM2_alias_dropped": {
-      "_note": "`(expr AS ?x)` projections skipped — an aggregate column disappears.",
+      "_note": "`(expr AS ?x)` projections skipped — an aggregate column disappears. Both alias axes: V4 (alias last) and V8 (alias first) lose the ?n column.",
       "from": "        names.push(inner.value);\n",
       "to": "        void inner.value;\n",
-      "expect": ["V4"]
+      "expect": ["V4", "V8"]
     },
     "VM3_wildcard_as_empty_projection": {
-      "_note": "`SELECT *` read as an empty projection — no columns at all.",
+      "_note": "`SELECT *` read as an empty projection — no columns at all. Also V7: it is a SELECT * axis too, and an empty projection lists no columns there.",
       "from": "      if (term.termType === \"Wildcard\") return null;\n",
       "to": "      if (term.termType === \"Wildcard\") continue;\n",
-      "expect": ["V5"]
+      "expect": ["V5", "V7"]
     },
     "VM4_no_store_drops_projection": {
       "_note": "The no-store envelope carries no columns.",
       "from": "    return { kind: \"select\", rows: [], variables: declaredProjection(ast) ?? [] };\n",
       "to": "    return { kind: \"select\", rows: [], variables: [] };\n",
       "expect": ["V6"]
+    },
+    "VM5_alias_columns_appended_last": {
+      "_note": "`(expr AS ?x)` columns appended after the plain variables — «in its place» is lost when the alias comes first (review 2026-10-24, form X2).",
+      "from": "  const names: string[] = [];\n  for (const v of vars as Array<unknown>) {\n    if (v && typeof v === \"object\") {\n      const term = v as Record<string, unknown>;\n      if (term.termType === \"Wildcard\") return null;\n      if (term.termType === \"Variable\" && typeof term.value === \"string\") {\n        names.push(term.value);\n        continue;\n      }\n      const inner = term.variable as { value?: unknown } | undefined;\n      if (inner && typeof inner.value === \"string\") {\n        names.push(inner.value);\n      }\n    }\n  }\n  return names;\n",
+      "to": "  const names: string[] = [];\n  const aliased: string[] = [];\n  for (const v of vars as Array<unknown>) {\n    if (v && typeof v === \"object\") {\n      const term = v as Record<string, unknown>;\n      if (term.termType === \"Wildcard\") return null;\n      if (term.termType === \"Variable\" && typeof term.value === \"string\") {\n        names.push(term.value);\n        continue;\n      }\n      const inner = term.variable as { value?: unknown } | undefined;\n      if (inner && typeof inner.value === \"string\") {\n        aliased.push(inner.value);\n      }\n    }\n  }\n  return [...names, ...aliased];\n",
+      "expect": ["V8"]
+    },
+    "VM6_select_star_sorted": {
+      "_note": "`SELECT *` columns sorted alphabetically instead of first-seen (review 2026-10-24, form X3).",
+      "from": "  return [...seen];\n",
+      "to": "  return [...seen].sort();\n",
+      "expect": ["V5"]
+    },
+    "VM7_select_star_first_row_only": {
+      "_note": "`SELECT *` columns read from the first row only — a variable bound only in a later (OPTIONAL) row is lost (review 2026-10-24, form X4; the idiom §10(в) warns ticket 058bad52 against).",
+      "from": "  for (const row of rows) {\n",
+      "to": "  for (const row of rows.slice(0, 1)) {\n",
+      "expect": ["V7"]
     }
   }
 }

@@ -88,4 +88,17 @@ describe("LayoutSelector — [[uid]], [[uid|label]] and [[label]] of one class m
     warm = true;
     expect(sel.resolve(["[[pn__DailyNote]]"])).toBe(byUid);
   });
+
+  test("S9 @req:ddd9b7f1-3f53-4514-ad8a-f764827fcbbe the NOTE side is resolved on every resolve too — a note whose class is [[uid]] gets the Layout once a cold cache fills", () => {
+    // Mirror of S7: here the uid sits on the NOTE side (the form of most daily
+    // notes) and the Layout names its class by label. A memo of the note's
+    // canonical class would freeze the cold-cache miss for the whole session.
+    const byLabel = layout("pn__DailyNote", "layout-by-label");
+    let warm = false;
+    const lazy = (uuid: string): string | null => (warm ? resolveUid(uuid) : null);
+    const sel = new LayoutSelector({ all: [byLabel] }, { resolveUid: lazy });
+    expect(sel.resolve([`[[${DAILY_NOTE_UID}]]`])).toBeNull();
+    warm = true;
+    expect(sel.resolve([`[[${DAILY_NOTE_UID}]]`])).toBe(byLabel);
+  });
 });

@@ -405,8 +405,9 @@ export function createLayoutBlockFromFrontmatter(
   if (classOf(frontmatter, QUERY_TABLE_BLOCK_CLASS_IRI, QUERY_TABLE_BLOCK_CLASS_UID)) {
     const queryRaw = frontmatter["query__TableBlock_query"];
     if (queryRaw != null && typeof queryRaw !== "string") {
+      const shape = Array.isArray(queryRaw) ? "a list" : `a value of type ${typeof queryRaw}`;
       warn(
-        `QueryTableBlock ${base.uid}: query__TableBlock_query must be a single wikilink to a query__NamedQuery, not a list — the block is not rendered (${options.sourcePath})`,
+        `QueryTableBlock ${base.uid}: query__TableBlock_query must be a single wikilink to a query__NamedQuery, not ${shape} — the block is not rendered (${options.sourcePath})`,
       );
       return null;
     }

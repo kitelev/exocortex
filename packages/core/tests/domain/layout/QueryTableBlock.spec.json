@@ -51,28 +51,40 @@
       "expect": ["Q1"]
     },
     "M7_layout_link_not_parsed": {
-      "_note": "`exo__LayoutBlock_layout` kept raw (brackets included) — no reference matches a Layout; every assembly axis that expects a block in a Layout reddens. A4/A12 (no linked block / parse warning) stay green by construction. A9/A10/A11 too: each attaches a block by link before asserting.",
+      "_note": "`exo__LayoutBlock_layout` kept raw (brackets included) — no reference matches a Layout; every assembly axis that expects a block in a Layout reddens. A4/A12 (no linked block / parse warning) stay green by construction. A9/A10/A11 too: each attaches a block by link before asserting. Also A13: it first attaches its blocks through exo__LayoutBlock_layout, so with the link unparsed the Layout has no blocks.",
       "from": "    layoutRef = wikilinkTarget(layoutRaw);\n",
       "to": "    layoutRef = layoutRaw.trim();\n",
-      "expect": ["A1", "A2", "A3", "A5", "A6", "A7", "A8", "A9", "A10", "A11"]
+      "expect": [
+        "A1",
+        "A2",
+        "A3",
+        "A5",
+        "A6",
+        "A7",
+        "A8",
+        "A9",
+        "A10",
+        "A11",
+        "A13"
+      ]
     },
     "M8_order_not_parsed": {
-      "_note": "`exo__LayoutBlock_order` never read — every block unordered, uid ASC. A1/A2/A7/A11 use uids that sort against the order; A5/A9's uids sort WITH it, so they stay green. A11 too: its numbered block 9 must lead.",
+      "_note": "`exo__LayoutBlock_order` never read — every block unordered, uid ASC. A1/A2/A7/A11 use uids that sort against the order; A5/A9's uids sort WITH it, so they stay green. A11 too: its numbered block 9 must lead. Also A13: «z-nine» has order 9; unparsed, both blocks are unordered and fall to uid order (a-odd first), and no warning is emitted.",
       "from": "  const order = parseStrictInteger(orderRaw);\n",
       "to": "  const order = parseStrictInteger(undefined);\n",
-      "expect": ["A1", "A2", "A7", "A11"]
+      "expect": ["A1", "A2", "A7", "A11", "A13"]
     },
     "M9_bad_order_silent": {
-      "_note": "A non-integer order no longer warns (still treated as absent). A11 too: it asserts the same warning for strict-integer rejects.",
+      "_note": "A non-integer order no longer warns (still treated as absent). A11 too: it asserts the same warning for strict-integer rejects. Also A13: it expects the same «must be an integer» warning for \"1e2\" / \"\" / \"0x10\".",
       "from": "  if (orderRaw != null && order === null) {\n",
       "to": "  if (orderRaw != null && order === null && orderRaw === order) {\n",
-      "expect": ["A7", "A11"]
+      "expect": ["A7", "A11", "A13"]
     },
     "M10_lax_order": {
-      "_note": "Order parsed with the lax `parseInteger` (`Number.parseInt`): \"1.5\" → 1, \"2nd\" → 2 — sorted ahead of 9 without a warning. Only A11 carries such forms.",
+      "_note": "Order parsed with the lax `parseInteger` (`Number.parseInt`): \"1.5\" → 1, \"2nd\" → 2 — sorted ahead of 9 without a warning. Only A11 carries such forms. Also A13: parseInteger (Number.parseInt) reads \"1e2\" as 1 and \"0x10\" as 0, so «a-odd» jumps ahead of «z-nine» (order 9).",
       "from": "  const order = parseStrictInteger(orderRaw);\n",
       "to": "  const order = parseInteger(orderRaw);\n",
-      "expect": ["A11"]
+      "expect": ["A11", "A13"]
     },
     "M11_lax_limit": {
       "_note": "Limit parsed with the lax `parseInteger`: \"2.5\" → 2, \"10abc\" → 10, \"1e2\" → 1, silently.",
@@ -99,10 +111,28 @@
       "expect": ["Q8"]
     },
     "M15_list_query_as_missing": {
-      "_note": "A list `_query` falls to the «required» message (the misleading one the review named).",
+      "_note": "A list `_query` falls to the «required» message (the misleading one the review named). Also Q11: a NUMBER `_query` then falls to the «required» branch, so the «must be a single wikilink» message is missing there too.",
       "from": "    if (queryRaw != null && typeof queryRaw !== \"string\") {\n",
       "to": "    if (queryRaw != null && typeof queryRaw !== \"string\" && queryRaw === null) {\n",
-      "expect": ["Q6"]
+      "expect": ["Q6", "Q11"]
+    },
+    "M16_negative_limit_accepted": {
+      "_note": "Only 0 rejected — a negative strict integer becomes the row cap (rows.slice(0, -5)) (review 2026-10-24, form X1). Same anchor as M3, different `to` (ITRV §A94).",
+      "from": "    if (parsedLimit !== null && parsedLimit > 0) {\n",
+      "to": "    if (parsedLimit !== null && parsedLimit !== 0) {\n",
+      "expect": ["Q10"]
+    },
+    "M17_order_coerced_by_number": {
+      "_note": "`exo__LayoutBlock_order` coerced with Number() + Number.isInteger — \"1e2\" → 100, \"\" → 0, \"0x10\" → 16 pass as integers (review 2026-10-24, form X6).",
+      "from": "  const order = parseStrictInteger(orderRaw);\n",
+      "to": "  const order =\n    orderRaw == null || typeof orderRaw === \"boolean\"\n      ? null\n      : Number.isInteger(Number(String(orderRaw).trim()))\n        ? Number(String(orderRaw).trim())\n        : null;\n",
+      "expect": ["A13"]
+    },
+    "M18_list_wording_for_any_non_string": {
+      "_note": "Every non-string `_query` reported as «not a list» — the wording the review flagged for a number (LOW, 2026-10-24).",
+      "from": "      const shape = Array.isArray(queryRaw) ? \"a list\" : `a value of type ${typeof queryRaw}`;\n",
+      "to": "      const shape = \"a list\";\n",
+      "expect": ["Q11"]
     }
   }
 }

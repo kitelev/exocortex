@@ -15,10 +15,10 @@
   "harness": "cd \"$(dirname {subject})/../../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/application/services/LayoutSelector.canonical.test.ts packages/core/tests/application/services/LayoutSelector.test.ts packages/core/tests/application/services/LayoutSelector.property.test.ts --verbose 2>&1",
   "mutants": {
     "SM1_note_side_not_resolved": {
-      "_note": "Note classes only normalized (the pre-9821a379 path) — a bare-uid note class never meets a resolved target.",
+      "_note": "Note classes only normalized (the pre-9821a379 path) — a bare-uid note class never meets a resolved target. Also S9: its note class is a bare [[uid]], which normalize never turns into the label.",
       "from": "      const canonical = WikiLinkHelpers.resolveSymbolic(raw, this.resolveUid);\n",
       "to": "      const canonical = WikiLinkHelpers.normalize(raw);\n",
-      "expect": ["S3", "S4"]
+      "expect": ["S3", "S4", "S9"]
     },
     "SM2_target_side_not_resolved": {
       "_note": "targetClass only normalized — a Layout written with `[[uid]]` matches only bare-uid notes. S8 too: its Layout targets the bare uid.",
@@ -27,16 +27,22 @@
       "expect": ["S1", "S2", "S3", "S7", "S8"]
     },
     "SM3_resolver_option_dropped": {
-      "_note": "The constructor ignores `options.resolveUid` — S3 survives (uid meets uid), every cross-form axis reddens. S8 too: same uid target, no resolver.",
+      "_note": "The constructor ignores `options.resolveUid` — S3 survives (uid meets uid), every cross-form axis reddens. S8 too: same uid target, no resolver. Also S9: with no resolver the note's [[uid]] never resolves, cold or warm.",
       "from": "    this.resolveUid = options.resolveUid ?? NO_RESOLVER;\n",
       "to": "    this.resolveUid = options.resolveUid ? NO_RESOLVER : NO_RESOLVER;\n",
-      "expect": ["S1", "S2", "S4", "S7", "S8"]
+      "expect": ["S1", "S2", "S4", "S7", "S8", "S9"]
     },
     "SM4_note_side_uid_wins": {
       "_note": "The alternative the review named (uid decides, alias only as a fallback) — deliberately NOT what RFC 9821a379 decision 4 specifies (resolveSymbolic = the codebase's alias-wins convention). Locks the chosen semantics.",
       "from": "      const canonical = WikiLinkHelpers.resolveSymbolic(raw, this.resolveUid);\n",
       "to": "      const canonical = WikiLinkHelpers.resolveSymbolic(raw.replace(/\\|[^\\]]*/, \"\"), this.resolveUid);\n",
       "expect": ["S8"]
+    },
+    "SM5_note_side_memo": {
+      "_note": "The note's canonical class memoized per instance — a cold-cache miss on a [[uid]] note freezes for the session (review 2026-10-24, form X5).",
+      "from": "  private readonly resolveUid: (uuid: string) => string | null | undefined;\n\n  constructor(\n    private readonly source: LayoutSelectorSource,\n    options: LayoutSelectorOptions = {},\n  ) {\n    this.resolveUid = options.resolveUid ?? NO_RESOLVER;\n  }\n\n  /**\n   * Resolve the winning Layout for an asset's `exo__Instance_class` array.\n   *\n   * @param instanceClasses raw strings from frontmatter (`[[ems__Project]]`,\n   *   `[[UUID|ems__Project]]`, bare `\"ems__Project\"`, etc.) in iteration order.\n   * @returns winning Layout or `null` if no layout targets any of the classes.\n   */\n  resolve(instanceClasses: readonly unknown[]): Layout | null {\n    if (!Array.isArray(instanceClasses) || instanceClasses.length === 0) {\n      return null;\n    }\n\n    const layouts = this.source.all;\n    if (layouts.length === 0) return null;\n\n    const targets = layouts.map((layout) =>\n      WikiLinkHelpers.resolveSymbolic(layout.targetClass, this.resolveUid),\n    );\n\n    for (const raw of instanceClasses) {\n      if (typeof raw !== \"string\") continue;\n      const canonical = WikiLinkHelpers.resolveSymbolic(raw, this.resolveUid);\n",
+      "to": "  private readonly resolveUid: (uuid: string) => string | null | undefined;\n  private readonly noteMemo = new Map<string, string>();\n\n  constructor(\n    private readonly source: LayoutSelectorSource,\n    options: LayoutSelectorOptions = {},\n  ) {\n    this.resolveUid = options.resolveUid ?? NO_RESOLVER;\n  }\n\n  /**\n   * Resolve the winning Layout for an asset's `exo__Instance_class` array.\n   *\n   * @param instanceClasses raw strings from frontmatter (`[[ems__Project]]`,\n   *   `[[UUID|ems__Project]]`, bare `\"ems__Project\"`, etc.) in iteration order.\n   * @returns winning Layout or `null` if no layout targets any of the classes.\n   */\n  resolve(instanceClasses: readonly unknown[]): Layout | null {\n    if (!Array.isArray(instanceClasses) || instanceClasses.length === 0) {\n      return null;\n    }\n\n    const layouts = this.source.all;\n    if (layouts.length === 0) return null;\n\n    const targets = layouts.map((layout) =>\n      WikiLinkHelpers.resolveSymbolic(layout.targetClass, this.resolveUid),\n    );\n\n    for (const raw of instanceClasses) {\n      if (typeof raw !== \"string\") continue;\n      const canonical =\n        this.noteMemo.get(raw) ?? WikiLinkHelpers.resolveSymbolic(raw, this.resolveUid);\n      this.noteMemo.set(raw, canonical);\n",
+      "expect": ["S9"]
     }
   }
 }

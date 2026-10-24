@@ -184,6 +184,27 @@ describe("assembleLayoutBlocks — blocks name their Layout (RFC 9821a379 AC3)",
     }
   });
 
+  test("A13 @req:ddd9b7f1-3f53-4514-ad8a-f764827fcbbe exo__LayoutBlock_order \"1e2\", \"\" and \"0x10\" are not STRICT integers either — absent, with a warning", () => {
+    // `Number("1e2")` is 100, `Number("")` is 0 and `Number("0x10")` is 16 —
+    // all integers to Number.isInteger. A block with such an order would jump
+    // ahead of «z-nine» (order 9) or behind it by an accident of coercion.
+    for (const raw of ["1e2", "", "0x10"]) {
+      const warnings: string[] = [];
+      const blocks = [
+        block("a-odd", { exo__LayoutBlock_layout: `[[${L1}]]`, exo__LayoutBlock_order: raw }, (m) =>
+          warnings.push(m),
+        ),
+        block("z-nine", { exo__LayoutBlock_layout: `[[${L1}]]`, exo__LayoutBlock_order: 9 }),
+      ];
+      const [assembled] = assembleLayoutBlocks([layout(L1)], blocks);
+      expect([raw, assembled.blocks]).toEqual([raw, ["z-nine", "a-odd"]]);
+      expect([raw, warnings.some((w) => w.includes("exo__LayoutBlock_order must be an integer"))]).toEqual([
+        raw,
+        true,
+      ]);
+    }
+  });
+
   test("A12 @req:ddd9b7f1-3f53-4514-ad8a-f764827fcbbe a Layout still carrying exo__Layout_blocks is warned that the list is not read", () => {
     const warnings: string[] = [];
     const parsed = createLayoutFromFrontmatter(

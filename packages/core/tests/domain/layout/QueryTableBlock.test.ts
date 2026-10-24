@@ -189,6 +189,41 @@ describe("query__TableBlock — parse into the query-table kind (RFC 9821a379 AC
     expect(ok && isQueryTableBlock(ok) ? ok.limit : null).toBe(25);
   });
 
+  test("Q10 @req:ddd9b7f1-3f53-4514-ad8a-f764827fcbbe a NEGATIVE `_limit` (-5, \"-5\") is not a positive integer — 100 with a warning", () => {
+    // A strict integer, but not positive: an implementation that only rejects 0
+    // would hand the plugin rows.slice(0, -5) — the table minus its last rows.
+    for (const raw of [-5, "-5"]) {
+      const warnings: string[] = [];
+      const block = createLayoutBlockFromFrontmatter(
+        {
+          exo__Asset_uid: "b",
+          exo__Instance_class: [`[[${QUERY_TABLE_BLOCK_CLASS_IRI}]]`],
+          query__TableBlock_query: `[[${QUERY_UID}]]`,
+          query__TableBlock_limit: raw,
+        },
+        { ...SRC, warn: (m) => warnings.push(m) },
+      );
+      expect([raw, block && isQueryTableBlock(block) ? block.limit : null]).toEqual([raw, 100]);
+      expect([raw, warnings.some((w) => w.includes("query__TableBlock_limit"))]).toEqual([raw, true]);
+    }
+  });
+
+  test("Q11 @req:ddd9b7f1-3f53-4514-ad8a-f764827fcbbe `_query` given as a NUMBER is rejected as not a single wikilink — the message does not call it a list", () => {
+    const warnings: string[] = [];
+    const block = createLayoutBlockFromFrontmatter(
+      {
+        exo__Asset_uid: "b-number",
+        exo__Instance_class: [`[[${QUERY_TABLE_BLOCK_CLASS_IRI}]]`],
+        query__TableBlock_query: 42,
+      },
+      { ...SRC, warn: (m) => warnings.push(m) },
+    );
+    expect(block).toBeNull();
+    const message = warnings.find((w) => w.includes("must be a single wikilink"));
+    expect(message).toContain("not a value of type number");
+    expect(message).not.toContain("list");
+  });
+
   test("Q5 @req:ddd9b7f1-3f53-4514-ad8a-f764827fcbbe isLayoutBlockFrontmatter recognises query__TableBlock by label and by UID; an unrelated class is not a block", () => {
     expect(
       isLayoutBlockFrontmatter({ exo__Instance_class: [`[[${QUERY_TABLE_BLOCK_CLASS_IRI}]]`] }),

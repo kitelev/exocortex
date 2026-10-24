@@ -84,6 +84,16 @@ describe("SELECT projection in declared order (RFC 9821a379 AC5, core)", () => {
     expect(result.kind === "select" ? result.variables : null).toEqual(["s", "n"]);
   });
 
+  test("V8 @req:ddd9b7f1-3f53-4514-ad8a-f764827fcbbe an alias declared FIRST stays first — «in its place» is checked where its place is not the end", async () => {
+    // V4 has the alias last, so an implementation appending aliases after the
+    // plain variables passes it; here the alias leads the projection.
+    const result = await evaluateWithExoEval(
+      `SELECT (COUNT(?e) AS ?n) ?s WHERE { ?e <https://example.org/start> ?s } GROUP BY ?s`,
+      { store: await storeWithOneEpisode() },
+    );
+    expect(result.kind === "select" ? result.variables : null).toEqual(["n", "s"]);
+  });
+
   test("V6 @req:ddd9b7f1-3f53-4514-ad8a-f764827fcbbe without a store the empty SELECT envelope still carries the declared projection", async () => {
     const result = await evaluateWithExoEval(BINDS_END_FIRST);
     expect(result).toEqual({ kind: "select", rows: [], variables: ["Начало", "Конец"] });
@@ -97,5 +107,37 @@ describe("SELECT projection in declared order (RFC 9821a379 AC5, core)", () => {
     const vars = result.kind === "select" ? result.variables : [];
     expect([...vars].sort()).toEqual(["e", "s"]);
     expect(result.kind === "select" ? result.rows[0].variables() : null).toEqual(vars);
+
+    // First-seen is not alphabetical here (?z is bound before ?a): a sorted
+    // list would read ["a", "z"].
+    const reversed = await evaluateWithExoEval(
+      `SELECT * WHERE { ?z <https://example.org/start> ?a }`,
+      { store: await storeWithOneEpisode() },
+    );
+    if (reversed.kind !== "select") throw new Error("expected a SELECT envelope");
+    const firstSeen = reversed.rows[0].variables();
+    expect(firstSeen).not.toEqual([...firstSeen].sort()); // canary: the input discriminates
+    expect(reversed.variables).toEqual(firstSeen);
+  });
+
+  test("V7 @req:ddd9b7f1-3f53-4514-ad8a-f764827fcbbe SELECT * lists a variable bound only in a LATER row (OPTIONAL), not just the first row's", async () => {
+    const store = new InMemoryTripleStore();
+    for (let i = 1; i <= 3; i++) {
+      const e = new IRI(`https://example.org/episode-${i}`);
+      await store.add(new Triple(e, new IRI("https://example.org/start"), new Literal(`2026-08-0${i}`)));
+      if (i === 3) {
+        await store.add(new Triple(e, new IRI("https://example.org/end"), new Literal("2026-08-13")));
+      }
+    }
+    const result = await evaluateWithExoEval(
+      `SELECT * WHERE { ?e <https://example.org/start> ?s OPTIONAL { ?e <https://example.org/end> ?en } }`,
+      { store },
+    );
+    if (result.kind !== "select") throw new Error("expected a SELECT envelope");
+    expect(result.rows).toHaveLength(3);
+    // Canary: the first row lacks the OPTIONAL variable, so «the first row's
+    // variables» and «every bound variable» differ on this input.
+    expect(result.rows[0].variables()).not.toContain("en");
+    expect([...result.variables].sort()).toEqual(["e", "en", "s"]);
   });
 });
