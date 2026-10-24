@@ -28,7 +28,7 @@ import {
  * branching. Returns `null` when the linkpath does not resolve or the
  * target has no label.
  */
-function createMetadataClassResolver(app: App): ClassRefResolver {
+export function createMetadataClassResolver(app: App): ClassRefResolver {
   return (uuid: string): string | null => {
     const target = app.metadataCache.getFirstLinkpathDest(uuid, "");
     if (!target) return null;

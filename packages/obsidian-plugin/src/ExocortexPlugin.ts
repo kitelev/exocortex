@@ -133,7 +133,10 @@ import { BodyLinkPatch } from "./presentation/body/BodyLinkPatch";
 import { GraphViewPatch } from "./presentation/graph-view/GraphViewPatch";
 import { PrintNameRuleService } from "./domain/display-name/PrintNameRuleService";
 import { ObsidianFileSystemAdapter } from "./adapters/ObsidianFileSystemAdapter";
-import { populateServiceRegistry } from "./infrastructure/services/ServiceRegistryPopulator";
+import {
+  createMetadataClassResolver,
+  populateServiceRegistry,
+} from "./infrastructure/services/ServiceRegistryPopulator";
 import { ObsidianFileOpener } from "./infrastructure/services/ObsidianFileOpener";
 import { createObsidianClassLabelResolver } from "./infrastructure/services/ObsidianClassLabelResolver";
 import { createObsidianRefToFolderResolver } from "./infrastructure/services/ObsidianRefToFolderResolver";
@@ -803,11 +806,17 @@ export default class ExocortexPlugin extends Plugin {
       );
       this.exoLayoutRepository.initialize();
       const exoLayoutRepo = this.exoLayoutRepository;
-      this.layoutSelector = new LayoutSelector({
-        get all() {
-          return exoLayoutRepo.getSnapshot().layouts;
+      // RFC 9821a379 decision 4 — the selector resolves a bare-UID class ref
+      // (`[[uid]]`, note side and targetClass side) to its label through the
+      // metadataCache, so `[[uid]]`, `[[uid|label]]` and `[[label]]` match.
+      this.layoutSelector = new LayoutSelector(
+        {
+          get all() {
+            return exoLayoutRepo.getSnapshot().layouts;
+          },
         },
-      });
+        { resolveUid: createMetadataClassResolver(this.app) },
+      );
 
       // RFC-024 Phase 3 — PanelResolver constructed early so that
       // UniversalLayoutRenderer (and through it, ButtonGroupsBuilder /

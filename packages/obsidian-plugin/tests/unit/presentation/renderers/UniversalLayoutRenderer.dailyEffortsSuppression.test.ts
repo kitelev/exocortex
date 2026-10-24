@@ -73,6 +73,8 @@ function dailyBlock(
     uid,
     title: partition,
     collapsed: false,
+    layoutRef: null,
+    order: null,
     sourcePath: `${uid}.md`,
     partition,
   } as LayoutBlock;
@@ -84,6 +86,8 @@ function backlinksBlock(uid: string): LayoutBlock {
     uid,
     title: "Children",
     collapsed: false,
+    layoutRef: null,
+    order: null,
     sourcePath: `${uid}.md`,
     rowClass: "ems__Task",
     referencingProperty: "ems__Effort_parent",

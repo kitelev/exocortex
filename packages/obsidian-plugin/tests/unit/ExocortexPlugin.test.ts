@@ -257,6 +257,51 @@ describe("ExocortexPlugin", () => {
     });
   });
 
+  // RFC 9821a379 decision 4 (ticket 035da1eb, AC4) — the LayoutSelector built
+  // in onload resolves a bare-UID class ref to its label through the
+  // metadataCache, so a Layout with `targetClass: [[uid]]` applies to a note
+  // whose class is written `[[pn__DailyNote]]`. Guards the WIRING: the core
+  // axes (LayoutSelector.canonical.test.ts) cannot see whether onload passes
+  // the resolver.
+  describe("RFC 9821a379 — LayoutSelector wired with the metadataCache resolver", () => {
+    it("W1 @req:ddd9b7f1-3f53-4514-ad8a-f764827fcbbe a Layout targeting [[uid]] is selected for a note whose class is [[pn__DailyNote]]", async () => {
+      const dailyNoteUid = "b04e7a3e-6b49-4984-9f8d-b74e9f36818b";
+      mockMetadataCache.getFirstLinkpathDest = jest.fn((linkpath: string) =>
+        linkpath === dailyNoteUid ? { path: `classes/${dailyNoteUid}.md` } : null,
+      );
+      mockMetadataCache.getFileCache = jest.fn((file: { path?: string }) =>
+        file?.path === `classes/${dailyNoteUid}.md`
+          ? { frontmatter: { exo__Asset_label: "pn__DailyNote" } }
+          : null,
+      );
+
+      await plugin.onload();
+
+      const internals = plugin as unknown as {
+        layoutSelector: { resolve(classes: readonly string[]): { uid: string } | null };
+        exoLayoutRepository: { getSnapshot(): unknown };
+      };
+      const layout = {
+        uid: "layout-daily",
+        label: "Daily",
+        targetClass: dailyNoteUid,
+        blocks: ["b"],
+        priority: 0,
+        coexistsWithDefault: true,
+        sourcePath: "layout-daily.md",
+      };
+      jest.spyOn(internals.exoLayoutRepository, "getSnapshot").mockReturnValue({
+        layouts: [layout],
+        blocks: [],
+        blocksByUid: new Map(),
+        blocksByLabel: new Map(),
+      });
+
+      expect(internals.layoutSelector.resolve(["[[pn__DailyNote]]"])?.uid).toBe("layout-daily");
+      expect(internals.layoutSelector.resolve(["[[ems__Task]]"])).toBeNull();
+    });
+  });
+
   // RFC 0002 §3.8 P12 (#3588) — «Exocortex: Open logs». The command surfaces
   // the persisted log file (plugin data folder). Per the Desktop↔Mobile
   // Command Parity invariant it MUST register UNCONDITIONALLY — no

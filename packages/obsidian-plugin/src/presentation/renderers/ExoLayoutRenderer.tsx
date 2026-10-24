@@ -211,6 +211,15 @@ export class ExoLayoutRenderer {
       this.renderDailyEffortsBlock(blockContainer, block.partition, block.title, partition);
       return;
     }
+    if (block.kind === "query-table") {
+      // RFC 9821a379 — the core parses `query__TableBlock`; drawing its rows
+      // (provider, «index stable» flag, error isolation) is the plugin step of
+      // the same RFC. Until it lands the block renders nothing.
+      this.deps.logger.debug(
+        `ExoLayoutRenderer: query-table block ${block.uid} is parsed but not drawn yet (file=${file.path})`,
+      );
+      return;
+    }
     // Defensive branch — parser/type guard should have prevented unknown
     // kinds from ever reaching this point; we still skip quietly.
     const unreachable: never = block;

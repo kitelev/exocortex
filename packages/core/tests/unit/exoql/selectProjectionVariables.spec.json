@@ -1,0 +1,42 @@
+{
+  "_doc": "Revert-verify mutants for ticket 035da1eb (RFC 9821a379 AC5, core half): the SELECT envelope carries `variables` = the projection in declared order; `SELECT *` falls back to first-seen bound variables.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/exoql/evaluateWithExoEval.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/exoql/selectProjectionVariables.test.ts packages/core/tests/unit/exoql/evaluateWithExoEval.test.ts --verbose 2>&1",
+  "mutants": {
+    "VM1_binding_order": {
+      "_note": "`variables` taken from the rows (binding order) — exactly what the RFC rules out.",
+      "from": "    variables: declaredProjection(ast) ?? boundVariables(rows),\n",
+      "to": "    variables: boundVariables(rows),\n",
+      "expect": ["V1", "V2", "V3"]
+    },
+    "VM2_alias_dropped": {
+      "_note": "`(expr AS ?x)` projections skipped — an aggregate column disappears.",
+      "from": "        names.push(inner.value);\n",
+      "to": "        void inner.value;\n",
+      "expect": ["V4"]
+    },
+    "VM3_wildcard_as_empty_projection": {
+      "_note": "`SELECT *` read as an empty projection — no columns at all.",
+      "from": "      if (term.termType === \"Wildcard\") return null;\n",
+      "to": "      if (term.termType === \"Wildcard\") continue;\n",
+      "expect": ["V5"]
+    },
+    "VM4_no_store_drops_projection": {
+      "_note": "The no-store envelope carries no columns.",
+      "from": "    return { kind: \"select\", rows: [], variables: declaredProjection(ast) ?? [] };\n",
+      "to": "    return { kind: \"select\", rows: [], variables: [] };\n",
+      "expect": ["V6"]
+    }
+  }
+}

@@ -22,7 +22,11 @@
  *     "Always true" `ASK { }` precondition target is a degenerate case).
  *     Top-level top execution dispatches by AST shape:
  *
- *       • SELECT     → `{ kind: 'select', rows: SolutionMapping[] }`
+ *       • SELECT     → `{ kind: 'select', rows: SolutionMapping[], variables: string[] }`
+ *         — `variables` is the SELECT projection in the order the query
+ *         declares it (RFC 9821a379: table columns follow the projection, not
+ *         the binding order a row happens to carry). `SELECT *` has no
+ *         declared order: every variable bound in the rows, first-seen order.
  *       • ASK        → `{ kind: 'ask', result: boolean }`
  *       • CONSTRUCT  → `{ kind: 'construct', triples: Triple[] }`
  */
@@ -49,9 +53,42 @@ export interface EvaluateWithExoEvalOptions {
 }
 
 export type ExoQLEvalResult =
-  | { kind: "select"; rows: SolutionMapping[] }
+  | { kind: "select"; rows: SolutionMapping[]; variables: string[] }
   | { kind: "ask"; result: boolean }
   | { kind: "construct"; triples: Triple[] };
+
+/**
+ * The SELECT projection in declaration order — `?x` and `(expr AS ?x)` alike —
+ * or `null` for `SELECT *` (no declared projection).
+ */
+function declaredProjection(ast: unknown): string[] | null {
+  const vars = (ast as { variables?: unknown }).variables;
+  if (!Array.isArray(vars)) return null;
+  const names: string[] = [];
+  for (const v of vars as Array<unknown>) {
+    if (v && typeof v === "object") {
+      const term = v as Record<string, unknown>;
+      if (term.termType === "Wildcard") return null;
+      if (term.termType === "Variable" && typeof term.value === "string") {
+        names.push(term.value);
+        continue;
+      }
+      const inner = term.variable as { value?: unknown } | undefined;
+      if (inner && typeof inner.value === "string") {
+        names.push(inner.value);
+      }
+    }
+  }
+  return names;
+}
+
+function boundVariables(rows: readonly SolutionMapping[]): string[] {
+  const seen = new Set<string>();
+  for (const row of rows) {
+    for (const name of row.variables()) seen.add(name);
+  }
+  return [...seen];
+}
 
 /**
  * Parse, validate, and (when enabled) evaluate a SPARQL string against
@@ -98,7 +135,7 @@ export async function evaluateWithExoEval(
     if (queryType === "CONSTRUCT") {
       return { kind: "construct", triples: [] };
     }
-    return { kind: "select", rows: [] };
+    return { kind: "select", rows: [], variables: declaredProjection(ast) ?? [] };
   }
 
   const translator = new ExoQLAlgebraTranslator();
@@ -116,5 +153,9 @@ export async function evaluateWithExoEval(
     return { kind: "construct", triples };
   }
   const rows = await executor.executeAll(algebra);
-  return { kind: "select", rows };
+  return {
+    kind: "select",
+    rows,
+    variables: declaredProjection(ast) ?? boundVariables(rows),
+  };
 }

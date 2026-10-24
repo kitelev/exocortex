@@ -1,0 +1,42 @@
+{
+  "_doc": "Revert-verify mutants for ticket 035da1eb (RFC 9821a379 AC4, decision 4): `LayoutSelector` canonicalizes BOTH the note's classes and every Layout's targetClass through `WikiLinkHelpers.resolveSymbolic` with the injected `resolveUid`.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/application/services/LayoutSelector.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/application/services/LayoutSelector.canonical.test.ts packages/core/tests/application/services/LayoutSelector.test.ts packages/core/tests/application/services/LayoutSelector.property.test.ts --verbose 2>&1",
+  "mutants": {
+    "SM1_note_side_not_resolved": {
+      "_note": "Note classes only normalized (the pre-9821a379 path) — a bare-uid note class never meets a resolved target.",
+      "from": "      const canonical = WikiLinkHelpers.resolveSymbolic(raw, this.resolveUid);\n",
+      "to": "      const canonical = WikiLinkHelpers.normalize(raw);\n",
+      "expect": ["S3", "S4"]
+    },
+    "SM2_target_side_not_resolved": {
+      "_note": "targetClass only normalized — a Layout written with `[[uid]]` matches only bare-uid notes. S8 too: its Layout targets the bare uid.",
+      "from": "      WikiLinkHelpers.resolveSymbolic(layout.targetClass, this.resolveUid),\n",
+      "to": "      WikiLinkHelpers.normalize(layout.targetClass),\n",
+      "expect": ["S1", "S2", "S3", "S7", "S8"]
+    },
+    "SM3_resolver_option_dropped": {
+      "_note": "The constructor ignores `options.resolveUid` — S3 survives (uid meets uid), every cross-form axis reddens. S8 too: same uid target, no resolver.",
+      "from": "    this.resolveUid = options.resolveUid ?? NO_RESOLVER;\n",
+      "to": "    this.resolveUid = options.resolveUid ? NO_RESOLVER : NO_RESOLVER;\n",
+      "expect": ["S1", "S2", "S4", "S7", "S8"]
+    },
+    "SM4_note_side_uid_wins": {
+      "_note": "The alternative the review named (uid decides, alias only as a fallback) — deliberately NOT what RFC 9821a379 decision 4 specifies (resolveSymbolic = the codebase's alias-wins convention). Locks the chosen semantics.",
+      "from": "      const canonical = WikiLinkHelpers.resolveSymbolic(raw, this.resolveUid);\n",
+      "to": "      const canonical = WikiLinkHelpers.resolveSymbolic(raw.replace(/\\|[^\\]]*/, \"\"), this.resolveUid);\n",
+      "expect": ["S8"]
+    }
+  }
+}

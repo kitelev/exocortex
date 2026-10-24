@@ -111,6 +111,10 @@ export class NamedQueryRunner implements NamedQueryRunnerPort {
    * it read-only. Returns the discriminated envelope, or `null` when the asset
    * has no resolvable SPARQL body. Parse / allowlist errors (e.g. an UPDATE
    * body) propagate so callers can surface a precise message.
+   *
+   * A SELECT envelope carries `variables` — the projection in the order the
+   * query declares it (RFC 9821a379: a `query__TableBlock` takes its columns
+   * from it; a row's own `variables()` follow BINDING order, not projection).
    */
   async run(
     queryUid: string,

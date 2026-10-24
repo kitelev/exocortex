@@ -58,6 +58,8 @@ function makePropertiesBlock(uid: string, label = "Props"): LayoutBlock {
     uid,
     title: "Properties",
     collapsed: false,
+    layoutRef: null,
+    order: null,
     sourcePath: `${uid}.md`,
   } as LayoutBlock;
 }
@@ -68,6 +70,8 @@ function makeBacklinksBlock(uid: string, label = "Backlinks"): LayoutBlock {
     uid,
     title: "Child Tasks",
     collapsed: false,
+    layoutRef: null,
+    order: null,
     sourcePath: `${uid}.md`,
     rowClass: "ems__Task",
     referencingProperty: "ems__Effort_parent",

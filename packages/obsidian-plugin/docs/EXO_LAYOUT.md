@@ -4,9 +4,14 @@
 structure of a note whose class you own. Instead of writing a
 `dataviewjs` / `exo-layout` codeblock inside every `period__Week` note (or
 every `ems__Project`, or every `ems__Area`), you publish **one** Layout
-asset that targets the class, reference a handful of **Block** assets, and
-the plugin renders the declared blocks in the declared order on every
+asset that targets the class plus a handful of **Block** assets that name
+it, and the plugin renders those blocks in their declared order on every
 note of that class — no per-note plumbing required.
+
+The link points **from the block to the Layout** (RFC 9821a379): each block
+carries `exo__LayoutBlock_layout` (its Layout) and `exo__LayoutBlock_order`
+(its place). The Layout itself does not list its blocks —
+`exo__Layout_blocks` is no longer read.
 
 Layouts and blocks live as regular vault files with `exo__Layout` or an
 `exo__*Block` subclass in `exo__Instance_class`. The plugin's
@@ -49,14 +54,12 @@ exo__Asset_label: "period__Week layout"
 exo__Instance_class:
   - "[[exo__Layout]]"
 exo__Layout_targetClass: "[[period__Week]]"
-exo__Layout_blocks:
-  - "[[c1c9b3cd-7f42-4f5a-9a0a-9d3e0f9c6b11]]"
 exo__Layout_priority: 0
 exo__Layout_coexistsWithDefault: false
 ---
 ```
 
-### File 2 — the `exo__BacklinksTableBlock` referenced by the Layout
+### File 2 — the `exo__BacklinksTableBlock` that names the Layout
 
 ```yaml
 ---
@@ -65,6 +68,8 @@ exo__Asset_label: "Weekly Objectives (for period__Week)"
 exo__Instance_class:
   - "[[exo__BacklinksTableBlock]]"
 exo__LayoutBlock_title: "Weekly Objectives"
+exo__LayoutBlock_layout: "[[0b8af5f8-7a9f-4f24-9e80-3d8de32f8b3b]]"
+exo__LayoutBlock_order: 1
 exo__BacklinksTableBlock_rowClass: "[[ems__WeeklyObjective]]"
 exo__BacklinksTableBlock_referencingProperty: "[[ems__WeeklyObjective__week]]"
 exo__BacklinksTableBlock_columns:
@@ -85,10 +90,21 @@ The columns render in the declared order, left-to-right. Every
 input — invalid blocks are skipped by the layout render loop without
 throwing, so one typo never brings the whole page down.
 
+## Linking a block to its Layout
+
+Every block kind carries the same two link fields:
+
+| Field                     | Required | Notes                                                                                                                                                                                                                                                                                    |
+| ------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `exo__LayoutBlock_layout` | yes      | Wikilink to the Layout: `[[uid]]`, `[[uid\|text]]` or `[[label]]`. The part before `\|` names the Layout (its uid, file name or label); the text after `\|` is ignored. A block without it belongs to no Layout; a label shared by two Layouts attaches the block to none — link by uid. |
+| `exo__LayoutBlock_order`  | no       | Integer (`1`, `"2"`; not `1.5` or `"2nd"`). Blocks render by order ascending; blocks without an order follow the numbered ones; ties by block uid ascending.                                                                                                                             |
+
+A Layout that no block names is not selected (a `log.warn` says so).
+
 ## Block types reference (MVP)
 
-Two block kinds ship in this MVP. Their discriminator is the
-`exo__Instance_class` wikilink on the block asset itself.
+Their discriminator is the `exo__Instance_class` wikilink on the block
+asset itself.
 
 ### `exo__PropertiesBlock`
 
@@ -96,7 +112,7 @@ Renders the open note's own frontmatter as a two-column properties table.
 
 | Field                        | Required | Notes                                                                                            |
 | ---------------------------- | -------- | ------------------------------------------------------------------------------------------------ |
-| `exo__Asset_uid`             | yes      | Block uid referenced from `exo__Layout_blocks`.                                                  |
+| `exo__Asset_uid`             | yes      | Block uid; ties in `exo__LayoutBlock_order` resolve by it.                                       |
 | `exo__Instance_class`        | yes      | Must contain `[[exo__PropertiesBlock]]` (plain or UUID).                                         |
 | `exo__LayoutBlock_title`     | no       | `<h3>` shown above the table. Falls back to `exo__Asset_label`, then to the block file basename. |
 | `exo__LayoutBlock_collapsed` | no       | Reserved for a future "collapsed by default" UX — not yet consulted by the renderer.             |
@@ -144,12 +160,12 @@ the React renderer looks it up against the row frontmatter (e.g.
 When more than one Layout asset targets the same class, the resolver
 picks a single winner.
 
-| Step | Rule                                                                                       |
-| ---- | ------------------------------------------------------------------------------------------ |
-| 1    | Walk `exo__Instance_class` of the open note in declaration order; stop at the first match. |
-| 2    | Among matches for the winning class, pick the highest `exo__Layout_priority`.              |
-| 3    | Tiebreaker — `exo__Asset_uid` ascending.                                                   |
-| 4    | Nothing matched — fall back to the default Asset Relations rendering.                      |
+| Step | Rule                                                                                                                                                                                                                                      |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Walk `exo__Instance_class` of the open note in declaration order; stop at the first match. A class and a `targetClass` match in any wikilink form — `[[uid]]`, `[[uid\|label]]`, `[[label]]` (a bare uid is resolved to the class label). |
+| 2    | Among matches for the winning class, pick the highest `exo__Layout_priority`.                                                                                                                                                             |
+| 3    | Tiebreaker — `exo__Asset_uid` ascending.                                                                                                                                                                                                  |
+| 4    | Nothing matched — fall back to the default Asset Relations rendering.                                                                                                                                                                     |
 
 Declaration order of classes in `exo__Instance_class` matters: the
 selector walks classes in that order, and the first class to produce a
@@ -180,9 +196,15 @@ can appear:
   UUID. Regenerate one or paste from an existing working asset.
 - `Layout <uid>: exo__Layout_targetClass required (<path>)` — add the
   class wikilink you want this Layout to render for.
-- `Layout <uid>: exo__Layout_blocks must contain at least one block (<path>)` —
-  the blocks array was empty or absent. Reference at least one block
-  asset; bare identifiers and wikilinks both work.
+- `Layout <uid>: no exo__LayoutBlock names this Layout through exo__LayoutBlock_layout — the Layout is not selected (exo__Layout_blocks is no longer read) (<path>)` —
+  put `exo__LayoutBlock_layout: "[[<layout uid>]]"` on each block of this
+  Layout. A list under `exo__Layout_blocks` is ignored.
+- `Layout <uid>: exo__Layout_blocks is no longer read — link each block to this Layout with exo__LayoutBlock_layout (<path>)` —
+  the Layout still carries the old list; delete it and link the blocks.
+- `LayoutBlock <uid>: exo__LayoutBlock_layout names no known Layout ("<ref>", <path>)` —
+  the reference matches no indexed Layout's uid, file name or label.
+- `LayoutBlock <uid>: exo__LayoutBlock_layout "<ref>" names N Layouts — attached to none (<path>)` —
+  the reference (usually a label) is ambiguous; link by uid.
 - `LayoutBlock: exo__Asset_uid missing at <path>` — same rule as Layout.
 - `BacklinksTableBlock <uid>: rowClass and referencingProperty required (<path>)` —
   both fields are mandatory for the block filter to match anything.
@@ -200,7 +222,8 @@ expected a Layout, check:
 
 1. `enableExoLayoutRenderer` is `true` in Settings → Exocortex.
 2. The note's `exo__Instance_class` contains the class targeted by the
-   Layout (exact wikilink match after normalisation).
+   Layout (match after normalisation; a bare uid is resolved to the
+   class label, so `[[uid]]` and `[[label]]` of one class match).
 3. The console does not show any `log.warn` for the Layout or its
    blocks — a single parse failure blanks the whole Layout (the
    selector returns `null`).

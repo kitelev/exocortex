@@ -6,13 +6,15 @@
  *   - Malformed LayoutBlock frontmatter → parser returns null, warn fires.
  *   - Missing block asset (Layout references block that is not in repo)
  *     → renderer skips, logs warn, continues with remaining blocks.
- *   - Circular block ref (block references itself as sub-block — not
- *     supported by schema, but parser MUST not loop).
+ *   - Block → Layout link (RFC 9821a379 decision 3): `exo__Layout_blocks` is
+ *     not read; a Layout no block names is dropped by `assembleLayoutBlocks`
+ *     (warn), a malformed link attaches the block to nothing (warn, no loop).
  *   - Invalid block type (frontmatter-declared class is unknown)
  *     → parser returns null, repository filters out.
  */
 
 import {
+  assembleLayoutBlocks,
   createLayoutBlockFromFrontmatter,
   createLayoutFromFrontmatter,
   isLayoutBlockFrontmatter,
@@ -37,7 +39,6 @@ describe("exo__Layout fault-injection matrix (RFC exo__Layout Phase 2)", () => {
       {
         exo__Asset_uid: "uid",
         exo__Instance_class: ["[[exo__Layout]]"],
-        exo__Layout_blocks: ["[[b1]]"],
       },
       { sourcePath: "a.md", warn },
     );
@@ -45,18 +46,27 @@ describe("exo__Layout fault-injection matrix (RFC exo__Layout Phase 2)", () => {
     expect(warn).toHaveBeenCalled();
   });
 
-  test("Layout with empty blocks array returns null + warn", () => {
+  test("Layout that no block names is dropped by assembly + warn (exo__Layout_blocks is not read)", () => {
     const warn = jest.fn();
-    const result = createLayoutFromFrontmatter(
+    const parsed = createLayoutFromFrontmatter(
       {
         exo__Asset_uid: "uid",
         exo__Layout_targetClass: "[[ems__Task]]",
-        exo__Layout_blocks: [],
+        exo__Layout_blocks: ["[[b1]]"],
       },
       { sourcePath: "a.md", warn },
     );
-    expect(result).toBeNull();
-    expect(warn).toHaveBeenCalled();
+    expect(parsed).not.toBeNull();
+    expect(parsed?.blocks).toEqual([]);
+    const b1 = createLayoutBlockFromFrontmatter(
+      { exo__Asset_uid: "b1", exo__Instance_class: ["[[exo__PropertiesBlock]]"] },
+      { sourcePath: "b1.md", warn },
+    );
+    const assembled = assembleLayoutBlocks(parsed ? [parsed] : [], b1 ? [b1] : [], warn);
+    expect(assembled).toEqual([]);
+    expect(
+      warn.mock.calls.some(([m]) => String(m).includes("exo__Layout_blocks is no longer read")),
+    ).toBe(true);
   });
 
   test("Layout missing uid returns null + warn", () => {
@@ -64,7 +74,6 @@ describe("exo__Layout fault-injection matrix (RFC exo__Layout Phase 2)", () => {
     const result = createLayoutFromFrontmatter(
       {
         exo__Layout_targetClass: "[[ems__Task]]",
-        exo__Layout_blocks: ["[[b1]]"],
       },
       { sourcePath: "a.md", warn },
     );
@@ -119,34 +128,43 @@ describe("exo__Layout fault-injection matrix (RFC exo__Layout Phase 2)", () => {
     expect(isLayoutBlockFrontmatter(null)).toBe(false);
   });
 
-  test("circular self-reference in blocks array does not loop parser", () => {
+  test("a block naming another block (not a Layout) attaches to nothing — single pass, no loop", () => {
     const warn = jest.fn();
-    // Parser only normalizes strings — circular refs are semantic, not syntactic.
-    const result = createLayoutFromFrontmatter(
+    const layout = createLayoutFromFrontmatter(
+      { exo__Asset_uid: "L", exo__Layout_targetClass: "[[ems__Task]]" },
+      { sourcePath: "L.md", warn },
+    );
+    const self = createLayoutBlockFromFrontmatter(
       {
         exo__Asset_uid: "self",
-        exo__Layout_targetClass: "[[ems__Task]]",
-        exo__Layout_blocks: ["[[self]]"],
+        exo__Instance_class: ["[[exo__PropertiesBlock]]"],
+        exo__LayoutBlock_layout: "[[self]]",
       },
-      { sourcePath: "a.md", warn },
+      { sourcePath: "self.md", warn },
     );
-    // Parser accepts — the repo/renderer are responsible for cycle detection.
-    expect(result).not.toBeNull();
-    expect(result?.blocks).toEqual(["self"]);
+    const assembled = assembleLayoutBlocks(layout ? [layout] : [], self ? [self] : [], warn);
+    expect(assembled).toEqual([]);
+    expect(
+      warn.mock.calls.some(([m]) => String(m).includes("names no known Layout")),
+    ).toBe(true);
   });
 
-  test("malformed blocks array (mixed nulls / numbers) filtered to valid strings", () => {
-    const warn = jest.fn();
-    const result = createLayoutFromFrontmatter(
-      {
-        exo__Asset_uid: "uid",
-        exo__Layout_targetClass: "[[ems__Task]]",
-        exo__Layout_blocks: ["[[b1]]", 42 as unknown as string, null, "[[b2]]"],
-      },
-      { sourcePath: "a.md", warn },
-    );
-    expect(result).not.toBeNull();
-    expect(result?.blocks).toEqual(["b1", "b2"]);
+  test("malformed exo__LayoutBlock_layout (number / list) — block belongs to no Layout + warn", () => {
+    for (const bad of [42, ["[[L]]"]]) {
+      const warn = jest.fn();
+      const block = createLayoutBlockFromFrontmatter(
+        {
+          exo__Asset_uid: "b",
+          exo__Instance_class: ["[[exo__PropertiesBlock]]"],
+          exo__LayoutBlock_layout: bad,
+        },
+        { sourcePath: "b.md", warn },
+      );
+      expect(block?.layoutRef).toBeNull();
+      expect(
+        warn.mock.calls.some(([m]) => String(m).includes("must be a single wikilink")),
+      ).toBe(true);
+    }
   });
 
   test("malformed priority (non-numeric string) defaults to 0", () => {
@@ -155,7 +173,6 @@ describe("exo__Layout fault-injection matrix (RFC exo__Layout Phase 2)", () => {
       {
         exo__Asset_uid: "uid",
         exo__Layout_targetClass: "[[ems__Task]]",
-        exo__Layout_blocks: ["[[b1]]"],
         exo__Layout_priority: "not-a-number",
       },
       { sourcePath: "a.md", warn },

@@ -38,6 +38,11 @@ export {
   isDailyEffortsByClassBlock,
   isLayoutBlockFrontmatter,
   isPropertiesBlock,
+  isQueryTableBlock,
+  QUERY_TABLE_BLOCK_CLASS_IRI,
+  QUERY_TABLE_BLOCK_CLASS_UID,
+  QUERY_TABLE_BLOCK_DEFAULT_EMPTY_TEXT,
+  QUERY_TABLE_BLOCK_DEFAULT_LIMIT,
   type BacklinksTableBlock,
   type CreateLayoutBlockOptions,
   type DailyEffortsByClassBlock,
@@ -45,4 +50,7 @@ export {
   type LayoutBlock,
   type LayoutBlockBase,
   type PropertiesBlock,
+  type QueryTableBlock,
 } from "./LayoutBlock";
+
+export { assembleLayoutBlocks } from "./assembleLayoutBlocks";
