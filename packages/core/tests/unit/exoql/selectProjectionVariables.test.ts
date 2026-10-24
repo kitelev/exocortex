@@ -120,7 +120,37 @@ describe("SELECT projection in declared order (RFC 9821a379 AC5, core)", () => {
     expect(reversed.variables).toEqual(firstSeen);
   });
 
-  test("V7 @req:ddd9b7f1-3f53-4514-ad8a-f764827fcbbe SELECT * lists a variable bound only in a LATER row (OPTIONAL), not just the first row's", async () => {
+  test("V7 @req:ddd9b7f1-3f53-4514-ad8a-f764827fcbbe SELECT * lists every variable bound in ANY row — two OPTIONALs bound in different rows, no row carries them all", async () => {
+    // Episode 1 has an end (?en), episode 2 has a note (?nt). No single row
+    // binds both, so «the first row's variables» and «the widest row's
+    // variables» each lose a column — whatever order the rows come in.
+    const store = new InMemoryTripleStore();
+    const e1 = new IRI("https://example.org/episode-1");
+    const e2 = new IRI("https://example.org/episode-2");
+    await store.add(new Triple(e1, new IRI("https://example.org/start"), new Literal("2026-08-01")));
+    await store.add(new Triple(e1, new IRI("https://example.org/end"), new Literal("2026-08-11")));
+    await store.add(new Triple(e2, new IRI("https://example.org/start"), new Literal("2026-08-02")));
+    await store.add(new Triple(e2, new IRI("https://example.org/note"), new Literal("заметка")));
+    const result = await evaluateWithExoEval(
+      `SELECT * WHERE { ?e <https://example.org/start> ?s OPTIONAL { ?e <https://example.org/end> ?en } OPTIONAL { ?e <https://example.org/note> ?nt } }`,
+      { store },
+    );
+    if (result.kind !== "select") throw new Error("expected a SELECT envelope");
+    expect(result.rows).toHaveLength(2);
+    // Canary, order-independent: every row lacks ?en or ?nt.
+    for (const row of result.rows) {
+      const vars = row.variables();
+      expect(vars.includes("en") && vars.includes("nt")).toBe(false);
+    }
+    expect([...result.variables].sort()).toEqual(["e", "en", "nt", "s"]);
+  });
+
+  test("V9 @req:ddd9b7f1-3f53-4514-ad8a-f764827fcbbe SELECT * — a variable bound only in a LATER row is listed when the first row lacks it", async () => {
+    // Separates «the first row's variables» from «the widest row's» (V7 fails
+    // both): here a later row binds everything, so only the first-row reading
+    // loses ?en. The store returns rows in insertion order (Map/Set, left join
+    // keeps the left side's order); the canary below fails loudly if it ever
+    // does not.
     const store = new InMemoryTripleStore();
     for (let i = 1; i <= 3; i++) {
       const e = new IRI(`https://example.org/episode-${i}`);
@@ -135,9 +165,7 @@ describe("SELECT projection in declared order (RFC 9821a379 AC5, core)", () => {
     );
     if (result.kind !== "select") throw new Error("expected a SELECT envelope");
     expect(result.rows).toHaveLength(3);
-    // Canary: the first row lacks the OPTIONAL variable, so «the first row's
-    // variables» and «every bound variable» differ on this input.
-    expect(result.rows[0].variables()).not.toContain("en");
+    expect(result.rows[0].variables()).not.toContain("en"); // canary: the first row is the narrow one
     expect([...result.variables].sort()).toEqual(["e", "en", "s"]);
   });
 });

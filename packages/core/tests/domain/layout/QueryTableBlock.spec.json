@@ -111,10 +111,10 @@
       "expect": ["Q8"]
     },
     "M15_list_query_as_missing": {
-      "_note": "A list `_query` falls to the «required» message (the misleading one the review named). Also Q11: a NUMBER `_query` then falls to the «required» branch, so the «must be a single wikilink» message is missing there too.",
+      "_note": "A list `_query` falls to the «required» message (the misleading one the review named). Also Q11: a NUMBER `_query` then falls to the «required» branch, so the «must be a single wikilink» message is missing there too. And Q12: a boolean / map `_query` falls to «required» the same way.",
       "from": "    if (queryRaw != null && typeof queryRaw !== \"string\") {\n",
       "to": "    if (queryRaw != null && typeof queryRaw !== \"string\" && queryRaw === null) {\n",
-      "expect": ["Q6", "Q11"]
+      "expect": ["Q6", "Q11", "Q12"]
     },
     "M16_negative_limit_accepted": {
       "_note": "Only 0 rejected — a negative strict integer becomes the row cap (rows.slice(0, -5)) (review 2026-10-24, form X1). Same anchor as M3, different `to` (ITRV §A94).",
@@ -129,10 +129,22 @@
       "expect": ["A13"]
     },
     "M18_list_wording_for_any_non_string": {
-      "_note": "Every non-string `_query` reported as «not a list» — the wording the review flagged for a number (LOW, 2026-10-24).",
+      "_note": "Every non-string `_query` reported as «not a list» — the wording the review flagged for a number (LOW, 2026-10-24). Also Q12: a boolean and a map are then called «a list» as well.",
       "from": "      const shape = Array.isArray(queryRaw) ? \"a list\" : `a value of type ${typeof queryRaw}`;\n",
       "to": "      const shape = \"a list\";\n",
-      "expect": ["Q11"]
+      "expect": ["Q11", "Q12"]
+    },
+    "M19_list_reported_as_type": {
+      "_note": "The Array branch dropped — a list is reported as «a value of type object» (review round 2, 2026-10-24, form X7).",
+      "from": "      const shape = Array.isArray(queryRaw) ? \"a list\" : `a value of type ${typeof queryRaw}`;\n",
+      "to": "      const shape = `a value of type ${typeof queryRaw}`;\n",
+      "expect": ["Q6"]
+    },
+    "M20_type_wording_only_for_number": {
+      "_note": "Only a number gets the type wording; any other non-string is still «a list» (review round 2, 2026-10-24, form X8).",
+      "from": "      const shape = Array.isArray(queryRaw) ? \"a list\" : `a value of type ${typeof queryRaw}`;\n",
+      "to": "      const shape = typeof queryRaw === \"number\" ? \"a value of type number\" : \"a list\";\n",
+      "expect": ["Q12"]
     }
   }
 }

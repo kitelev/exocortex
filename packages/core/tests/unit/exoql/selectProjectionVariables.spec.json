@@ -27,10 +27,10 @@
       "expect": ["V4", "V8"]
     },
     "VM3_wildcard_as_empty_projection": {
-      "_note": "`SELECT *` read as an empty projection — no columns at all. Also V7: it is a SELECT * axis too, and an empty projection lists no columns there.",
+      "_note": "`SELECT *` read as an empty projection — no columns at all. Also V7: it is a SELECT * axis too, and an empty projection lists no columns there. And V9, also a SELECT * axis.",
       "from": "      if (term.termType === \"Wildcard\") return null;\n",
       "to": "      if (term.termType === \"Wildcard\") continue;\n",
-      "expect": ["V5", "V7"]
+      "expect": ["V5", "V7", "V9"]
     },
     "VM4_no_store_drops_projection": {
       "_note": "The no-store envelope carries no columns.",
@@ -51,9 +51,15 @@
       "expect": ["V5"]
     },
     "VM7_select_star_first_row_only": {
-      "_note": "`SELECT *` columns read from the first row only — a variable bound only in a later (OPTIONAL) row is lost (review 2026-10-24, form X4; the idiom §10(в) warns ticket 058bad52 against).",
+      "_note": "`SELECT *` columns read from the first row only — a variable bound only in a later (OPTIONAL) row is lost (review 2026-10-24, form X4; the idiom §10(в) warns ticket 058bad52 against). Reddens V7 (no row binds both OPTIONALs) and V9 (the first row is the narrow one); VM8 reddens only V7 — the pair is told apart by V9.",
       "from": "  for (const row of rows) {\n",
       "to": "  for (const row of rows.slice(0, 1)) {\n",
+      "expect": ["V7", "V9"]
+    },
+    "VM8_select_star_widest_row": {
+      "_note": "`SELECT *` columns read from the row with the most bindings — a variable bound only in another row is lost (review round 2, 2026-10-24, form X9).",
+      "from": "  const seen = new Set<string>();\n  for (const row of rows) {\n    for (const name of row.variables()) seen.add(name);\n  }\n",
+      "to": "  const seen = new Set<string>();\n  const widest = rows.reduce<SolutionMapping | undefined>((a, b) => (a === undefined || b.variables().length > a.variables().length ? b : a), undefined);\n  for (const row of widest ? [widest] : []) {\n    for (const name of row.variables()) seen.add(name);\n  }\n",
       "expect": ["V7"]
     }
   }

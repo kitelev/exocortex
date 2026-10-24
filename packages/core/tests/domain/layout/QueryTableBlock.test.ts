@@ -122,6 +122,7 @@ describe("query__TableBlock — parse into the query-table kind (RFC 9821a379 AC
     );
     expect(block).toBeNull();
     expect(warnings.some((w) => w.includes("must be a single wikilink"))).toBe(true);
+    expect(warnings.some((w) => w.includes("not a list"))).toBe(true);
     expect(warnings.some((w) => w.includes("required"))).toBe(false);
   });
 
@@ -222,6 +223,27 @@ describe("query__TableBlock — parse into the query-table kind (RFC 9821a379 AC
     const message = warnings.find((w) => w.includes("must be a single wikilink"));
     expect(message).toContain("not a value of type number");
     expect(message).not.toContain("list");
+  });
+
+  test("Q12 @req:ddd9b7f1-3f53-4514-ad8a-f764827fcbbe `_query` given as a boolean or a map is named by its type too — not «a list», not «required»", () => {
+    for (const [raw, type] of [
+      [true, "boolean"],
+      [{ a: 1 }, "object"],
+    ] as const) {
+      const warnings: string[] = [];
+      const block = createLayoutBlockFromFrontmatter(
+        {
+          exo__Asset_uid: "b-other",
+          exo__Instance_class: [`[[${QUERY_TABLE_BLOCK_CLASS_IRI}]]`],
+          query__TableBlock_query: raw,
+        },
+        { ...SRC, warn: (m) => warnings.push(m) },
+      );
+      expect([type, block]).toEqual([type, null]);
+      const message = warnings.find((w) => w.includes("must be a single wikilink")) ?? "";
+      expect([type, message.includes(`not a value of type ${type}`)]).toEqual([type, true]);
+      expect([type, message.includes("list")]).toEqual([type, false]);
+    }
   });
 
   test("Q5 @req:ddd9b7f1-3f53-4514-ad8a-f764827fcbbe isLayoutBlockFrontmatter recognises query__TableBlock by label and by UID; an unrelated class is not a block", () => {
