@@ -97,7 +97,6 @@ function validLayout(uid: string, overrides: Record<string, unknown> = {}) {
     exo__Asset_label: `Layout ${uid}`,
     exo__Instance_class: [LAYOUT_CLASS_WIKILINK],
     exo__Layout_targetClass: "[[ems__WeeklyObjective]]",
-    exo__Layout_blocks: ["[[props-block]]", "[[backlinks-block]]"],
     exo__Layout_priority: 0,
     exo__Layout_coexistsWithDefault: false,
     ...overrides,
@@ -114,6 +113,19 @@ function validPropertiesBlock(
     exo__Instance_class: [PROPERTIES_BLOCK_CLASS],
     exo__LayoutBlock_title: "Properties",
     ...overrides,
+  };
+}
+
+/**
+ * RFC 9821a379 decision 3 — a Layout is selected only when some block names
+ * it (`exo__LayoutBlock_layout`). `blockFor(uid)` is the minimal such block,
+ * keyed `<uid>-block.md` so it sits beside the Layout in the fake vault.
+ */
+function blockFor(layoutUid: string): Record<string, Record<string, unknown>> {
+  return {
+    [`${layoutUid}-block.md`]: validPropertiesBlock(`${layoutUid}-block`, {
+      exo__LayoutBlock_layout: `[[${layoutUid}]]`,
+    }),
   };
 }
 
@@ -150,8 +162,12 @@ describe("ExoLayoutRepository — initial scan", () => {
   test("indexes valid layouts and blocks separately", () => {
     const adapter = makeAdapter({
       "layout-a.md": validLayout("uid-layout-a"),
-      "props.md": validPropertiesBlock("uid-props"),
-      "backlinks.md": validBacklinksBlock("uid-backlinks"),
+      "props.md": validPropertiesBlock("uid-props", {
+        exo__LayoutBlock_layout: "[[uid-layout-a]]",
+      }),
+      "backlinks.md": validBacklinksBlock("uid-backlinks", {
+        exo__LayoutBlock_layout: "[[uid-layout-a]]",
+      }),
       "other.md": {
         exo__Asset_uid: "uid-other",
         exo__Instance_class: ["[[ems__Task]]"],
@@ -159,7 +175,7 @@ describe("ExoLayoutRepository — initial scan", () => {
       "invalid-layout.md": {
         exo__Asset_uid: "uid-invalid",
         exo__Instance_class: [LAYOUT_CLASS_WIKILINK],
-        // missing exo__Layout_targetClass AND exo__Layout_blocks
+        // missing exo__Layout_targetClass
       },
     });
 
@@ -168,6 +184,8 @@ describe("ExoLayoutRepository — initial scan", () => {
 
     const snap = repo.getSnapshot();
     expect(snap.layouts.map((l) => l.uid)).toEqual(["uid-layout-a"]);
+    // Both blocks name the Layout and carry no order ⇒ uid ASC.
+    expect(snap.layouts[0].blocks).toEqual(["uid-backlinks", "uid-props"]);
     expect(snap.blocks.map((b) => b.uid).sort()).toEqual([
       "uid-backlinks",
       "uid-props",
@@ -197,6 +215,7 @@ describe("ExoLayoutRepository — initial scan", () => {
       "layout.md": validLayout("uid-bare", {
         exo__Instance_class: [LAYOUT_CLASS_BARE],
       }),
+      ...blockFor("uid-bare"),
     });
     const repo = new ExoLayoutRepository(adapter, makeTimer());
     repo.initialize();
@@ -215,9 +234,46 @@ describe("ExoLayoutRepository — initial scan", () => {
   });
 });
 
+describe("ExoLayoutRepository — block → Layout assembly (RFC 9821a379 AC3, ticket 035da1eb)", () => {
+  test("R1 @req:ddd9b7f1-3f53-4514-ad8a-f764827fcbbe the snapshot carries ASSEMBLED Layouts — blocks in exo__LayoutBlock_order, a Layout no block names is absent, a query__TableBlock without _query is not indexed", () => {
+    const warnings: string[] = [];
+    const adapter = makeAdapter({
+      "with-blocks.md": validLayout("L-with"),
+      "no-blocks.md": validLayout("L-none"),
+      "p2.md": validPropertiesBlock("p-second", {
+        exo__LayoutBlock_layout: "[[L-with]]",
+        exo__LayoutBlock_order: 2,
+      }),
+      "p1.md": validBacklinksBlock("p-first", {
+        exo__LayoutBlock_layout: "[[L-with]]",
+        exo__LayoutBlock_order: 1,
+      }),
+      "qt-no-query.md": {
+        exo__Asset_uid: "qt-no-query",
+        exo__Instance_class: ["[[query__TableBlock]]"],
+        exo__LayoutBlock_layout: "[[L-with]]",
+        exo__LayoutBlock_order: 3,
+      },
+    });
+    const repo = new ExoLayoutRepository(adapter, {
+      logger: { warn: (m) => warnings.push(m) },
+      ...makeTimer().options,
+    });
+    repo.initialize();
+
+    const snap = repo.getSnapshot();
+    expect(snap.layouts.map((l) => [l.uid, l.blocks])).toEqual([
+      ["L-with", ["p-first", "p-second"]],
+    ]);
+    expect(snap.blocksByUid.has("qt-no-query")).toBe(false);
+    expect(warnings.some((w) => w.includes("L-none") && w.includes("not selected"))).toBe(true);
+    expect(warnings.some((w) => w.includes("query__TableBlock_query required"))).toBe(true);
+  });
+});
+
 describe("ExoLayoutRepository — event debouncing", () => {
   test("coalesces multiple events within 150ms window (1 rebuild)", () => {
-    const adapter = makeAdapter({ "layout.md": validLayout("a") });
+    const adapter = makeAdapter({ "layout.md": validLayout("a"), ...blockFor("a") });
     const timer = makeTimer();
     const repo = new ExoLayoutRepository(adapter, timer.options);
     repo.initialize();
@@ -248,7 +304,7 @@ describe("ExoLayoutRepository — event debouncing", () => {
   });
 
   test("rebuildNow() cancels pending debounce and rebuilds synchronously", () => {
-    const adapter = makeAdapter({ "a.md": validLayout("a") });
+    const adapter = makeAdapter({ "a.md": validLayout("a"), ...blockFor("a") });
     const timer = makeTimer();
     const repo = new ExoLayoutRepository(adapter, timer.options);
     repo.initialize();
@@ -256,6 +312,8 @@ describe("ExoLayoutRepository — event debouncing", () => {
     adapter.setFrontmatter({
       "a.md": validLayout("a"),
       "b.md": validLayout("b"),
+      ...blockFor("a"),
+      ...blockFor("b"),
     });
     adapter.fire("changed", "b.md");
     expect(timer.pending()).toBe(1);
@@ -272,6 +330,8 @@ describe("ExoLayoutRepository — event debouncing", () => {
     const adapter = makeAdapter({
       "a.md": validLayout("a"),
       "b.md": validLayout("b"),
+      ...blockFor("a"),
+      ...blockFor("b"),
     });
     const timer = makeTimer();
     const repo = new ExoLayoutRepository(adapter, timer.options);
@@ -304,7 +364,7 @@ describe("ExoLayoutRepository — event debouncing", () => {
 
 describe("ExoLayoutRepository — double-buffering atomic swap", () => {
   test("caller retains old snapshot across rebuilds (immutability)", () => {
-    const adapter = makeAdapter({ "a.md": validLayout("a") });
+    const adapter = makeAdapter({ "a.md": validLayout("a"), ...blockFor("a") });
     const timer = makeTimer();
     const repo = new ExoLayoutRepository(adapter, timer.options);
     repo.initialize();
@@ -315,6 +375,8 @@ describe("ExoLayoutRepository — double-buffering atomic swap", () => {
     adapter.setFrontmatter({
       "a.md": validLayout("a"),
       "b.md": validLayout("b"),
+      ...blockFor("a"),
+      ...blockFor("b"),
     });
     adapter.fire("changed", "b.md");
     timer.advance(150);
@@ -342,6 +404,7 @@ describe("ExoLayoutRepository — duplicate detection", () => {
     const adapter = makeAdapter({
       "a.md": validLayout("dup-uid", { exo__Layout_targetClass: "[[ems__Task]]" }),
       "b.md": validLayout("dup-uid", { exo__Layout_targetClass: "[[ems__Project]]" }),
+      ...blockFor("dup-uid"),
     });
     const repo = new ExoLayoutRepository(adapter, {
       logger: { warn: (m) => warnings.push(m) },
@@ -410,7 +473,7 @@ describe("ExoLayoutRepository — dispose", () => {
 
 describe("ExoLayoutRepository — default-timer fallback", () => {
   test("no timer injected → uses real setTimeout/clearTimeout", async () => {
-    const adapter = makeAdapter({ "a.md": validLayout("a") });
+    const adapter = makeAdapter({ "a.md": validLayout("a"), ...blockFor("a") });
     const repo = new ExoLayoutRepository(adapter, { debounceMs: 5 });
     repo.initialize();
     adapter.fire("changed", "a.md");
@@ -420,7 +483,7 @@ describe("ExoLayoutRepository — default-timer fallback", () => {
   });
 
   test("dispose cancels a real-timer pending rebuild", async () => {
-    const adapter = makeAdapter({ "a.md": validLayout("a") });
+    const adapter = makeAdapter({ "a.md": validLayout("a"), ...blockFor("a") });
     const warnings: string[] = [];
     const repo = new ExoLayoutRepository(adapter, {
       debounceMs: 30,
@@ -473,7 +536,9 @@ describe("ExoLayoutRepository — Issue #3368 cold-start race", () => {
     // WITHOUT firing a "changed" event — exactly the warm-boot race.
     adapter.setFrontmatter({
       "layout-late.md": validLayout("late-uid"),
-      "block-late.md": validPropertiesBlock("late-block"),
+      "block-late.md": validPropertiesBlock("late-block", {
+        exo__LayoutBlock_layout: "[[late-uid]]",
+      }),
     });
     // Snapshot still stale — no event fired, no debounced rebuild scheduled.
     expect(repo.getSnapshot().layouts).toHaveLength(0);
@@ -487,7 +552,7 @@ describe("ExoLayoutRepository — Issue #3368 cold-start race", () => {
   });
 
   test("rebuildNow() is idempotent — repeated calls produce stable snapshot", () => {
-    const adapter = makeAdapter({ "layout.md": validLayout("a") });
+    const adapter = makeAdapter({ "layout.md": validLayout("a"), ...blockFor("a") });
     const repo = new ExoLayoutRepository(adapter, makeTimer().options);
 
     repo.initialize();

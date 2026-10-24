@@ -41,7 +41,7 @@ describe("evaluateWithExoEval (PR3 wired)", () => {
 
   it("returns empty SELECT envelope when no store provided", async () => {
     const result = await evaluateWithExoEval("SELECT ?s WHERE { ?s ?p ?o }");
-    expect(result).toEqual({ kind: "select", rows: [] });
+    expect(result).toEqual({ kind: "select", rows: [], variables: ["s"] });
   });
 
   it("returns empty ASK=false envelope when no store provided", async () => {

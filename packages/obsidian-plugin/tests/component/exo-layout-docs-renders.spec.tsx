@@ -17,6 +17,7 @@ import * as yaml from "js-yaml";
 import React from "react";
 
 import {
+  assembleLayoutBlocks,
   createLayoutFromFrontmatter,
   createLayoutBlockFromFrontmatter,
   isBacklinksTableBlock,
@@ -94,20 +95,19 @@ test.describe("docs/EXO_LAYOUT.md example renders", () => {
   }) => {
     const [layoutFm, blockFm] = loadDocsYamlBlocks();
 
-    const layout = createLayoutFromFrontmatter(layoutFm, {
+    const parsedLayout = createLayoutFromFrontmatter(layoutFm, {
       sourcePath: DOCS_PATH,
       warn: (msg) => {
         throw new Error(`docs Layout parse warning: ${msg}`);
       },
     });
-    if (layout === null) {
+    if (parsedLayout === null) {
       throw new Error(
         `docs Layout parse returned null for first YAML block in ${DOCS_PATH}`,
       );
     }
-    expect(layout.targetClass).toBe("period__Week");
-    expect(layout.coexistsWithDefault).toBe(false);
-    expect(layout.blocks.length).toBe(1);
+    expect(parsedLayout.targetClass).toBe("period__Week");
+    expect(parsedLayout.coexistsWithDefault).toBe(false);
 
     const block: LayoutBlock | null = createLayoutBlockFromFrontmatter(blockFm, {
       sourcePath: DOCS_PATH,
@@ -121,8 +121,13 @@ test.describe("docs/EXO_LAYOUT.md example renders", () => {
       );
     }
 
-    // The Layout references the block by uid (post-normalisation).
-    expect(layout.blocks[0]).toBe(block.uid);
+    // RFC 9821a379 decision 3 — the block names the Layout; assembly turns
+    // the link into the Layout's block list.
+    const assembled: Layout[] = assembleLayoutBlocks([parsedLayout], [block], (msg) => {
+      throw new Error(`docs Layout assembly warning: ${msg}`);
+    });
+    expect(assembled).toHaveLength(1);
+    expect(assembled[0].blocks).toEqual([block.uid]);
 
     // Post-parse columns are normalised to bare property names so the renderer
     // can index frontmatter directly without further transform.

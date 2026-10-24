@@ -1,0 +1,66 @@
+{
+  "_doc": "Revert-verify mutants for ticket 035da1eb (RFC 9821a379 AC5, core half): the SELECT envelope carries `variables` = the projection in declared order; `SELECT *` falls back to first-seen bound variables.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/exoql/evaluateWithExoEval.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/exoql/selectProjectionVariables.test.ts packages/core/tests/unit/exoql/evaluateWithExoEval.test.ts --verbose 2>&1",
+  "mutants": {
+    "VM1_binding_order": {
+      "_note": "`variables` taken from the rows (binding order) — exactly what the RFC rules out. Also V8: in the alias-first GROUP BY query the row binds the group key ?s before the aggregate ?n, so binding order reads [s, n] against the declared [n, s].",
+      "from": "    variables: declaredProjection(ast) ?? boundVariables(rows),\n",
+      "to": "    variables: boundVariables(rows),\n",
+      "expect": ["V1", "V2", "V3", "V8"]
+    },
+    "VM2_alias_dropped": {
+      "_note": "`(expr AS ?x)` projections skipped — an aggregate column disappears. Both alias axes: V4 (alias last) and V8 (alias first) lose the ?n column.",
+      "from": "        names.push(inner.value);\n",
+      "to": "        void inner.value;\n",
+      "expect": ["V4", "V8"]
+    },
+    "VM3_wildcard_as_empty_projection": {
+      "_note": "`SELECT *` read as an empty projection — no columns at all. Also V7: it is a SELECT * axis too, and an empty projection lists no columns there. And V9, also a SELECT * axis.",
+      "from": "      if (term.termType === \"Wildcard\") return null;\n",
+      "to": "      if (term.termType === \"Wildcard\") continue;\n",
+      "expect": ["V5", "V7", "V9"]
+    },
+    "VM4_no_store_drops_projection": {
+      "_note": "The no-store envelope carries no columns.",
+      "from": "    return { kind: \"select\", rows: [], variables: declaredProjection(ast) ?? [] };\n",
+      "to": "    return { kind: \"select\", rows: [], variables: [] };\n",
+      "expect": ["V6"]
+    },
+    "VM5_alias_columns_appended_last": {
+      "_note": "`(expr AS ?x)` columns appended after the plain variables — «in its place» is lost when the alias comes first (review 2026-10-24, form X2).",
+      "from": "  const names: string[] = [];\n  for (const v of vars as Array<unknown>) {\n    if (v && typeof v === \"object\") {\n      const term = v as Record<string, unknown>;\n      if (term.termType === \"Wildcard\") return null;\n      if (term.termType === \"Variable\" && typeof term.value === \"string\") {\n        names.push(term.value);\n        continue;\n      }\n      const inner = term.variable as { value?: unknown } | undefined;\n      if (inner && typeof inner.value === \"string\") {\n        names.push(inner.value);\n      }\n    }\n  }\n  return names;\n",
+      "to": "  const names: string[] = [];\n  const aliased: string[] = [];\n  for (const v of vars as Array<unknown>) {\n    if (v && typeof v === \"object\") {\n      const term = v as Record<string, unknown>;\n      if (term.termType === \"Wildcard\") return null;\n      if (term.termType === \"Variable\" && typeof term.value === \"string\") {\n        names.push(term.value);\n        continue;\n      }\n      const inner = term.variable as { value?: unknown } | undefined;\n      if (inner && typeof inner.value === \"string\") {\n        aliased.push(inner.value);\n      }\n    }\n  }\n  return [...names, ...aliased];\n",
+      "expect": ["V8"]
+    },
+    "VM6_select_star_sorted": {
+      "_note": "`SELECT *` columns sorted alphabetically instead of first-seen (review 2026-10-24, form X3).",
+      "from": "  return [...seen];\n",
+      "to": "  return [...seen].sort();\n",
+      "expect": ["V5"]
+    },
+    "VM7_select_star_first_row_only": {
+      "_note": "`SELECT *` columns read from the first row only — a variable bound only in a later (OPTIONAL) row is lost (review 2026-10-24, form X4; the idiom §10(в) warns ticket 058bad52 against). Reddens V7 (no row binds both OPTIONALs) and V9 (the first row is the narrow one); VM8 reddens only V7 — the pair is told apart by V9.",
+      "from": "  for (const row of rows) {\n",
+      "to": "  for (const row of rows.slice(0, 1)) {\n",
+      "expect": ["V7", "V9"]
+    },
+    "VM8_select_star_widest_row": {
+      "_note": "`SELECT *` columns read from the row with the most bindings — a variable bound only in another row is lost (review round 2, 2026-10-24, form X9).",
+      "from": "  const seen = new Set<string>();\n  for (const row of rows) {\n    for (const name of row.variables()) seen.add(name);\n  }\n",
+      "to": "  const seen = new Set<string>();\n  const widest = rows.reduce<SolutionMapping | undefined>((a, b) => (a === undefined || b.variables().length > a.variables().length ? b : a), undefined);\n  for (const row of widest ? [widest] : []) {\n    for (const name of row.variables()) seen.add(name);\n  }\n",
+      "expect": ["V7"]
+    }
+  }
+}

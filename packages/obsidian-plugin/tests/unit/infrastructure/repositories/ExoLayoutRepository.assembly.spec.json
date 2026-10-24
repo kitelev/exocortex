@@ -1,0 +1,24 @@
+{
+  "_doc": "Revert-verify mutant for ticket 035da1eb (RFC 9821a379 AC3 in the product): the repository publishes ASSEMBLED Layouts. Without the call the snapshot carries block-less Layouts and nothing renders.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/infrastructure/repositories/ExoLayoutRepository.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../../packages/obsidian-plugin\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/infrastructure/repositories/ExoLayoutRepository.test.ts --verbose 2>&1",
+  "mutants": {
+    "RM1_unassembled_snapshot": {
+      "_note": "Snapshot gets the parsed Layouts (blocks: []) instead of the assembled ones — `assembledLayouts` kept referenced so noUnusedLocals does not turn the mutant into BROKEN.",
+      "from": "      layouts: Object.freeze(assembledLayouts) as readonly Layout[],\n",
+      "to": "      layouts: Object.freeze(assembledLayouts.length < 0 ? assembledLayouts : nextLayouts) as readonly Layout[],\n",
+      "expect": ["R1"]
+    }
+  }
+}

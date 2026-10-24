@@ -611,6 +611,12 @@ export {
   isDailyEffortsByClassBlock,
   isLayoutBlockFrontmatter,
   isPropertiesBlock,
+  isQueryTableBlock,
+  QUERY_TABLE_BLOCK_CLASS_IRI,
+  QUERY_TABLE_BLOCK_CLASS_UID,
+  QUERY_TABLE_BLOCK_DEFAULT_EMPTY_TEXT,
+  QUERY_TABLE_BLOCK_DEFAULT_LIMIT,
+  assembleLayoutBlocks,
   type BacklinksTableBlock,
   type CreateLayoutBlockOptions,
   type DailyEffortsByClassBlock,
@@ -618,6 +624,7 @@ export {
   type LayoutBlock,
   type LayoutBlockBase,
   type PropertiesBlock,
+  type QueryTableBlock,
 } from "./domain/layout";
 
 // pn__DailyNote section toggles (RFC pn__DailyNote toggles — req a38ac95b):
@@ -638,6 +645,7 @@ export {
 export {
   LayoutSelector,
   selectByPriority,
+  type LayoutSelectorOptions,
   type LayoutSelectorSource,
 } from "./application/services/LayoutSelector";
 

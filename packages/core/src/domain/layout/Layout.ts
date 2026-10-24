@@ -4,8 +4,14 @@
  * Maps to ontology class `exo__Layout` (starter-kit
  * `exo/08d00289-a5c8-4df1-8885-40a00a014004.md`).
  *
- * One asset declares the ordered body structure (array of block wikilinks)
- * for a single target class.  When multiple `exo__Layout` assets target the
+ * One asset declares the body structure for a single target class. The
+ * blocks are NOT listed on the Layout: each `exo__LayoutBlock` names its
+ * Layout through `exo__LayoutBlock_layout` (+ `exo__LayoutBlock_order`) — the
+ * link points block → Layout (UWI, RFC 9821a379 decision 3). The parser below
+ * reads only the Layout's own properties and returns `blocks: []`;
+ * {@link assembleLayoutBlocks} fills `blocks` from the block assets and drops
+ * a Layout that no block names. `exo__Layout_blocks` is no longer read.
+ * When multiple `exo__Layout` assets target the
  * same class, the resolver picks the highest `priority`; ties resolved by
  * `exo__Asset_uid` ascending for deterministic cross-vault behaviour.
  *
@@ -17,13 +23,16 @@
  * @since 15.x (RFC exo__Layout Phase 1)
  */
 
-import { WikiLinkHelpers } from "../../utilities/WikiLinkHelpers";
 import { normalizeRef } from "./normalizeRef";
 
 export interface Layout {
   readonly uid: string;
   readonly label: string;
   readonly targetClass: string;
+  /**
+   * Uids of the Layout's blocks in render order. Empty straight out of
+   * {@link createLayoutFromFrontmatter}; filled by `assembleLayoutBlocks`.
+   */
   readonly blocks: readonly string[];
   readonly priority: number;
   readonly coexistsWithDefault: boolean;
@@ -102,19 +111,10 @@ export function createLayoutFromFrontmatter(
     return null;
   }
 
-  const blocksRaw = toStringArray(frontmatter["exo__Layout_blocks"]);
-  const blocks: string[] = [];
-  for (const entry of blocksRaw) {
-    const normalized = WikiLinkHelpers.normalize(entry);
-    if (normalized.length > 0) {
-      blocks.push(normalized);
-    }
-  }
-  if (blocks.length === 0) {
+  if (frontmatter["exo__Layout_blocks"] != null) {
     warn(
-      `Layout ${uid}: exo__Layout_blocks must contain at least one block (${sourcePath})`,
+      `Layout ${uid}: exo__Layout_blocks is no longer read — link each block to this Layout with exo__LayoutBlock_layout (${sourcePath})`,
     );
-    return null;
   }
 
   const labelRaw = frontmatter["exo__Asset_label"];
@@ -134,7 +134,7 @@ export function createLayoutFromFrontmatter(
     uid,
     label,
     targetClass,
-    blocks,
+    blocks: [],
     priority,
     coexistsWithDefault,
     sourcePath,
@@ -147,7 +147,9 @@ export function isLayout(value: unknown): value is Layout {
   if (typeof c.uid !== "string" || c.uid.length === 0) return false;
   if (typeof c.label !== "string") return false;
   if (typeof c.targetClass !== "string" || c.targetClass.length === 0) return false;
-  if (!Array.isArray(c.blocks) || c.blocks.length === 0) return false;
+  // `blocks` may be empty: that is what the parser returns before
+  // `assembleLayoutBlocks` fills it (RFC 9821a379 decision 3).
+  if (!Array.isArray(c.blocks)) return false;
   if (c.blocks.some((b) => typeof b !== "string")) return false;
   if (typeof c.priority !== "number" || !Number.isFinite(c.priority)) return false;
   if (typeof c.coexistsWithDefault !== "boolean") return false;

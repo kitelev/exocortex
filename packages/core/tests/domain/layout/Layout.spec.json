@@ -1,0 +1,30 @@
+{
+  "_doc": "Revert-verify mutants for ticket 035da1eb (RFC 9821a379 decision 3) on `Layout.ts`: the parser no longer reads `exo__Layout_blocks` but warns when it is present; `isLayout` accepts the parser's block-less Layout.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/domain/layout/Layout.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/domain/layout/assembleLayoutBlocks.test.ts --verbose 2>&1",
+  "mutants": {
+    "LM1_isLayout_requires_blocks": {
+      "_note": "The pre-9821a379 guard restored: a parsed Layout (blocks: []) is not a Layout.",
+      "from": "  if (!Array.isArray(c.blocks)) return false;\n",
+      "to": "  if (!Array.isArray(c.blocks) || c.blocks.length === 0) return false;\n",
+      "expect": ["A10"]
+    },
+    "LM2_old_list_silent": {
+      "_note": "`exo__Layout_blocks` present but not warned — the old list is ignored without a word.",
+      "from": "  if (frontmatter[\"exo__Layout_blocks\"] != null) {\n",
+      "to": "  if (frontmatter[\"exo__Layout_blocks\"] != null && uid.length < 0) {\n",
+      "expect": ["A12"]
+    }
+  }
+}

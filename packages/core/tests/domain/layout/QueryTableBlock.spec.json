@@ -1,0 +1,150 @@
+{
+  "_doc": "Revert-verify mutants for ticket 035da1eb (RFC 9821a379 AC2 + the block half of AC3): `createLayoutBlockFromFrontmatter` parses `query__TableBlock` into kind `query-table` (query = wikilink TARGET; without `_query` rejected) and reads `exo__LayoutBlock_layout` / `exo__LayoutBlock_order` on every block kind. One mutant per guarantee; each reddens exactly its axes.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/domain/layout/LayoutBlock.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/domain/layout/QueryTableBlock.test.ts packages/core/tests/domain/layout/assembleLayoutBlocks.test.ts packages/core/tests/domain/layout/LayoutBlock.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_query_alias_not_target": {
+      "_note": "`_query` read through normalizeRef (WikiLinkHelpers.normalize) — for `[[uid|label]]` it hands back the ALIAS, so the runner would look up a label as a uid. Only Q2 carries the alias form. Q7 too: `[[uid#Запрос|…]]` keeps its subpath under normalize.",
+      "from": "    const query = typeof queryRaw === \"string\" ? wikilinkTarget(queryRaw) : null;\n",
+      "to": "    const query = normalizeRef(queryRaw);\n",
+      "expect": ["Q2", "Q7"]
+    },
+    "M2_missing_query_accepted": {
+      "_note": "A block without `_query` is accepted with an empty query instead of rejected — the negative clause of AC2.",
+      "from": "        `QueryTableBlock ${base.uid}: query__TableBlock_query required — the block is not rendered (${options.sourcePath})`,\n      );\n      return null;\n",
+      "to": "        `QueryTableBlock ${base.uid}: query__TableBlock_query required — the block is not rendered (${options.sourcePath})`,\n      );\n      return { ...base, kind: \"query-table\", query: \"\", limit: QUERY_TABLE_BLOCK_DEFAULT_LIMIT, emptyText: QUERY_TABLE_BLOCK_DEFAULT_EMPTY_TEXT };\n",
+      "expect": ["Q3"]
+    },
+    "M3_limit_ignored": {
+      "_note": "`_limit` never read — every block gets the default 100. Q9 too: its positive control `\" 25 \"` → 25 needs the limit read.",
+      "from": "    if (parsedLimit !== null && parsedLimit > 0) {\n",
+      "to": "    if (parsedLimit !== null && parsedLimit > 0 && parsedLimit < 0) {\n",
+      "expect": ["Q4", "Q9"]
+    },
+    "M4_not_registered_as_block": {
+      "_note": "`isLayoutBlockFrontmatter` does not know query__TableBlock — the repository would never even try to parse it.",
+      "from": "    ) ||\n    classOf(frontmatter, QUERY_TABLE_BLOCK_CLASS_IRI, QUERY_TABLE_BLOCK_CLASS_UID)\n",
+      "to": "    ) ||\n    classOf(frontmatter, \"\", \"\")\n",
+      "expect": ["Q3", "Q5"]
+    },
+    "M5_class_uid_constant_ignored": {
+      "_note": "The parse branch recognises the class by LABEL only — a block whose class is the bare `[[uid]]` of query__TableBlock falls to «unknown block class». Q1 and A8 use the UID form.",
+      "from": "  if (classOf(frontmatter, QUERY_TABLE_BLOCK_CLASS_IRI, QUERY_TABLE_BLOCK_CLASS_UID)) {\n",
+      "to": "  if (classOf(frontmatter, QUERY_TABLE_BLOCK_CLASS_IRI, QUERY_TABLE_BLOCK_CLASS_IRI)) {\n",
+      "expect": ["Q1", "A8"]
+    },
+    "M6_empty_text_default": {
+      "_note": "Default empty text lost — RFC: «Нет ⇒ «Нет строк»».",
+      "from": "        : QUERY_TABLE_BLOCK_DEFAULT_EMPTY_TEXT;\n",
+      "to": "        : \"\";\n",
+      "expect": ["Q1"]
+    },
+    "M7_layout_link_not_parsed": {
+      "_note": "`exo__LayoutBlock_layout` kept raw (brackets included) — no reference matches a Layout; every assembly axis that expects a block in a Layout reddens. A4/A12 (no linked block / parse warning) stay green by construction. A9/A10/A11 too: each attaches a block by link before asserting. Also A13: it first attaches its blocks through exo__LayoutBlock_layout, so with the link unparsed the Layout has no blocks.",
+      "from": "    layoutRef = wikilinkTarget(layoutRaw);\n",
+      "to": "    layoutRef = layoutRaw.trim();\n",
+      "expect": [
+        "A1",
+        "A2",
+        "A3",
+        "A5",
+        "A6",
+        "A7",
+        "A8",
+        "A9",
+        "A10",
+        "A11",
+        "A13"
+      ]
+    },
+    "M8_order_not_parsed": {
+      "_note": "`exo__LayoutBlock_order` never read — every block unordered, uid ASC. A1/A2/A7/A11 use uids that sort against the order; A5/A9's uids sort WITH it, so they stay green. A11 too: its numbered block 9 must lead. Also A13: «z-nine» has order 9; unparsed, both blocks are unordered and fall to uid order (a-odd first), and no warning is emitted.",
+      "from": "  const order = parseStrictInteger(orderRaw);\n",
+      "to": "  const order = parseStrictInteger(undefined);\n",
+      "expect": ["A1", "A2", "A7", "A11", "A13"]
+    },
+    "M9_bad_order_silent": {
+      "_note": "A non-integer order no longer warns (still treated as absent). A11 too: it asserts the same warning for strict-integer rejects. Also A13: it expects the same «must be an integer» warning for \"1e2\" / \"\" / \"0x10\".",
+      "from": "  if (orderRaw != null && order === null) {\n",
+      "to": "  if (orderRaw != null && order === null && orderRaw === order) {\n",
+      "expect": ["A7", "A11", "A13"]
+    },
+    "M10_lax_order": {
+      "_note": "Order parsed with the lax `parseInteger` (`Number.parseInt`): \"1.5\" → 1, \"2nd\" → 2 — sorted ahead of 9 without a warning. Only A11 carries such forms. Also A13: parseInteger (Number.parseInt) reads \"1e2\" as 1 and \"0x10\" as 0, so «a-odd» jumps ahead of «z-nine» (order 9).",
+      "from": "  const order = parseStrictInteger(orderRaw);\n",
+      "to": "  const order = parseInteger(orderRaw);\n",
+      "expect": ["A11", "A13"]
+    },
+    "M11_lax_limit": {
+      "_note": "Limit parsed with the lax `parseInteger`: \"2.5\" → 2, \"10abc\" → 10, \"1e2\" → 1, silently.",
+      "from": "    const parsedLimit = parseStrictInteger(limitRaw);\n",
+      "to": "    const parsedLimit = parseInteger(limitRaw);\n",
+      "expect": ["Q9"]
+    },
+    "M12_layout_ref_alias": {
+      "_note": "THE review HIGH, restored in its narrowest form: the layout link is read by its ALIAS (the last part of `[[a|b]]`) — a block copied from another Layout follows its stale alias. A5's b2 alias equals its own Layout's label, so only A9 can tell.",
+      "from": "    layoutRef = wikilinkTarget(layoutRaw);\n",
+      "to": "    layoutRef = wikilinkTarget(layoutRaw.replace(/^\\s*\\[\\[[^|\\]]*\\|/, \"[[\"));\n",
+      "expect": ["A9"]
+    },
+    "M13_subpath_kept": {
+      "_note": "`#subpath` left in the target — the query uid becomes `uid#Запрос`.",
+      "from": "  const target = stripped.split(\"|\")[0].split(\"#\")[0].trim();\n",
+      "to": "  const target = stripped.split(\"|\")[0].trim();\n",
+      "expect": ["Q7"]
+    },
+    "M14_label_query_silent": {
+      "_note": "A query named by label is kept WITHOUT the warning that the runner cannot find it.",
+      "from": "    if (!UUID_RE.test(query)) {\n",
+      "to": "    if (!UUID_RE.test(query) && query.length < 0) {\n",
+      "expect": ["Q8"]
+    },
+    "M15_list_query_as_missing": {
+      "_note": "A list `_query` falls to the «required» message (the misleading one the review named). Also Q11: a NUMBER `_query` then falls to the «required» branch, so the «must be a single wikilink» message is missing there too. And Q12: a boolean / map `_query` falls to «required» the same way.",
+      "from": "    if (queryRaw != null && typeof queryRaw !== \"string\") {\n",
+      "to": "    if (queryRaw != null && typeof queryRaw !== \"string\" && queryRaw === null) {\n",
+      "expect": ["Q6", "Q11", "Q12"]
+    },
+    "M16_negative_limit_accepted": {
+      "_note": "Only 0 rejected — a negative strict integer becomes the row cap (rows.slice(0, -5)) (review 2026-10-24, form X1). Same anchor as M3, different `to` (ITRV §A94).",
+      "from": "    if (parsedLimit !== null && parsedLimit > 0) {\n",
+      "to": "    if (parsedLimit !== null && parsedLimit !== 0) {\n",
+      "expect": ["Q10"]
+    },
+    "M17_order_coerced_by_number": {
+      "_note": "`exo__LayoutBlock_order` coerced with Number() + Number.isInteger — \"1e2\" → 100, \"\" → 0, \"0x10\" → 16 pass as integers (review 2026-10-24, form X6).",
+      "from": "  const order = parseStrictInteger(orderRaw);\n",
+      "to": "  const order =\n    orderRaw == null || typeof orderRaw === \"boolean\"\n      ? null\n      : Number.isInteger(Number(String(orderRaw).trim()))\n        ? Number(String(orderRaw).trim())\n        : null;\n",
+      "expect": ["A13"]
+    },
+    "M18_list_wording_for_any_non_string": {
+      "_note": "Every non-string `_query` reported as «not a list» — the wording the review flagged for a number (LOW, 2026-10-24). Also Q12: a boolean and a map are then called «a list» as well.",
+      "from": "      const shape = Array.isArray(queryRaw) ? \"a list\" : `a value of type ${typeof queryRaw}`;\n",
+      "to": "      const shape = \"a list\";\n",
+      "expect": ["Q11", "Q12"]
+    },
+    "M19_list_reported_as_type": {
+      "_note": "The Array branch dropped — a list is reported as «a value of type object» (review round 2, 2026-10-24, form X7).",
+      "from": "      const shape = Array.isArray(queryRaw) ? \"a list\" : `a value of type ${typeof queryRaw}`;\n",
+      "to": "      const shape = `a value of type ${typeof queryRaw}`;\n",
+      "expect": ["Q6"]
+    },
+    "M20_type_wording_only_for_number": {
+      "_note": "Only a number gets the type wording; any other non-string is still «a list» (review round 2, 2026-10-24, form X8).",
+      "from": "      const shape = Array.isArray(queryRaw) ? \"a list\" : `a value of type ${typeof queryRaw}`;\n",
+      "to": "      const shape = typeof queryRaw === \"number\" ? \"a value of type number\" : \"a list\";\n",
+      "expect": ["Q12"]
+    }
+  }
+}

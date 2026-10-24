@@ -1,0 +1,66 @@
+{
+  "_doc": "Revert-verify mutants for ticket 035da1eb (RFC 9821a379 AC3): `assembleLayoutBlocks` inverts block → Layout links — order ASC, unordered after numbered, ties by uid ASC, a block of another Layout does not get in, an ambiguous link attaches to none, a Layout no block names is dropped.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/domain/layout/assembleLayoutBlocks.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/domain/layout/assembleLayoutBlocks.test.ts --verbose 2>&1",
+  "mutants": {
+    "N1_order_ignored_between_numbered": {
+      "_note": "Two numbered blocks compare equal regardless of order — falls to the input order of the stable sort.",
+      "from": "    return a.order - b.order;\n",
+      "to": "    return 0;\n",
+      "expect": ["A1", "A2"]
+    },
+    "N2_unordered_first": {
+      "_note": "Blocks without an order go BEFORE the numbered ones. A11 too: its odd-order block is unordered.",
+      "from": "  if (a.order !== null && b.order === null) return -1;\n  if (a.order === null && b.order !== null) return 1;\n",
+      "to": "  if (a.order !== null && b.order === null) return 1;\n  if (a.order === null && b.order !== null) return -1;\n",
+      "expect": ["A2", "A7", "A11"]
+    },
+    "N3_tie_by_uid_desc": {
+      "_note": "Ties and the unordered tail by uid DESC.",
+      "from": "  if (a.uid < b.uid) return -1;\n  if (a.uid > b.uid) return 1;\n",
+      "to": "  if (a.uid < b.uid) return 1;\n  if (a.uid > b.uid) return -1;\n",
+      "expect": ["A2"]
+    },
+    "N4_block_joins_wrong_layout": {
+      "_note": "Every linked block joins the FIRST Layout — the negative clause «блок другого Layout не попадает». A9 too: own-b of L2 would join L1.",
+      "from": "    const [at] = targets;\n    members[at].push(block);\n",
+      "to": "    const [at] = targets;\n    members[at - at].push(block);\n",
+      "expect": ["A3", "A6", "A9"]
+    },
+    "N5_layout_without_blocks_kept": {
+      "_note": "A Layout no block names is kept with an empty block list — «Layout без блоков не выбирается» lost.",
+      "from": "        `Layout ${layout.uid}: no exo__LayoutBlock names this Layout through exo__LayoutBlock_layout — the Layout is not selected (exo__Layout_blocks is no longer read) (${layout.sourcePath})`,\n      );\n      return;\n",
+      "to": "        `Layout ${layout.uid}: no exo__LayoutBlock names this Layout through exo__LayoutBlock_layout — the Layout is not selected (exo__Layout_blocks is no longer read) (${layout.sourcePath})`,\n      );\n",
+      "expect": ["A4"]
+    },
+    "N6_ambiguous_guessed": {
+      "_note": "A reference naming two Layouts is attached to the first instead of none.",
+      "from": "    if (targets.size > 1) {\n",
+      "to": "    if (targets.size > 1 && targets.size < 1) {\n",
+      "expect": ["A6"]
+    },
+    "N7_label_not_indexed": {
+      "_note": "Layouts are not indexed by label — `[[label]]` references fail; the shared-label case then reads «names no known Layout» instead of «names 2 Layouts».",
+      "from": "    index(layout.label, at);\n",
+      "to": "    index(layout.label.slice(0, 0), at);\n",
+      "expect": ["A5", "A6"]
+    },
+    "N8_basename_not_indexed": {
+      "_note": "Layouts are not indexed by file basename — `[[<file name>]]` references fail (only A5's b4 uses a basename that differs from the uid).",
+      "from": "    index(basename(layout.sourcePath), at);\n",
+      "to": "    index(basename(layout.sourcePath).slice(0, 0), at);\n",
+      "expect": ["A5"]
+    }
+  }
+}

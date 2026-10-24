@@ -27,6 +27,7 @@
  */
 
 import {
+  assembleLayoutBlocks,
   createLayoutBlockFromFrontmatter,
   createLayoutFromFrontmatter,
   isLayoutBlockFrontmatter,
@@ -104,9 +105,9 @@ export class ExoLayoutRepository {
     this.adapter = adapter;
     this.debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
     this.logger = options.logger ?? NOOP_LOGGER;
-    this.setTimer = options.setTimer ?? ((cb, ms) => setTimeout(cb, ms));
+    this.setTimer = options.setTimer ?? ((cb, ms) => window.setTimeout(cb, ms));
     this.clearTimer =
-      options.clearTimer ?? ((handle) => clearTimeout(handle as never));
+      options.clearTimer ?? ((handle) => window.clearTimeout(handle as never));
   }
 
   /**
@@ -235,8 +236,15 @@ export class ExoLayoutRepository {
       }
     }
 
+    // RFC 9821a379 decision 3 — blocks name their Layout; invert the link
+    // once per rebuild (warnings once per rebuild, not per render). A Layout
+    // that no block names is dropped here, so the selector never picks it.
+    const assembledLayouts = assembleLayoutBlocks(nextLayouts, nextBlocks, (msg) =>
+      this.logger.warn(msg),
+    );
+
     this.snapshot = Object.freeze({
-      layouts: Object.freeze(nextLayouts) as readonly Layout[],
+      layouts: Object.freeze(assembledLayouts) as readonly Layout[],
       blocks: Object.freeze(nextBlocks) as readonly LayoutBlock[],
       blocksByUid: nextBlocksByUid,
       blocksByLabel: nextBlocksByLabel,

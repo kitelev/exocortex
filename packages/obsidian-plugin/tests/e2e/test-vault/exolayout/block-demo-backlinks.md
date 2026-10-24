@@ -3,6 +3,8 @@ exo__Instance_class: "[[exo__BacklinksTableBlock]]"
 exo__Asset_uid: fixture-exolayout-demo-block
 exo__Asset_label: "Demo rows (fixture)"
 exo__LayoutBlock_title: "Demo Rows"
+exo__LayoutBlock_layout: "[[fixture-exolayout-demo-class]]"
+exo__LayoutBlock_order: 1
 exo__BacklinksTableBlock_rowClass: "[[exo__DemoRow]]"
 exo__BacklinksTableBlock_referencingProperty: "[[exo__DemoRow__target]]"
 exo__BacklinksTableBlock_columns:

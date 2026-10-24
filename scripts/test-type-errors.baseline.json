@@ -516,11 +516,6 @@
       "count": 3
     },
     {
-      "file": "packages/obsidian-plugin/tests/component/exo-layout-docs-renders.spec.tsx",
-      "code": "TS6133",
-      "count": 1
-    },
-    {
       "file": "packages/obsidian-plugin/tests/component/properties/DateTimePropertyField.spec.tsx",
       "code": "TS2686",
       "count": 21
