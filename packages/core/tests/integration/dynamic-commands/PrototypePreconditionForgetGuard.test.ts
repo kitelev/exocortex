@@ -52,6 +52,17 @@ const LIFECYCLE_TARGET_CLASSES = new Set([
   // this widening changes NO verdict today — the value is that the commands are
   // now IN the guarded set rather than silently outside it.
   "ems__Action",
+  // Idea classes — added by the exoas-exocmd pointer bump to f6bc69fe (T4 316dd2be),
+  // which first brought the idea status commands of exoas-exocmd f227b8cb (2026-10-11)
+  // into this repo. Measured 2026-10-26 on that head: 8 bindings target them
+  // (Idea — Trash, Idea — Park, Trash, Park — Waiting) and all four bound commands'
+  // preconditions (fe18e20c, 5e7a7b9b, 36ae0a02, 4265c691) already carry the
+  // not-a-prototype clause, so — as with ems__Action — no verdict changes; the
+  // value is that idea status commands are now IN the guarded set. ems__Idea is an
+  // ems__Effort subclass; flow__Idea projects from ems__Idea; idea__Idea is its sibling.
+  "ems__Idea",
+  "flow__Idea",
+  "idea__Idea",
 ]);
 const UNIVERSAL_TARGET_CLASSES = new Set(["exo__Asset"]);
 
