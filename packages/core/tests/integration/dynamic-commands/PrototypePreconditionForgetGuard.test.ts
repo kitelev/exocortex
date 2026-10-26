@@ -58,8 +58,12 @@ const LIFECYCLE_TARGET_CLASSES = new Set([
   // (Idea — Trash, Idea — Park, Trash, Park — Waiting) and all four bound commands'
   // preconditions (fe18e20c, 5e7a7b9b, 36ae0a02, 4265c691) already carry the
   // not-a-prototype clause, so — as with ems__Action — no verdict changes; the
-  // value is that idea status commands are now IN the guarded set. ems__Idea is an
-  // ems__Effort subclass; flow__Idea projects from ems__Idea; idea__Idea is its sibling.
+  // value is that idea status commands are now IN the guarded set. Hierarchy: idea__Idea
+  // is the common parent of the idea classes (exo__Statement bridges e7b04eb8 «ems__Idea ⊂
+  // idea__Idea», 26cc683f «flow__Idea ⊂ idea__Idea»); only ems__Idea is also an ems__Effort.
+  // The bucket is still lifecycle for all three: they are instance-level status targets,
+  // and lifecycle is the strictest bucket — dropping the not-a-prototype clause from
+  // idea-park reddens two checks here, whereas KNOWN_NON_LIFECYCLE would hide it.
   "ems__Idea",
   "flow__Idea",
   "idea__Idea",
