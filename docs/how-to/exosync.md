@@ -223,8 +223,8 @@ consumed silently. Real conflicts go through `GatedStructuredMerger`:
   onto a heading the base already has (renumbering), a heading put over or
   taken off existing text, a rename against a delete — are caught on the
   output, paragraph by paragraph: a base paragraph the merge would keep more
-  times than the two sides' own additions account for, or keep after one side
-  deleted it, is a conflict. Counts cannot tell a move from a delete plus an
+  times than the two sides' own additions account for, or — held once in the
+  base — keep after one side deleted it, is a conflict. Counts cannot tell a move from a delete plus an
   identical re-add, so these conflict too: a paragraph moved on one side and
   deleted on the other, and a paragraph deleted on both sides and written
   again — by one side, or by each side in its own place (a journal entry

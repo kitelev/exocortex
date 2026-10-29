@@ -23,8 +23,8 @@
  *    taken off existing text, a rename against a delete when the renaming
  *    side kept a paragraph of the section verbatim) are caught on the
  *    OUTPUT: a base paragraph the merge would keep more times than the two
- *    sides' own additions account for, or keep after one side deleted it, is
- *    a CONFLICT (ems__Bug 96a86732). Counts cannot tell a move from a delete
+ *    sides' own additions account for, or — held once in the base — keep
+ *    after one side deleted it, is a CONFLICT (ems__Bug 96a86732). Counts cannot tell a move from a delete
  *    plus an identical re-add, so such moves conflict too. Text changed
  *    inside a paragraph is not tracked by it.
  *  - Any CONFLICT outcome is handed to quarantine by the caller (D17) —
@@ -619,10 +619,12 @@ function mergeBody(base: string, local: string, remote: string): BodyMergeResult
     .map((k) => mergedByKey.get(k) as string)
     .join("\n");
 
-  // The result is counted section by section, as each side is: re-splitting
-  // `body` would fuse a heading-less section placed after a section without a
-  // trailing newline (a preamble placed last, ems__Bug 1b8a2c8a) into one
-  // paragraph neither side has, and the resurrected text would go uncounted.
+  // The result is counted section by section, as each side is. Re-splitting
+  // `body` would differ twice: a heading-less section placed after a section
+  // without a trailing newline (a preamble the order puts after the skeleton,
+  // ems__Bug 1b8a2c8a) fuses with it into one paragraph neither side has, so
+  // resurrected text went uncounted; and a section ending inside an unclosed
+  // fence swallows the headings after it, which then counted as text.
   const mergedSecs = orderedKeys.flatMap((k) => splitSections(mergedByKey.get(k) as string));
   const lost = textCountViolation(bSecs, lSecs, rSecs, mergedSecs);
   if (lost !== null) return { ok: false, reason: lost };

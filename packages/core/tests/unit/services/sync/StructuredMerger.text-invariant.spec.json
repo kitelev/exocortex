@@ -133,7 +133,7 @@
       "_note": "Strips newlines but keeps spaces and \\r: T15 (trailing spaces), T16 (whitespace-only blank lines leave a leading space), T17 (CRLF leaves \\r)."
     },
     "M17_check_on_fused_body": {
-      "_note": "Implementation review MEDIUM-2: counting the result by re-splitting `body` fuses a preamble placed last (ems__Bug 1b8a2c8a) with the last paragraph of a note without a trailing newline, so the resurrected text is never counted.",
+      "_note": "Implementation review MEDIUM-2: counting the result by re-splitting `body` fuses a preamble the order puts after the skeleton (ems__Bug 1b8a2c8a) with the last paragraph of a note without a trailing newline, so the resurrected text is never counted. Re-splitting differs a second way, not locked by any axis: a section ending inside an unclosed fence swallows the headings after it, which then count as text (review round 2: only false conflicts of the re-split form, all on malformed fences; the merged content there is not judged).",
       "from": "  const mergedSecs = orderedKeys.flatMap((k) => splitSections(mergedByKey.get(k) as string));\n",
       "to": "  const mergedSecs = splitSections(body);\n",
       "expect": ["T18"]

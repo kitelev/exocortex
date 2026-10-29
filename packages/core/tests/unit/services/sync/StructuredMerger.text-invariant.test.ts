@@ -25,6 +25,9 @@ import { StructuredMerger, type YamlCodec } from "../../../../src/services/sync/
  * cannot tell a move from a delete + identical re-add, so a paragraph moved
  * on one side and deleted on the other (P1), or deleted on both and written
  * again — by one side (P2) or by each side in its own place (P3) — conflicts.
+ * T19 and P3 are the SAME count shape (b = l = r = 1, m = 2, the base copy
+ * deleted on both sides): one rule seen as a fix (T19) and as its price (P3),
+ * so "fixing" P3 breaks T19.
  */
 
 const codec: YamlCodec = {
