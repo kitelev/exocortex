@@ -56,6 +56,8 @@ describe("StructuredMerger — heading renamed on both sides (ems__Bug 1fdfd7fb)
     });
   });
 
+  // Held by two guards: this one and the output invariant (ems__Bug 96a86732) — the
+  // section text would appear twice — so mutant M1 of this suite's spec no longer reddens it.
   it("H2 real section text (counter 94 → 95 remote / 97 local) → conflict", () => {
     expect(createHash("sha256").update(REAL_COUNTER_SECTION, "utf8").digest("hex")).toBe(
       REAL_COUNTER_SECTION_SHA256,
@@ -135,6 +137,8 @@ describe("StructuredMerger — heading renamed on both sides (ems__Bug 1fdfd7fb)
     if (r.status === "merged") expect(headingsOf(r.content)).toEqual(["## A", "## Z"]);
   });
 
+  // Held by two guards: this one and the output invariant (ems__Bug 96a86732) — the
+  // section text would appear twice — so mutant M1 or M8 of this suite's spec no longer reddens it.
   it("H9 divergent rename next to a NEW section on one side (position shifted) → conflict", () => {
     expect(
       merger.mergeAsset({
@@ -146,6 +150,8 @@ describe("StructuredMerger — heading renamed on both sides (ems__Bug 1fdfd7fb)
     ).toBe("conflict");
   });
 
+  // Held by two guards: this one and the output invariant (ems__Bug 96a86732) — the
+  // section text would appear twice — so mutant M1 of this suite's spec no longer reddens it.
   it("H10 divergent rename where one side also MOVED the section → conflict", () => {
     expect(
       merger.mergeAsset({
