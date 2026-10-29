@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify for ems__Bug 96a86732 (ExoSync body merge resurrected a section deleted on one side when the other side renamed its heading, and kept text twice when the two sides put different headings over shared text), subject = StructuredMerger.ts, output invariant textCountViolation in mergeBody. Axes T*/C*/P* in StructuredMerger.text-invariant.test.ts, H* in StructuredMerger.heading-rename.test.ts (run together so a mutant that breaks a 1fdfd7fb control shows up). Not locked by any mutant here, regression controls of the merger: T2/T4/T9 (conflicted before through other guards; T9 is now held by the invariant too), C2/C3 (every base paragraph there has m = min(l, r) or 0, so no non-negative bound reddens them). P1/P2 are the named price (a move cannot be told from a delete + identical re-add). Named gap, asserted by no axis in either direction: text changed inside a paragraph (a renamed section whose only paragraph was also edited, a dense list split by different headings). Run: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting tree and subject to YOUR checkout.",
+  "_doc": "Revert-verify for ems__Bug 96a86732 (ExoSync body merge resurrected a section deleted on one side when the other side renamed its heading, and kept text twice when the two sides put different headings over shared text), subject = StructuredMerger.ts, output invariant textCountViolation in mergeBody. Axes T*/C*/P* in StructuredMerger.text-invariant.test.ts, H* in StructuredMerger.heading-rename.test.ts (run together so a mutant that breaks a 1fdfd7fb control shows up). Not locked by any mutant here, regression controls of the merger: T2/T4/T9 (conflicted before through other guards; T9 is now held by the invariant too), C2/C3 (every base paragraph there has m = min(l, r) or 0, so no non-negative bound reddens them). P1/P2/P3 are the named price (a move cannot be told from a delete + identical re-add: moved on one side and deleted on the other; deleted on both and written again by one side; by each side in its own place). The 'once' wording of the duplicate reason has no axis: no input found reaches m = 1 with l = r = 0. Named gap, asserted by no axis in either direction: text changed inside a paragraph (a renamed section whose only paragraph was also edited, a dense list split by different headings). Run: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting tree and subject to YOUR checkout.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/StructuredMerger.ts",
   "symlink_node_modules": [
@@ -18,6 +18,7 @@
       "expect": [
         "P1",
         "P2",
+        "P3",
         "T1",
         "T10",
         "T11",
@@ -27,6 +28,10 @@
         "T15",
         "T16",
         "T17",
+        "T18",
+        "T19",
+        "T20",
+        "T21",
         "T3",
         "T5",
         "T6",
@@ -37,7 +42,7 @@
     "M2_no_unchanged_side_clause": {
       "from": "      unique && l === b ? r : unique && r === b ? l : Math.max(l, r, l + r - b);\n",
       "to": "      Math.max(l, r, l + r - b);\n",
-      "expect": ["P1", "P2", "T1", "T10", "T11", "T15"]
+      "expect": ["P1", "P2", "T1", "T10", "T11", "T15", "T18"]
     },
     "M3_no_independent_additions": {
       "from": "      unique && l === b ? r : unique && r === b ? l : Math.max(l, r, l + r - b);\n",
@@ -47,7 +52,7 @@
     "M4_own_side_bound": {
       "from": "      unique && l === b ? r : unique && r === b ? l : Math.max(l, r, l + r - b);\n",
       "to": "      unique && l === b ? l : unique && r === b ? r : Math.max(l, r, l + r - b);\n",
-      "expect": ["C5", "P1", "P2", "T1", "T10", "T11", "T15"]
+      "expect": ["C5", "P1", "P2", "T1", "T10", "T11", "T15", "T18"]
     },
     "M5_mirror_clause_off": {
       "from": "      unique && l === b ? r : unique && r === b ? l : Math.max(l, r, l + r - b);\n",
@@ -62,8 +67,21 @@
     "M7_untrimmed": {
       "from": "      const u = p.trim();\n",
       "to": "      const u = p;\n",
-      "expect": ["P1", "T12", "T13", "T14", "T15", "T16", "T17", "T5"],
-      "_note": "An untrimmed unit keeps the leading newline of the blank line under its heading and the trailing newline / \\r / spaces, so its string depends on the paragraph's POSITION in the section: once a paragraph moves under another heading it no longer matches its base copy and the invariant loses it. Reddens every axis where a paragraph changes position (T5, T12-T14, P1) or carries whitespace/CRLF separators (T15-T17)."
+      "expect": [
+        "P1",
+        "T12",
+        "T13",
+        "T14",
+        "T15",
+        "T16",
+        "T17",
+        "T18",
+        "T19",
+        "T20",
+        "T21",
+        "T5"
+      ],
+      "_note": "An untrimmed unit keeps the leading newline of the blank line under its heading and the trailing newline / \\r / spaces, so its string depends on the paragraph's POSITION in the section: once a paragraph moves under another heading it no longer matches its base copy and the invariant loses it. Reddens every axis where a paragraph changes position (T5, T12-T14, T19-T21, P1; T18 — section text becomes the preamble) or carries whitespace/CRLF separators (T15-T17)."
     },
     "M8_empty_units_counted": {
       "from": "      if (u !== \"\") counts.set(u, (counts.get(u) ?? 0) + 1);\n",
@@ -106,13 +124,35 @@
     "M15_preamble_first_line_dropped": {
       "from": "    const text = s.heading === \"\" ? s.text : s.text.split(\"\\n\").slice(1).join(\"\\n\");\n",
       "to": "    const text = s.text.split(\"\\n\").slice(1).join(\"\\n\");\n",
-      "expect": ["T14"]
+      "expect": ["T14", "T18"]
     },
     "M16_newlines_only_trimmed": {
       "from": "      const u = p.trim();\n",
       "to": "      const u = p.replace(/^\\n+|\\n+$/g, \"\");\n",
       "expect": ["T15", "T16", "T17"],
       "_note": "Strips newlines but keeps spaces and \\r: T15 (trailing spaces), T16 (whitespace-only blank lines leave a leading space), T17 (CRLF leaves \\r)."
+    },
+    "M17_check_on_fused_body": {
+      "_note": "Implementation review MEDIUM-2: counting the result by re-splitting `body` fuses a preamble placed last (ems__Bug 1b8a2c8a) with the last paragraph of a note without a trailing newline, so the resurrected text is never counted.",
+      "from": "  const mergedSecs = orderedKeys.flatMap((k) => splitSections(mergedByKey.get(k) as string));\n",
+      "to": "  const mergedSecs = splitSections(body);\n",
+      "expect": ["T18"]
+    },
+    "M18_reason_not_json_quoted": {
+      "from": "    const shown = JSON.stringify(unit.length > 60 ? `${unit.slice(0, 60)}…` : unit);\n",
+      "to": "    const shown = `\"${unit.length > 60 ? `${unit.slice(0, 60)}…` : unit}\"`;\n",
+      "expect": ["T20"]
+    },
+    "M19_reason_not_truncated": {
+      "from": "unit.length > 60 ?",
+      "to": "unit.length > 6000 ?",
+      "expect": ["T21"]
+    },
+    "M20_judged_only_when_keys_differ": {
+      "_note": "Implementation review LOW-1 (W6): the invariant also judges merges whose section keys are the same on all three sides — a divergent move with no heading change (T19) and the named price P1.",
+      "from": "  const lost = textCountViolation(bSecs, lSecs, rSecs, mergedSecs);\n",
+      "to": "  const ks = (x: { keyed: Map<string, unknown> }): string => [...x.keyed.keys()].sort().join(\"|\");\n  const lost = ks(b) === ks(l) && ks(b) === ks(r) ? null : textCountViolation(bSecs, lSecs, rSecs, mergedSecs);\n",
+      "expect": ["P1", "T19"]
     }
   }
 }

@@ -10,16 +10,21 @@ import { StructuredMerger, type YamlCodec } from "../../../../src/services/sync/
  * and must keep conflicting. C1-C8 must keep merging: independent additions
  * of a shared separator (C1), a paragraph repeated in two sections (C2), an
  * unrelated deletion next to a rename (C3), text new on both sides (C4), a
- * one-sided copy (C5, C8 — the original deleted on the other side), blank
- * units (C6 — a heading-only section has no text at stake), a repeated base
- * paragraph re-written elsewhere (C7 — judged for duplication only). T12-T17
- * are the inputs adversarial review found unlocked: a repeated tail (T12),
- * a one-character tail (T13), preamble text right after the frontmatter
- * (T14), trailing spaces stripped by the renaming side (T15), whitespace-only
- * blank lines (T16), CRLF (T17). P1 and P2 are the named price: counts cannot
- * tell a move from a delete + identical re-add, so a paragraph moved on one
- * side and deleted on the other (P1), or deleted on both and written again
- * by one (P2), conflicts.
+ * one-sided copy (C5 — the other side edits elsewhere; C8 — the other side
+ * deletes the original), blank units (C6 — a heading-only section has no
+ * text at stake), a repeated base paragraph re-written elsewhere (C7 —
+ * judged for duplication only). T12-T17 are the inputs adversarial review of
+ * the specification found unlocked: a repeated tail (T12), a one-character
+ * tail (T13), preamble text right after the frontmatter (T14), trailing
+ * spaces stripped by the renaming side (T15), whitespace-only blank lines
+ * (T16), CRLF (T17). Review of the implementation added: a heading taken off
+ * against a delete in a note without a trailing newline, where the preamble
+ * lands last and would fuse with the last paragraph (T18), a divergent move
+ * of one item with no heading change at all (T19), the reason staying one
+ * line (T20) and truncated (T21). P1, P2 and P3 are the named price: counts
+ * cannot tell a move from a delete + identical re-add, so a paragraph moved
+ * on one side and deleted on the other (P1), or deleted on both and written
+ * again — by one side (P2) or by each side in its own place (P3) — conflicts.
  */
 
 const codec: YamlCodec = {
@@ -284,6 +289,60 @@ describe("StructuredMerger — text the section keys cannot pair (ems__Bug 96a86
       bodied("## 2026-10-28\n\nСозвон.\n\n## 2026-10-29\n\nНовая запись.\n\n---"),
     );
     expect(r).toMatchObject({ status: "conflict", reason: expect.stringContaining("resurrect") });
+  });
+
+  it("T18 heading taken off locally, section deleted remotely, no trailing newline (the preamble lands last) → conflict, never fused", () => {
+    const r = run(
+      `${FM}## Контекст\n\nПроект запущен 01.10.\n\n## Итог\n\nСдано.`,
+      `${FM}Проект запущен 01.10.\n\n## Итог\n\nСдано.`,
+      `${FM}## Итог\n\nСдано.`,
+    );
+    expect(r).toMatchObject({ status: "conflict", reason: expect.stringContaining("resurrect") });
+  });
+
+  it("T19 one checklist item removed on both sides and re-added under a different existing day on each → conflict, never twice", () => {
+    const r = run(
+      bodied("## Пн\n\n- [ ] позвонить\n\nзаметка пн\n\n## Вт\n\nзаметка вт\n\n## Ср\n\nзаметка ср"),
+      bodied("## Пн\n\nзаметка пн\n\n## Вт\n\nзаметка вт\n\n- [ ] позвонить\n\n## Ср\n\nзаметка ср"),
+      bodied("## Пн\n\nзаметка пн\n\n## Вт\n\nзаметка вт\n\n## Ср\n\nзаметка ср\n\n- [ ] позвонить"),
+    );
+    expect(r).toMatchObject({ status: "conflict", reason: expect.stringContaining("duplicate") });
+  });
+
+  it("T20 the reason stays one line: a multi-line paragraph is quoted with its newline escaped", () => {
+    const r = run(
+      bodied("## S\n\npara one\n\n- [ ] a\n- [ ] b"),
+      bodied("## S\n\npara one\n\n## L split\n\n- [ ] a\n- [ ] b"),
+      bodied("## S\n\npara one\n\n## R split\n\n- [ ] a\n- [ ] b"),
+    );
+    expect(r.status).toBe("conflict");
+    if (r.status === "conflict") {
+      expect(r.reason).toContain('"- [ ] a\\n- [ ] b"');
+      expect(r.reason).not.toContain("\n");
+    }
+  });
+
+  it("T21 the reason truncates a long paragraph to 60 characters", () => {
+    const long = "Длинный абзац: ".padEnd(90, "ж");
+    const r = run(
+      bodied(`## S\n\npara one\n\n${long}`),
+      bodied(`## S\n\npara one\n\n## L split\n\n${long}`),
+      bodied(`## S\n\npara one\n\n## R split\n\n${long}`),
+    );
+    expect(r.status).toBe("conflict");
+    if (r.status === "conflict") {
+      expect(r.reason).toContain(`"${long.slice(0, 60)}…"`);
+      expect(r.reason).not.toContain(long);
+    }
+  });
+
+  it("P3 price: both sides pruned an old entry with its separator, each appended its own entry with its own → conflict (a re-add cannot be told from a split)", () => {
+    const r = run(
+      bodied("## 2026-10-27\n\nСделал отчёт.\n\n---\n\n## 2026-10-28\n\nСозвон."),
+      bodied("## 2026-10-28\n\nСозвон.\n\n## 2026-10-29\n\nНовая запись.\n\n---"),
+      bodied("## 2026-10-28\n\nСозвон.\n\nЕщё созвон.\n\n---"),
+    );
+    expect(r).toMatchObject({ status: "conflict", reason: expect.stringContaining("duplicate") });
   });
 
   it("P1 price: a paragraph moved to another section on one side, deleted on the other → conflict", () => {

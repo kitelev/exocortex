@@ -22,9 +22,11 @@
  *    (a rename onto a heading the base already has, a heading put over or
  *    taken off existing text, a rename against a delete when the renaming
  *    side kept a paragraph of the section verbatim) are caught on the
- *    OUTPUT: a base paragraph the merge would keep twice, or keep after one
- *    side deleted it, is a CONFLICT (ems__Bug 96a86732). Text changed inside
- *    a paragraph is not tracked by it.
+ *    OUTPUT: a base paragraph the merge would keep more times than the two
+ *    sides' own additions account for, or keep after one side deleted it, is
+ *    a CONFLICT (ems__Bug 96a86732). Counts cannot tell a move from a delete
+ *    plus an identical re-add, so such moves conflict too. Text changed
+ *    inside a paragraph is not tracked by it.
  *  - Any CONFLICT outcome is handed to quarantine by the caller (D17) —
  *    this module never guesses.
  *
@@ -617,20 +619,25 @@ function mergeBody(base: string, local: string, remote: string): BodyMergeResult
     .map((k) => mergedByKey.get(k) as string)
     .join("\n");
 
-  const lost = textCountViolation(base, local, remote, body);
+  // The result is counted section by section, as each side is: re-splitting
+  // `body` would fuse a heading-less section placed after a section without a
+  // trailing newline (a preamble placed last, ems__Bug 1b8a2c8a) into one
+  // paragraph neither side has, and the resurrected text would go uncounted.
+  const mergedSecs = orderedKeys.flatMap((k) => splitSections(mergedByKey.get(k) as string));
+  const lost = textCountViolation(bSecs, lSecs, rSecs, mergedSecs);
   if (lost !== null) return { ok: false, reason: lost };
   return { ok: true, body, warnings };
 }
 
 /**
- * Text units of a body for the output invariant: every blank-line separated
- * paragraph of every section (a line of only spaces, tabs or "\r" counts as
- * blank, so CRLF bodies split the same way), the heading line itself
- * excluded, trimmed, empty ones dropped.
+ * Text units of a body's sections for the output invariant: every blank-line
+ * separated paragraph of every section (a line of only spaces, tabs or "\r"
+ * counts as blank, so CRLF bodies split the same way), the heading line
+ * itself excluded, trimmed, empty ones dropped.
  */
-function textUnits(body: string): Map<string, number> {
+function textUnits(sections: Section[]): Map<string, number> {
   const counts = new Map<string, number>();
-  for (const s of splitSections(body)) {
+  for (const s of sections) {
     const text = s.heading === "" ? s.text : s.text.split("\n").slice(1).join("\n");
     for (const p of text.split(/\n[ \t\r]*\n/)) {
       const u = p.trim();
@@ -646,23 +653,25 @@ function textUnits(body: string): Map<string, number> {
  * result under two keys (duplicated) or under a new key the other side never
  * deleted (resurrected). Per base paragraph with counts b / l / r and m in the
  * result: a paragraph the base holds ONCE and one side kept must not outlive
- * the other side's deletion (b = l = 1 ⇒ m ≤ r, and mirrored); otherwise the
- * result holds at most what both sides' independent additions give
- * (m ≤ max(l, r, l + r - b)). A repeated base paragraph ("---", "TODO") is
- * judged for duplication only: a deleted copy re-written elsewhere cannot be
- * told from an independent addition. Text new on both sides and blank units
- * are not judged. Counts cannot tell a move from a delete + identical re-add,
- * so a paragraph moved on one side and deleted on the other — or deleted on
- * both and written again by one — is refused too. The unit is a whole
- * paragraph: text changed INSIDE it (a renamed section whose only paragraph,
- * a table or a dense list, was also edited) is not tracked. A violation is a
- * CONFLICT — this module refuses instead of guessing (D17).
+ * the other side's deletion (b = l = 1 ⇒ m ≤ r, and mirrored); otherwise
+ * m ≤ max(l, r, l + r - b) — what the two sides' independent additions give
+ * when no copy was deleted on both sides. A repeated base paragraph ("---",
+ * "TODO") is judged for duplication only: a deleted copy re-written
+ * elsewhere cannot be told from an independent addition. Text new on both
+ * sides and blank units are not judged. Counts cannot tell a move from a
+ * delete + identical re-add, so a paragraph moved on one side and deleted on
+ * the other — or deleted on both and written again, by one side or by each
+ * side in its own place (a journal entry pruned on both devices, each
+ * appending its own entry with the same "---") — is refused too. The unit is
+ * a whole paragraph: text changed INSIDE it (a renamed section whose only
+ * paragraph, a table or a dense list, was also edited) is not tracked. A
+ * violation is a CONFLICT — this module refuses instead of guessing (D17).
  */
 function textCountViolation(
-  base: string,
-  local: string,
-  remote: string,
-  merged: string,
+  base: Section[],
+  local: Section[],
+  remote: Section[],
+  merged: Section[],
 ): string | null {
   const bu = textUnits(base);
   const lu = textUnits(local);
@@ -678,7 +687,7 @@ function textCountViolation(
     if (m <= bound) continue;
     const shown = JSON.stringify(unit.length > 60 ? `${unit.slice(0, 60)}…` : unit);
     return m > Math.max(l, r)
-      ? `paragraph ${shown} would appear ${m === 1 ? "once" : `${m} times`}, more than on either side (local ${l}, remote ${r}) — a heading change the section keys cannot pair, refusing to duplicate text`
+      ? `paragraph ${shown} would appear ${m === 1 ? "once" : `${m} times`}, more than on either side (local ${l}, remote ${r}) — the section keys cannot pair it (a heading change, a move, or a deletion re-written on both sides), refusing to duplicate text`
       : `paragraph ${shown} was removed on one side (local ${l}, remote ${r}, base ${b}) but the merge keeps it under another heading — refusing to resurrect deleted text`;
   }
   return null;
