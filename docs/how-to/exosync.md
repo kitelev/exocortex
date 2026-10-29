@@ -219,7 +219,15 @@ consumed silently. Real conflicts go through `GatedStructuredMerger`:
   while each side has a new heading of its own is a conflict too: sections
   are matched by heading text, so a heading renamed differently on each side
   cannot be told from an unrelated delete + add, and keeping both would hold
-  the section twice.
+  the section twice. Heading changes the keys cannot pair at all — a rename
+  onto a heading the base already has (renumbering), a heading put over or
+  taken off existing text, a rename against a delete — are caught on the
+  output, paragraph by paragraph: a base paragraph the merge would keep more
+  times than either side holds it, or keep after one side deleted it, is a
+  conflict. Counts cannot tell a move from a delete plus an identical re-add,
+  so a paragraph moved on one side and deleted on the other is a conflict
+  too. The unit is a whole paragraph: a renamed section whose only paragraph
+  (a table, a dense list) was also edited still merges against a delete.
 - **SHACL merge-gate** (`MergeShaclGate`) — validates the merged candidate
   with the existing SHACL-lite validator before it may ship: intrinsic
   violations (minCount/maxCount/datatype) always gate; `sh:class` range

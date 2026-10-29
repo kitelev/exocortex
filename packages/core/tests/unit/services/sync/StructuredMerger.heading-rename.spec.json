@@ -13,23 +13,10 @@
   "red_re": "› (H\\d+) ",
   "mutants": {
     "M1_guard_never_fires": {
-      "_note": "The pre-fix behaviour. H7 and H11 redden too, as expected: they are the named prices of the guard.",
+      "_note": "The pre-fix behaviour. H7 and H11 redden too, as expected: they are the named prices of the guard. H2, H9 and H10 no longer redden: their inputs keep the section text twice, so the output invariant textCountViolation (ems__Bug 96a86732) refuses them too — two guards hold them. Breaking BOTH (this mutant plus the invariant off) reddens H2, H9, H10 again: manual flip, ems__Bug 96a86732 specification.",
       "from": "  if (removedOnBoth.length > 0) {\n",
       "to": "  if (removedOnBoth.length < 0) {\n",
-      "expect": [
-        "H1",
-        "H10",
-        "H11",
-        "H16",
-        "H18",
-        "H2",
-        "H22",
-        "H23",
-        "H24",
-        "H25",
-        "H7",
-        "H9"
-      ]
+      "expect": ["H1", "H11", "H16", "H18", "H22", "H23", "H24", "H25", "H7"]
     },
     "M3a_local_convergent_addition_counts": {
       "_note": "A heading added on BOTH sides (the same rename) must not count as a local-only addition.",
@@ -66,10 +53,10 @@
       "expect": ["H1", "H24"]
     },
     "M8_exactly_one_local_addition": {
-      "_note": "Locked by the axes where the LOCAL side adds two keys: H9, H16, H24.",
+      "_note": "Locked by the axes where the LOCAL side adds two keys: H16, H24. H9 adds two keys too but no longer reddens: its input keeps the section text twice, so the output invariant (ems__Bug 96a86732) refuses it as well.",
       "from": "    if (localOnly.length > 0 && remoteOnly.length > 0) {\n",
       "to": "    if (localOnly.length === 1 && remoteOnly.length > 0) {\n",
-      "expect": ["H16", "H24", "H9"]
+      "expect": ["H16", "H24"]
     },
     "M9_reason_names_first_key_only": {
       "from": "          .slice(0, 3)\n",

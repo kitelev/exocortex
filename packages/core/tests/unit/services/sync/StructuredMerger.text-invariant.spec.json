@@ -1,0 +1,118 @@
+{
+  "_doc": "Revert-verify for ems__Bug 96a86732 (ExoSync body merge resurrected a section deleted on one side when the other side renamed its heading, and kept text twice when the two sides put different headings over shared text), subject = StructuredMerger.ts, output invariant textCountViolation in mergeBody. Axes T*/C*/P* in StructuredMerger.text-invariant.test.ts, H* in StructuredMerger.heading-rename.test.ts (run together so a mutant that breaks a 1fdfd7fb control shows up). Not locked by any mutant here, regression controls of the merger: T2/T4/T9 (conflicted before through other guards; T9 is now held by the invariant too), C2/C3 (every base paragraph there has m = min(l, r) or 0, so no non-negative bound reddens them). P1/P2 are the named price (a move cannot be told from a delete + identical re-add). Named gap, asserted by no axis in either direction: text changed inside a paragraph (a renamed section whose only paragraph was also edited, a dense list split by different headings). Run: python3 -I ~/.claude/bin/mutant-driver.py <this spec> after setting tree and subject to YOUR checkout.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/sync/StructuredMerger.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/test-utils/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/services/sync/StructuredMerger.heading-rename.test.ts packages/core/tests/unit/services/sync/StructuredMerger.text-invariant.test.ts 2>&1",
+  "red_re": "› ([HTCP]\\d+) ",
+  "mutants": {
+    "M1_invariant_off": {
+      "from": "    if (m <= bound) continue;\n",
+      "to": "    if (m <= bound + Number.MAX_SAFE_INTEGER) continue;\n",
+      "expect": [
+        "P1",
+        "P2",
+        "T1",
+        "T10",
+        "T11",
+        "T12",
+        "T13",
+        "T14",
+        "T15",
+        "T16",
+        "T17",
+        "T3",
+        "T5",
+        "T6",
+        "T7",
+        "T8"
+      ]
+    },
+    "M2_no_unchanged_side_clause": {
+      "from": "      unique && l === b ? r : unique && r === b ? l : Math.max(l, r, l + r - b);\n",
+      "to": "      Math.max(l, r, l + r - b);\n",
+      "expect": ["P1", "P2", "T1", "T10", "T11", "T15"]
+    },
+    "M3_no_independent_additions": {
+      "from": "      unique && l === b ? r : unique && r === b ? l : Math.max(l, r, l + r - b);\n",
+      "to": "      unique && l === b ? r : unique && r === b ? l : Math.max(l, r);\n",
+      "expect": ["C1"]
+    },
+    "M4_own_side_bound": {
+      "from": "      unique && l === b ? r : unique && r === b ? l : Math.max(l, r, l + r - b);\n",
+      "to": "      unique && l === b ? l : unique && r === b ? r : Math.max(l, r, l + r - b);\n",
+      "expect": ["C5", "P1", "P2", "T1", "T10", "T11", "T15"]
+    },
+    "M5_mirror_clause_off": {
+      "from": "      unique && l === b ? r : unique && r === b ? l : Math.max(l, r, l + r - b);\n",
+      "to": "      unique && l === b ? r : Math.max(l, r, l + r - b);\n",
+      "expect": ["P2", "T10"]
+    },
+    "M6_heading_line_kept": {
+      "from": "    const text = s.heading === \"\" ? s.text : s.text.split(\"\\n\").slice(1).join(\"\\n\");\n",
+      "to": "    const text = s.text;\n",
+      "expect": ["T11"]
+    },
+    "M7_untrimmed": {
+      "from": "      const u = p.trim();\n",
+      "to": "      const u = p;\n",
+      "expect": ["P1", "T12", "T13", "T14", "T15", "T16", "T17", "T5"],
+      "_note": "An untrimmed unit keeps the leading newline of the blank line under its heading and the trailing newline / \\r / spaces, so its string depends on the paragraph's POSITION in the section: once a paragraph moves under another heading it no longer matches its base copy and the invariant loses it. Reddens every axis where a paragraph changes position (T5, T12-T14, P1) or carries whitespace/CRLF separators (T15-T17)."
+    },
+    "M8_empty_units_counted": {
+      "from": "      if (u !== \"\") counts.set(u, (counts.get(u) ?? 0) + 1);\n",
+      "to": "      if (u !== \"\" || u === \"\") counts.set(u, (counts.get(u) ?? 0) + 1);\n",
+      "expect": ["C6"]
+    },
+    "M9_repeated_judged_for_resurrection": {
+      "from": "    const unique = b === 1;\n",
+      "to": "    const unique = b >= 1;\n",
+      "expect": ["C7"]
+    },
+    "M10_new_text_judged": {
+      "_note": "The rejected alternative 'judge text new on both sides for duplication too' (planning §7).",
+      "from": "  for (const [unit, b] of bu) {\n    const l = lu.get(unit) ?? 0;\n    const r = ru.get(unit) ?? 0;\n    const m = mu.get(unit) ?? 0;\n    const unique = b === 1;\n    const bound =\n      unique && l === b ? r : unique && r === b ? l : Math.max(l, r, l + r - b);\n",
+      "to": "  for (const unit of new Set([...bu.keys(), ...mu.keys()])) {\n    const b = bu.get(unit) ?? 0;\n    const l = lu.get(unit) ?? 0;\n    const r = ru.get(unit) ?? 0;\n    const m = mu.get(unit) ?? 0;\n    const unique = b === 1;\n    const bound =\n      b === 0 ? Math.max(l, r) : unique && l === b ? r : unique && r === b ? l : Math.max(l, r, l + r - b);\n",
+      "expect": ["C4"]
+    },
+    "M11_split_on_bare_newlines_only": {
+      "_note": "The plan's split: whitespace-only blank lines and CRLF bodies no longer divide paragraphs (review MEDIUM-1).",
+      "from": "    for (const p of text.split(/\\n[ \\t\\r]*\\n/)) {\n",
+      "to": "    for (const p of text.split(/\\n{2,}/)) {\n",
+      "expect": ["T16", "T17"]
+    },
+    "M12_one_char_units_skipped": {
+      "from": "      if (u !== \"\") counts.set(u, (counts.get(u) ?? 0) + 1);\n",
+      "to": "      if (u.length > 1) counts.set(u, (counts.get(u) ?? 0) + 1);\n",
+      "expect": ["T13"]
+    },
+    "M13_repeated_not_judged": {
+      "_note": "Also locks 'l + r' and 'l + r - 1' in place of 'l + r - b' (review W1/W2): T12 reddens them, but their set equals this one, so they stay out of the spec.",
+      "from": "    if (m <= bound) continue;\n",
+      "to": "    if (m <= bound || b > 1) continue;\n",
+      "expect": ["T12"]
+    },
+    "M14_one_side_none_means_none": {
+      "from": "      unique && l === b ? r : unique && r === b ? l : Math.max(l, r, l + r - b);\n",
+      "to": "      unique && Math.min(l, r) === 0 && Math.max(l, r) >= 1 ? 0 : Math.max(l, r, l + r - b);\n",
+      "expect": ["C8"]
+    },
+    "M15_preamble_first_line_dropped": {
+      "from": "    const text = s.heading === \"\" ? s.text : s.text.split(\"\\n\").slice(1).join(\"\\n\");\n",
+      "to": "    const text = s.text.split(\"\\n\").slice(1).join(\"\\n\");\n",
+      "expect": ["T14"]
+    },
+    "M16_newlines_only_trimmed": {
+      "from": "      const u = p.trim();\n",
+      "to": "      const u = p.replace(/^\\n+|\\n+$/g, \"\");\n",
+      "expect": ["T15", "T16", "T17"],
+      "_note": "Strips newlines but keeps spaces and \\r: T15 (trailing spaces), T16 (whitespace-only blank lines leave a leading space), T17 (CRLF leaves \\r)."
+    }
+  }
+}
