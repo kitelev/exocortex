@@ -187,6 +187,22 @@ describe("VaultRDFIndexer file-removed listeners (RFC 9821a379 AC10, ticket 058b
     expect(listener).not.toHaveBeenCalled();
   });
 
+  it("D14 @req:23f10730-82f7-4037-b566-da79d5fa3378 a reified statement re-created during the rebuild gets no purging rebuild and is not announced", async () => {
+    slotTriples = [{ triple: "episodes/e1.md exo:Statement_subject" }];
+    const indexer = await makeIndexer();
+    const finish = holdRebuild();
+    const refresh = indexer.refresh();
+    const listener = jest.fn();
+    indexer.onFileRemoved(listener);
+    const removal = indexer.removeFile(file);
+    livePaths.add(file.path);
+    await finish();
+    await refresh;
+    await removal;
+    expect(events).toEqual(["rebuilt"]);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
   it("D6 @req:23f10730-82f7-4037-b566-da79d5fa3378 deleting a reified statement is announced after the rebuild that purges its edge", async () => {
     slotTriples = [{ triple: "episodes/e1.md exo:Statement_subject" }];
     const indexer = await makeIndexer();

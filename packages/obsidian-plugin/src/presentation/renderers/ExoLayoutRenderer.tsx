@@ -131,9 +131,11 @@ export class ExoLayoutRenderer {
    * review X1). A root that was not on the page when its render started is
    * judged by its generation alone. Both page renders in ExocortexPlugin
    * attach the root first; `UniversalLayoutRenderer.refresh()` re-renders the
-   * root it last drew into without checking that it is still attached, so a
-   * refresh after autoRenderLayout removed that root queries once and paints
-   * into the detached root — a cost, not a wrong page.
+   * root it last drew into without checking that it is still attached. When
+   * that root was removed and no new one drawn (edit mode, the Layout hidden by
+   * a setting, no metadata container, Obsidian re-rendering the preview before
+   * the observer redraws), a refresh queries once and paints into the detached
+   * root — a cost, not a wrong page.
    */
   private readonly roots = new WeakMap<
     HTMLElement,

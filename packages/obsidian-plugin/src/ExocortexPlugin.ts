@@ -1481,8 +1481,9 @@ export default class ExocortexPlugin extends Plugin {
               // earlier full rebuild already completed (or this one did and a
               // later step threw), the failure is not recorded and the waiting
               // blocks are woken; after a rebuild that failed for good the store
-              // stays cleared until the next successful one, so a block drawn or
-              // woken then shows its empty text (a named limitation).
+              // is refilled only per file until the next successful one, so a
+              // block drawn or woken then shows its empty text or an incomplete
+              // table (a named limitation, see IndexStability).
               this.indexStability.markInitialIndexFailed(
                 err instanceof Error ? err.message : String(err),
               );

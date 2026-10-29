@@ -20,9 +20,11 @@
  * triples for a moment; a full-rebuild window would miss everything.
  *
  * A complete index is never revoked: after a full rebuild fails for good (its
- * retries exhausted) the store stays cleared until the next successful one
- * while {@link isStable} holds, so a block drawn or woken then shows its empty
- * text — a named limitation (ticket 058bad52); closing it needs a «store
+ * retries exhausted) the store is left cleared — or, when it failed after the
+ * walk loaded the triples, without the inferred ones — and until the next
+ * successful rebuild only per-file updates refill it, while {@link isStable}
+ * holds; a block drawn or woken then shows its empty text or an incomplete
+ * table — a named limitation (ticket 058bad52); closing it needs a «store
  * incomplete» state on top of the retries.
  *
  * When the authoritative first walk FAILS and no complete index exists,
