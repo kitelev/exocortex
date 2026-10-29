@@ -1,0 +1,35 @@
+{
+  "_doc": "Revert-verify mutants for ticket 058bad52 (RFC 9821a379 AC7, bypass of ems__Bug 2bc09942): NamedQueryRunner.run refuses a body that still carries a $token after substitution, only when asked.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/NamedQueryRunner.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/services/NamedQueryRunner.unsetTokens.test.ts --verbose 2>&1",
+  "mutants": {
+    "KM1_raw_body_checked": {
+      "_note": "The check reads the body BEFORE substitution — $currentAsset with a value reads as unset.",
+      "from": "      const unset = findUnsetQueryTokens(substituted);\n",
+      "to": "      const unset = findUnsetQueryTokens(body);\n",
+      "expect": ["K2"]
+    },
+    "KM2_refusal_dropped": {
+      "from": "      if (unset.length > 0) throw new UnsetQueryTokenError(unset);\n",
+      "to": "      if (unset.length > 0 && unset.length < 0) throw new UnsetQueryTokenError(unset);\n",
+      "expect": ["K1"]
+    },
+    "KM3_refusal_by_default": {
+      "_note": "Existing callers (runScalar, CLI run-query) would start refusing.",
+      "from": "    if (options.refuseUnsetTokens === true) {\n",
+      "to": "    if (options.refuseUnsetTokens !== false) {\n",
+      "expect": ["K4"]
+    }
+  }
+}

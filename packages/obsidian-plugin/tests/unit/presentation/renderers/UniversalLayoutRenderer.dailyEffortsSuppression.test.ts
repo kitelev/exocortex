@@ -175,6 +175,7 @@ describe("UniversalLayoutRenderer — daily-efforts suppression (req a38ac95b h)
     (renderer as any).areaTreeRenderer = { render: jest.fn().mockResolvedValue(undefined) };
     (renderer as any).exoLayoutRenderer = {
       render: jest.fn().mockResolvedValue({ rendered: true, blockCount: 1 }),
+      beginPage: jest.fn(() => 7),
     };
     return { renderer, navSpy, tasksSpy };
   }

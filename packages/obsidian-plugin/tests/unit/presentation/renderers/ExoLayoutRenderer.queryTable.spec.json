@@ -1,0 +1,94 @@
+{
+  "_doc": "Revert-verify mutants for ticket 058bad52 (RFC 9821a379 §Шаг 2, AC8, AC11, review X1/X2/X4/X5): loading until the index is stable or its failure, answers of superseded or left pages dropped (per root, out-of-order renders), block-level error isolation incl. the shared daily computation, outcome mapping, link click. Review of the implementation (2026-10-30): EM14 locks the block error as text (M2). The answer of a page LEFT while its query is in flight (stable index) is locked by E15: EM2 (no recheck after the answer) reddens it; the subtler wrong form — after the answer re-check only the generation, not that the root is still on the page (review XA) — needs edits in two places (isCurrent in render() and its call in the fill) and has no single anchor, so it was flipped by hand on a tree copy: E15 red, the rest of this file green.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/presentation/renderers/ExoLayoutRenderer.tsx",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../..\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/presentation/renderers/ExoLayoutRenderer.queryTable.test.ts --verbose 2>&1",
+  "mutants": {
+    "EM1_no_stability_wait": {
+      "from": "      if (stability !== undefined && !stability.isStable()) {\n",
+      "to": "      if (stability !== undefined && !stability.isStable() && stability === undefined) {\n",
+      "expect": ["E1", "E3", "E11", "E14"]
+    },
+    "EM2_late_answer_painted": {
+      "from": "      if (!isCurrent()) return;\n      paint(toViewState(outcome, block));\n",
+      "to": "      paint(toViewState(outcome, block));\n",
+      "expect": ["E2", "E9", "E15"],
+      "_note": "E15 reddens by mechanism: without the re-check after the answer, the answer of a page left meanwhile is painted too."
+    },
+    "EM3_stale_render_queries": {
+      "_note": "The only staleness check after an await. A second check right before the query was defensive (no await since the render-time check when the fill did not wait) — the first matrix proved it with 0 reds, and it was removed.",
+      "from": "        if (!isCurrent()) return;\n        if (settled.kind === \"failed\") {\n",
+      "to": "        if (settled.kind === \"failed\") {\n",
+      "expect": ["E3", "E11"]
+    },
+    "EM4_block_error_propagates": {
+      "from": "      } catch (error) {\n        const message = error instanceof Error ? error.message : String(error);\n        this.deps.logger.error(\n          `ExoLayoutRenderer: block ${block.uid} failed",
+      "to": "      } catch (error) {\n        if (error !== undefined || error === undefined) throw error;\n        const message = error instanceof Error ? error.message : String(error);\n        this.deps.logger.error(\n          `ExoLayoutRenderer: block ${block.uid} failed",
+      "expect": ["E4", "E13", "E16"],
+      "_note": "E16 reddens by mechanism: a propagated error draws no error element at all."
+    },
+    "EM5_provider_failure_silent": {
+      "from": "      if (isCurrent()) {\n        paint({ kind: \"message\",",
+      "to": "      if (isCurrent() && message === \"\") {\n        paint({ kind: \"message\",",
+      "expect": ["E5"]
+    },
+    "EM6_empty_text_ignored": {
+      "from": "    emptyText: block.emptyText,\n",
+      "to": "    emptyText: \"Нет строк\",\n",
+      "expect": ["E6"]
+    },
+    "EM7_no_provider_silent": {
+      "from": "    if (provider === undefined) {\n      paint({\n",
+      "to": "    if (provider === undefined) {\n      if (block.query === \"\") paint({\n",
+      "expect": ["E7"]
+    },
+    "EM8_link_click_dead": {
+      "from": "            void this.deps.app.workspace.openLinkText(path, file.path, false);\n",
+      "to": "            void path;\n",
+      "expect": ["E8"]
+    },
+    "EM9_left_page_kept": {
+      "_note": "The review's X2: a fill of a page that was left still queries (and, out of order, a second time). E15 reddens by the same mechanism after the answer.",
+      "from": "        (!root.wasOnPage || el.isConnected)\n",
+      "to": "        (!root.wasOnPage || el.isConnected || root.wasOnPage)\n",
+      "expect": ["E10", "E11", "E15"]
+    },
+    "EM10_stale_birth_paints": {
+      "_note": "E10 reddens by mechanism: with the index stable no await precedes the query, so this render-time check is the only guard before the provider — without it the page left before its render reached the block (E10) queries too. Since the duplicate pre-query check was dropped, the guard covers both the paint (E12) and the query.",
+      "from": "    if (!isCurrent()) return;\n    paint({ kind: \"loading\" });\n",
+      "to": "    paint({ kind: \"loading\" });\n",
+      "expect": ["E10", "E12"]
+    },
+    "EM11_generation_ignored": {
+      "from": "        root.generation === pageGeneration &&\n",
+      "to": "        root.generation >= 0 &&\n",
+      "expect": ["E2", "E3", "E9", "E12"]
+    },
+    "EM12_failed_index_waits": {
+      "from": "        if (settled.kind === \"failed\") {\n",
+      "to": "        if (settled.kind === \"failed\" && block.query === \"\") {\n",
+      "expect": ["E14"]
+    },
+    "EM13_daily_failure_lost": {
+      "from": "      if (partitionError !== null) throw partitionError;\n",
+      "to": "      if (partitionError !== null && block.uid === \"\") throw partitionError;\n",
+      "expect": ["E13"]
+    },
+    "EM14_block_error_as_html": {
+      "_note": "Review M2: the error a block draws must not interpret its title or message as HTML.",
+      "from": "        }).textContent = `Блок «${block.title}»: ${message}`;\n",
+      "to": "        }).innerHTML = `Блок «${block.title}»: ${message}`;\n",
+      "expect": ["E16"]
+    }
+  }
+}

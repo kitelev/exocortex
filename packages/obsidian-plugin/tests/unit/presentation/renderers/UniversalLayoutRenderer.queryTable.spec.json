@@ -1,0 +1,59 @@
+{
+  "_doc": "Revert-verify mutants for ticket 058bad52: AC9 (a query-table Layout leaves the day's task table as is), forwarding of provider + stability, a page of the root begun on every render and its generation carried to the Layout render.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/presentation/renderers/UniversalLayoutRenderer.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../..\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/presentation/renderers/UniversalLayoutRenderer.queryTable.test.ts --verbose 2>&1",
+  "mutants": {
+    "NM1_any_block_suppresses": {
+      "_note": "The pre-#3910 shape: any block of a daily Layout steps the time table aside.",
+      "from": "      const dailyTasksBlockActive = claimedDailyPartitions.has(\"tasks\");\n",
+      "to": "      const dailyTasksBlockActive = claimedDailyPartitions.has(\"tasks\") || (layoutActive && layout !== null && layout.blocks.length > 0);\n",
+      "expect": ["N1"]
+    },
+    "UM1_provider_not_forwarded": {
+      "from": "      queryTableProvider: rfc009Services?.queryTableProvider,\n",
+      "to": "      queryTableProvider: undefined,\n",
+      "expect": ["U1", "U5", "U6"],
+      "_note": "U5 and U6 redden by mechanism: it drives the real ExoLayoutRenderer through two page renders, so the provider, the begun page and its carried generation all reach the painted block."
+    },
+    "UM2_stability_not_forwarded": {
+      "from": "      indexStability: rfc009Services?.indexStability,\n",
+      "to": "      indexStability: undefined,\n",
+      "expect": ["U4"]
+    },
+    "UM3_page_not_begun": {
+      "from": "    const pageGeneration = this.exoLayoutRenderer.beginPage(el);\n",
+      "to": "    const pageGeneration = 7;\n",
+      "expect": ["U2", "U5", "U6"],
+      "_note": "U5 and U6 redden by mechanism: it drives the real ExoLayoutRenderer through two page renders, so the provider, the begun page and its carried generation all reach the painted block."
+    },
+    "UM4_generation_not_carried": {
+      "from": "          pageGeneration,\n",
+      "to": "          pageGeneration + 1,\n",
+      "expect": ["U3", "U5", "U6"],
+      "_note": "U5 and U6 redden by mechanism: it drives the real ExoLayoutRenderer through two page renders, so the provider, the begun page and its carried generation all reach the painted block."
+    },
+    "UM5_page_begun_after_first_await": {
+      "_note": "Review M1: the page is begun only after the button groups build — a slower first render takes the generation from a refresh() that started later, the visible block stays on loading and the query runs twice. The build inside the mutant is caught so a build failure does not escape render() (review round 2, L4: otherwise the mutant changes a second property).",
+      "from": "    const pageGeneration = this.exoLayoutRenderer.beginPage(el);\n",
+      "to": "    const pageGeneration = await (async () => {\n      const f = this.app.workspace.getActiveFile();\n      if (f) {\n        try {\n          await this.buttonGroupsBuilder.build(f);\n        } catch {\n          // the real call below reports it\n        }\n      }\n      return this.exoLayoutRenderer.beginPage(el);\n    })();\n",
+      "expect": ["U5"]
+    },
+    "UM6_page_begun_after_lazy_loader": {
+      "_note": "Review round 2, M1: in production the lazy asset-graph loader is wired, so its await is the first one; the page begun after it loses the generation to a refresh() the same way.",
+      "from": "    const pageGeneration = this.exoLayoutRenderer.beginPage(el);\n",
+      "to": "    const pageGeneration = await (async () => {\n      const f = this.app.workspace.getActiveFile();\n      if (f && this.lazyAssetGraphLoader) {\n        try {\n          await this.lazyAssetGraphLoader.ensureLoadedByIRI(new IRI(vaultPathToIRI(f.path)));\n        } catch {\n          // the real call below reports it\n        }\n      }\n      return this.exoLayoutRenderer.beginPage(el);\n    })();\n",
+      "expect": ["U6"]
+    }
+  }
+}

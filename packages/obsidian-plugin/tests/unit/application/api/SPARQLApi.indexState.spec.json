@@ -1,0 +1,38 @@
+{
+  "_doc": "Revert-verify mutants for ticket 058bad52 (review RD/RE): SPARQLApi passes the indexer's rebuild state and its file-removed signal (RFC AC10) through.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/application/api/SPARQLApi.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../..\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/application/api/SPARQLApi.indexState.test.ts --verbose 2>&1",
+  "mutants": {
+    "CM1_refreshing_dropped": {
+      "from": "    return this.queryService.isIndexRefreshing();\n",
+      "to": "    return this.queryService.isIndexRefreshing() && false;\n",
+      "expect": ["C1"]
+    },
+    "CM2_settle_dropped": {
+      "from": "    return this.queryService.whenIndexRefreshSettled();\n",
+      "to": "    return Promise.resolve(this.queryService === undefined ? undefined : undefined);\n",
+      "expect": ["C2"]
+    },
+    "CM3_count_dropped": {
+      "from": "    return this.queryService.getCompletedIndexRefreshCount();\n",
+      "to": "    return this.queryService.getCompletedIndexRefreshCount() * 0;\n",
+      "expect": ["C3"]
+    },
+    "CM4_removal_dropped": {
+      "from": "    return this.queryService.onIndexFileRemoved(listener);\n",
+      "to": "    return this.queryService.onIndexFileRemoved(() => listener === undefined);\n",
+      "expect": ["C4"]
+    }
+  }
+}

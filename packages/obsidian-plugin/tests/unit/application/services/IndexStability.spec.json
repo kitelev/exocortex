@@ -1,0 +1,61 @@
+{
+  "_doc": "Revert-verify mutants for ticket 058bad52 (RFC 9821a379 decision 7): stable = a complete index (warm eager walk marked, or any completed full rebuild) AND no rebuild in flight; a failed first walk is reported; back-to-back rebuilds are waited for. Not recording the failure once a complete index exists is defensive while whenStable checks completeness first (SM6 locks that order); waking the waiters on that failure is NOT defensive (review of the implementation, L3: a rebuild may complete with no mark, and a waiter asleep before it never re-checks) — SM8.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/application/services/IndexStability.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../..\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/application/services/IndexStability.test.ts --verbose 2>&1",
+  "mutants": {
+    "SM1_mark_ignored": {
+      "from": "    return this.initialComplete || this.index.completedRefreshCount() > 0;\n",
+      "to": "    return this.index.completedRefreshCount() > 0;\n",
+      "expect": ["S1", "S4"]
+    },
+    "SM2_rebuild_ignored": {
+      "from": "    return this.hasCompleteIndex() && !this.index.isRefreshing();\n",
+      "to": "    return this.hasCompleteIndex();\n",
+      "expect": ["S2", "S3"]
+    },
+    "SM3_single_wait": {
+      "from": "        continue;\n",
+      "to": "        return { kind: \"stable\" };\n",
+      "expect": ["S3"]
+    },
+    "SM4_rebuilds_not_counted": {
+      "_note": "The review's X4: a later successful rebuild never recovers the index. S9 reddens by mechanism: the waiter is woken by the failure mark (SM7), and only a counted rebuild makes its re-check stable rather than failed (SM4).",
+      "from": "    return this.initialComplete || this.index.completedRefreshCount() > 0;\n",
+      "to": "    return this.initialComplete || this.index.completedRefreshCount() < 0;\n",
+      "expect": ["S6", "S7", "S9"]
+    },
+    "SM5_failure_ignored": {
+      "from": "      if (this.failure !== null) {\n",
+      "to": "      if (this.failure !== null && this.failure === \"\") {\n",
+      "expect": ["S5", "S6"]
+    },
+    "SM6_failure_before_completeness": {
+      "from": "      if (this.hasCompleteIndex()) return { kind: \"stable\" };\n      if (this.failure !== null) {\n        return { kind: \"failed\", message: this.failure };\n      }\n",
+      "to": "      if (this.failure !== null) {\n        return { kind: \"failed\", message: this.failure };\n      }\n      if (this.hasCompleteIndex()) return { kind: \"stable\" };\n",
+      "expect": ["S6"]
+    },
+    "SM7_waiter_not_woken": {
+      "from": "    wake();\n",
+      "to": "    void wake;\n",
+      "expect": ["S1", "S5", "S9"],
+      "_note": "S9 reddens by mechanism: the waiter is woken by the failure mark (SM7), and only a counted rebuild makes its re-check stable rather than failed (SM4)."
+    },
+    "SM8_failure_wake_skipped": {
+      "_note": "The form before the implementation review: the failure reported after a complete index exists returned without waking the waiters.",
+      "from": "    if (!this.hasCompleteIndex()) this.failure = message;\n    this.fire();\n",
+      "to": "    if (this.hasCompleteIndex()) return;\n    this.failure = message;\n    this.fire();\n",
+      "expect": ["S9"]
+    }
+  }
+}

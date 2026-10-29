@@ -6,6 +6,7 @@ import { Literal } from "../domain/models/rdf/Literal";
 import { evaluateWithExoEval } from "../exoql/evaluateWithExoEval";
 import type { ExoQLEvalResult } from "../exoql/evaluateWithExoEval";
 import { iriToObsidianName } from "../utilities/iriToObsidianName";
+import { findUnsetQueryTokens } from "./findUnsetQueryTokens";
 
 /**
  * RFC 78c2b7d0 C4 — read side of the homoiconic CQRS-lite model.
@@ -87,6 +88,32 @@ export interface NamedQueryScalar {
   readonly iri?: string;
 }
 
+/** Options of {@link NamedQueryRunner.run}. */
+export interface NamedQueryRunOptions {
+  /**
+   * RFC 9821a379 decision 8 — refuse to evaluate when a `$<name>` token is left
+   * in the body after substitution: throw {@link UnsetQueryTokenError} instead.
+   * The engine reads such a token as an unbound variable and a comparison with
+   * it passes every row (ems__Bug 2bc09942). Off by default — the existing
+   * callers (`runScalar`, CLI `run-query`) keep their exact behaviour.
+   */
+  readonly refuseUnsetTokens?: boolean;
+}
+
+/**
+ * A `$<name>` token survived substitution (see
+ * {@link NamedQueryRunOptions.refuseUnsetTokens}). `tokens` are the names
+ * without `$`, in order of first appearance.
+ */
+export class UnsetQueryTokenError extends Error {
+  constructor(readonly tokens: readonly string[]) {
+    super(
+      `NamedQueryRunner: no value for ${tokens.map((t) => `$${t}`).join(", ")} — the query was not evaluated (a $token is a parameter; left unset it is an unbound variable, and a comparison with one lets every row through).`,
+    );
+    this.name = "UnsetQueryTokenError";
+  }
+}
+
 /**
  * Narrow port consumed by `GroundingExecutor` for the `property_set`
  * `targetValueQuery` value-source. Keeps the executor decoupled from the full
@@ -119,11 +146,16 @@ export class NamedQueryRunner implements NamedQueryRunnerPort {
   async run(
     queryUid: string,
     context: NamedQueryContext = {},
+    options: NamedQueryRunOptions = {},
   ): Promise<ExoQLEvalResult | null> {
     if (!queryUid) return null;
     const body = await this.queryBodyResolver.resolveSparql(queryUid);
     if (!body) return null;
     const substituted = this.substitute(body, context);
+    if (options.refuseUnsetTokens === true) {
+      const unset = findUnsetQueryTokens(substituted);
+      if (unset.length > 0) throw new UnsetQueryTokenError(unset);
+    }
     return evaluateWithExoEval(substituted, { store: this.tripleStore });
   }
 

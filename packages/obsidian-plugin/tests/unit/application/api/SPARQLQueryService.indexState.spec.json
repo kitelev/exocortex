@@ -1,0 +1,38 @@
+{
+  "_doc": "Revert-verify mutants for ticket 058bad52 (review RE): SPARQLQueryService passes the indexer's rebuild state through (same axes as SPARQLApi — the real chain).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/application/services/SPARQLQueryService.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../..\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/application/api/SPARQLApi.indexState.test.ts --verbose 2>&1",
+  "mutants": {
+    "QM1_refreshing_dropped": {
+      "from": "    return this.indexer.isRefreshing();\n",
+      "to": "    return this.indexer.isRefreshing() && false;\n",
+      "expect": ["C1"]
+    },
+    "QM2_settle_dropped": {
+      "from": "    return this.indexer.whenRefreshSettled();\n",
+      "to": "    return Promise.resolve(this.indexer === undefined ? undefined : undefined);\n",
+      "expect": ["C2"]
+    },
+    "QM3_count_dropped": {
+      "from": "    return this.indexer.getCompletedRefreshCount();\n",
+      "to": "    return this.indexer.getCompletedRefreshCount() * 0;\n",
+      "expect": ["C3"]
+    },
+    "QM4_removal_dropped": {
+      "from": "    return this.indexer.onFileRemoved(listener);\n",
+      "to": "    return this.indexer.onFileRemoved(() => listener === undefined);\n",
+      "expect": ["C4"]
+    }
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "_doc": "Revert-verify mutants for ticket 058bad52: the unset-token scanner skips string literals (live REPLACE(…, \"$1\")), long strings with escapes, comments and IRIs, reads < as an operator when no IRIREF follows; names are Unicode, unique, in first-appearance order.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/findUnsetQueryTokens.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && CI=true node --experimental-vm-modules node_modules/jest/bin/jest.js --config packages/core/jest.config.js packages/core/tests/unit/services/NamedQueryRunner.unsetTokens.test.ts --verbose 2>&1",
+  "mutants": {
+    "FM1_strings_scanned": {
+      "_note": "Type-preserving: `&& c === '#'` after the quote check is TS2367 (no overlap) and core ts-jest type-checks. K11 reddens by mechanism: its $z sits inside a ''' long string.",
+      "from": "    if (c === '\"' || c === \"'\") {\n",
+      "to": "    if ((c === '\"' || c === \"'\") && sparql.length < 0) {\n",
+      "expect": ["K3", "K6", "K7", "K9", "K11"]
+    },
+    "FM2_comments_scanned": {
+      "from": "    if (c === \"#\") {\n",
+      "to": "    if (c === \"#\" && c !== \"#\") {\n",
+      "expect": ["K3"]
+    },
+    "FM3_iris_scanned": {
+      "_note": "K1 reddens by mechanism: with IRIs not skipped, the # inside <…exo#Asset_label> opens a 'comment' that hides the real $who to the end of the line.",
+      "from": "      if (iriLength > 0) {\n",
+      "to": "      if (iriLength > 0 && sparql.length < 0) {\n",
+      "expect": ["K1", "K3"]
+    },
+    "FM4_ascii_names": {
+      "from": "const VARNAME = /^[\\p{L}\\p{N}_][\\p{L}\\p{N}\\p{M}_\\u00B7\\u203F\\u2040]*/u;\n",
+      "to": "const VARNAME = /^[A-Za-z0-9_][A-Za-z0-9_\\u00B7\\u203F\\u2040]*/u;\n",
+      "expect": ["K5"]
+    },
+    "FM5_duplicates_kept": {
+      "from": "        if (!seen.has(token[0])) {\n",
+      "to": "        if (!seen.has(token[0]) || names.length >= 0) {\n",
+      "expect": ["K10"]
+    },
+    "FM6_long_string_as_short": {
+      "_note": "K7 stays green by mechanism: its long string holds two ESCAPED quotes, and read as a chain of short strings it closes at the same place. K11 reddens by mechanism: its $z sits inside a ''' long string.",
+      "from": "  if (sparql.startsWith(long, start)) {\n",
+      "to": "  if (sparql.startsWith(long, start) && start < 0) {\n",
+      "expect": ["K6", "K11"]
+    },
+    "FM7_short_escape_ignored": {
+      "from": "    j += sparql[j] === \"\\\\\" ? 2 : 1;\n",
+      "to": "    j += sparql[j] === \"\\\\\" ? 1 : 1;\n",
+      "expect": ["K9"]
+    },
+    "FM8_long_escape_ignored": {
+      "_note": "The review's X7b: an escaped quote before the closing triple quote ends the long string early.",
+      "from": "      k += sparql[k] === \"\\\\\" ? 2 : 1;\n",
+      "to": "      k += sparql[k] === \"\\\\\" ? 1 : 1;\n",
+      "expect": ["K7"]
+    },
+    "FM9_lt_always_iri": {
+      "_note": "The review's RS: `<` read as an IRI to the nearest `>` swallows `?s < $dayEnd) . ?e <…p>`.",
+      "from": "    if (ch.charCodeAt(0) <= 0x20 || IRI_FORBIDDEN.includes(ch)) return 0;\n",
+      "to": "    if (sparql.length < 0) return 0;\n",
+      "expect": ["K8"]
+    },
+    "FM10_single_quote_long_as_short": {
+      "_note": "Review L5: only \"\"\" opens a long string; a ''' string with a bare quote inside ends early and the rest reads as tokens.",
+      "from": "  if (sparql.startsWith(long, start)) {\n",
+      "to": "  if (sparql.startsWith(long, start) && quote === '\"') {\n",
+      "expect": ["K11"]
+    }
+  }
+}

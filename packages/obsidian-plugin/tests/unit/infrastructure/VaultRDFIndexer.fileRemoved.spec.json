@@ -1,0 +1,111 @@
+{
+  "_doc": "Revert-verify mutants for ticket 058bad52 (RFC 9821a379 AC10, founder's decision 2026-10-30): the indexer announces a deletion that changed the store, AFTER the change — after the in-flight rebuild (dropping the triples it read of the deleted file, unless the path came back), after the rebuild a deleted reified statement or FileSpace declaration needs; not a deletion of a file without triples, not an edit; unsubscribe is per listener; a failing listener is contained. `notifyFileRemoved` iterates a copy of the set (a listener added during a notification is not called by it) — defensive, no mutant.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/infrastructure/VaultRDFIndexer.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/infrastructure/VaultRDFIndexer.fileRemoved.test.ts --verbose 2>&1",
+  "mutants": {
+    "DM1_announced_before_removal": {
+      "_note": "Announcing before the removal can only be unconditional — the gate is the removal's own result — so every axis that wants the announcement after the change, or none at all, reddens. D12 reddens by mechanism: it combines a rebuild in flight with a deleted reified statement, so the announce order, the wait for the rebuild, the purging rebuild and the after-rebuild branch all meet in it. D13 reddens by the same mechanism for a deleted FileSpace declaration. D14 reddens by mechanism: a reified statement re-created during the rebuild is kept and not announced only after the wait and the «path exists again» check.",
+      "from": "    if (await this.removeFileFromStore(file)) {\n      this.notifyFileRemoved(file.path);\n    }\n",
+      "to": "    this.notifyFileRemoved(file.path);\n    await this.removeFileFromStore(file);\n",
+      "expect": [
+        "D1",
+        "D2",
+        "D6",
+        "D8",
+        "D9",
+        "D10",
+        "D11",
+        "D12",
+        "D13",
+        "D14"
+      ]
+    },
+    "DM2_rebuild_not_awaited": {
+      "_note": "Without the wait the removal runs inside the rebuild window: removed and announced before the rebuild settles (D2, D9), and before the path is re-created (D10). D12 reddens by mechanism: it combines a rebuild in flight with a deleted reified statement, so the announce order, the wait for the rebuild, the purging rebuild and the after-rebuild branch all meet in it. D13 reddens by the same mechanism for a deleted FileSpace declaration. D14 reddens by mechanism: a reified statement re-created during the rebuild is kept and not announced only after the wait and the «path exists again» check.",
+      "from": "      await this.refreshInFlight;\n      // The rebuild lists the vault once",
+      "to": "      void this.refreshInFlight;\n      // The rebuild lists the vault once",
+      "expect": ["D2", "D9", "D10", "D12", "D13", "D14"]
+    },
+    "DM3_any_triple_removal_announced": {
+      "_note": "The announcement placed where triples are dropped: an edit announces a deletion (D3), a deletion is announced twice (D1, D9), and a file without triples is announced (D8).",
+      "from": "    const triples = await this.tripleStore.match(fileIRI);\n    return this.tripleStore.removeAll(triples);\n",
+      "to": "    const triples = await this.tripleStore.match(fileIRI);\n    const removed = await this.tripleStore.removeAll(triples);\n    this.notifyFileRemoved(filePath);\n    return removed;\n",
+      "expect": ["D1", "D3", "D8", "D9"]
+    },
+    "DM4_unsubscribe_noop": {
+      "from": "      this.fileRemovedListeners.delete(listener);\n",
+      "to": "      void listener;\n",
+      "expect": ["D4"]
+    },
+    "DM5_listener_failure_escapes": {
+      "from": "      try {\n        listener(path);\n      } catch (error) {\n",
+      "to": "      listener(path);\n      try {\n        void path;\n      } catch (error) {\n",
+      "expect": ["D5"]
+    },
+    "DM6_statement_rebuild_silent": {
+      "_note": "The review's MX1: a deletion that needs a full rebuild is not announced. D12 reddens by mechanism: it combines a rebuild in flight with a deleted reified statement, so the announce order, the wait for the rebuild, the purging rebuild and the after-rebuild branch all meet in it.",
+      "from": "      await this.refresh();\n      return true;\n    }\n    const removed",
+      "to": "      await this.refresh();\n      return false;\n    }\n    const removed",
+      "expect": ["D6", "D12"]
+    },
+    "DM7_unsubscribe_clears_all": {
+      "_note": "The review's MX3.",
+      "from": "      this.fileRemovedListeners.delete(listener);\n",
+      "to": "      this.fileRemovedListeners.clear();\n",
+      "expect": ["D7"]
+    },
+    "DM8_rebuild_read_triples_kept": {
+      "_note": "The base's early return after the rebuild: the triples the walk read of the deleted file stay (review, MEDIUM). D12 reddens by mechanism: it combines a rebuild in flight with a deleted reified statement, so the announce order, the wait for the rebuild, the purging rebuild and the after-rebuild branch all meet in it. D13 reddens by the same mechanism for a deleted FileSpace declaration.",
+      "from": "      if (this.app.vault.getAbstractFileByPath(file.path) !== null) {\n",
+      "to": "      if (this.app.vault.getAbstractFileByPath(file.path) !== undefined) {\n",
+      "expect": ["D9", "D12", "D13"]
+    },
+    "DM9_recreated_path_dropped": {
+      "from": "      if (this.app.vault.getAbstractFileByPath(file.path) !== null) {\n",
+      "to": "      if (this.app.vault.getAbstractFileByPath(file.path) === undefined) {\n",
+      "expect": ["D10", "D14"],
+      "_note": "D14 reddens by mechanism: a reified statement re-created during the rebuild is kept and not announced only after the wait and the «path exists again» check."
+    },
+    "DM10_unchanged_store_announced": {
+      "_note": "The review's P2: deleting an attachment re-renders the page.",
+      "from": "    return removed > 0;\n",
+      "to": "    return removed >= 0;\n",
+      "expect": ["D8"]
+    },
+    "DM11_filespace_rebuild_silent": {
+      "_note": "The review's MX1, the FileSpace branch. D13 reddens by the same mechanism for a deleted FileSpace declaration.",
+      "from": "        await this.refresh();\n        return true;\n      }\n    }\n",
+      "to": "        await this.refresh();\n        return false;\n      }\n    }\n",
+      "expect": ["D11", "D13"]
+    },
+    "DM12_after_rebuild_subject_triples_only": {
+      "_note": "Review L1: after waiting for the rebuild in flight, only the file's own triples are dropped — the purging rebuild a deleted reified statement needs is skipped, and its edge stays in the table. D13 reddens by the same mechanism for a deleted FileSpace declaration.",
+      "from": "      if (this.app.vault.getAbstractFileByPath(file.path) !== null) {\n        return false;\n      }\n    }\n",
+      "to": "      if (this.app.vault.getAbstractFileByPath(file.path) !== null) {\n        return false;\n      }\n      return (await this.removeFileTriples(file.path)) > 0;\n    }\n",
+      "expect": ["D12", "D13"]
+    },
+    "DM13_after_rebuild_filespace_skipped": {
+      "_note": "Review round 2, L2: after waiting for the rebuild in flight, the FileSpace branch is skipped — the deleted declaration keeps its mount excluded.",
+      "from": "      if (this.app.vault.getAbstractFileByPath(file.path) !== null) {\n        return false;\n      }\n    }\n    // Deleting a FileSpace declaration",
+      "to": "      if (this.app.vault.getAbstractFileByPath(file.path) !== null) {\n        return false;\n      }\n    } else\n    // Deleting a FileSpace declaration",
+      "expect": ["D13"]
+    },
+    "DM14_recreated_statement_rebuilt": {
+      "_note": "Review round 3, L1: the «path exists again» check is applied only to a file that was not a reified statement — a natural refactor «check right before dropping the triples» that sends a re-created statement to the purging rebuild and announces it.",
+      "from": "      if (this.app.vault.getAbstractFileByPath(file.path) !== null) {\n",
+      "to": "      if (this.app.vault.getAbstractFileByPath(file.path) !== null && !(await this.wasReifiedStatement(file.path))) {\n",
+      "expect": ["D14"]
+    }
+  }
+}

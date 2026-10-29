@@ -1,0 +1,87 @@
+{
+  "_doc": "Revert-verify mutants for ticket 058bad52: onload passes the row provider and the stability flag to the layout renderer; the flag reads the index rebuild state and count; the first complete index is marked exactly at the #3472 moments (warm eager walk / post-resolved refresh) and a failure of the authoritative walk is reported; a deletion the index applied re-renders the open page (RFC AC10).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/ExocortexPlugin.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../packages/obsidian-plugin\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/ExocortexPlugin.test.ts -t 'W([2-9]|1[0-3]) ' --verbose 2>&1",
+  "mutants": {
+    "WM2_provider_not_passed": {
+      "from": "          queryTableProvider,\n          indexStability: this.indexStability,\n",
+      "to": "          queryTableProvider: queryTableProvider === undefined ? queryTableProvider : undefined,\n          indexStability: this.indexStability,\n",
+      "expect": ["W2"]
+    },
+    "WM3_post_resolve_not_marked": {
+      "from": "              this.indexStability.markInitialIndexComplete();\n              this.autoRenderLayout();\n",
+      "to": "              this.autoRenderLayout();\n",
+      "expect": ["W3", "W10"]
+    },
+    "WM4_cold_eager_marks": {
+      "_note": "W6 and W8 redden by mechanism: a cold eager walk marked complete makes the partial index 'complete' — the failed post-resolve refresh is then ignored (W6) and the index is stable before 'resolved' (W8).",
+      "from": "                if (cacheWasWarmAtWalkStart) {\n                  this.indexStability.markInitialIndexComplete();\n",
+      "to": "                if (cacheWasWarmAtWalkStart || !cacheWasWarmAtWalkStart) {\n                  this.indexStability.markInitialIndexComplete();\n",
+      "expect": ["W3", "W5", "W6", "W8"]
+    },
+    "WM5_warm_eager_not_marked": {
+      "from": "                if (cacheWasWarmAtWalkStart) {\n                  this.indexStability.markInitialIndexComplete();\n",
+      "to": "                if (cacheWasWarmAtWalkStart && !cacheWasWarmAtWalkStart) {\n                  this.indexStability.markInitialIndexComplete();\n",
+      "expect": ["W4", "W7"]
+    },
+    "WM6_post_resolve_failure_silent": {
+      "from": "              this.indexStability.markInitialIndexFailed(\n                err instanceof Error ? err.message : String(err),\n              );\n            });\n",
+      "to": "              void err;\n            });\n",
+      "expect": ["W6"]
+    },
+    "WM7_refreshing_unwired": {
+      "from": "        isRefreshing: () => this.sparql.isIndexRefreshing(),\n",
+      "to": "        isRefreshing: () => this.sparql.isIndexRefreshing() && false,\n",
+      "expect": ["W7"]
+    },
+    "WM8_count_unwired": {
+      "from": "        completedRefreshCount: () => this.sparql.getCompletedIndexRefreshCount(),\n",
+      "to": "        completedRefreshCount: () => this.sparql.getCompletedIndexRefreshCount() * 0,\n",
+      "expect": ["W8"]
+    },
+    "WM9_warm_eager_failure_silent": {
+      "from": "                if (cacheWasWarmAtWalkStart) {\n                  this.indexStability.markInitialIndexFailed(\n",
+      "to": "                if (cacheWasWarmAtWalkStart && !cacheWasWarmAtWalkStart) {\n                  this.indexStability.markInitialIndexFailed(\n",
+      "expect": ["W9"]
+    },
+    "WM11_removal_not_rerendered": {
+      "_note": "RFC AC10 (founder's decision 2026-10-30): without the subscription nothing is scheduled — W12 and W13 read the same schedule.",
+      "from": "      this.sparql.onIndexFileRemoved(() => {\n",
+      "to": "      void ((): void => {\n",
+      "expect": ["W11", "W12", "W13"]
+    },
+    "WM12_desktop_only": {
+      "_note": "The review's MX2: Desktop↔Mobile parity.",
+      "from": "      this.sparql.onIndexFileRemoved(() => {\n",
+      "to": "      if (!Platform.isMobile) this.sparql.onIndexFileRemoved(() => {\n",
+      "expect": ["W12"]
+    },
+    "WM13_not_debounced": {
+      "_note": "The review's MX4.",
+      "from": "          \"auto-layout-delete\",\n          () => this.autoRenderLayout(),\n          150,\n",
+      "to": "          \"auto-layout-delete\",\n          () => this.autoRenderLayout(),\n          0,\n",
+      "expect": ["W13"]
+    },
+    "WM14_timer_renders_nothing": {
+      "from": "          \"auto-layout-delete\",\n          () => this.autoRenderLayout(),\n",
+      "to": "          \"auto-layout-delete\",\n          () => this.layoutRenderer === undefined,\n",
+      "expect": ["W11"]
+    },
+    "WM10_cold_eager_failure_reported": {
+      "from": "                if (cacheWasWarmAtWalkStart) {\n                  this.indexStability.markInitialIndexFailed(\n",
+      "to": "                if (cacheWasWarmAtWalkStart || !cacheWasWarmAtWalkStart) {\n                  this.indexStability.markInitialIndexFailed(\n",
+      "expect": ["W10"]
+    }
+  }
+}

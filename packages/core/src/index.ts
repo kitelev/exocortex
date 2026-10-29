@@ -157,7 +157,10 @@ export {
   type NamedQueryContext,
   type NamedQueryParam,
   type NamedQueryScalar,
+  type NamedQueryRunOptions,
+  UnsetQueryTokenError,
 } from "./services/NamedQueryRunner";
+export { findUnsetQueryTokens } from "./services/findUnsetQueryTokens";
 export type { ExoQLEvalResult } from "./exoql/evaluateWithExoEval";
 export { iriToObsidianName } from "./utilities/iriToObsidianName";
 export { labelTermBearers } from "./utilities/assetLabelLookup";

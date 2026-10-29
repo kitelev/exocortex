@@ -1,0 +1,59 @@
+{
+  "_doc": "Revert-verify mutants for ticket 058bad52: what the query-table block shows — title, loading, empty text, footer (cut + time), link cells handled in-app, alert.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/presentation/components/LayoutBlocks.tsx",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../..\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/presentation/components/QueryTableBlockView.test.tsx --verbose 2>&1",
+  "mutants": {
+    "BM1_loading_as_empty": {
+      "from": "          {QUERY_TABLE_LOADING_TEXT}\n",
+      "to": "          {QUERY_TABLE_LOADING_TEXT === \"\" ? \"\" : \"Нет строк\"}\n",
+      "expect": ["B1"]
+    },
+    "BM2_cut_not_named": {
+      "from": "  return shown < total ? `показано ${shown} из ${total} · ${time}` : time;\n",
+      "to": "  return shown < total ? time : time;\n",
+      "expect": ["B3"]
+    },
+    "BM3_time_not_shown": {
+      "from": "  const time = `запрос ${elapsedMs} мс`;\n",
+      "to": "  const time = `запрос`;\n",
+      "expect": ["B2", "B3"]
+    },
+    "BM4_link_as_text": {
+      "from": "                    {cell.kind === \"link\" ? (\n",
+      "to": "                    {cell.kind === \"link\" && cell.path === \"\" ? (\n",
+      "expect": ["B4", "B7"]
+    },
+    "BM5_problem_not_alert": {
+      "from": "        <div className=\"exocortex-layout-block-error\" role=\"alert\">\n",
+      "to": "        <div className=\"exocortex-layout-block-error\">\n",
+      "expect": ["B5"]
+    },
+    "BM6_empty_text_replaced": {
+      "from": "        <div className=\"exocortex-layout-block-empty\">{state.emptyText}</div>\n",
+      "to": "        <div className=\"exocortex-layout-block-empty\">{state.emptyText === \"\" ? \"\" : \"No rows\"}</div>\n",
+      "expect": ["B2"]
+    },
+    "BM7_title_dropped": {
+      "_note": "The review's RG.",
+      "from": "      {title !== \"\" && <h3 className=\"exocortex-layout-block-title\">{title}</h3>}\n",
+      "to": "      {title === \"\" && <h3 className=\"exocortex-layout-block-title\">{title}</h3>}\n",
+      "expect": ["B6"]
+    },
+    "BM8_default_not_prevented": {
+      "from": "                          e.preventDefault();\n",
+      "to": "                          void e;\n",
+      "expect": ["B7"]
+    }
+  }
+}

@@ -90,6 +90,21 @@ export class VaultRDFIndexer {
    * Consumed by the one-shot «indexing complete» notice (Issue #3472).
    */
   private lastWalkStats: VaultWalkStats | null = null;
+  /**
+   * Full rebuilds (`refresh()`) that completed — each leaves a complete store
+   * (RFC 9821a379 decision 7: any successful full walk makes the index stable).
+   */
+  private completedRefreshes = 0;
+
+  /**
+   * Told which file was deleted, once the deletion has changed the store (RFC
+   * 9821a379 AC10, ticket 058bad52 — founder's decision 2026-10-30: an open
+   * page re-renders when a note its query reads is deleted). Only deletions
+   * that changed the store: an edit re-renders through
+   * `metadataCache.on("changed")`, and a file without triples (an
+   * attachment, an excluded folder) changes no query answer.
+   */
+  private readonly fileRemovedListeners = new Set<(path: string) => void>();
 
   /**
    * Periodic per-file progress sink for FULL walks (#al-activitylog-progress).
@@ -372,17 +387,54 @@ export class VaultRDFIndexer {
     return slots.length > 0;
   }
 
+  /**
+   * Subscribe to deletions that changed the store; the listener runs AFTER
+   * the file's triples are gone (after the in-flight rebuild, if one was
+   * running). Returns the unsubscribe function.
+   */
+  onFileRemoved(listener: (path: string) => void): () => void {
+    this.fileRemovedListeners.add(listener);
+    return () => {
+      this.fileRemovedListeners.delete(listener);
+    };
+  }
+
   async removeFile(file: TFile): Promise<void> {
+    if (await this.removeFileFromStore(file)) {
+      this.notifyFileRemoved(file.path);
+    }
+  }
+
+  private notifyFileRemoved(path: string): void {
+    for (const listener of [...this.fileRemovedListeners]) {
+      try {
+        listener(path);
+      } catch (error) {
+        this.logger.warn("file-removed listener failed", {
+          filePath: path,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
+  /** Drops a deleted file from the store; true when the store changed. */
+  private async removeFileFromStore(file: TFile): Promise<boolean> {
     if (this.refreshInFlight !== null) {
       await this.refreshInFlight;
-      return; // the refresh saw the current (post-delete) vault state
+      // The rebuild lists the vault once, at its start: a file deleted after
+      // the walk read it keeps its triples. Drop them below — unless the path
+      // exists again (re-created; its own events index it).
+      if (this.app.vault.getAbstractFileByPath(file.path) !== null) {
+        return false;
+      }
     }
     // Deleting a FileSpace declaration un-excludes its mount — previously
     // skipped files must be indexed, which only a full reindex can do.
     if (this.fileSpaceDeclarations.has(file.path)) {
       if (await this.rediscoverFileSpaces()) {
         await this.refresh();
-        return;
+        return true;
       }
     }
     // Issue #3936: deleting a reified exo__Statement leaves its materialized
@@ -391,12 +443,13 @@ export class VaultRDFIndexer {
     // as updateFile).
     if (await this.wasReifiedStatement(file.path)) {
       await this.refresh();
-      return;
+      return true;
     }
-    await this.errorHandler.executeWithRetry(
+    const removed = await this.errorHandler.executeWithRetry(
       async () => this.removeFileTriples(file.path),
       { context: "VaultRDFIndexer.removeFile", filePath: file.path }
     );
+    return removed > 0;
   }
 
   async renameFile(file: TFile, oldPath: string): Promise<void> {
@@ -625,10 +678,11 @@ export class VaultRDFIndexer {
     return frontmatterDeclaresFileSpace(fm);
   }
 
-  private async removeFileTriples(filePath: string): Promise<void> {
+  /** Removes the file's subject triples; returns how many were removed. */
+  private async removeFileTriples(filePath: string): Promise<number> {
     const fileIRI = new IRI(`obsidian://vault/${encodeURI(filePath)}`);
     const triples = await this.tripleStore.match(fileIRI);
-    await this.tripleStore.removeAll(triples);
+    return this.tripleStore.removeAll(triples);
   }
 
   /**
@@ -660,6 +714,7 @@ export class VaultRDFIndexer {
           await this.tripleStore.addAll(result.triples);
           await this.runInference();
           this.recordWalkStats(result.summary, startedAt);
+          this.completedRefreshes += 1;
         },
         { context: "VaultRDFIndexer.refresh", operation: "refresh" }
       )
@@ -691,6 +746,28 @@ export class VaultRDFIndexer {
 
   getTripleStore(): InMemoryTripleStore {
     return this.tripleStore;
+  }
+
+  /**
+   * RFC 9821a379 decision 7 — true while a FULL rebuild (`refresh()`) is in
+   * flight: the store was cleared and is being refilled, so a query answers
+   * from a partial graph. Incremental per-file updates do not count.
+   */
+  isRefreshing(): boolean {
+    return this.refreshInFlight !== null;
+  }
+
+  /**
+   * Resolves once the in-flight full rebuild (if any) has settled — success
+   * or failure alike (the latch never rejects). Immediately when none runs.
+   */
+  whenRefreshSettled(): Promise<void> {
+    return this.refreshInFlight ?? Promise.resolve();
+  }
+
+  /** Number of full rebuilds (`refresh()`) that completed successfully. */
+  getCompletedRefreshCount(): number {
+    return this.completedRefreshes;
   }
 
   /**

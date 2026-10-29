@@ -154,6 +154,116 @@ function resolveCell(row: AssetRelation, column: string): string {
 }
 
 /**
+ * QueryTableBlockView — the `query-table` block (RFC 9821a379, ticket 058bad52).
+ *
+ * States, decided upstream by `ExoLayoutRenderer`:
+ *  - `loading` — the index is not stable yet (AC8): «Загрузка…», never the
+ *    empty text, so a cold start does not claim «there are no rows».
+ *  - `message` — a problem named by the query's label (AC7, AC11).
+ *  - `rows` — the table; an empty result shows the block's `emptyText`. The
+ *    footer names the cut («показано N из M» when the limit trimmed rows) and
+ *    the query time (AC10 — readable on desktop AND iPhone without tooling).
+ *
+ * Security: every header, cell and message is JSX-escaped.
+ */
+export type QueryTableViewCell =
+  | { readonly kind: "link"; readonly path: string; readonly text: string }
+  | { readonly kind: "text"; readonly text: string };
+
+export type QueryTableViewState =
+  | { readonly kind: "loading" }
+  | { readonly kind: "message"; readonly text: string }
+  | {
+      readonly kind: "rows";
+      readonly columns: readonly string[];
+      readonly rows: readonly (readonly QueryTableViewCell[])[];
+      readonly total: number;
+      readonly elapsedMs: number;
+      readonly emptyText: string;
+    };
+
+export interface QueryTableBlockViewProps {
+  readonly title: string;
+  readonly state: QueryTableViewState;
+  readonly onLinkClick?: (path: string) => void;
+}
+
+export const QUERY_TABLE_LOADING_TEXT = "Загрузка…";
+
+export function queryTableFooter(shown: number, total: number, elapsedMs: number): string {
+  const time = `запрос ${elapsedMs} мс`;
+  return shown < total ? `показано ${shown} из ${total} · ${time}` : time;
+}
+
+export const QueryTableBlockView: React.FC<QueryTableBlockViewProps> = ({
+  title,
+  state,
+  onLinkClick,
+}) => {
+  return (
+    <div className="exocortex-layout-block exocortex-layout-block-query-table">
+      {title !== "" && <h3 className="exocortex-layout-block-title">{title}</h3>}
+      {state.kind === "loading" && (
+        <div className="exocortex-layout-block-loading" role="status" aria-busy="true">
+          {QUERY_TABLE_LOADING_TEXT}
+        </div>
+      )}
+      {state.kind === "message" && (
+        <div className="exocortex-layout-block-error" role="alert">
+          {state.text}
+        </div>
+      )}
+      {state.kind === "rows" && state.rows.length === 0 && (
+        <div className="exocortex-layout-block-empty">{state.emptyText}</div>
+      )}
+      {state.kind === "rows" && state.rows.length > 0 && (
+        <table className="exocortex-layout-block-query-table-table" role="table">
+          <thead>
+            <tr>
+              {state.columns.map((col) => (
+                <th key={col} scope="col">
+                  {col}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {state.rows.map((row, r) => (
+              <tr key={r}>
+                {row.map((cell, c) => (
+                  <td key={c}>
+                    {cell.kind === "link" ? (
+                      <a
+                        className="internal-link"
+                        data-href={cell.path}
+                        href={cell.path}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onLinkClick?.(cell.path);
+                        }}
+                      >
+                        {cell.text}
+                      </a>
+                    ) : (
+                      cell.text
+                    )}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {state.kind === "rows" && (
+        <div className="exocortex-layout-block-meta">
+          {queryTableFooter(state.rows.length, state.total, state.elapsedMs)}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/**
  * DailyEffortsBlockView — renders one class-partition of the day's efforts
  * (Actions / Tasks / Projects) as a clickable list (RL#4b / VL#4, RFC
  * pn__DailyNote toggles). The partition + visibility are decided upstream in

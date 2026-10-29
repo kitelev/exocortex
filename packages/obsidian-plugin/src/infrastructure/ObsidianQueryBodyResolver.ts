@@ -47,6 +47,20 @@ export class ObsidianQueryBodyResolver implements IQueryBodyResolver {
   }
 
   /**
+   * `exo__Asset_label` of the asset with this UID — the same UID→path index
+   * as {@link resolveSparql}, so a `query-table` block names the query it ran
+   * (RFC 9821a379 AC7/AC11). `null` when the asset or its label is missing.
+   */
+  resolveLabel(queryUid: string): string | null {
+    if (!queryUid) return null;
+    const file = this.findFileByUid(queryUid);
+    if (!file) return null;
+    const label =
+      this.app.metadataCache.getFileCache(file)?.frontmatter?.["exo__Asset_label"];
+    return typeof label === "string" && label.trim() !== "" ? label.trim() : null;
+  }
+
+  /**
    * Reset the UID→path cache. Plugin layer should invoke this when
    * vault events fire (rename / delete / metadata change) — kept opt-in
    * so the resolver stays a pure read-side adapter.

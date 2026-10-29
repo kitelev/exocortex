@@ -86,6 +86,8 @@ import {
 } from "./infrastructure/repositories";
 import { ObsidianVaultAdapter } from "./adapters/ObsidianVaultAdapter";
 import { ObsidianQueryBodyResolver } from "./infrastructure/ObsidianQueryBodyResolver";
+import { IndexStability } from "./application/services/IndexStability";
+import { createObsidianQueryTableProvider } from "./presentation/renderers/layout/obsidianQueryTable";
 import { createIsInWrongFolderHostFunction } from "./infrastructure/precondition/createIsInWrongFolderHostFunction";
 import { createHasEmptyPropertiesHostFunction } from "./infrastructure/precondition/createHasEmptyPropertiesHostFunction";
 import { TaskTrackingService } from "./application/services/TaskTrackingService";
@@ -367,6 +369,12 @@ export default class ExocortexPlugin extends Plugin {
   api!: ExocortexAPI;
   override settings!: ExocortexSettings;
   printNameRuleService!: PrintNameRuleService;
+  /**
+   * RFC 9821a379 decision 7 (ticket 058bad52) — «индекс стабилен»: the first
+   * complete index exists and no full rebuild is in flight. `query-table`
+   * blocks wait on it instead of answering from a partial store.
+   */
+  indexStability!: IndexStability;
   commandResolver!: CommandResolver;
   preconditionEvaluator!: PreconditionEvaluator;
   groundingExecutor!: GroundingExecutor;
@@ -585,6 +593,27 @@ export default class ExocortexPlugin extends Plugin {
         this.activityLog.record(indexProgressToActivity(processed, total)),
       );
       this.api = new ExocortexAPI(this);
+      this.indexStability = new IndexStability({
+        isRefreshing: () => this.sparql.isIndexRefreshing(),
+        whenRefreshSettled: () => this.sparql.whenIndexRefreshSettled(),
+        completedRefreshCount: () => this.sparql.getCompletedIndexRefreshCount(),
+      });
+      // RFC 9821a379 AC10 (ticket 058bad52, founder's decision 2026-10-30) —
+      // deleting a note changes no other file's frontmatter, so no
+      // `metadataCache.on("changed")` re-render follows it and a query-table
+      // block on the open page keeps the deleted row. Re-render once the index
+      // has dropped the file's triples (debounced like the workspace events).
+      // Registered on both platforms. No unsubscribe: sparql.dispose()
+      // unregisters the indexer's vault events; a removal begun before unload
+      // may still call this, but onunload disposes the TimerManager first and
+      // a disposed one ignores the call.
+      this.sparql.onIndexFileRemoved(() => {
+        this.timerManager.setTimeout(
+          "auto-layout-delete",
+          () => this.autoRenderLayout(),
+          150,
+        );
+      });
 
       // RFC 22b50a17 Phase 4 — AssetSpace materialization tracker.
       // Constructed eagerly; first `refresh()` runs inside the
@@ -718,6 +747,16 @@ export default class ExocortexPlugin extends Plugin {
         queryBodyResolver,
         tripleStore,
       );
+      // RFC 9821a379 §Шаг 2 (ticket 058bad52) — rows of `query-table` Layout
+      // blocks: the same runner + body resolver, `$currentAsset` = the open
+      // page; IRI cells read as display names through the same resolver the
+      // Relations table uses.
+      const queryTableProvider = createObsidianQueryTableProvider({
+        app: this.app,
+        plugin: this,
+        runner: namedQueryRunner,
+        queryLabels: queryBodyResolver,
+      });
       // req f5b79260 (ticket 316dd2be) — the creation gate: a vault-declared
       // `exocmd__CreationGate` rule judges every file the grounding engine
       // and the service registry are about to CREATE (same rule, same verdict
@@ -930,6 +969,8 @@ export default class ExocortexPlugin extends Plugin {
           // is false the renderer shows an "indexing…" placeholder in place of
           // an empty COMMANDS region instead of a blank layout.
           isStoreReady: () => this.sparql.isReady(),
+          queryTableProvider,
+          indexStability: this.indexStability,
         },
       );
 
@@ -1415,6 +1456,9 @@ export default class ExocortexPlugin extends Plugin {
               // overwrites by id, so this is safe even if the first
               // attempt registered nothing.
               await initExocmdPalette();
+              // RFC 9821a379 decision 7 — the authoritative initial index is
+              // complete (the same moment the #3472 notice below reports).
+              this.indexStability.markInitialIndexComplete();
               this.autoRenderLayout();
               // Issue #3472 — the initial full reindex is done AND the
               // dependent surfaces (palette, layouts) just re-rendered:
@@ -1431,6 +1475,17 @@ export default class ExocortexPlugin extends Plugin {
               this.logger.error(
                 "Failed to reindex triple store after metadataCache resolved",
                 err,
+              );
+              // RFC 9821a379 decision 7 — the authoritative first walk failed:
+              // query-table blocks say so instead of spinning forever. When an
+              // earlier full rebuild already completed (or this one did and a
+              // later step threw), the failure is not recorded and the waiting
+              // blocks are woken; after a rebuild that failed for good the store
+              // is refilled only per file until the next successful one, so a
+              // block drawn or woken then shows its empty text or an incomplete
+              // table (a named limitation, see IndexStability).
+              this.indexStability.markInitialIndexFailed(
+                err instanceof Error ? err.message : String(err),
               );
             });
         }),
@@ -1739,6 +1794,13 @@ export default class ExocortexPlugin extends Plugin {
                 // happen before `autoRenderLayout` so the Command Palette is
                 // ready for the very first user Cmd-P invocation.
                 await initExocmdPalette();
+                // RFC 9821a379 decision 7 — an eager walk over an ALREADY
+                // resolved metadataCache is complete (the #3472 eager-notice
+                // condition); a cold-cache walk is partial and waits for the
+                // post-resolve refresh to mark it.
+                if (cacheWasWarmAtWalkStart) {
+                  this.indexStability.markInitialIndexComplete();
+                }
                 // Issue #3171 — re-render to upgrade currently-open file
                 // from the fast path to the full resolver. The strategy
                 // switch in `DynamicCommandButtonGroupBuilder` is per-call,
@@ -1793,6 +1855,14 @@ export default class ExocortexPlugin extends Plugin {
                   "Failed to eagerly initialize triple store",
                   err,
                 );
+                // RFC 9821a379 decision 7 — over an already-resolved cache the
+                // eager walk IS the authoritative one (no post-resolve refresh
+                // may follow); on a cold cache the post-resolve refresh decides.
+                if (cacheWasWarmAtWalkStart) {
+                  this.indexStability.markInitialIndexFailed(
+                    err instanceof Error ? err.message : String(err),
+                  );
+                }
               })
               .finally(() => {
                 resolve();
