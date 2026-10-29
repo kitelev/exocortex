@@ -13,7 +13,8 @@ import { CommandResolver, PreconditionEvaluator, GroundingExecutor } from "@kite
 import type { LayoutSelector, ITripleStore, LazyAssetGraphLoader } from "@kitelev/exocortex-core";
 import { IRI, vaultPathToIRI, WikiLinkHelpers } from "@kitelev/exocortex-core";
 import type { ExoLayoutRepository } from "@plugin/infrastructure/repositories";
-import { ExoLayoutRenderer } from "./ExoLayoutRenderer";
+import { ExoLayoutRenderer, type ExoLayoutRendererDeps } from "./ExoLayoutRenderer";
+import type { QueryTableProvider } from "./layout/QueryTableProvider";
 import { collectDayEfforts } from "./helpers/DailyEffortsCollector";
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
 import { EventListenerManager } from '@plugin/adapters/events/EventListenerManager';
@@ -163,6 +164,14 @@ export class UniversalLayoutRenderer {
        * layout. Omit to keep the legacy behaviour (no skeleton).
        */
       isStoreReady?: () => boolean;
+      /**
+       * RFC 9821a379 §Шаг 2 (ticket 058bad52) — rows of `query-table` blocks
+       * and the «индекс стабилен» flag they wait on. Both forwarded to
+       * {@link ExoLayoutRenderer}; absent ⇒ the block says so / treats the
+       * index as stable.
+       */
+      queryTableProvider?: QueryTableProvider;
+      indexStability?: ExoLayoutRendererDeps["indexStability"];
     },
   ) {
     this.app = app;
@@ -226,6 +235,8 @@ export class UniversalLayoutRenderer {
       // (vault.adapter), no Platform gate → desktop↔mobile parity.
       dailyEffortsProvider: (file) =>
         collectDayEfforts(file, this.vaultAdapter, this.metadataExtractor),
+      queryTableProvider: rfc009Services?.queryTableProvider,
+      indexStability: rfc009Services?.indexStability,
     });
   }
 
@@ -380,6 +391,10 @@ export class UniversalLayoutRenderer {
   }
 
   public async render(source: string, el: HTMLElement, _ctx: MarkdownPostProcessorContext): Promise<void> {
+    // RFC 9821a379 §Шаг 2 — a page render of this root starts: it supersedes
+    // the pending query-table fills of every earlier render of the same root,
+    // with or without a Layout, even if an earlier render finishes later.
+    const pageGeneration = this.exoLayoutRenderer.beginPage(el);
     try {
       this.rootContainer = el;
       const config = LayoutConfigParser.parse(source);
@@ -471,7 +486,13 @@ export class UniversalLayoutRenderer {
       // skip the default AreaTree + Relations sections (full replace mode).
       // Properties block and action buttons are always preserved per RFC §62.
       if (layoutActive && layout !== null) {
-        await this.exoLayoutRenderer.render(el, currentFile, layout, relations);
+        await this.exoLayoutRenderer.render(
+          el,
+          currentFile,
+          layout,
+          relations,
+          pageGeneration,
+        );
         if (!layout.coexistsWithDefault) {
           this.currentFilePath = currentFile.path;
           this.currentClaimedDailyPartitions = claimedDailyPartitions;

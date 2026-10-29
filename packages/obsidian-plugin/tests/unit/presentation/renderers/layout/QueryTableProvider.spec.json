@@ -1,0 +1,105 @@
+{
+  "_doc": "Revert-verify mutants for ticket 058bad52 (RFC 9821a379 AC5/AC7/AC10/AC11): the row provider — projection columns, cells (link / text / lexical literal / decoded path), limit, unset-token refusal, $currentAsset, errors as named outcomes (never a throw), time from the label lookup on.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/presentation/renderers/layout/QueryTableProvider.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/presentation/renderers/layout/QueryTableProvider.test.ts --verbose 2>&1",
+  "mutants": {
+    "PM1_columns_binding_order": {
+      "_note": "rows[0].variables() — binding order (core axis V1, ticket 035da1eb).",
+      "from": "      const columns = [...result.variables];\n",
+      "to": "      const columns = result.rows[0] !== undefined ? [...result.rows[0].variables()] : [...result.variables];\n",
+      "expect": ["P1", "P11"]
+    },
+    "PM2_dates_through_Date": {
+      "_note": "A date-looking literal formatted through Date — the zone shift the RFC forbids.",
+      "from": "  if (term instanceof Literal) return { kind: \"text\", text: term.value };\n",
+      "to": "  if (term instanceof Literal) return { kind: \"text\", text: /^\\d{4}-\\d{2}-\\d{2}/.test(term.value) ? new Date(term.value).toLocaleString() : term.value };\n",
+      "expect": ["P11"]
+    },
+    "PM3_missing_file_linked": {
+      "from": "      if (text !== null) return { kind: \"link\", path, text };\n",
+      "to": "      if (text !== null || path !== null) return { kind: \"link\", path, text: text ?? path };\n",
+      "expect": ["P2"]
+    },
+    "PM4_limit_ignored": {
+      "from": "        .slice(0, block.limit)\n",
+      "to": "        .slice(0, block.limit === 0 ? 0 : undefined)\n",
+      "expect": ["P3"]
+    },
+    "PM5_tokens_not_refused": {
+      "from": "          { refuseUnsetTokens: true },\n",
+      "to": "          { refuseUnsetTokens: false },\n",
+      "expect": ["P4"]
+    },
+    "PM6_no_current_asset": {
+      "from": "          { currentAsset: vaultPathToIRI(file.path) },\n",
+      "to": "          { currentAsset: vaultPathToIRI(file.path) === \"\" ? \"\" : undefined },\n",
+      "expect": ["P5"]
+    },
+    "PM7_error_thrown": {
+      "from": "      // Evaluation AND cell building (display-name resolution reads vault\n",
+      "to": "      if (error !== undefined || error === undefined) throw error;\n      // Evaluation AND cell building (display-name resolution reads vault\n",
+      "expect": ["P6", "P10"]
+    },
+    "PM8_label_dropped": {
+      "_note": "P12 reddens by mechanism: the label lookup is not called, so its time is not counted.",
+      "from": "      queryLabel = deps.queryLabel(block.query) ?? block.query;\n",
+      "to": "      queryLabel = block.query;\n",
+      "expect": ["P4", "P6", "P10", "P12"]
+    },
+    "PM9_not_found_as_empty": {
+      "from": "      if (result === null) return { kind: \"not-found\", queryLabel };\n",
+      "to": "      if (result === null) return { kind: \"rows\", queryLabel, columns: [], rows: [], total: 0, elapsedMs: 0 };\n",
+      "expect": ["P6"]
+    },
+    "PM10_time_lost": {
+      "from": "        elapsedMs: Math.round(now() - startedAt),\n",
+      "to": "        elapsedMs: Math.round(startedAt - startedAt),\n",
+      "expect": ["P7", "P12"]
+    },
+    "PM11_problem_unnamed": {
+      "from": "  const q = `Запрос «${outcome.queryLabel}»`;\n",
+      "to": "  const q = `Запрос`;\n",
+      "expect": ["P8"]
+    },
+    "PM12_label_lookup_untimed": {
+      "_note": "The clock starts after the label lookup — the uid-index scan it pays for leaves the shown time.",
+      "from": "    const startedAt = now();\n    let queryLabel = block.query;\n    try {\n      queryLabel = deps.queryLabel(block.query) ?? block.query;\n    } catch {\n      // The label only names the query; its uid names it too.\n    }\n",
+      "to": "    let queryLabel = block.query;\n    try {\n      queryLabel = deps.queryLabel(block.query) ?? block.query;\n    } catch {\n      // The label only names the query; its uid names it too.\n    }\n    const startedAt = now();\n",
+      "expect": ["P12"]
+    },
+    "PM13_label_failure_throws": {
+      "from": "    } catch {\n      // The label only names the query; its uid names it too.\n    }\n",
+      "to": "    } finally {\n      // The label only names the query; its uid names it too.\n    }\n",
+      "expect": ["P10"]
+    },
+    "PM14_path_not_decoded": {
+      "_note": "The review's RA: a daily note «2026-08-10 Note.md» and Cyrillic names would be text, not links.",
+      "from": "    const path = iriToVaultPath(term.value);\n",
+      "to": "    const path = term.value.startsWith(\"obsidian://vault/\") ? term.value.slice(17) : null;\n",
+      "expect": ["P9"]
+    },
+    "PM15_foreign_iri_blank": {
+      "_note": "Review L4.",
+      "from": "    return { kind: \"text\", text: iriToObsidianName(term.value) ?? term.value };\n",
+      "to": "    return { kind: \"text\", text: iriToObsidianName(term.value) ?? \"\" };\n",
+      "expect": ["P13"]
+    },
+    "PM16_bnode_blank": {
+      "_note": "Review L4.",
+      "from": "  if (term instanceof BlankNode) return { kind: \"text\", text: `_:${term.id}` };\n",
+      "to": "  if (term instanceof BlankNode) return { kind: \"text\", text: \"\" };\n",
+      "expect": ["P14"]
+    }
+  }
+}

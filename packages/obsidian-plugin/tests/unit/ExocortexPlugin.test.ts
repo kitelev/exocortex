@@ -7,7 +7,7 @@ import { LoggerFactory } from "../../src/adapters/logging/LoggerFactory";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 import { UniversalLayoutRenderer } from "../../src/presentation/renderers/UniversalLayoutRenderer";
 import { CommandManager } from "../../src/application/services/CommandManager";
-import { TaskStatusService, DI_TOKENS, registerCoreServices, resetContainer } from "@kitelev/exocortex-core";
+import { TaskStatusService, DI_TOKENS, registerCoreServices, resetContainer, IRI, Literal, Triple } from "@kitelev/exocortex-core";
 import { TaskTrackingService } from "../../src/application/services/TaskTrackingService";
 import { AliasSyncService } from "../../src/application/services/AliasSyncService";
 import { ExocortexSettingTab } from "../../src/presentation/settings/ExocortexSettingTab";
@@ -299,6 +299,215 @@ describe("ExocortexPlugin", () => {
 
       expect(internals.layoutSelector.resolve(["[[pn__DailyNote]]"])?.uid).toBe("layout-daily");
       expect(internals.layoutSelector.resolve(["[[ems__Task]]"])).toBeNull();
+    });
+  });
+
+  // RFC 9821a379 §Шаг 2 / decision 7 (ticket 058bad52) — the query-table row
+  // provider and the «индекс стабилен» flag are wired in onload, and the flag
+  // is marked at the two moments the plugin already treats as «indexing
+  // complete» (#3472): a warm-cache eager walk, or the post-`resolved` refresh.
+  describe("RFC 9821a379 — query-table provider and index stability wired in onload", () => {
+    let resolvedHandler: (() => void) | undefined;
+    let spies: jest.SpyInstance[] = [];
+
+    beforeEach(async () => {
+      resolvedHandler = undefined;
+      mockMetadataCache.on.mockImplementation((event: string, cb: () => void) => {
+        if (event === "resolved") resolvedHandler = cb;
+        return { unsubscribe: jest.fn() };
+      });
+      const sparqlApiModule = await import("../../src/application/api/SPARQLApi");
+      spies = [
+        jest.spyOn(sparqlApiModule.SPARQLApi.prototype, "refresh").mockResolvedValue(undefined),
+        jest.spyOn(sparqlApiModule.SPARQLApi.prototype, "query").mockResolvedValue({ bindings: [], count: 0 } as never),
+      ];
+    });
+
+    afterEach(() => {
+      spies.forEach((s) => s.mockRestore());
+      delete mockMetadataCache.initialized;
+    });
+
+    it("W2 @req:23f10730-82f7-4037-b566-da79d5fa3378 the layout renderer receives the row provider and the plugin's index-stability flag", async () => {
+      await plugin.onload();
+      const options = (UniversalLayoutRenderer as jest.Mock).mock.calls[0][4];
+      // An optional option, so TypeScript does not prove it is passed — the
+      // wiring is what this axis checks (the provider itself: O1, O2).
+      expect(options.queryTableProvider).toEqual(expect.any(Function));
+      expect(options.indexStability).toBe(plugin.indexStability);
+    });
+
+    it("W3 @req:23f10730-82f7-4037-b566-da79d5fa3378 the index is not stable between 'resolved' and the end of the authoritative refresh; it is after", async () => {
+      let finish!: () => void;
+      spies[0].mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      await plugin.onload();
+      await flushPromises();
+      expect(plugin.indexStability.isStable()).toBe(false);
+      resolvedHandler!();
+      await flushPromises();
+      expect(plugin.indexStability.isStable()).toBe(false);
+      finish();
+      await flushPromises();
+      expect(plugin.indexStability.isStable()).toBe(true);
+    });
+
+    it("W4 @req:23f10730-82f7-4037-b566-da79d5fa3378 an eager walk over an already-resolved metadataCache makes the index stable without waiting for 'resolved'", async () => {
+      mockMetadataCache.initialized = true;
+      await plugin.onload();
+      await flushPromises();
+      expect(plugin.indexStability.isStable()).toBe(true);
+    });
+
+    it("W5 @req:23f10730-82f7-4037-b566-da79d5fa3378 a metadataCache that resolves DURING the eager walk does not make the partial store stable", async () => {
+      let finishWalk!: () => void;
+      spies[1].mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finishWalk = () => resolve({ bindings: [], count: 0 });
+          }),
+      );
+      await plugin.onload();
+      await flushPromises();
+      mockMetadataCache.initialized = true;
+      finishWalk();
+      await flushPromises();
+      expect(plugin.indexStability.isStable()).toBe(false);
+    });
+
+    it("W6 @req:23f10730-82f7-4037-b566-da79d5fa3378 a failed authoritative refresh is reported to the blocks instead of an endless wait", async () => {
+      spies[0].mockRejectedValue(new Error("walk failed"));
+      await plugin.onload();
+      await flushPromises();
+      resolvedHandler!();
+      await flushPromises();
+      await flushPromises();
+      await expect(plugin.indexStability.whenStable()).resolves.toEqual({
+        kind: "failed",
+        message: "walk failed",
+      });
+    });
+
+    it("W8 @req:23f10730-82f7-4037-b566-da79d5fa3378 a completed full rebuild counted by the plugin's index makes it stable", async () => {
+      await plugin.onload();
+      await flushPromises();
+      expect(plugin.indexStability.isStable()).toBe(false);
+      jest
+        .spyOn(plugin.sparql, "getCompletedIndexRefreshCount")
+        .mockReturnValue(1);
+      expect(plugin.indexStability.isStable()).toBe(true);
+    });
+
+    it("W9 @req:23f10730-82f7-4037-b566-da79d5fa3378 a failed eager walk over an already-resolved cache is reported (no post-resolve refresh may follow)", async () => {
+      mockMetadataCache.initialized = true;
+      spies[1].mockRejectedValue(new Error("eager failed"));
+      await plugin.onload();
+      await flushPromises();
+      await expect(plugin.indexStability.whenStable()).resolves.toEqual({
+        kind: "failed",
+        message: "eager failed",
+      });
+    });
+
+    it("W10 @req:23f10730-82f7-4037-b566-da79d5fa3378 a failed eager walk over a cold cache is not reported — the post-resolve refresh decides", async () => {
+      spies[1].mockRejectedValue(new Error("eager failed"));
+      await plugin.onload();
+      await flushPromises();
+      let outcome: unknown = "pending";
+      void plugin.indexStability.whenStable().then((o) => {
+        outcome = o;
+      });
+      await flushPromises();
+      expect(outcome).toBe("pending");
+      resolvedHandler!();
+      await flushPromises();
+      await flushPromises();
+      expect(outcome).toEqual({ kind: "stable" });
+    });
+
+    it("W7 @req:23f10730-82f7-4037-b566-da79d5fa3378 the stability flag reads the plugin's index-rebuild state", async () => {
+      mockMetadataCache.initialized = true;
+      await plugin.onload();
+      await flushPromises();
+      expect(plugin.indexStability.isStable()).toBe(true);
+      jest.spyOn(plugin.sparql, "isIndexRefreshing").mockReturnValue(true);
+      expect(plugin.indexStability.isStable()).toBe(false);
+    });
+
+    // RFC 9821a379 AC10 (founder's decision 2026-10-30): a deletion changes no
+    // other file's frontmatter, so only this subscription re-renders the page.
+    async function deleteIndexedNote(): Promise<{
+      scheduled: unknown[][];
+      render: jest.SpyInstance;
+    }> {
+      await plugin.onload();
+      await flushPromises();
+      const internals = plugin as unknown as {
+        timerManager: {
+          setTimeout(name: string | null, cb: () => void, ms: number): unknown;
+        };
+        autoRenderLayout(): void;
+      };
+      const timers = jest
+        .spyOn(internals.timerManager, "setTimeout")
+        .mockReturnValue(null);
+      const render = jest
+        .spyOn(internals, "autoRenderLayout")
+        .mockImplementation(() => undefined);
+      await plugin.sparql.getTripleStore().add(
+        new Triple(
+          new IRI("obsidian://vault/episodes/e1.md"),
+          new IRI("https://exocortex.my/ontology/exo#Asset_label"),
+          new Literal("E1"),
+        ),
+      );
+      const indexer = plugin.sparql.getRdfIndexer() as unknown as {
+        removeFile(file: TFile): Promise<void>;
+      };
+      await indexer.removeFile({ path: "episodes/e1.md" } as TFile);
+      return {
+        scheduled: timers.mock.calls.filter(
+          ([name]) => name === "auto-layout-delete",
+        ),
+        render,
+      };
+    }
+
+    it("W11 @req:23f10730-82f7-4037-b566-da79d5fa3378 a note the index removed re-renders the open page", async () => {
+      const { scheduled, render } = await deleteIndexedNote();
+      expect(scheduled).toHaveLength(1);
+      expect(render).not.toHaveBeenCalled();
+      (scheduled[0][1] as () => void)();
+      expect(render).toHaveBeenCalledTimes(1);
+    });
+
+    it("W13 @req:23f10730-82f7-4037-b566-da79d5fa3378 the re-render after a deletion is debounced 150 ms under one key", async () => {
+      const { scheduled } = await deleteIndexedNote();
+      expect(scheduled.map((call) => call[2])).toEqual([150]);
+    });
+
+    it("W12 @req:23f10730-82f7-4037-b566-da79d5fa3378 the re-render after a deletion is wired on mobile too (Desktop↔Mobile parity)", async () => {
+      const obsidianMock = await import("obsidian");
+      const platform = (
+        obsidianMock as unknown as {
+          Platform: { isMobile: boolean; isDesktop: boolean };
+        }
+      ).Platform;
+      const originalIsMobile = platform.isMobile;
+      const originalIsDesktop = platform.isDesktop;
+      platform.isMobile = true;
+      platform.isDesktop = false;
+      try {
+        const { scheduled } = await deleteIndexedNote();
+        expect(scheduled).toHaveLength(1);
+      } finally {
+        platform.isMobile = originalIsMobile;
+        platform.isDesktop = originalIsDesktop;
+      }
     });
   });
 

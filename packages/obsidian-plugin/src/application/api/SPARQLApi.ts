@@ -415,6 +415,33 @@ export class SPARQLApi {
   }
 
   /**
+   * RFC 9821a379 decision 7 — true while a FULL index rebuild is in flight
+   * (the store is cleared and refilling). A separate accessor, like
+   * {@link getLastIndexWalkStats}, so {@link IRdfIndexerHandle} stays narrow.
+   */
+  isIndexRefreshing(): boolean {
+    return this.queryService.isIndexRefreshing();
+  }
+
+  /** Resolves once the in-flight full index rebuild (if any) has settled. */
+  whenIndexRefreshSettled(): Promise<void> {
+    return this.queryService.whenIndexRefreshSettled();
+  }
+
+  /** Full index rebuilds completed successfully so far (RFC 9821a379 decision 7). */
+  getCompletedIndexRefreshCount(): number {
+    return this.queryService.getCompletedIndexRefreshCount();
+  }
+
+  /**
+   * RFC 9821a379 AC10 — subscribe to deletions the index has applied (the
+   * file's triples are gone). Returns the unsubscribe function.
+   */
+  onIndexFileRemoved(listener: (path: string) => void): () => void {
+    return this.queryService.onIndexFileRemoved(listener);
+  }
+
+  /**
    * Disposes of the SPARQL API and releases all associated resources.
    *
    * This method should be called when the API is no longer needed, typically

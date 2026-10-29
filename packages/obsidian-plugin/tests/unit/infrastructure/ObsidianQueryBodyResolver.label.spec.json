@@ -1,0 +1,23 @@
+{
+  "_doc": "Revert-verify mutant for ticket 058bad52 (review RK): resolveLabel returns the query asset's exo__Asset_label from the uid index.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/infrastructure/ObsidianQueryBodyResolver.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/presentation/renderers/layout/obsidianQueryTable.test.ts --verbose 2>&1",
+  "mutants": {
+    "KLM1_label_never_found": {
+      "from": "    return typeof label === \"string\" && label.trim() !== \"\" ? label.trim() : null;\n",
+      "to": "    return typeof label === \"string\" && label.trim() !== \"\" && label === \"\" ? label.trim() : null;\n",
+      "expect": ["O1", "O2"]
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "_doc": "Revert-verify mutants for ticket 058bad52 (RFC 9821a379 AC5): an IRI cell reads as the asset's display name with the vault exo__DisplayNameSpec rules; a missing file gives no link; the plugin factory wires links and the query label.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/obsidian-plugin/src/presentation/renderers/layout/obsidianQueryTable.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../..\" && CI=true node ../../node_modules/jest/bin/jest.js --config jest.config.js tests/unit/presentation/renderers/layout/obsidianQueryTable.test.ts --verbose 2>&1",
+  "mutants": {
+    "LM1_bare_label": {
+      "from": "    return (\n      resolver.resolve({\n",
+      "to": "    return label ?? (\n      resolver.resolve({\n",
+      "expect": ["L1", "L3", "L4", "O1"]
+    },
+    "LM2_missing_file_text": {
+      "from": "    if (!(file instanceof TFile)) return null;\n",
+      "to": "    if (!(file instanceof TFile)) return vaultPath.split(\"/\").pop() ?? null;\n",
+      "expect": ["L2"]
+    },
+    "LM3_no_basename_fallback": {
+      "from": "        : file.basename;\n",
+      "to": "        : \"\";\n",
+      "expect": ["L3"]
+    },
+    "LM4_vault_rules_dropped": {
+      "_note": "The review's RB: the 🔄/✅ prefixes of exo__DisplayNameSpec would differ from the Relations table.",
+      "from": "    ruleService,\n    ruleService?.createMetadataResolver() ?? null,\n",
+      "to": "    null,\n    null,\n",
+      "expect": ["L4"]
+    },
+    "OM1_factory_never_links": {
+      "_note": "The review's RF.",
+      "from": "    createLinkText: () =>\n      createObsidianQueryTableLinkText(deps.app, deps.plugin),\n",
+      "to": "    createLinkText: () => () => null,\n",
+      "expect": ["O1"]
+    },
+    "OM2_factory_label_unwired": {
+      "from": "    queryLabel: (uid) => deps.queryLabels.resolveLabel(uid),\n",
+      "to": "    queryLabel: () => null,\n",
+      "expect": ["O1", "O2"]
+    }
+  }
+}

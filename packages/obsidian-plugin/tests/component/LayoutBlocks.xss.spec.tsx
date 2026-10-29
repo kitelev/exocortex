@@ -15,6 +15,7 @@ import React from "react";
 import {
   BacklinksTableBlockView,
   PropertiesBlockView,
+  QueryTableBlockView,
 } from "../../src/presentation/components/LayoutBlocks";
 import type { AssetRelation } from "../../src/presentation/renderers/layout/types";
 
@@ -96,6 +97,61 @@ test.describe("LayoutBlocks XSS — JSX auto-escaping prevents script execution"
         rows={[maliciousRow]}
       />,
     );
+
+    const fired = await page.evaluate(
+      () => (window as unknown as { __xss_fired__?: boolean }).__xss_fired__ === true,
+    );
+    expect(fired).toBe(false);
+  });
+
+  // RFC 9821a379 (ticket 058bad52) — the query-table block draws a named
+  // query's rows: column names, cell texts, link labels (display names of
+  // vault assets) and the problem message all come from vault data.
+  test("QueryTableBlockView title, columns, cells and link labels escape XSS vectors", async ({
+    mount,
+    page,
+  }) => {
+    const rows = await mount(
+      <QueryTableBlockView
+        title={scriptVector}
+        state={{
+          kind: "rows",
+          columns: [scriptVector, "label"],
+          rows: [
+            [
+              { kind: "text", text: eventVector },
+              { kind: "link", path: jsUriVector, text: scriptVector },
+            ],
+          ],
+          total: 1,
+          elapsedMs: 3,
+          emptyText: "Нет строк",
+        }}
+      />,
+    );
+    await expect(rows.locator("script")).toHaveCount(0);
+    await expect(rows.locator("img")).toHaveCount(0);
+    await expect(rows.locator("td").first()).toHaveText(eventVector);
+    await expect(rows.locator("a.internal-link")).toHaveText(scriptVector);
+    // The link carries href like the daily-efforts block does; a click is
+    // prevented and routed to onLinkClick, so even a javascript: path never runs.
+    await rows.locator("a.internal-link").click();
+
+    const fired = await page.evaluate(
+      () => (window as unknown as { __xss_fired__?: boolean }).__xss_fired__ === true,
+    );
+    expect(fired).toBe(false);
+  });
+
+  test("QueryTableBlockView problem message escapes XSS vectors", async ({
+    mount,
+    page,
+  }) => {
+    const message = await mount(
+      <QueryTableBlockView title="" state={{ kind: "message", text: eventVector }} />,
+    );
+    await expect(message.locator("img")).toHaveCount(0);
+    await expect(message.locator("[role=alert]")).toHaveText(eventVector);
 
     const fired = await page.evaluate(
       () => (window as unknown as { __xss_fired__?: boolean }).__xss_fired__ === true,

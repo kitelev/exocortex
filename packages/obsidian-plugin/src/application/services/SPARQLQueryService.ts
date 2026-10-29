@@ -320,4 +320,24 @@ export class SPARQLQueryService {
   getLastWalkStats(): VaultWalkStats | null {
     return this.indexer.getLastWalkStats();
   }
+
+  /** Passthrough to {@link VaultRDFIndexer.isRefreshing} (RFC 9821a379 decision 7). */
+  isIndexRefreshing(): boolean {
+    return this.indexer.isRefreshing();
+  }
+
+  /** Passthrough to {@link VaultRDFIndexer.whenRefreshSettled}. */
+  whenIndexRefreshSettled(): Promise<void> {
+    return this.indexer.whenRefreshSettled();
+  }
+
+  /** Passthrough to {@link VaultRDFIndexer.getCompletedRefreshCount}. */
+  getCompletedIndexRefreshCount(): number {
+    return this.indexer.getCompletedRefreshCount();
+  }
+
+  /** Passthrough to {@link VaultRDFIndexer.onFileRemoved} (RFC 9821a379 AC10). */
+  onIndexFileRemoved(listener: (path: string) => void): () => void {
+    return this.indexer.onFileRemoved(listener);
+  }
 }

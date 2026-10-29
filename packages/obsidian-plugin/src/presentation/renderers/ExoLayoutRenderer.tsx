@@ -29,17 +29,26 @@ import type {
   DailyEffortsPartitioned,
   Layout,
   LayoutBlock,
+  QueryTableBlock,
 } from "@kitelev/exocortex-core";
 import type { ReactRenderer } from "@plugin/presentation/utils/ReactRenderer";
 import type { ExoLayoutSnapshot } from "@plugin/infrastructure/repositories";
 import type { AssetRelation } from "./layout/types";
 import type { ILogger } from "@plugin/adapters/logging/ILogger";
 import type { ObsidianApp } from "@plugin/types";
+import type { IndexStabilityOutcome } from "@plugin/application/services/IndexStability";
 import {
   BacklinksTableBlockView,
   DailyEffortsBlockView,
   PropertiesBlockView,
+  QueryTableBlockView,
+  type QueryTableViewState,
 } from "@plugin/presentation/components/LayoutBlocks";
+import {
+  describeQueryTableProblem,
+  type QueryTableOutcome,
+  type QueryTableProvider,
+} from "./layout/QueryTableProvider";
 import { AssetMetadataService } from "@plugin/presentation/renderers/layout/helpers/AssetMetadataService";
 import {
   WikiLinkHelpers,
@@ -86,6 +95,19 @@ export interface ExoLayoutRendererDeps {
   readonly dailyEffortsProvider?: (
     file: TFile,
   ) => readonly DailyEffortItem[] | null;
+  /**
+   * RFC 9821a379 §Шаг 2 (ticket 058bad52) — rows of a `query-table` block.
+   * Absent ⇒ the block says the runner is not wired (never a silent blank).
+   */
+  readonly queryTableProvider?: QueryTableProvider;
+  /**
+   * RFC 9821a379 decision 7 — «индекс стабилен». While it is false a
+   * `query-table` block shows loading and waits; absent ⇒ treated as stable.
+   */
+  readonly indexStability?: {
+    isStable(): boolean;
+    whenStable(): Promise<IndexStabilityOutcome>;
+  };
 }
 
 export interface ExoLayoutRenderResult {
@@ -94,14 +116,70 @@ export interface ExoLayoutRenderResult {
 }
 
 export class ExoLayoutRenderer {
+  /**
+   * Which page render owns each ROOT element (the container the page renderer
+   * draws into). RFC §Шаг 2: «ответ, пришедший после смены страницы,
+   * отбрасывается». A `query-table` fill queries and paints only while
+   *  - its page render is still the latest one of its root — a re-render of the
+   *    same root (`refresh()`) supersedes it, even when the OLDER render reaches
+   *    this renderer later (renders finish out of order), and
+   *  - its root, if it was on the page when the render started, still is —
+   *    opening another note removes the root.
+   * ⛔ Keyed per root, never one counter for the plugin: two pages render
+   * concurrently, and a slow render of the page that was LEFT would otherwise
+   * supersede the visible one and leave it on «Загрузка…» (ticket 058bad52,
+   * review X1). A root that was not on the page when its render started is
+   * judged by its generation alone. Both page renders in ExocortexPlugin
+   * attach the root first; `UniversalLayoutRenderer.refresh()` re-renders the
+   * root it last drew into without checking that it is still attached, so a
+   * refresh after autoRenderLayout removed that root queries once and paints
+   * into the detached root — a cost, not a wrong page.
+   */
+  private readonly roots = new WeakMap<
+    HTMLElement,
+    { readonly generation: number; readonly wasOnPage: boolean }
+  >();
+  private lastGeneration = 0;
+  private readonly pending = new Set<Promise<void>>();
+
   constructor(private readonly deps: ExoLayoutRendererDeps) {}
+
+  /**
+   * Resolves when every asynchronous block fill started so far has painted or
+   * been dropped. The page does not wait for it (`render()` returns as soon as
+   * the placeholders are in place); tests and measurements do.
+   */
+  whenSettled(): Promise<void> {
+    return Promise.all([...this.pending]).then(() => undefined);
+  }
+
+  /**
+   * A page render of `root` starts — the page renderer calls it FIRST, before
+   * any await, and passes the result to {@link render}. Every earlier render of
+   * the same root is superseded from this moment, including one that has not
+   * reached {@link render} yet. Returns the render's generation.
+   */
+  beginPage(root: HTMLElement): number {
+    const generation = ++this.lastGeneration;
+    this.roots.set(root, { generation, wasOnPage: root.isConnected });
+    return generation;
+  }
 
   async render(
     el: HTMLElement,
     file: TFile,
     layout: Layout,
     relations: readonly AssetRelation[],
+    pageGeneration: number = this.beginPage(el),
   ): Promise<ExoLayoutRenderResult> {
+    const isCurrent = (): boolean => {
+      const root = this.roots.get(el);
+      return (
+        root !== undefined &&
+        root.generation === pageGeneration &&
+        (!root.wasOnPage || el.isConnected)
+      );
+    };
     const snapshot = this.deps.snapshotProvider();
     const container = el.createDiv({ cls: "exocortex-exo-layout" });
     container.setAttr("data-layout-uid", layout.uid);
@@ -117,7 +195,16 @@ export class ExoLayoutRenderer {
     // daily-efforts block.
     const noteFrontmatter = (this.deps.app.metadataCache.getFileCache(file)
       ?.frontmatter ?? null) as Record<string, unknown> | null;
-    const partition = this.computeDailyPartition(file, layout, snapshot);
+    // AC11 — a failure of the shared daily computation is the daily blocks'
+    // failure, drawn in THEIR places; the other blocks still render.
+    let partition: DailyEffortsPartitioned<DailyEffortItem> | null = null;
+    let partitionError: Error | null = null;
+    try {
+      partition = this.computeDailyPartition(file, layout, snapshot);
+    } catch (error) {
+      partitionError =
+        error instanceof Error ? error : new Error(String(error));
+    }
 
     let blockCount = 0;
     for (const rawRef of layout.blocks) {
@@ -135,8 +222,35 @@ export class ExoLayoutRenderer {
       if (!this.isBlockVisible(block, noteFrontmatter)) {
         continue;
       }
-      await this.renderBlock(container, file, block, relations, partition);
-      blockCount += 1;
+      const blockContainer = container.createDiv({
+        cls: "exocortex-exo-layout-block",
+        attr: {
+          "data-block-uid": block.uid,
+          "data-block-kind": block.kind,
+        },
+      });
+      // AC11 (RFC 9821a379) — a block that throws draws its error in its own
+      // place; the next blocks and the page sections below still render.
+      try {
+        await this.renderBlock(
+          blockContainer,
+          file,
+          block,
+          relations,
+          partition,
+          partitionError,
+          isCurrent,
+        );
+        blockCount += 1;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.deps.logger.error(
+          `ExoLayoutRenderer: block ${block.uid} failed (file=${file.path}): ${message}`,
+        );
+        blockContainer.createDiv({
+          cls: "exocortex-layout-block-error",
+        }).textContent = `Блок «${block.title}»: ${message}`;
+      }
     }
 
     return { rendered: blockCount > 0, blockCount };
@@ -185,20 +299,14 @@ export class ExoLayoutRenderer {
   }
 
   private async renderBlock(
-    container: HTMLElement,
+    blockContainer: HTMLElement,
     file: TFile,
     block: LayoutBlock,
     relations: readonly AssetRelation[],
     partition: DailyEffortsPartitioned<DailyEffortItem> | null,
+    partitionError: Error | null,
+    isCurrent: () => boolean,
   ): Promise<void> {
-    const blockContainer = container.createDiv({
-      cls: "exocortex-exo-layout-block",
-      attr: {
-        "data-block-uid": block.uid,
-        "data-block-kind": block.kind,
-      },
-    });
-
     if (block.kind === "properties") {
       this.renderPropertiesBlock(blockContainer, file, block.title);
       return;
@@ -208,16 +316,12 @@ export class ExoLayoutRenderer {
       return;
     }
     if (block.kind === "daily-efforts-by-class") {
+      if (partitionError !== null) throw partitionError;
       this.renderDailyEffortsBlock(blockContainer, block.partition, block.title, partition);
       return;
     }
     if (block.kind === "query-table") {
-      // RFC 9821a379 — the core parses `query__TableBlock`; drawing its rows
-      // (provider, «index stable» flag, error isolation) is the plugin step of
-      // the same RFC. Until it lands the block renders nothing.
-      this.deps.logger.debug(
-        `ExoLayoutRenderer: query-table block ${block.uid} is parsed but not drawn yet (file=${file.path})`,
-      );
+      this.renderQueryTableBlock(blockContainer, file, block, isCurrent);
       return;
     }
     // Defensive branch — parser/type guard should have prevented unknown
@@ -226,6 +330,71 @@ export class ExoLayoutRenderer {
     this.deps.logger.warn(
       `ExoLayoutRenderer: unknown block kind on asset ${(unreachable as LayoutBlock).uid}`,
     );
+  }
+
+  /**
+   * RFC 9821a379 §Шаг 2 — draws the placeholder now and fills the rows
+   * asynchronously: the page below does not wait for the query, and the fill
+   * first waits for a stable index (AC8: loading, never the empty text, while
+   * the store is incomplete; the rows appear by themselves when it settles).
+   */
+  private renderQueryTableBlock(
+    container: HTMLElement,
+    file: TFile,
+    block: QueryTableBlock,
+    isCurrent: () => boolean,
+  ): void {
+    const paint = (state: QueryTableViewState): void => {
+      this.deps.reactRenderer.render(
+        container,
+        React.createElement(QueryTableBlockView, {
+          title: block.title,
+          state,
+          onLinkClick: (path: string) => {
+            void this.deps.app.workspace.openLinkText(path, file.path, false);
+          },
+        }),
+      );
+    };
+    const provider = this.deps.queryTableProvider;
+    if (provider === undefined) {
+      paint({
+        kind: "message",
+        text: `Запрос «${block.query}»: исполнитель запросов не подключён`,
+      });
+      return;
+    }
+    if (!isCurrent()) return;
+    paint({ kind: "loading" });
+    const fill = (async () => {
+      // Checked at render time above; re-checked only after an await — the
+      // stability wait is the only one before the query.
+      const stability = this.deps.indexStability;
+      if (stability !== undefined && !stability.isStable()) {
+        const settled = await stability.whenStable();
+        if (!isCurrent()) return;
+        if (settled.kind === "failed") {
+          paint({
+            kind: "message",
+            text: `Индекс хранилища не построен (${settled.message}) — строки появятся после переиндексации`,
+          });
+          return;
+        }
+      }
+      const outcome = await provider(file, block);
+      if (!isCurrent()) return;
+      paint(toViewState(outcome, block));
+    })().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      this.deps.logger.error(
+        `ExoLayoutRenderer: query-table block ${block.uid} failed (file=${file.path}): ${message}`,
+      );
+      if (isCurrent()) {
+        paint({ kind: "message", text: `Запрос «${block.query}»: ${message}` });
+      }
+    });
+    this.pending.add(fill);
+    void fill.then(() => this.pending.delete(fill));
   }
 
   private renderDailyEffortsBlock(
@@ -296,6 +465,23 @@ export class ExoLayoutRenderer {
       }),
     );
   }
+}
+
+function toViewState(
+  outcome: QueryTableOutcome,
+  block: QueryTableBlock,
+): QueryTableViewState {
+  if (outcome.kind !== "rows") {
+    return { kind: "message", text: describeQueryTableProblem(outcome) };
+  }
+  return {
+    kind: "rows",
+    columns: outcome.columns,
+    rows: outcome.rows,
+    total: outcome.total,
+    elapsedMs: outcome.elapsedMs,
+    emptyText: block.emptyText,
+  };
 }
 
 function resolveBlock(
