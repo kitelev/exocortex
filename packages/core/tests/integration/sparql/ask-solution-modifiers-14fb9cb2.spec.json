@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 14fb9cb2: ASK honours GROUP BY / HAVING and LIMIT / OFFSET (SPARQL 1.1 §16.3, §18.2.4) — `translateAsk` wraps WHERE in Group (with HAVING) then Slice, and does NOT translate ORDER BY. M8/M9 are the planning review's plausible wrong implementations R1/R2, M10–M17 the specification review's V8/V5/V1–V4/V6/V9, M18–M21 the implementation review's (last GROUP BY variable only, aggregate counter reset per HAVING constraint, DISTINCT before the slice, HAVING without an aggregate as a Filter) — each passed the harness of its time. `aggregates.length > 0` in the group condition is implied by HAVING here (aggregates come only from HAVING) — kept verbatim from `translateSelect`, so no mutant on it. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct). `red_re` anchors on the jest failure header `● <suite> › <axis> ` (ITRV §A44/§A104). Anchors are CODE lines of `translateAsk` only; the group-condition line repeats in `translateSelect`, so its anchor carries the preceding `modifiers.having` call to stay unique. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145).",
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 14fb9cb2: ASK honours GROUP BY / HAVING and LIMIT / OFFSET (SPARQL 1.1 §16.3, §18.2.4) — `translateAsk` wraps WHERE in Group (with HAVING) then Slice, and does NOT translate ORDER BY. M8/M9 are the planning review's plausible wrong implementations R1/R2, M10–M17 the specification review's V8/V5/V1–V4/V6/V9, M18–M23 the implementation review's (last GROUP BY variable only, aggregate counter reset per HAVING constraint, DISTINCT before the slice, HAVING without an aggregate as a Filter; round 2: Group on the raw GROUP BY, an empty-pattern shortcut that slices only LIMIT 0) — each passed the harness of its time. `aggregates.length > 0` in the group condition is implied by HAVING here (aggregates come only from HAVING) — kept verbatim from `translateSelect`, so no mutant on it. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct). `red_re` anchors on the jest failure header `● <suite> › <axis> ` (ITRV §A44/§A104). Anchors are CODE lines of `translateAsk` only; the group-condition line repeats in `translateSelect`, so its anchor carries the preceding `modifiers.having` call to stay unique. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -14,7 +14,7 @@
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/algebra/AlgebraTranslator.ts",
   "mutants": {
     "M1_no_slice": {
-      "_note": "The defect for LIMIT / OFFSET: Slice is not built. A11 is split per path (A11a precondition, A11b run-query, A11c ExoQL.ask, A11d plugin): all four see the missing step. A16 and A17 carry OFFSET forms (3 groups with OFFSET 3; `W OFFSET 2`) that need the slice. A16b (OFFSET 2 over 2 groups) and A20 (OFFSET 3 over 3 duplicate rows) need the slice too.",
+      "_note": "The defect for LIMIT / OFFSET: Slice is not built. A11 is split per path (A11a precondition, A11b run-query, A11c ExoQL.ask, A11d plugin): all four see the missing step. A16 and A17 carry OFFSET forms (3 groups with OFFSET 3; `W OFFSET 2`) that need the slice. A16b (OFFSET 2 over 2 groups) and A20 (OFFSET 3 over 3 duplicate rows) need the slice too. A22 (`GROUP BY (STR(?s)) OFFSET 2`) too.",
       "from": "      where = { type: \"slice\", limit: modifiers.limit, offset: modifiers.offset, input: where };",
       "to": "      void where;",
       "expect": [
@@ -33,7 +33,8 @@
         "A16",
         "A16b",
         "A17",
-        "A20"
+        "A20",
+        "A22"
       ]
     },
     "M2_no_group": {
@@ -95,10 +96,21 @@
       ]
     },
     "M6_slice_drops_offset": {
-      "_note": "Plausible wrong Slice: LIMIT carried, OFFSET lost. A16 (OFFSET 3 over 3 groups) and A17 (`W OFFSET 2`) need OFFSET. A16b (OFFSET 2) and A20 (OFFSET 3) need OFFSET.",
+      "_note": "Plausible wrong Slice: LIMIT carried, OFFSET lost. A16 (OFFSET 3 over 3 groups) and A17 (`W OFFSET 2`) need OFFSET. A16b (OFFSET 2) and A20 (OFFSET 3) need OFFSET. A22 (OFFSET 2) and A4 (`ASK {} OFFSET 1`) too.",
       "from": "      where = { type: \"slice\", limit: modifiers.limit, offset: modifiers.offset, input: where };",
       "to": "      where = { type: \"slice\", limit: modifiers.limit, input: where };",
-      "expect": ["A2", "A6", "A12", "A13", "A16", "A16b", "A17", "A20"]
+      "expect": [
+        "A2",
+        "A4",
+        "A6",
+        "A12",
+        "A13",
+        "A16",
+        "A16b",
+        "A17",
+        "A20",
+        "A22"
+      ]
     },
     "M7_orderby_translated": {
       "_note": "ORDER BY translated as for SELECT: the answer is the same (ORDER BY without an aggregate never removes a solution), only the form and the sort cost change — locked by A10 alone.",
@@ -119,7 +131,7 @@
       "expect": ["A14"]
     },
     "M10_throw_on_slice": {
-      "_note": "Review V8: the slice step throws. A button precondition turns the throw into `false`, so only axes that expect `true` on that path (A18a) can see it. Every path that does not catch throws on any LIMIT/OFFSET (C3 carries OFFSET 1 / LIMIT 1 too); A11a stays green — its forms expect `false`, which the catch also gives. A16b, A20 and A21 (`HAVING (1 = 1) LIMIT 1`) carry a slice as well.",
+      "_note": "Review V8: the slice step throws. A button precondition turns the throw into `false`, so only axes that expect `true` on that path (A18a) can see it. Every path that does not catch throws on any LIMIT/OFFSET (C3 carries OFFSET 1 / LIMIT 1 too); A11a stays green — its forms expect `false`, which the catch also gives. A16b, A20 and A21 (`HAVING (1 = 1) LIMIT 1`) carry a slice as well. A22 carries OFFSET too.",
       "from": "      where = { type: \"slice\", limit: modifiers.limit, offset: modifiers.offset, input: where };",
       "to": "      throw new Error(\"slice unsupported\");",
       "expect": [
@@ -144,7 +156,8 @@
         "A18c",
         "A18d",
         "A20",
-        "A21"
+        "A21",
+        "A22"
       ]
     },
     "M11_shared_aggregate_state": {
@@ -212,6 +225,18 @@
       "from": "      modifiers.having,\n      aggregates,\n      aggregateVarMap\n    );\n\n    if (aggregates.length > 0 || groupVars.length > 0 || havingExpressions.length > 0) {",
       "to": "      modifiers.having,\n      aggregates,\n      aggregateVarMap\n    );\n\n    if (aggregates.length === 0 && groupVars.length === 0 && havingExpressions.length > 0) {\n      for (const h of havingExpressions) where = { type: \"filter\", expression: h, input: where };\n    } else if (aggregates.length > 0 || groupVars.length > 0 || havingExpressions.length > 0) {",
       "expect": ["A21"]
+    },
+    "M22_group_on_raw_group_by": {
+      "_note": "Implementation review round 2 (V31): Group built from the RAW `GROUP BY` instead of the translated variables. GROUP BY by an expression yields no variable today (ems__Bug 38328fcc), so the solutions collapse into ONE group — `GROUP BY (STR(?s)) OFFSET 1` answers false, worse than the base. Locked by the absolute axis A22.",
+      "from": "      modifiers.having,\n      aggregates,\n      aggregateVarMap\n    );\n\n    if (aggregates.length > 0 || groupVars.length > 0 || havingExpressions.length > 0) {",
+      "to": "      modifiers.having,\n      aggregates,\n      aggregateVarMap\n    );\n\n    if ((modifiers.group?.length ?? 0) > 0 || havingExpressions.length > 0) {",
+      "expect": ["A22"]
+    },
+    "M23_empty_pattern_limit_zero_only": {
+      "_note": "Implementation review round 2 (V39): a shortcut for the empty pattern that slices only LIMIT 0 — `ASK {} OFFSET 1` then answers true. A4 carries OFFSET forms over `{}`.",
+      "from": "    if (modifiers.limit !== undefined || modifiers.offset !== undefined) {",
+      "to": "    if ((query.where?.length ?? 0) > 0 ? modifiers.limit !== undefined || modifiers.offset !== undefined : modifiers.limit === 0) {",
+      "expect": ["A4"]
     }
   }
 }

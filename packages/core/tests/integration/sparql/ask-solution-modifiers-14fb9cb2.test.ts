@@ -29,13 +29,17 @@
  *
  * Not asserted here, on purpose: the grouping step is the one SELECT uses, and
  * its own gaps are those bugs' axes — among them ems__Bug 2653916f (phantom
- * group over an empty input, HAVING without an aggregate is not a Filter, an
- * aggregate in ORDER BY, EXISTS in HAVING), 38328fcc (GROUP BY by expression)
- * and 2f27f300 (IN / NOT IN and an aggregate inside a function call in HAVING).
- * The ASK answers they give are PARITY with SELECT, not asserted as correct:
- * A12 (aggregate / slice forms) and A21 (HAVING without an aggregate) lock
- * "ASK ⇔ the SELECT with the same modifiers has a row" on their forms, so fixing
- * a gap in the shared step fixes both forms.
+ * group over an empty input, HAVING without an aggregate is not a Filter,
+ * EXISTS in HAVING), 38328fcc (GROUP BY by expression) and 2f27f300 (IN / NOT
+ * IN and an aggregate inside a function call in HAVING). The ASK answers they
+ * give follow SELECT, not the standard: A12 (aggregate / slice forms) and A21
+ * (HAVING without an aggregate) lock "ASK ⇔ the SELECT with the same modifiers
+ * has a row" on their forms, so fixing a gap in the shared step fixes both.
+ * Two exceptions: GROUP BY by expression is held by an ABSOLUTE axis (A22) —
+ * its answers do not change when 38328fcc is fixed; and an aggregate in ORDER
+ * BY (2653916f) is NOT shared — ASK does not translate ORDER BY, so it ignores
+ * the aggregate while SELECT refuses the query, and fixing it for SELECT will
+ * need `translateAsk` too.
  */
 
 import "reflect-metadata";
@@ -257,8 +261,10 @@ describe("ASK solution modifiers (ems__Bug 14fb9cb2)", () => {
     expect(await ask(`ASK ${W} LIMIT 0 OFFSET 1`)).toBe(false);
   });
 
-  it("A4 the empty pattern with LIMIT 0 answers false", async () => {
+  it("A4 the empty pattern is ONE solution: LIMIT 0, OFFSET 1 and LIMIT 1 OFFSET 1 answer false", async () => {
     expect(await ask(`ASK {} LIMIT 0`)).toBe(false);
+    expect(await ask(`ASK {} OFFSET 1`)).toBe(false);
+    expect(await ask(`ASK {} LIMIT 1 OFFSET 1`)).toBe(false);
   });
 
   // ------------------------------------------------------------ GROUP BY / HAVING
@@ -325,6 +331,15 @@ describe("ASK solution modifiers (ems__Bug 14fb9cb2)", () => {
     // ?c is the one class of both bugs, so grouping by ?c ALONE would give 1 group.
     expect(await ask(`ASK ${WC} GROUP BY ?s ?c OFFSET 1`)).toBe(true);
     expect(await ask(`ASK ${WC} GROUP BY ?s ?c OFFSET 2`)).toBe(false);
+  });
+
+  it("A22 GROUP BY by an expression does not collapse the solutions into one group: OFFSET 1 true, OFFSET 2 false", async () => {
+    // Absolute by SPARQL 1.1: STR(?s) gives 2 groups. The grouping step drops the
+    // expression today (ems__Bug 38328fcc), so no group is built and the slice
+    // runs over 2 solutions — the same answers; after 38328fcc, 2 groups — the
+    // same answers again. Grouping on the RAW `GROUP BY` instead would give 1 group.
+    expect(await ask(`ASK ${W} GROUP BY (STR(?s)) OFFSET 1`)).toBe(true);
+    expect(await ask(`ASK ${W} GROUP BY (STR(?s)) OFFSET 2`)).toBe(false);
   });
 
   it("A20 the slice counts DUPLICATE solutions: a projecting subquery keeps 3 rows of 2 subjects — OFFSET 2 true, OFFSET 3 false", async () => {
