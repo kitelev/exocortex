@@ -6,6 +6,7 @@ import type {
   ConstructOperation,
   AskOperation,
   DescribeOperation,
+  AggregateBinding,
   IRI,
   Variable,
 } from "./AlgebraOperation";
@@ -214,10 +215,51 @@ export class ExoQLAlgebraTranslator {
     return { type: "construct", template, where };
   }
 
+  /**
+   * ASK = "does the solution sequence have at least one member", and SPARQL 1.1
+   * (§16.3, §18.2.4) gives ASK the same solution modifiers as SELECT minus the
+   * projection. GROUP BY / HAVING and LIMIT / OFFSET decide which solutions
+   * survive, so they wrap WHERE here in the same order as `translateSelect`:
+   * Group (with HAVING) first, Slice last — ASK answers "the SELECT with the same
+   * modifiers has a row". The grouping step is deliberately the SAME one
+   * `translateSelect` uses, gaps included (ems__Bug 2653916f: phantom group over
+   * an empty input, HAVING without an aggregate, an aggregate in ORDER BY,
+   * EXISTS in HAVING; GROUP BY by expression — ems__Bug 38328fcc); fixing them
+   * there fixes both forms. ORDER BY is not translated: without an aggregate it
+   * only reorders, so it never changes whether a solution survives (no sort
+   * cost). `@types/sparqljs` types AskQuery without the modifiers, but the parser
+   * fills them for ASK as for SELECT (vault-exodev ems__Bug 14fb9cb2).
+   */
   private translateAsk(query: AskQuery): AskOperation {
-    const where = query.where && query.where.length > 0
+    let where: AlgebraOperation = query.where && query.where.length > 0
       ? this.patternTranslator.translateWhere(query.where)
       : ({ type: "bgp", triples: [] } as BGPOperation);
+
+    const modifiers = query as unknown as Pick<SelectQuery, "group" | "having" | "limit" | "offset">;
+
+    this.aggregateTranslator.resetCounter();
+    const aggregateVarMap = new Map<SparqljsExpression, string>();
+    const aggregates: AggregateBinding[] = [];
+    const groupVars = this.aggregateTranslator.extractGroupVariables(modifiers.group);
+    const havingExpressions = this.aggregateTranslator.extractHavingExpressions(
+      modifiers.having,
+      aggregates,
+      aggregateVarMap
+    );
+
+    if (aggregates.length > 0 || groupVars.length > 0 || havingExpressions.length > 0) {
+      where = {
+        type: "group",
+        variables: groupVars,
+        aggregates,
+        having: havingExpressions.length > 0 ? havingExpressions : undefined,
+        input: where,
+      };
+    }
+
+    if (modifiers.limit !== undefined || modifiers.offset !== undefined) {
+      where = { type: "slice", limit: modifiers.limit, offset: modifiers.offset, input: where };
+    }
 
     return { type: "ask", where };
   }

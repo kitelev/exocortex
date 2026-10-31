@@ -1,0 +1,185 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 14fb9cb2: ASK honours GROUP BY / HAVING and LIMIT / OFFSET (SPARQL 1.1 §16.3, §18.2.4) — `translateAsk` wraps WHERE in Group (with HAVING) then Slice, and does NOT translate ORDER BY. M8/M9 are the planning review's plausible wrong implementations R1/R2, M10–M17 the specification review's V8/V5/V1–V4/V6/V9 — each passed the harness of its time. `aggregates.length > 0` in the group condition is implied by HAVING here (aggregates come only from HAVING) — kept verbatim from `translateSelect`, so no mutant on it. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct). `red_re` anchors on the jest failure header `● <suite> › <axis> ` (ITRV §A44/§A104). Anchors are CODE lines of `translateAsk` only; the group-condition line repeats in `translateSelect`, so its anchor carries the preceding `modifiers.having` call to stay unique. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/ask-solution-modifiers-14fb9cb2.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/algebra/AlgebraTranslator.ts",
+  "mutants": {
+    "M1_no_slice": {
+      "_note": "The defect for LIMIT / OFFSET: Slice is not built. A11 is split per path (A11a precondition, A11b run-query, A11c ExoQL.ask, A11d plugin): all four see the missing step. A16 and A17 carry OFFSET forms (3 groups with OFFSET 3; `W OFFSET 2`) that need the slice.",
+      "from": "      where = { type: \"slice\", limit: modifiers.limit, offset: modifiers.offset, input: where };",
+      "to": "      void where;",
+      "expect": [
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A6",
+        "A10",
+        "A11a",
+        "A11b",
+        "A11c",
+        "A11d",
+        "A12",
+        "A13",
+        "A16",
+        "A17"
+      ]
+    },
+    "M2_no_group": {
+      "_note": "The defect for GROUP BY / HAVING: Group is not built. A11 is split per path (A11a precondition, A11b run-query, A11c ExoQL.ask, A11d plugin): all four see the missing step. A15/A15b/A18* use the implicit group (HAVING without GROUP BY); A16 and A17 use GROUP BY with OFFSET / HAVING.",
+      "from": "      modifiers.having,\n      aggregates,\n      aggregateVarMap\n    );\n\n    if (aggregates.length > 0 || groupVars.length > 0 || havingExpressions.length > 0) {",
+      "to": "      modifiers.having,\n      aggregates,\n      aggregateVarMap\n    );\n\n    if (aggregates.length < 0 && groupVars.length < 0 && havingExpressions.length < 0) {",
+      "expect": [
+        "A5",
+        "A6",
+        "A8",
+        "A9",
+        "A11a",
+        "A11b",
+        "A11c",
+        "A11d",
+        "A12",
+        "A13",
+        "A14",
+        "A15",
+        "A15b",
+        "A16",
+        "A17",
+        "A18a",
+        "A18b",
+        "A18c",
+        "A18d"
+      ]
+    },
+    "M3_slice_before_group": {
+      "_note": "Plausible wrong order: Slice goes UNDER Group (cuts solutions, then groups what is left). A17's `WA GROUP BY ?s OFFSET 2` cuts 3 solutions to 1 first and then still finds a group.",
+      "from": "      where = { type: \"slice\", limit: modifiers.limit, offset: modifiers.offset, input: where };",
+      "to": "      where = where.type === \"group\" ? { ...where, input: { type: \"slice\", limit: modifiers.limit, offset: modifiers.offset, input: where.input } } : { type: \"slice\", limit: modifiers.limit, offset: modifiers.offset, input: where };",
+      "expect": ["A6", "A7", "A12", "A13", "A17"]
+    },
+    "M4_limit_zero_falsy": {
+      "_note": "Plausible wrong guard: truthiness instead of `!== undefined` — LIMIT 0 reads as 'no limit'. A11 is split per path (A11a precondition, A11b run-query, A11c ExoQL.ask, A11d plugin): all four see the missing step.",
+      "from": "    if (modifiers.limit !== undefined || modifiers.offset !== undefined) {",
+      "to": "    if (modifiers.limit || modifiers.offset) {",
+      "expect": ["A1", "A4", "A10", "A11a", "A11b", "A11c", "A11d", "A12"]
+    },
+    "M5_no_implicit_group": {
+      "_note": "Plausible wrong guard: Group only with an explicit GROUP BY — HAVING without GROUP BY is dropped. A15/A15b (several HAVING constraints) and A18* (`W0 HAVING (COUNT(*) = 0)`) have no GROUP BY.",
+      "from": "      modifiers.having,\n      aggregates,\n      aggregateVarMap\n    );\n\n    if (aggregates.length > 0 || groupVars.length > 0 || havingExpressions.length > 0) {",
+      "to": "      modifiers.having,\n      aggregates,\n      aggregateVarMap\n    );\n\n    if (groupVars.length > 0 && (aggregates.length >= 0 || havingExpressions.length >= 0)) {",
+      "expect": [
+        "A8",
+        "A9",
+        "A12",
+        "A14",
+        "A15",
+        "A15b",
+        "A18a",
+        "A18b",
+        "A18c",
+        "A18d"
+      ]
+    },
+    "M6_slice_drops_offset": {
+      "_note": "Plausible wrong Slice: LIMIT carried, OFFSET lost. A16 (OFFSET 3 over 3 groups) and A17 (`W OFFSET 2`) need OFFSET.",
+      "from": "      where = { type: \"slice\", limit: modifiers.limit, offset: modifiers.offset, input: where };",
+      "to": "      where = { type: \"slice\", limit: modifiers.limit, input: where };",
+      "expect": ["A2", "A6", "A12", "A13", "A16", "A17"]
+    },
+    "M7_orderby_translated": {
+      "_note": "ORDER BY translated as for SELECT: the answer is the same (ORDER BY never removes a solution), only the form and the sort cost change — locked by A10 alone.",
+      "from": "    if (modifiers.limit !== undefined || modifiers.offset !== undefined) {",
+      "to": "    const order = (query as unknown as Pick<SelectQuery, \"order\">).order;\n    if (order && order.length > 0) {\n      where = { type: \"orderby\", comparators: order.map((o: Ordering) => this.aggregateTranslator.translateOrderComparator(o)), input: where };\n    }\n    if (modifiers.limit !== undefined || modifiers.offset !== undefined) {",
+      "expect": ["A10"]
+    },
+    "M8_having_after_slice": {
+      "_note": "Plausible wrong order (review R1): HAVING moved ABOVE the slice — groups are cut first, then filtered.",
+      "from": "      where = { type: \"slice\", limit: modifiers.limit, offset: modifiers.offset, input: where };",
+      "to": "      where = { type: \"slice\", limit: modifiers.limit, offset: modifiers.offset, input: where.type === \"group\" ? { ...where, having: undefined } : where };\n      if (havingExpressions.length > 0) where = { type: \"filter\", expression: havingExpressions[0], input: where };",
+      "expect": ["A12", "A13"]
+    },
+    "M9_no_group_on_empty_pattern": {
+      "_note": "Plausible wrong guard (review R2): no Group when WHERE is empty — `ASK {}` is one empty solution and groups like any other.",
+      "from": "      modifiers.having,\n      aggregates,\n      aggregateVarMap\n    );\n\n    if (aggregates.length > 0 || groupVars.length > 0 || havingExpressions.length > 0) {",
+      "to": "      modifiers.having,\n      aggregates,\n      aggregateVarMap\n    );\n\n    if ((query.where?.length ?? 0) > 0 && (aggregates.length > 0 || groupVars.length > 0 || havingExpressions.length > 0)) {",
+      "expect": ["A14"]
+    },
+    "M10_throw_on_slice": {
+      "_note": "Review V8: the slice step throws. A button precondition turns the throw into `false`, so only axes that expect `true` on that path (A18a) can see it. Every path that does not catch throws on any LIMIT/OFFSET (C3 carries OFFSET 1 / LIMIT 1 too); A11a stays green — its forms expect `false`, which the catch also gives.",
+      "from": "      where = { type: \"slice\", limit: modifiers.limit, offset: modifiers.offset, input: where };",
+      "to": "      throw new Error(\"slice unsupported\");",
+      "expect": [
+        "C3",
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A6",
+        "A7",
+        "A10",
+        "A11b",
+        "A11c",
+        "A11d",
+        "A12",
+        "A13",
+        "A16",
+        "A17",
+        "A18a",
+        "A18b",
+        "A18c",
+        "A18d"
+      ]
+    },
+    "M11_shared_aggregate_state": {
+      "_note": "Review V5: the aggregate list and map outlive one translation (instance state, never cleared) — a translator reused across queries (the plugin keeps one) leaks a HAVING aggregate into the next ASK. Only a REUSED translator sees it: A17, and the plugin path A18d (the plugin translator already translated A11d's HAVING query).",
+      "from": "    const aggregateVarMap = new Map<SparqljsExpression, string>();\n    const aggregates: AggregateBinding[] = [];",
+      "to": "    const aggregateVarMap = ((this as unknown as { __askMap?: Map<SparqljsExpression, string> }).__askMap ??= new Map<SparqljsExpression, string>());\n    const aggregates: AggregateBinding[] = ((this as unknown as { __askAggs?: AggregateBinding[] }).__askAggs ??= []);",
+      "expect": ["A17", "A18d"]
+    },
+    "M12_first_having_only": {
+      "_note": "Review V1: only the first HAVING constraint is kept.",
+      "from": "        variables: groupVars,\n        aggregates,\n        having: havingExpressions.length > 0 ? havingExpressions : undefined,\n        input: where,",
+      "to": "        variables: groupVars,\n        aggregates,\n        having: havingExpressions.length > 0 ? [havingExpressions[0]] : undefined,\n        input: where,",
+      "expect": ["A15"]
+    },
+    "M13_last_having_only": {
+      "_note": "Review V2: only the last HAVING constraint is kept.",
+      "from": "        variables: groupVars,\n        aggregates,\n        having: havingExpressions.length > 0 ? havingExpressions : undefined,\n        input: where,",
+      "to": "        variables: groupVars,\n        aggregates,\n        having: havingExpressions.length > 0 ? [havingExpressions[havingExpressions.length - 1]] : undefined,\n        input: where,",
+      "expect": ["A15b"]
+    },
+    "M14_having_disjunction": {
+      "_note": "Review V3: several HAVING constraints joined by OR instead of AND.",
+      "from": "        variables: groupVars,\n        aggregates,\n        having: havingExpressions.length > 0 ? havingExpressions : undefined,\n        input: where,",
+      "to": "        variables: groupVars,\n        aggregates,\n        having: havingExpressions.length > 0 ? [{ type: \"logical\", operator: \"||\", operands: havingExpressions } as (typeof havingExpressions)[number]] : undefined,\n        input: where,",
+      "expect": ["A15", "A15b"]
+    },
+    "M15_first_group_variable": {
+      "_note": "Review V4: only the first GROUP BY variable is kept.",
+      "from": "        variables: groupVars,\n        aggregates,\n        having: havingExpressions.length > 0 ? havingExpressions : undefined,\n        input: where,",
+      "to": "        variables: groupVars.slice(0, 1),\n        aggregates,\n        having: havingExpressions.length > 0 ? havingExpressions : undefined,\n        input: where,",
+      "expect": ["A16"]
+    },
+    "M16_limit_not_json": {
+      "_note": "Review V6: LIMIT carried as a BigInt — breaks only the precondition path's JSON round-trip, whose catch then answers `false`.",
+      "from": "      where = { type: \"slice\", limit: modifiers.limit, offset: modifiers.offset, input: where };",
+      "to": "      where = { type: \"slice\", limit: modifiers.limit !== undefined ? (BigInt(modifiers.limit) as unknown as number) : undefined, offset: modifiers.offset, input: where };",
+      "expect": ["A18a"]
+    },
+    "M17_always_slice": {
+      "_note": "Review V9: Slice built even without LIMIT / OFFSET — the answers stay the same, but the algebra of every live precondition changes (AC4); locked by A19 alone.",
+      "from": "    if (modifiers.limit !== undefined || modifiers.offset !== undefined) {",
+      "to": "    if (modifiers.limit !== undefined || modifiers.offset !== undefined || modifiers.limit === undefined) {",
+      "expect": ["A19"]
+    }
+  }
+}
