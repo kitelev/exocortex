@@ -12,7 +12,8 @@
  * GROUP BY) over an EMPTY WHERE answered `false` instead of `true`.
  *
  * The fix wraps WHERE the way `translateSelect` does — Group (with HAVING) first,
- * Slice last — and leaves ORDER BY out: it reorders, it never removes a solution.
+ * Slice last — and leaves ORDER BY out: without an aggregate it only reorders, it
+ * never removes a solution (an aggregate in ORDER BY is ems__Bug 2653916f).
  *
  * ## The paths under test
  *
@@ -27,10 +28,14 @@
  * controls, green on the pre-fix engine by construction.
  *
  * Not asserted here, on purpose: the grouping step is the one SELECT uses, and
- * its own gaps (ems__Bug 2653916f — phantom group over an empty input under
- * GROUP BY, HAVING without an aggregate, an aggregate in ORDER BY, EXISTS in
- * HAVING; GROUP BY by expression — ems__Bug 38328fcc) are that bug's axes. The
- * differential A12 keeps ASK equal to SELECT, so fixing them there fixes both.
+ * its own gaps are those bugs' axes — among them ems__Bug 2653916f (phantom
+ * group over an empty input, HAVING without an aggregate is not a Filter, an
+ * aggregate in ORDER BY, EXISTS in HAVING), 38328fcc (GROUP BY by expression)
+ * and 2f27f300 (IN / NOT IN and an aggregate inside a function call in HAVING).
+ * The ASK answers they give are PARITY with SELECT, not asserted as correct:
+ * A12 (aggregate / slice forms) and A21 (HAVING without an aggregate) lock
+ * "ASK ⇔ the SELECT with the same modifiers has a row" on their forms, so fixing
+ * a gap in the shared step fixes both forms.
  */
 
 import "reflect-metadata";
@@ -150,6 +155,8 @@ const W = `{ ?s exo:Instance_class ems:Bug . ?s exo:Asset_label ?l . }`;
 const WA = `{ ?s exo:Instance_class ems:Bug . ?s exo:Asset_aliases ?a . }`;
 /** No solution. */
 const W0 = `{ ?s exo:Instance_class ems:Bug . ?s exo:Asset_label "No such bug" . }`;
+/** Three solutions over (?s, ?c, ?a): ?c is the same class for both bugs. */
+const WC = `{ ?s exo:Instance_class ?c . ?s exo:Asset_aliases ?a . }`;
 
 const translate = (sparql: string): AlgebraOperation =>
   new ExoQLAlgebraTranslator().translate(new SPARQLParser().parse(q(sparql)));
@@ -300,10 +307,30 @@ describe("ASK solution modifiers (ems__Bug 14fb9cb2)", () => {
     expect(await ask(`ASK ${W} HAVING (COUNT(*) = 3) (COUNT(*) = 2)`)).toBe(false);
   });
 
+  it("A15c two DIFFERENT aggregates in HAVING keep their own values: COUNT = 2 and MAX = \"Asset Two\" both hold", async () => {
+    // Each aggregate gets its own binding; a translation that names both the
+    // same (counter reset per constraint) lets one overwrite the other.
+    expect(await select(`SELECT (COUNT(*) AS ?n) WHERE ${W} HAVING (COUNT(*) = 2) (MAX(?l) = "Asset Two")`)).toHaveLength(1);
+    expect(await ask(`ASK ${W} HAVING (COUNT(*) = 2) (MAX(?l) = "Asset Two")`)).toBe(true);
+    expect(await ask(`ASK ${W} HAVING (MAX(?l) = "Asset Two") (COUNT(*) = 2)`)).toBe(true);
+  });
+
   it("A16 GROUP BY over two variables: (?s, ?a) gives 3 groups — OFFSET 2 true, OFFSET 3 false, COUNT = 2 false", async () => {
     expect(await ask(`ASK ${WA} GROUP BY ?s ?a OFFSET 2`)).toBe(true);
     expect(await ask(`ASK ${WA} GROUP BY ?s ?a OFFSET 3`)).toBe(false);
     expect(await ask(`ASK ${WA} GROUP BY ?s ?a HAVING (COUNT(*) = 2)`)).toBe(false);
+  });
+
+  it("A16b every GROUP BY variable counts, the last one too: (?s, ?c) with a constant ?c gives 2 groups — OFFSET 1 true, OFFSET 2 false", async () => {
+    // ?c is the one class of both bugs, so grouping by ?c ALONE would give 1 group.
+    expect(await ask(`ASK ${WC} GROUP BY ?s ?c OFFSET 1`)).toBe(true);
+    expect(await ask(`ASK ${WC} GROUP BY ?s ?c OFFSET 2`)).toBe(false);
+  });
+
+  it("A20 the slice counts DUPLICATE solutions: a projecting subquery keeps 3 rows of 2 subjects — OFFSET 2 true, OFFSET 3 false", async () => {
+    expect(await select(`SELECT ?s WHERE { { SELECT ?s WHERE ${WA} } }`)).toHaveLength(3);
+    expect(await ask(`ASK { { SELECT ?s WHERE ${WA} } } OFFSET 2`)).toBe(true);
+    expect(await ask(`ASK { { SELECT ?s WHERE ${WA} } } OFFSET 3`)).toBe(false);
   });
 
   it("A17 one translator reused across queries (as the plugin's SPARQLQueryService keeps it) answers like a fresh one", async () => {
@@ -329,7 +356,7 @@ describe("ASK solution modifiers (ems__Bug 14fb9cb2)", () => {
   });
 
   // ------------------------------------------------------------ ORDER BY (form)
-  it("A10 ORDER BY is not translated for ASK — it reorders, never removes (no sort cost)", () => {
+  it("A10 ORDER BY is not translated for ASK — without an aggregate it only reorders, never removes (no sort cost)", () => {
     const op = translate(`ASK ${W} ORDER BY ?l LIMIT 0`) as AskOperation;
     expect(op.type).toBe("ask");
     expect(op.where.type).toBe("slice");
@@ -396,6 +423,32 @@ describe("ASK solution modifiers (ems__Bug 14fb9cb2)", () => {
       }
     }
     expect(FORMS.length).toBeGreaterThanOrEqual(160);
+    expect(mismatches).toEqual([]);
+  });
+
+  // HAVING WITHOUT an aggregate (and without GROUP BY). By SPARQL 1.1 there is no
+  // grouping then and HAVING acts as a Filter; the shared grouping step builds a
+  // group anyway (ems__Bug 2653916f), so SELECT answers otherwise — and so does
+  // ASK. Parity is the design: a Filter branch in ASK alone would make ASK and
+  // SELECT disagree, and the fix of 2653916f in the shared step fixes both.
+  const NO_AGG_FORMS: Array<{ where: string; mods: string; proj: string }> = [
+    { where: W, mods: `HAVING (?l = "Asset One")`, proj: "?l" },
+    { where: W, mods: `HAVING (true)`, proj: "?l" },
+    { where: WA, mods: `HAVING (?a = "Alpha one")`, proj: "?a" },
+    { where: W0, mods: `HAVING (true)`, proj: "?s" },
+    { where: W0, mods: `HAVING (1 = 1) LIMIT 1`, proj: "?s" },
+    { where: W0, mods: `HAVING (!BOUND(?s))`, proj: "?s" },
+  ];
+
+  it("A21 HAVING without an aggregate: ASK equals 'the SELECT has a row' (parity with the shared grouping step)", async () => {
+    const mismatches: string[] = [];
+    for (const f of NO_AGG_FORMS) {
+      const a = await ask(`ASK ${f.where} ${f.mods}`);
+      const rows = await select(`SELECT ${f.proj} WHERE ${f.where} ${f.mods}`);
+      if (a !== rows.length > 0) {
+        mismatches.push(`${f.where === W ? "W" : f.where === WA ? "WA" : "W0"} ${f.mods} → ASK ${a}, SELECT ${rows.length}`);
+      }
+    }
     expect(mismatches).toEqual([]);
   });
 });

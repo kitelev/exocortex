@@ -222,10 +222,11 @@ export class ExoQLAlgebraTranslator {
    * survive, so they wrap WHERE here in the same order as `translateSelect`:
    * Group (with HAVING) first, Slice last — ASK answers "the SELECT with the same
    * modifiers has a row". The grouping step is deliberately the SAME one
-   * `translateSelect` uses, gaps included (ems__Bug 2653916f: phantom group over
-   * an empty input, HAVING without an aggregate, an aggregate in ORDER BY,
-   * EXISTS in HAVING; GROUP BY by expression — ems__Bug 38328fcc); fixing them
-   * there fixes both forms. ORDER BY is not translated: without an aggregate it
+   * `translateSelect` uses, gaps included — among them ems__Bug 2653916f (phantom
+   * group over an empty input, HAVING without an aggregate, an aggregate in ORDER
+   * BY, EXISTS in HAVING), 38328fcc (GROUP BY by expression) and 2f27f300 (IN and
+   * an aggregate inside a function call in HAVING); fixing them in the shared step
+   * fixes both forms. ORDER BY is not translated: without an aggregate it
    * only reorders, so it never changes whether a solution survives (no sort
    * cost). `@types/sparqljs` types AskQuery without the modifiers, but the parser
    * fills them for ASK as for SELECT (vault-exodev ems__Bug 14fb9cb2).
