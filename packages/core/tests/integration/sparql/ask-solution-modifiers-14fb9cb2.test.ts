@@ -35,8 +35,9 @@
  * give follow SELECT, not the standard: A12 (aggregate / slice forms) and A21
  * (HAVING without an aggregate) lock "ASK ⇔ the SELECT with the same modifiers
  * has a row" on their forms, so fixing a gap in the shared step fixes both.
- * Two exceptions: GROUP BY by expression is held by an ABSOLUTE axis (A22) —
- * its answers do not change when 38328fcc is fixed; and an aggregate in ORDER
+ * Two exceptions: GROUP BY by expression with OFFSET is held by an ABSOLUTE
+ * axis (A22) — its answers do not change when 38328fcc is fixed (with HAVING it
+ * follows SELECT and is 38328fcc's to fix); and an aggregate in ORDER
  * BY (2653916f) is NOT shared — ASK does not translate ORDER BY, so it ignores
  * the aggregate while SELECT refuses the query, and fixing it for SELECT will
  * need `translateAsk` too.
