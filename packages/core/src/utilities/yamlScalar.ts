@@ -95,6 +95,8 @@ const YAML_FLOAT =
 // (ticket 71f1ca37 п.2); that bound is lifted here. Timestamp properties are
 // neither string-semantic nor `xsd:string`-ranged and never reach this oracle.
 const YAML_DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+// Pre-filter for {@link yaml11OnlyNumber} (ems__Bug 6b4d2533).
+const MAYBE_YAML11_ONLY_NUMBER = /^\+?[0-9_.]/;
 /** The two lexical forms `xsd:string` leaves bare (ticket 8185c9dd — the range-rule boolean exclusion, canonical lowercase only). */
 const CANONICAL_YAML_BOOLEAN = /^(?:true|false)$/;
 
@@ -226,6 +228,58 @@ function yaml11ReaderCoercesToNonString(value: string): boolean {
 }
 
 /**
+ * Does the product's reader (js-yaml `YAML11_SCHEMA`) read this bare plain
+ * scalar as a NUMBER that Obsidian's metadataCache (YAML 1.2 core — the
+ * {@link YAML_INT}… table) keeps as a string? (ems__Bug 6b4d2533.)
+ *
+ * These are the YAML 1.1-only numbers: the sexagesimal form (`18:00` → 1080,
+ * `1:2:3` → 3723, `1:30.5` → 90.5) and `+.5`. Written bare under a property
+ * with no declared range, Obsidian shows the author's `18:00` while the graph
+ * holds the integer 1080 — nobody typing a clock time means minutes. Quoted,
+ * both readers return the string the author typed.
+ *
+ * ⛔ Number only, deliberately:
+ * - a `Date` is not resolved here — the 1.1 reader reads a bare datetime
+ *   (`2026-11-02T18:00:00`) as a `Date`, the 1.2 table does not list it, and
+ *   timestamp properties must stay bare to be `xsd:dateTime` ({@link YAML_DATE});
+ * - a 1.1 boolean (`yes` / `no` / `off` …) is the same disagreement, but its
+ *   bare form on an untyped property is pinned by req 21ceea14 (axis R19
+ *   control) — changing it is a separate decision, not part of this bug.
+ *
+ * Known residue: a `_`-separated form (`1_000`, `0x_1F`) is a number to YAML
+ * 1.1 and a string to a strict 1.2 reader, but the {@link YAML_INT} table
+ * admits `_`, so it stays bare (review of PR #4590, LOW-1 — 167 forms, none
+ * seen in live data).
+ */
+function yaml11OnlyNumber(value: string): boolean {
+  // Cheap pre-filter (review of PR #4590, LOW-4): every YAML 1.1-only number
+  // that reaches this check starts with a digit, `+`, `.` or `_` — a leading
+  // `-` is already quoted by the indicator guard above. Skips the `yaml.load`
+  // for the common untyped value (a word, a wikilink).
+  if (!MAYBE_YAML11_ONLY_NUMBER.test(value)) return false;
+  let loaded: unknown;
+  try {
+    loaded = yaml.load(`v: ${value}`, { schema: yaml.YAML11_SCHEMA });
+  } catch {
+    // Defensive (integration-test-revert-verify §A35): forms the reader
+    // rejects are quoted by the guards `needsYamlQuoting` runs before this
+    // check. Fails towards quoting, like `yaml11ReaderCoercesToNonString`:
+    // a value the reader rejects, written bare, breaks the whole frontmatter.
+    return true;
+  }
+  if (typeof loaded !== "object" || loaded === null) return false;
+  const v = (loaded as { v?: unknown }).v;
+  if (typeof v !== "number") return false;
+  return !(
+    YAML_BOOL.test(value) ||
+    YAML_NULL.test(value) ||
+    YAML_INT.test(value) ||
+    YAML_FLOAT.test(value) ||
+    YAML_DATE.test(value)
+  );
+}
+
+/**
  * Does ANY reader of this frontmatter coerce the bare plain scalar to a
  * non-string type? (#3750 MEDIUM-3, ticket 8185c9dd.) Two readers exist:
  * the product's `parseYamlFrontmatterTolerant` (js-yaml 5.3.0 `YAML11_SCHEMA`
@@ -334,6 +388,21 @@ export function needsYamlQuoting(
   // Non-characters / lone surrogates: bare, the reader throws for the whole
   // frontmatter; quoted, they are `\uNNNN`-escaped (ticket 65ea50c4).
   if (YAML_NON_PRINTABLE_CHARS.test(value)) return true;
+
+  // ems__Bug 6b4d2533 — no declared range, and the two readers disagree on
+  // the bare value (YAML 1.1 reads `18:00` as 1080, Obsidian as "18:00"):
+  // quote, so the graph holds what the author typed and Obsidian shows.
+  // Gated to an UNKNOWN range: a declared numeric / boolean range keeps the
+  // typing decided above (ticket 2227d660), `xsd:string` is handled below.
+  // Skipped under string semantics: the oracle below already quotes every
+  // such number there (review of PR #4590, LOW-4 — no double `yaml.load`).
+  if (
+    typing === undefined &&
+    !quoteAmbiguousScalars &&
+    yaml11OnlyNumber(value)
+  ) {
+    return true;
+  }
 
   // Scalar-looking strings coerced to non-string types by a real YAML parser
   // (#3750 MEDIUM-3) — quote so a semantically-string value round-trips. Gated
