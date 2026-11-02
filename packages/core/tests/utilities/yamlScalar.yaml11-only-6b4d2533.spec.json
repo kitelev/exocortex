@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for ems__Bug 6b4d2533 — SUBJECT: packages/core/src/utilities/yamlScalar.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout. Guards enumerated from `git diff -U0` of the fix (integration-test-revert-verify §A8): the new rule in needsYamlQuoting, its range gate, the number-only filter (Date and boolean excluded), the 1.2-core agreement exclusion and the defensive catch. The harness also runs the existing yamlScalar / MetadataHelpers / FrontmatterService quoting suites, so a mutant that broke a pre-existing axis would surface in the control-vs-mutant diff rather than pass silently.",
+  "_doc": "Revert-verify mutants for ems__Bug 6b4d2533 — SUBJECT: packages/core/src/utilities/yamlScalar.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout. Guards enumerated from `git diff -U0` of the fix (integration-test-revert-verify §A8): the new rule in needsYamlQuoting, its range gate, the number-only filter (Date and boolean excluded), the 1.2-core agreement exclusion and the defensive catch. The harness also runs the existing yamlScalar / MetadataHelpers / FrontmatterService quoting suites, and `red_re` catches EVERY axis name (`[A-Z]\\d+[a-z]?`), not only Y — so an existing axis a mutant reddens is listed in `expect` with its reason (review of PR #4590, MEDIUM-2: with a Y-only `red_re` those extra axes were invisible).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/utilities/yamlScalar.ts",
   "symlink_node_modules": [
@@ -12,38 +12,58 @@
   ],
   "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/utilities/yamlScalar.yaml11-only-6b4d2533.test.ts tests/utilities/yamlScalar.test.ts tests/utilities/MetadataHelpers.yamlQuoting.test.ts tests/utilities/FrontmatterService.yamlQuoting.test.ts 2>&1",
   "env_var": "SUT",
-  "red_re": "› (Y\\d+) ",
+  "red_re": "› ([A-Z]\\d+[a-z]?) ",
   "mutants": {
     "M1_rule_removed": {
-      "from": "  if (typing === undefined && yaml11OnlyNumber(value)) return true;",
-      "to": "  void yaml11OnlyNumber;",
-      "expect": ["Y1", "Y2", "Y3", "Y4"],
-      "_note": "The fix itself: without the rule the writer returns to the pre-fix shape and `18:00` is written bare (Y1, Y3, Y4 — the reported defect) along with `+.5` (Y2)."
+      "from": "    typing === undefined &&\n    !quoteAmbiguousScalars &&\n    yaml11OnlyNumber(value)",
+      "to": "    false &&\n    !quoteAmbiguousScalars &&\n    yaml11OnlyNumber(value)",
+      "expect": ["R19", "Y1", "Y2", "Y3", "Y4"],
+      "_note": "The fix itself: without the rule the writer returns to the pre-fix shape and `18:00` is written bare (Y1, Y3, Y4 — the reported defect) along with `+.5` (Y2). R19 reds too: its rewritten control line expects `10:30` quoted on an untyped property — the same rule, pinned in the req 21ceea14 suite (measured, §A44)."
     },
     "M2_range_gate_dropped": {
-      "from": "  if (typing === undefined && yaml11OnlyNumber(value)) return true;",
-      "to": "  if (yaml11OnlyNumber(value)) return true;",
-      "expect": ["Y7", "Y8"],
-      "_note": "Shares M1's anchor (the driver splices each mutant into an untouched copy). Without the gate a DECLARED range stops deciding the typing: `1:30.5` under xsd:decimal and `18:00` under xsd:integer get quoted, overriding ticket 2227d660."
+      "from": "    typing === undefined &&\n    !quoteAmbiguousScalars &&\n    yaml11OnlyNumber(value)",
+      "to": "    !quoteAmbiguousScalars &&\n    yaml11OnlyNumber(value)",
+      "expect": ["R22", "Y7", "Y8"],
+      "_note": "Without the gate a DECLARED range stops deciding the typing: `1:30.5` under xsd:decimal and `18:00` under xsd:integer get quoted, overriding ticket 2227d660 (Y7, Y8). R22 reds too: it pins declared numeric ranges in the 8185c9dd suite (measured, §A44)."
     },
     "M3_date_admitted": {
       "from": "  if (typeof v !== \"number\") return false;",
       "to": "  if (typeof v === \"string\" || v === null || v === undefined) return false;",
-      "expect": ["Y6", "Y9"],
-      "_note": "Admits a Date and a boolean as a disagreement: a bare datetime would be quoted (timestamp properties stop being xsd:dateTime — Y6) and a 1.1 boolean would be quoted on an untyped property, overriding the R19 control of req 21ceea14 (Y9)."
+      "expect": ["R18a", "R18b", "Y6"],
+      "_note": "Admits a Date (and a boolean) as a disagreement: a bare datetime is quoted and timestamp properties would stop being xsd:dateTime (Y6; R18a/R18b pin the same datetime bound in the 8185c9dd suite). ⛔ Y9 (1.1 booleans stay bare) does NOT redden: the pre-filter `MAYBE_YAML11_ONLY_NUMBER` already rejects `yes` / `no` before the load, so Y9 is held by TWO guards and no single mutant can redden it — stated, not hidden (§A33); M7 (pre-filter removed) is the other half and is zero for the same reason."
     },
     "M4_agreement_exclusion_dropped": {
       "from": "  return !(\n    YAML_BOOL.test(value) ||",
       "to": "  return true || !(\n    YAML_BOOL.test(value) ||",
-      "expect": ["Y5"],
-      "_note": "Drops the 'both readers agree' exclusion: a bare `3` or `1.5` would be quoted and untyped numbers would turn into strings (`true` is already filtered out by the number-only check)."
+      "expect": ["G2", "R10", "R11", "R5", "Y5"],
+      "_note": "Drops the 'both readers agree' exclusion: a bare `3` or `1.5` would be quoted and untyped numbers would turn into strings (Y5). R5/R10/R11/G2 pin bare numbers on non-string properties in the existing suites (measured, §A44)."
     },
     "M5_catch_returns_true": {
-      "from": "    // check, so this branch keeps the pre-fix (bare) behaviour.\n    return false;",
-      "to": "    // check, so this branch keeps the pre-fix (bare) behaviour.\n    return true;",
+      "from": "    // a value the reader rejects, written bare, breaks the whole frontmatter.\n    return true;",
+      "to": "    // a value the reader rejects, written bare, breaks the whole frontmatter.\n    return false;",
       "expect": [],
       "_canary": "M1_rule_removed",
-      "_note": "⛔ Defensive branch, no distinguishing input (integration-test-revert-verify §A35): every value the reader rejects in `v: <value>` position is quoted by the guards needsYamlQuoting runs before the rule, so the catch is unreachable from the writer. Stated, not hidden; M1 is the canary that the delivery works."
+      "_note": "⛔ Defensive branch, no distinguishing input (integration-test-revert-verify §A35): every value the reader rejects in `v: <value>` position is quoted by the guards needsYamlQuoting runs before the rule, so the catch is unreachable from the writer (fuzz of 1 170 675 forms in review of PR #4590: 0 reach it). The branch now fails towards quoting (LOW-3); this mutant flips it back to bare. Stated, not hidden; M1 is the canary that the delivery works."
+    },
+    "M6_prefilter_drops_plus": {
+      "from": "const MAYBE_YAML11_ONLY_NUMBER = /^\\+?[0-9_.]/;",
+      "to": "const MAYBE_YAML11_ONLY_NUMBER = /^[0-9_.]/;",
+      "expect": ["Y2", "Y3", "Y4"],
+      "_note": "The pre-filter must admit a leading `+`: `+.5` is a YAML 1.1-only number. Without `+` it slips past the rule and is written bare (Y2; Y3/Y4 carry `+.5` in their list)."
+    },
+    "M7_prefilter_removed": {
+      "from": "  if (!MAYBE_YAML11_ONLY_NUMBER.test(value)) return false;",
+      "to": "  void MAYBE_YAML11_ONLY_NUMBER;",
+      "expect": [],
+      "_canary": "M1_rule_removed",
+      "_note": "⛔ Pure optimisation, no distinguishing input (§A35): the pre-filter only rejects values the number check rejects anyway — corpus of 160 436 values × 20 (qa, range) pairs, v1 (no pre-filter) vs v2: 0 differing (review of PR #4590 corpus, re-run 2026-11-02). It also holds Y9 together with the number check (see M3). Canary M1."
+    },
+    "M8_string_semantics_skip_removed": {
+      "from": "    typing === undefined &&\n    !quoteAmbiguousScalars &&\n    yaml11OnlyNumber(value)",
+      "to": "    typing === undefined &&\n    yaml11OnlyNumber(value)",
+      "expect": [],
+      "_canary": "M1_rule_removed",
+      "_note": "⛔ Pure optimisation, no distinguishing input (§A35): under string semantics the oracle `looksLikeNonStringScalar` below already quotes every YAML 1.1-only number, so skipping the rule there only saves the second `yaml.load` (LOW-4). Same corpus: 0 differing. Canary M1."
     }
   }
 }

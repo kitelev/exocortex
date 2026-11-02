@@ -26,7 +26,7 @@ const KEY = "kitelev-okr__KitelevPartOfDayOKR_startTime";
 const SEXAGESIMAL = ["18:00", "24:00", "00:30", "1:2:3", "1:30.5"];
 const YAML11_ONLY_NUMBERS = [...SEXAGESIMAL, "+.5"];
 
-describe("ems__Bug 6b4d2533 — YAML 1.1-only numbers under an unknown range", () => {
+describe("ems__Bug 6b4d2533 — YAML 1.1-only numbers under an unknown range @req:21ceea14-50dd-4cf8-bd3b-5a50b7c97105", () => {
   it.each(SEXAGESIMAL)(
     "Y1 sexagesimal %s is quoted when no range is known",
     (value) => {
@@ -55,8 +55,11 @@ describe("ems__Bug 6b4d2533 — YAML 1.1-only numbers under an unknown range", (
     }
   });
 
-  it("Y5 forms both readers agree on stay bare and keep their type", () => {
+  it("Y5 values the rule does not touch stay bare (numbers both readers agree on keep their type)", () => {
     const service = new FrontmatterService();
+    // `1e5` and `08` below are NOT agreed forms — they diverge the other way
+    // (a string to YAML 1.1, a number to 1.2-core) and stay bare because the
+    // rule only looks at "1.1 reads a number" (review of PR #4590, LOW-5).
     const agreed: Array<[string, unknown]> = [
       ["3", 3],
       ["1.5", 1.5],
