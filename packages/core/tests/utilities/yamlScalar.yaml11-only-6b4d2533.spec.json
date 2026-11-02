@@ -1,0 +1,49 @@
+{
+  "_doc": "Revert-verify mutants for ems__Bug 6b4d2533 — SUBJECT: packages/core/src/utilities/yamlScalar.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout. Guards enumerated from `git diff -U0` of the fix (integration-test-revert-verify §A8): the new rule in needsYamlQuoting, its range gate, the number-only filter (Date and boolean excluded), the 1.2-core agreement exclusion and the defensive catch. The harness also runs the existing yamlScalar / MetadataHelpers / FrontmatterService quoting suites, so a mutant that broke a pre-existing axis would surface in the control-vs-mutant diff rather than pass silently.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/utilities/yamlScalar.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/utilities/yamlScalar.yaml11-only-6b4d2533.test.ts tests/utilities/yamlScalar.test.ts tests/utilities/MetadataHelpers.yamlQuoting.test.ts tests/utilities/FrontmatterService.yamlQuoting.test.ts 2>&1",
+  "env_var": "SUT",
+  "red_re": "› (Y\\d+) ",
+  "mutants": {
+    "M1_rule_removed": {
+      "from": "  if (typing === undefined && yaml11OnlyNumber(value)) return true;",
+      "to": "  void yaml11OnlyNumber;",
+      "expect": ["Y1", "Y2", "Y3", "Y4"],
+      "_note": "The fix itself: without the rule the writer returns to the pre-fix shape and `18:00` is written bare (Y1, Y3, Y4 — the reported defect) along with `+.5` (Y2)."
+    },
+    "M2_range_gate_dropped": {
+      "from": "  if (typing === undefined && yaml11OnlyNumber(value)) return true;",
+      "to": "  if (yaml11OnlyNumber(value)) return true;",
+      "expect": ["Y7", "Y8"],
+      "_note": "Shares M1's anchor (the driver splices each mutant into an untouched copy). Without the gate a DECLARED range stops deciding the typing: `1:30.5` under xsd:decimal and `18:00` under xsd:integer get quoted, overriding ticket 2227d660."
+    },
+    "M3_date_admitted": {
+      "from": "  if (typeof v !== \"number\") return false;",
+      "to": "  if (typeof v === \"string\" || v === null || v === undefined) return false;",
+      "expect": ["Y6", "Y9"],
+      "_note": "Admits a Date and a boolean as a disagreement: a bare datetime would be quoted (timestamp properties stop being xsd:dateTime — Y6) and a 1.1 boolean would be quoted on an untyped property, overriding the R19 control of req 21ceea14 (Y9)."
+    },
+    "M4_agreement_exclusion_dropped": {
+      "from": "  return !(\n    YAML_BOOL.test(value) ||",
+      "to": "  return true || !(\n    YAML_BOOL.test(value) ||",
+      "expect": ["Y5"],
+      "_note": "Drops the 'both readers agree' exclusion: a bare `3` or `1.5` would be quoted and untyped numbers would turn into strings (`true` is already filtered out by the number-only check)."
+    },
+    "M5_catch_returns_true": {
+      "from": "    // check, so this branch keeps the pre-fix (bare) behaviour.\n    return false;",
+      "to": "    // check, so this branch keeps the pre-fix (bare) behaviour.\n    return true;",
+      "expect": [],
+      "_canary": "M1_rule_removed",
+      "_note": "⛔ Defensive branch, no distinguishing input (integration-test-revert-verify §A35): every value the reader rejects in `v: <value>` position is quoted by the guards needsYamlQuoting runs before the rule, so the catch is unreachable from the writer. Stated, not hidden; M1 is the canary that the delivery works."
+    }
+  }
+}

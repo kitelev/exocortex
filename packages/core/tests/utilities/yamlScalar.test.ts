@@ -680,9 +680,13 @@ describe("ticket 8185c9dd — the string oracle is the YAML11 reader (∪ 1.2-co
       expect(serializeYamlScalar(v, true)).toBe(`"${v}"`);
       expect(roundTrip(v, true)).toBe(v);
     }
-    // Control — without string semantics and without a range these stay bare
-    // (a timestamp / numeric property keeps its native type, as before).
-    expect(serializeYamlScalar("10:30")).toBe("10:30");
+    // Control — without string semantics and without a range a 1.1 boolean
+    // stays bare (a boolean-ish property keeps its native type, as before).
+    // ⛔ `10:30` is no longer in this control (ems__Bug 6b4d2533): a YAML
+    // 1.1-only NUMBER is quoted on an untyped property too, because Obsidian
+    // reads it as the string the author typed while the 1.1 reader made it
+    // 630 — see yamlScalar.yaml11-only-6b4d2533.test.ts.
+    expect(serializeYamlScalar("10:30")).toBe('"10:30"');
     expect(serializeYamlScalar("no")).toBe("no");
   });
 

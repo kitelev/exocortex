@@ -226,6 +226,47 @@ function yaml11ReaderCoercesToNonString(value: string): boolean {
 }
 
 /**
+ * Does the product's reader (js-yaml 5.3.0 `YAML11_SCHEMA`) read this bare
+ * plain scalar as a NUMBER that Obsidian's metadataCache (YAML 1.2 core — the
+ * {@link YAML_INT}… table) keeps as a string? (ems__Bug 6b4d2533.)
+ *
+ * These are the YAML 1.1-only numbers: the sexagesimal form (`18:00` → 1080,
+ * `1:2:3` → 3723, `1:30.5` → 90.5) and `+.5`. Written bare under a property
+ * with no declared range, Obsidian shows the author's `18:00` while the graph
+ * holds the integer 1080 — nobody typing a clock time means minutes. Quoted,
+ * both readers return the string the author typed.
+ *
+ * ⛔ Number only, deliberately:
+ * - a `Date` is not resolved here — the 1.1 reader reads a bare datetime
+ *   (`2026-11-02T18:00:00`) as a `Date`, the 1.2 table does not list it, and
+ *   timestamp properties must stay bare to be `xsd:dateTime` ({@link YAML_DATE});
+ * - a 1.1 boolean (`yes` / `no` / `off` …) is the same disagreement, but its
+ *   bare form on an untyped property is pinned by req 21ceea14 (axis R19
+ *   control) — changing it is a separate decision, not part of this bug.
+ */
+function yaml11OnlyNumber(value: string): boolean {
+  let loaded: unknown;
+  try {
+    loaded = yaml.load(`v: ${value}`, { schema: yaml.YAML11_SCHEMA });
+  } catch {
+    // Defensive (integration-test-revert-verify §A35): forms the reader
+    // rejects are quoted by the guards `needsYamlQuoting` runs before this
+    // check, so this branch keeps the pre-fix (bare) behaviour.
+    return false;
+  }
+  if (typeof loaded !== "object" || loaded === null) return false;
+  const v = (loaded as { v?: unknown }).v;
+  if (typeof v !== "number") return false;
+  return !(
+    YAML_BOOL.test(value) ||
+    YAML_NULL.test(value) ||
+    YAML_INT.test(value) ||
+    YAML_FLOAT.test(value) ||
+    YAML_DATE.test(value)
+  );
+}
+
+/**
  * Does ANY reader of this frontmatter coerce the bare plain scalar to a
  * non-string type? (#3750 MEDIUM-3, ticket 8185c9dd.) Two readers exist:
  * the product's `parseYamlFrontmatterTolerant` (js-yaml 5.3.0 `YAML11_SCHEMA`
@@ -334,6 +375,13 @@ export function needsYamlQuoting(
   // Non-characters / lone surrogates: bare, the reader throws for the whole
   // frontmatter; quoted, they are `\uNNNN`-escaped (ticket 65ea50c4).
   if (YAML_NON_PRINTABLE_CHARS.test(value)) return true;
+
+  // ems__Bug 6b4d2533 — no declared range, and the two readers disagree on
+  // the bare value (YAML 1.1 reads `18:00` as 1080, Obsidian as "18:00"):
+  // quote, so the graph holds what the author typed and Obsidian shows.
+  // Gated to an UNKNOWN range: a declared numeric / boolean range keeps the
+  // typing decided above (ticket 2227d660), `xsd:string` is handled below.
+  if (typing === undefined && yaml11OnlyNumber(value)) return true;
 
   // Scalar-looking strings coerced to non-string types by a real YAML parser
   // (#3750 MEDIUM-3) — quote so a semantically-string value round-trips. Gated
