@@ -1,5 +1,6 @@
 [
-  "<root>::braces::GHSA-vfj7-8cjw-p6xm",
+  "<root>::deepmerge::GHSA-gcqx-w48m-w2h4",
+  "<root>::glob::GHSA-3g3m-2fjr-6pw4",
   "<root>::js-yaml::GHSA-2883-xcg3-v3hh",
-  "<root>::sprintf-js::GHSA-hp3w-g68c-fv3c"
+  "<root>::minimatch::GHSA-g3hv-75wg-m249"
 ]
