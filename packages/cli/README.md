@@ -249,8 +249,10 @@ npx @kitelev/exocortex-cli query "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }" \
 
 `query --batch <file>` answers many queries over **one** graph load (a single `query` call pays a full load
 every time). The file is a JSON array of entries `{"name": "...", "sparql": "..."}`; names are unique and match
-`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`. Any path except a directory is accepted, so `/dev/stdin` and
-`<(...)` work too.
+`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`. Any path except a directory is accepted. `/dev/stdin` (a pipe)
+works however the CLI is started; `<(...)` works only when the CLI runs directly (the installed
+`exocortex-cli` bin or `node dist/index.js`) — under `npx` the descriptor is not passed on and the batch is
+refused with `cannot be read (EBADF)`, so use `/dev/stdin` or a file there.
 
 ```bash
 cat > batch.json <<'EOF'

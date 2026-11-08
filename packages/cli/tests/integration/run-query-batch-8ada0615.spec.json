@@ -68,6 +68,12 @@
       "to": "      process.exitCode = ExitCodes.GENERAL_ERROR;\n    }\n  }",
       "expect": ["R7b"],
       "_note": "Review of PR #4605 (round 1): a wrong implementation that passed all 51 axes of the first edition."
+    },
+    "K66_summary_epipe_swallowed": {
+      "from": "  } catch {\n    process.exitCode = ExitCodes.GENERAL_ERROR;\n    return;\n  }\n  finish(failed);",
+      "to": "  } catch {\n    /* reader gone */\n  }\n  finish(failed);",
+      "expect": ["R7c"],
+      "_note": "Review of PR #4605 (round 2): a clause of the requirement with no axis of its own."
     }
   }
 }

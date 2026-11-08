@@ -31,8 +31,8 @@
     "M4_stop_after_first_failure": {
       "from": "    record.durationMs = Date.now() - entryStart;\n    try {\n      await sink.write(ndjsonLine(record));\n    } catch {\n      // Nobody reads stdout any more (EPIPE): stop, do not run the rest.\n      process.exitCode = ExitCodes.GENERAL_ERROR;\n      return;\n    }\n",
       "to": "    record.durationMs = Date.now() - entryStart;\n    try {\n      await sink.write(ndjsonLine(record));\n    } catch {\n      // Nobody reads stdout any more (EPIPE): stop, do not run the rest.\n      process.exitCode = ExitCodes.GENERAL_ERROR;\n      return;\n    }\n    if (record.ok === false) break;\n",
-      "expect": ["B3", "B3b", "B4", "B11", "B13", "B13c"],
-      "_note": "B3, B13 and B13c are red too, legitimately: their FIRST entry fails (refused UPDATE / injected timeout); stopping drops the second entry, so the summary sits where the axis expects the second record. Extra after review round 1: B3b's first entry is refused; stopping there leaves its later entries unanswered."
+      "expect": ["B3", "B3b", "B4", "B11", "B11b", "B13", "B13c"],
+      "_note": "B3, B13 and B13c are red too, legitimately: their FIRST entry fails (refused UPDATE / injected timeout); stopping drops the second entry, so the summary sits where the axis expects the second record. Extra after review round 1: B3b's first entry is refused; stopping there leaves its later entries unanswered. Extra after review round 2: B11b's first entry fails with load; stopping there leaves the syntax and cached entries unanswered."
     },
     "M5_rc0_on_failure": {
       "from": "  process.exitCode = failed > 0 ? ExitCodes.OPERATION_FAILED : ExitCodes.SUCCESS;\n",
@@ -91,7 +91,8 @@
     "RV01_cache_hit_from_wrong_entry": {
       "from": "      const hit = cached[i] as",
       "to": "      const hit = cached[0] as",
-      "expect": ["B14", "B14c", "B14e"]
+      "expect": ["B11b", "B14", "B14c", "B14e"],
+      "_note": "Extra after review round 2: cached[0] belongs to entry 'a' (not cached), so the cached entry of B11b falls to the failed graph and answers load instead of ok."
     },
     "RV02_eager_graph_prefetch": {
       "from": "  const graph = graphLoader(vaultPath, options.useCache, sink);\n\n  // Result cache",
@@ -101,8 +102,8 @@
     "RV03_cache_keyed_by_name": {
       "from": "    cached.push(cache ? await cache.get(entry.sparql, options.cacheTtlSeconds, signature) : null);",
       "to": "    cached.push(cache ? await cache.get(entry.name, options.cacheTtlSeconds, signature) : null);",
-      "expect": ["B14", "B14c", "B14d", "B14e", "B14f", "B14g"],
-      "_note": "Here only the READ is keyed by name (the write stays keyed by text), so nothing ever hits: every cache axis that expects a hit is red."
+      "expect": ["B11b", "B14", "B14c", "B14d", "B14e", "B14f", "B14g"],
+      "_note": "Here only the READ is keyed by name (the write stays keyed by text), so nothing ever hits: every cache axis that expects a hit is red. Extra after review round 2: the cache is written by TEXT and read by NAME, so the cached entry of B11b misses and answers load instead of ok."
     },
     "RV04_signature_not_used_on_get": {
       "from": "    cached.push(cache ? await cache.get(entry.sparql, options.cacheTtlSeconds, signature) : null);",
@@ -267,6 +268,36 @@
       "to": "    entries = readBatchFile(batchPath, \"sparql\");",
       "expect": ["B19"],
       "_note": "Review of PR #4605 (round 1): a wrong implementation that passed all 51 axes of the first edition."
+    },
+    "K60b_only_json_paths_accepted": {
+      "from": "    text = readFileSync(full, \"utf-8\");\n",
+      "to": "    if (!full.endsWith(\".json\")) throw Object.assign(new Error(\"not a json file\"), { code: \"ENOENT\" });\n    text = readFileSync(full, \"utf-8\");\n",
+      "expect": ["B18b", "B20"],
+      "_note": "Review of PR #4605 (round 2): a clause of the requirement with no axis of its own. Single-edit form of the reviewer's K60 ('regular files only' via statSync needs two non-adjacent edits, which the driver cannot express): it refuses /dev/stdin, <(…) and a FIFO alike. Extra after review round 2: the directory of B18b is not a .json path either, so it is refused as missing (rc 3) instead of 'is a directory'."
+    },
+    "K61_failed_load_retypes_later_errors": {
+      "from": "(error as Error)?.name === \"BatchLoadError\" ? \"load\" : sparqlErrorType(error);",
+      "to": "(error as Error)?.name === \"BatchLoadError\" || (graph.state.graphLoads > 0 && graph.state.store === null) ? \"load\" : sparqlErrorType(error);",
+      "expect": ["B11b"],
+      "_note": "Review of PR #4605 (round 2): a clause of the requirement with no axis of its own."
+    },
+    "K62_missing_sparql_not_refused_by_typeof": {
+      "from": "if (typeof entry.sparql !== \"string\" || entry.sparql.trim() === \"\") {",
+      "to": "if ((entry.sparql as string).trim() === \"\") {",
+      "expect": ["B9i"],
+      "_note": "Review of PR #4605 (round 2): a clause of the requirement with no axis of its own."
+    },
+    "K63_missing_uid_accepted": {
+      "from": "if (typeof entry.uid !== \"string\" || entry.uid.trim() === \"\") {",
+      "to": "if (false) {",
+      "expect": ["R8"],
+      "_note": "Review of PR #4605 (round 2): a clause of the requirement with no axis of its own."
+    },
+    "K64_unknown_fields_accepted_for_run_query": {
+      "from": "      if (!allowed.includes(key)) {",
+      "to": "      if (!allowed.includes(key) && kind === \"sparql\") {",
+      "expect": ["R9"],
+      "_note": "Review of PR #4605 (round 2): a clause of the requirement with no axis of its own."
     }
   }
 }

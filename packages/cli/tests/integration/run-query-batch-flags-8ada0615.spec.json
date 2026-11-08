@@ -34,6 +34,12 @@
       "from": "            outputFormat !== \"text\" ? \"--output\" : null,",
       "to": "            null,",
       "expect": ["R2e"]
+    },
+    "K65_no_uid_no_batch_not_refused": {
+      "from": "        if (uid === undefined) {",
+      "to": "        if (uid === undefined && false) {",
+      "expect": ["R10"],
+      "_note": "Review of PR #4605 (round 2): a clause of the requirement with no axis of its own."
     }
   }
 }

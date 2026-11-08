@@ -15,6 +15,7 @@ import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals
 import * as fs from "fs";
 import * as path from "path";
 import os from "os";
+import { execFileSync, spawn } from "child_process";
 
 const { sparqlQueryCommand } = await import("../../src/commands/sparql-query.js");
 const { runQueryCommand } = await import("../../src/commands/run-query.js");
@@ -364,6 +365,7 @@ describe("query --batch / run-query --batch (ticket 8ada0615)", () => {
     ["B9f", [{ name: "a", sparql: "   " }], "a blank sparql", '"sparql" must be a non-empty string'],
     ["B9g", { name: "a", sparql: Q_COUNT }, "an object instead of an array", "must be a non-empty JSON array"],
     ["B9h", [null], "a null entry", "is not an object"],
+    ["B9i", [{ name: "a" }], "an entry without sparql", '"sparql" must be a non-empty string'],
   ];
   for (const [axis, shape, named, refusal] of BATCH_SHAPES) {
     it(`${axis} @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea a batch with ${named} is refused (rc 2) before the graph is loaded`, async () => {
@@ -410,6 +412,22 @@ describe("query --batch / run-query --batch (ticket 8ada0615)", () => {
     // about itself (review of PR #4605, MEDIUM 1: a retry per entry kept graphLoads = 1).
     expect(load).toHaveBeenCalledTimes(1);
     expect(process.exitCode).toBe(5);
+  }, 60000);
+
+  // Review of PR #4605, round 2: B11 holds only entries that need the graph. The
+  // requirement also says a refused entry keeps its type and a cached answer stays ok.
+  it("B11b @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea a load failure answers load only where the graph is needed: a refused entry keeps its type, a cached answer stays ok", async () => {
+    await runQuery(["--batch", batchFile([{ name: "hit", sparql: Q_SHORTHAND }])]);
+    cap.stdout = [];
+    jest.spyOn(CacheManager.prototype, "loadOrBuild").mockRejectedValue(new Error("EACCES simulated"));
+    const f = batchFile([
+      { name: "a", sparql: Q_COUNT },
+      { name: "syn", sparql: "SELECT ?s WHERE {" },
+      { name: "hit", sparql: Q_SHORTHAND },
+    ]);
+    await runQuery(["--batch", f, "--use-cache"]);
+    const recs = records();
+    expect(recs.slice(0, 3).map((r) => (r.ok ? "ok" : r.error?.type))).toEqual(["load", "syntax", "ok"]);
   }, 60000);
 
   function stripVolatile(r: Record<string, any>): Record<string, any> {
@@ -537,7 +555,7 @@ describe("query --batch / run-query --batch (ticket 8ada0615)", () => {
     expect(cap.exitCodes[0]).toBe(2);
     const everything = [...cap.stdout, ...cap.stderr, ...cap.consoleOut].join("\n");
     expect(everything).toContain("cannot be read (ELOOP)");
-    expect(everything).not.toContain("symbolic links");
+    expect(everything).not.toContain("ELOOP:");
     expect(loads.fullParse).not.toHaveBeenCalled();
   }, 60000);
 
@@ -552,6 +570,25 @@ describe("query --batch / run-query --batch (ticket 8ada0615)", () => {
     expect(cap.exitCodes[0]).toBe(3);
     expect(loads.fullParse).not.toHaveBeenCalled();
     expect(cap.stdout).toEqual([]);
+  }, 60000);
+
+  // Review of PR #4605, round 2: "/dev/stdin and <(…) are accepted" had no axis — a
+  // "regular files only" check would pass every other axis. A FIFO is what both are.
+  it("B20 @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea a FIFO is a valid batch source (what /dev/stdin from a pipe and <(…) are)", async () => {
+    const src = batchFile([{ name: "a", sparql: Q_COUNT }]);
+    const fifo = path.join(workDir, "batch.fifo");
+    execFileSync("mkfifo", [fifo]);
+    // A separate process writes, so the synchronous read in the CLI is not a deadlock.
+    const writer = spawn("sh", ["-c", `cat '${src}' > '${fifo}'`], { stdio: "ignore" });
+    try {
+      await runQuery(["--batch", fifo, "--no-cache"]);
+    } finally {
+      writer.kill("SIGKILL");
+    }
+    expect(cap.exitCodes).toEqual([]);
+    const recs = records();
+    expect(recs[0]).toMatchObject({ type: "result", name: "a", ok: true });
+    expect(recs[1]).toMatchObject({ type: "summary", queries: 1, ok: 1 });
   }, 60000);
 
   it("B15 @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea a failed result-cache WRITE keeps the computed answer (stderr warning with the errno code), rc 0", async () => {
@@ -815,5 +852,50 @@ describe("query --batch / run-query --batch (ticket 8ada0615)", () => {
     );
     expect(run).toHaveBeenCalledTimes(1);
     expect(process.exitCode).toBe(1);
+  }, 60000);
+
+  // Review of PR #4605, round 2: clauses of the requirement for run-query --batch that
+  // had no axis of their own.
+  it("R7c @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea run-query --batch: a reader gone at the SUMMARY line still exits 1", async () => {
+    const { runNamedQueryBatch } = await import("../../src/commands/run-query-batch.js");
+    await runNamedQueryBatch(
+      batchFile([{ name: "a", uid: NQ_LABELS }]),
+      { vault: vaultDir, useCache: false },
+      {
+        write: async (line: string) => {
+          if (line.includes('"type":"summary"')) throw Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
+        },
+        progress: () => undefined,
+      },
+    );
+    expect(process.exitCode).toBe(1);
+  }, 60000);
+
+  it("R8 @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea run-query --batch: an entry without a uid, or with a blank one, is refused (rc 2) before the graph is loaded", async () => {
+    const loads = spyLoads();
+    for (const bad of [[{ name: "a" }], [{ name: "a", uid: "  " }]]) {
+      cap.exitCodes = [];
+      await runNamed(["--batch", batchFile(bad)]);
+      expect(cap.exitCodes[0]).toBe(2);
+      expect([...cap.stderr, ...cap.consoleOut].join("\n")).toContain('"uid" must be a non-empty string');
+    }
+    expect(loads.fullParse).not.toHaveBeenCalled();
+    expect(cap.stdout).toEqual([]);
+  }, 60000);
+
+  it("R9 @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea run-query --batch: an unknown field in an entry is refused (rc 2) before the graph is loaded", async () => {
+    const loads = spyLoads();
+    await runNamed(["--batch", batchFile([{ name: "a", uid: NQ_LABELS, sparql: Q_COUNT }])]);
+    expect(cap.exitCodes[0]).toBe(2);
+    expect([...cap.stderr, ...cap.consoleOut].join("\n")).toContain("unknown field");
+    expect(loads.fullParse).not.toHaveBeenCalled();
+    expect(cap.stdout).toEqual([]);
+  }, 60000);
+
+  it("R10 @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea run-query with neither a uid nor --batch is refused with rc 2", async () => {
+    await runNamed([]);
+    expect(cap.exitCodes[0]).toBe(2);
+    expect(cap.consoleOut.join("\n")).toContain("needs a <uid> or --batch");
+    expect(cap.stdout).toEqual([]);
   }, 60000);
 });
