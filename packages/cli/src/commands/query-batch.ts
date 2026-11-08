@@ -28,7 +28,7 @@
  * - The result cache is best-effort: a failed cache WRITE never discards the
  *   computed answer (stderr warning with the errno code).
  */
-import { readFileSync, existsSync, statSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { resolve } from "path";
 // ⛔ Import from core ONLY names `sparql-query.ts` already imports: two unit suites
 // replace the whole module with a hand-written factory, and a new name here fails
@@ -159,17 +159,24 @@ export function readBatchFile(
   kind: "sparql" | "named",
 ): SparqlBatchEntry[] | NamedQueryBatchEntry[] {
   const full = resolve(batchPath);
-  if (!existsSync(full)) {
-    throw new FileNotFoundError(batchPath);
-  }
-  // Not `isFile()`: `/dev/stdin` and a process substitution `<(…)` are FIFOs /
-  // character devices and are legitimate batch sources for shell callers.
-  if (statSync(full).isDirectory()) {
-    throw batchFileError(batchPath, "is a directory");
+  // Read ONCE and classify the failure by errno — not `existsSync` + `statSync` +
+  // read, a check-then-use pair on the same path (CodeQL js/file-system-race).
+  // Not "regular files only": `/dev/stdin` and a process substitution `<(…)` are
+  // FIFOs / character devices and are legitimate batch sources for shell callers.
+  let text: string;
+  try {
+    text = readFileSync(full, "utf-8");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException)?.code;
+    // ENOTDIR: a path component is a file — "no such batch file", as existsSync said.
+    if (code === "ENOENT" || code === "ENOTDIR") throw new FileNotFoundError(batchPath);
+    if (code === "EISDIR") throw batchFileError(batchPath, "is a directory");
+    // Only the errno code: the raw fs message carries nothing the caller needs.
+    throw batchFileError(batchPath, `cannot be read (${code ?? "unknown error"})`);
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(full, "utf-8"));
+    parsed = JSON.parse(text);
   } catch {
     throw batchFileError(batchPath, "is not valid JSON");
   }

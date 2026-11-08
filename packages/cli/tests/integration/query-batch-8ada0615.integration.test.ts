@@ -448,6 +448,48 @@ describe("query --batch / run-query --batch (ticket 8ada0615)", () => {
     expect([...cap.stdout, ...cap.stderr, ...cap.consoleOut].join("\n")).not.toContain("FAKE-CAN");
   }, 60000);
 
+  // The batch file is read ONCE and a failed read is classified by errno (CodeQL
+  // js/file-system-race on the first edition: existsSync + statSync + read). One axis
+  // per branch — each classification is its own guard (mutants M21–M24).
+  it("B18 @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea a missing batch file exits 3 (file not found), nothing loaded", async () => {
+    const loads = spyLoads();
+    await runQuery(["--batch", path.join(workDir, "no-such-batch.json"), "--no-cache"]);
+    expect(cap.exitCodes[0]).toBe(3);
+    expect(loads.fullParse).not.toHaveBeenCalled();
+    expect(cap.stdout).toEqual([]);
+  }, 60000);
+
+  it("B18b @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea a directory as the batch file is refused (rc 2, 'is a directory'), nothing loaded", async () => {
+    const loads = spyLoads();
+    await runQuery(["--batch", workDir, "--no-cache"]);
+    expect(cap.exitCodes[0]).toBe(2);
+    expect([...cap.stdout, ...cap.stderr, ...cap.consoleOut].join("\n")).toContain("is a directory");
+    expect(loads.fullParse).not.toHaveBeenCalled();
+    expect(cap.stdout).toEqual([]);
+  }, 60000);
+
+  it("B18c @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea a path through a regular file (ENOTDIR) exits 3, like a missing file", async () => {
+    const f = batchFile([{ name: "a", sparql: Q_COUNT }]);
+    await runQuery(["--batch", path.join(f, "inner.json"), "--no-cache"]);
+    expect(cap.exitCodes[0]).toBe(3);
+    expect(cap.stdout).toEqual([]);
+  }, 60000);
+
+  it("B18d @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea any other read failure is refused with its errno code only (rc 2), not the raw fs message", async () => {
+    const loads = spyLoads();
+    // A symlink loop gives ELOOP for every user, root included (chmod 000 would not).
+    const a = path.join(workDir, "loop-a.json");
+    const b = path.join(workDir, "loop-b.json");
+    fs.symlinkSync(b, a);
+    fs.symlinkSync(a, b);
+    await runQuery(["--batch", a, "--no-cache"]);
+    expect(cap.exitCodes[0]).toBe(2);
+    const everything = [...cap.stdout, ...cap.stderr, ...cap.consoleOut].join("\n");
+    expect(everything).toContain("cannot be read (ELOOP)");
+    expect(everything).not.toContain("symbolic links");
+    expect(loads.fullParse).not.toHaveBeenCalled();
+  }, 60000);
+
   it("B15 @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea a failed result-cache WRITE keeps the computed answer (stderr warning with the errno code), rc 0", async () => {
     jest.spyOn(QueryResultCache.prototype, "set").mockRejectedValue(Object.assign(new Error("denied"), { code: "EACCES" }));
     await runQuery(["--batch", batchFile([{ name: "a", sparql: Q_COUNT }, { name: "b", sparql: Q_SHORTHAND }])]);

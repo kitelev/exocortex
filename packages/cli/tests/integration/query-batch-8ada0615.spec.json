@@ -168,6 +168,30 @@
       "from": "  out.on(\"error\", () => undefined);\n",
       "to": "  void out;\n",
       "expect": ["B17"]
+    },
+    "M21_missing_file_not_classified_as_not_found": {
+      "from": "    if (code === \"ENOENT\" || code === \"ENOTDIR\") throw new FileNotFoundError(batchPath);\n",
+      "to": "    if (code === \"ENOTDIR\") throw new FileNotFoundError(batchPath);\n",
+      "expect": ["B18"],
+      "_note": "CodeQL js/file-system-race fix (PR #4605): ENOENT falls through to the generic branch => rc 2 instead of 3."
+    },
+    "M22_enotdir_not_classified_as_not_found": {
+      "from": "    if (code === \"ENOENT\" || code === \"ENOTDIR\") throw new FileNotFoundError(batchPath);\n",
+      "to": "    if (code === \"ENOENT\") throw new FileNotFoundError(batchPath);\n",
+      "expect": ["B18c"],
+      "_note": "A path through a regular file falls through to the generic branch => rc 2 instead of 3 (existsSync said 'missing')."
+    },
+    "M23_directory_not_refused_as_directory": {
+      "from": "    if (code === \"EISDIR\") throw batchFileError(batchPath, \"is a directory\");\n",
+      "to": "    if (code === \"EISDIR_NEVER\") throw batchFileError(batchPath, \"is a directory\");\n",
+      "expect": ["B18b"],
+      "_note": "Type-preserving: the comparison stays, it never matches; a directory is refused generically, without 'is a directory'."
+    },
+    "M24_other_read_error_rethrown_raw": {
+      "from": "    throw batchFileError(batchPath, `cannot be read (${code ?? \"unknown error\"})`);\n",
+      "to": "    throw error;\n",
+      "expect": ["B18d"],
+      "_note": "The raw fs error (message with the errno text) leaves readBatchFile instead of the classified refusal with the code only."
     }
   }
 }
