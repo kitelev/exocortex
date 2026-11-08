@@ -287,11 +287,13 @@ npx @kitelev/exocortex-cli query --batch batch.json --vault ~/vault --no-cache
 not executed; no error quotes the content of the batch file. With the result cache on, the vault signature is
 computed once per batch and entries are served from (and stored to) the same cache a single `query` uses;
 under `--no-cache` no signature is computed at all. A failed write to the result cache keeps the computed
-answer (a warning on stderr).
+answer (a warning on stderr). As for a single `query`, an edit behind a directory symlink inside the vault does
+not invalidate cached answers within the TTL (the signature does not follow links) — use `--no-cache` there.
+If the graph cannot be loaded, every entry that needs it answers `load` (one attempt per batch).
 
 **Exit codes:** `0` — every entry succeeded; `5` — at least one entry failed; `2` — refused before start
-(file is not a valid batch, or an incompatible flag); `3` — no batch file; `1` — the reader closed stdout
-(no further entry runs).
+(the file is not a valid batch, is a directory or cannot be read — only the errno code is shown — or an
+incompatible flag); `3` — no batch file, or no vault; `1` — the reader closed stdout (no further entry runs).
 
 **Flags:** `--batch` cannot be combined with a positional query, `--template`, `--param`, `--dry-run`,
 `--explain`, `--stats`, `--output json` or `--format csv|ntriples`. Allowed: `--vault`, `--use-cache`,
@@ -305,7 +307,7 @@ Each answer carries the same data `run-query <uid> --format json` prints (`kind`
 `triples`). Error types add `not-found` (no such query, or it has no `sparql` block) and `unset-token` (the
 body keeps a `$parameter` the entry did not fill — a typo would otherwise match every row); errors carry the
 type only, never a message. `--batch` cannot be combined with a positional uid, `--current-asset`, `--param`,
-`--param-iri` or `--output json`.
+`--param-iri` or `--output json`; `run-query` with neither a uid nor `--batch` exits 2.
 
 ### index
 

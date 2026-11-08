@@ -13,7 +13,18 @@
     "M14_query_flag_clash_not_refused": {
       "from": "          if (clash.length > 0) {\n",
       "to": "          if (clash.length > 0 && false) {\n",
-      "expect": ["B10a", "B10b", "B10c", "B10d", "B10e", "B10f", "B10g", "B10h"]
+      "expect": [
+        "B10a",
+        "B10b",
+        "B10c",
+        "B10d",
+        "B10e",
+        "B10f",
+        "B10g",
+        "B10h",
+        "B10i"
+      ],
+      "_note": "Extra after review round 1: B10i is the --format ntriples half of the format clash."
     },
     "FQ1_template_not_refused": {
       "from": "            options.template ? \"--template\" : null,",
@@ -33,7 +44,8 @@
     "FQ4_format_csv_not_refused": {
       "from": "            options.format !== \"table\" && options.format !== \"json\" ? `--format ${options.format}` : null,",
       "to": "            null,",
-      "expect": ["B10h"]
+      "expect": ["B10h", "B10i"],
+      "_note": "Extra after review round 1: The whole --format clause is dropped: ntriples (B10i) is accepted as well as csv."
     },
     "FQ5_explain_stats_not_refused": {
       "from": "            options.explain ? \"--explain\" : null,\n            options.stats ? \"--stats\" : null,",
@@ -44,6 +56,12 @@
       "from": "            options.param ? \"--param\" : null,",
       "to": "            null,",
       "expect": ["B10c"]
+    },
+    "K8_format_ntriples_not_refused": {
+      "from": "options.format !== \"table\" && options.format !== \"json\" ? `--format ${options.format}` : null,",
+      "to": "options.format === \"csv\" ? `--format ${options.format}` : null,",
+      "expect": ["B10i"],
+      "_note": "Review of PR #4605 (round 1): a wrong implementation that passed all 51 axes of the first edition."
     }
   }
 }

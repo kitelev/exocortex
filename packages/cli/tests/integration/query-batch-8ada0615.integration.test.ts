@@ -246,6 +246,20 @@ describe("query --batch / run-query --batch (ticket 8ada0615)", () => {
     expect(after).toMatchObject({ name: "after", ok: true, count: 0 });
   }, 60000);
 
+  // Review of PR #4605 (LOW 1): B3 alone was satisfied by a refusal that looks for "INSERT".
+  it("B3b @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea every update form is refused, not only INSERT: DELETE DATA and a PREFIX-led INSERT DATA", async () => {
+    const f = batchFile([
+      { name: "del", sparql: 'DELETE DATA { <urn:test:x> <urn:test:p> "planted" }' },
+      { name: "pfx", sparql: 'PREFIX t: <urn:test:>\nINSERT DATA { t:x t:p "planted" }' },
+      { name: "after", sparql: "SELECT ?o WHERE { <urn:test:x> <urn:test:p> ?o }" },
+    ]);
+    await runQuery(["--batch", f, "--no-cache"]);
+    const [del, pfx, after] = records();
+    expect(del).toMatchObject({ name: "del", ok: false, error: { type: "update-rejected" } });
+    expect(pfx).toMatchObject({ name: "pfx", ok: false, error: { type: "update-rejected" } });
+    expect(after).toMatchObject({ name: "after", ok: true, count: 0 });
+  }, 60000);
+
   it("B4 @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea a failing entry does not stop the batch; rc = OPERATION_FAILED (5), no process.exit", async () => {
     const f = batchFile([
       { name: "ok1", sparql: Q_COUNT },
@@ -313,6 +327,17 @@ describe("query --batch / run-query --batch (ticket 8ada0615)", () => {
     expect(records()[0]).toEqual({ type: "result", name: "leak", ok: false, error: { type: "syntax" }, durationMs: expect.any(Number) });
   }, 60000);
 
+  // Review of PR #4605 (HIGH 1): B8 locks only a PARSE error. A query that parses but is
+  // rejected by the algebra translator answers type "execution", and the translator's
+  // message quotes the offending literal — so the "type only" rule must hold there too.
+  it("B8b @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea an EXECUTION error carries the type only: a literal the translator quotes is never echoed (bcc041d8)", async () => {
+    const f = batchFile([{ name: "leak", sparql: `SELECT ?x WHERE { ?s ?p ?o BIND(SUM("${CANARY}") AS ?x) }` }]);
+    await runQuery(["--batch", f, "--no-cache"]);
+    const everything = [...cap.stdout, ...cap.stderr, ...cap.consoleOut].join("\n");
+    expect(everything).not.toContain("FAKE-CAN");
+    expect(records()[0]).toEqual({ type: "result", name: "leak", ok: false, error: { type: "execution" }, durationMs: expect.any(Number) });
+  }, 60000);
+
   it("B9 @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea duplicate / invalid names and unknown fields are refused before the graph is loaded", async () => {
     const loads = spyLoads();
     for (const bad of [
@@ -329,6 +354,28 @@ describe("query --batch / run-query --batch (ticket 8ada0615)", () => {
     expect(cap.stdout).toEqual([]);
   }, 60000);
 
+  // Review of PR #4605 (LOW 2): one axis per boundary of the file shape and of the name —
+  // each refusal is its own guard (a shared axis would let one mutant hide another, §A147).
+  const BATCH_SHAPES: Array<[string, unknown, string, string]> = [
+    ["B9b", [{ name: "a".repeat(129), sparql: Q_COUNT }], "a name longer than 128 characters", "must match"],
+    ["B9c", [{ name: "_a", sparql: Q_COUNT }], "a name that does not start with a letter or digit", "must match"],
+    ["B9d", [{ name: "a\nb", sparql: Q_COUNT }], "a multi-line name", "must match"],
+    ["B9e", [{ sparql: Q_COUNT }], "an entry without a name", "must match"],
+    ["B9f", [{ name: "a", sparql: "   " }], "a blank sparql", '"sparql" must be a non-empty string'],
+    ["B9g", { name: "a", sparql: Q_COUNT }, "an object instead of an array", "must be a non-empty JSON array"],
+    ["B9h", [null], "a null entry", "is not an object"],
+  ];
+  for (const [axis, shape, named, refusal] of BATCH_SHAPES) {
+    it(`${axis} @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea a batch with ${named} is refused (rc 2) before the graph is loaded`, async () => {
+      const loads = spyLoads();
+      await runQuery(["--batch", batchFile(shape), "--no-cache"]);
+      expect(cap.exitCodes[0]).toBe(2);
+      expect([...cap.stderr, ...cap.consoleOut].join("\n")).toContain(refusal);
+      expect(loads.fullParse).not.toHaveBeenCalled();
+      expect(cap.stdout).toEqual([]);
+    }, 60000);
+  }
+
   // One axis per flag: each refusal is its own guard (spec review §A147 — shared red sets prove nothing).
   const QUERY_CLASHES: Array<[string, string[], string]> = [
     ["B10a", [Q_COUNT], "a positional query"],
@@ -339,6 +386,7 @@ describe("query --batch / run-query --batch (ticket 8ada0615)", () => {
     ["B10f", ["--stats"], "--stats"],
     ["B10g", ["--output", "json"], "--output"],
     ["B10h", ["--format", "csv"], "--format csv"],
+    ["B10i", ["--format", "ntriples"], "--format ntriples"],
   ];
   for (const [axis, extra, named] of QUERY_CLASHES) {
     it(`${axis} @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea --batch with ${named} is refused, nothing loaded`, async () => {
@@ -352,12 +400,15 @@ describe("query --batch / run-query --batch (ticket 8ada0615)", () => {
   }
 
   it("B11 @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea a graph load failure answers EVERY entry with type load; one attempt; rc 5", async () => {
-    jest.spyOn(CacheManager.prototype, "loadOrBuild").mockRejectedValue(new Error("EACCES simulated"));
-    const f = batchFile([{ name: "a", sparql: Q_COUNT }, { name: "b", sparql: Q_SHORTHAND }]);
+    const load = jest.spyOn(CacheManager.prototype, "loadOrBuild").mockRejectedValue(new Error("EACCES simulated"));
+    const f = batchFile([{ name: "a", sparql: Q_COUNT }, { name: "b", sparql: Q_SHORTHAND }, { name: "c", sparql: Q_COUNT }]);
     await runQuery(["--batch", f, "--no-cache", "--use-cache"]);
     const recs = records();
-    expect(recs.slice(0, 2).map((r) => r.error?.type)).toEqual(["load", "load"]);
-    expect(recs[2]).toMatchObject({ type: "summary", failed: 2, graphLoads: 1 });
+    expect(recs.slice(0, 3).map((r) => r.error?.type)).toEqual(["load", "load", "load"]);
+    expect(recs[3]).toMatchObject({ type: "summary", failed: 3, graphLoads: 1 });
+    // "One attempt" by an independent observer, not by the counter the code reports
+    // about itself (review of PR #4605, MEDIUM 1: a retry per entry kept graphLoads = 1).
+    expect(load).toHaveBeenCalledTimes(1);
     expect(process.exitCode).toBe(5);
   }, 60000);
 
@@ -490,6 +541,19 @@ describe("query --batch / run-query --batch (ticket 8ada0615)", () => {
     expect(loads.fullParse).not.toHaveBeenCalled();
   }, 60000);
 
+  it("B19 @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea a missing vault is refused before the graph is loaded (rc 3), not answered entry by entry", async () => {
+    const loads = spyLoads();
+    try {
+      await sparqlQueryCommand().parseAsync(["node", "query", "--batch", batchFile([{ name: "a", sparql: Q_COUNT }]),
+        "--vault", path.join(workDir, "no-such-vault"), "--no-cache"]);
+    } catch (e) {
+      if (!(e instanceof ExitSignal)) throw e;
+    }
+    expect(cap.exitCodes[0]).toBe(3);
+    expect(loads.fullParse).not.toHaveBeenCalled();
+    expect(cap.stdout).toEqual([]);
+  }, 60000);
+
   it("B15 @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea a failed result-cache WRITE keeps the computed answer (stderr warning with the errno code), rc 0", async () => {
     jest.spyOn(QueryResultCache.prototype, "set").mockRejectedValue(Object.assign(new Error("denied"), { code: "EACCES" }));
     await runQuery(["--batch", batchFile([{ name: "a", sparql: Q_COUNT }, { name: "b", sparql: Q_SHORTHAND }])]);
@@ -543,6 +607,24 @@ describe("query --batch / run-query --batch (ticket 8ada0615)", () => {
       { write: async () => { throw Object.assign(new Error("write EPIPE"), { code: "EPIPE" }); }, progress: () => undefined },
     );
     expect(exec).toHaveBeenCalledTimes(1);
+    expect(process.exitCode).toBe(1);
+  }, 60000);
+
+  it("B17c @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea a reader gone at the SUMMARY line still exits 1, not with the batch result", async () => {
+    const sparql = await import("../../src/commands/sparql-query.js");
+    await runSparqlBatch(
+      batchFile([{ name: "a", sparql: Q_COUNT }]),
+      {
+        vault: vaultDir, useCache: false, useQueryResultCache: false, cacheTtlSeconds: 300, timeoutMs: 30000,
+        noOptimize: false, buildAlgebra: sparql.buildAlgebra as never, executeAlgebra: sparql.executeAlgebra as never,
+      },
+      {
+        write: async (line: string) => {
+          if (line.includes('"type":"summary"')) throw Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
+        },
+        progress: () => undefined,
+      },
+    );
     expect(process.exitCode).toBe(1);
   }, 60000);
 
@@ -685,6 +767,17 @@ describe("query --batch / run-query --batch (ticket 8ada0615)", () => {
     expect(Object.keys(records()[0].error ?? {})).toEqual(["type"]);
   }, 60000);
 
+  // Review of PR #4605 (HIGH 1): R4b locks only a PARSE error; a param value the
+  // algebra translator quotes reaches an "execution" error — type only there too.
+  it("R4c @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea run-query --batch: an EXECUTION error carries the type only — a param value the translator quotes is never echoed (bcc041d8)", async () => {
+    const NQ_AGG = "a1000000-0000-4000-8000-0000000000a6";
+    fs.writeFileSync(path.join(vaultDir, "nq6.md"), namedQuery(NQ_AGG, "Aggregate inside BIND", "SELECT ?x WHERE { ?s ?p ?o BIND(SUM($pat) AS ?x) }"));
+    await runNamed(["--batch", batchFile([{ name: "leak", uid: NQ_AGG, params: { pat: CANARY } }])]);
+    expect([...cap.stdout, ...cap.stderr, ...cap.consoleOut].join("\n")).not.toContain("FAKE-CAN");
+    expect(records()[0]).toMatchObject({ name: "leak", ok: false, error: { type: "execution" } });
+    expect(Object.keys(records()[0].error ?? {})).toEqual(["type"]);
+  }, 60000);
+
   it("R5 @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea run-query --batch: a $param the entry did not supply is refused (unset-token), not answered with every row", async () => {
     const f = batchFile([{ name: "typo", uid: NQ_BY_LABEL, params: { lable: "Beta" } }]);
     await runNamed(["--batch", f]);
@@ -696,5 +789,31 @@ describe("query --batch / run-query --batch (ticket 8ada0615)", () => {
     await runNamed(["--batch", f]);
     expect(records()[1]).toMatchObject({ type: "summary", failed: 1, ok: 0 });
     expect(process.exitCode).toBe(5);
+  }, 60000);
+
+  // Review of PR #4605 (MEDIUM 2): B6 / B17b lock the flush and the EPIPE stop for
+  // query --batch only; run-query --batch has its own loop.
+  it("R7 @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea run-query --batch: an answer is flushed BEFORE the next entry runs", async () => {
+    deferFlush = true;
+    const original = core.NamedQueryRunner.prototype.run;
+    jest.spyOn(core.NamedQueryRunner.prototype, "run").mockImplementation(function (this: unknown, ...args: unknown[]) {
+      cap.events.push("run");
+      return original.apply(this as never, args as never);
+    } as never);
+    await runNamed(["--batch", batchFile([{ name: "a", uid: NQ_LABELS }, { name: "b", uid: NQ_LABELS }])]);
+    const ev = cap.events.filter((e) => e === "run" || e.startsWith("write:") || e.startsWith("flushed:"));
+    expect(ev.slice(0, 4)).toEqual(["run", "write:a", "flushed:a", "run"]);
+  }, 60000);
+
+  it("R7b @req:166613ce-7b3f-4ab0-825c-b9a3c36fbdea run-query --batch: once the reader is gone the batch stops — no further entry runs, rc 1", async () => {
+    const run = jest.spyOn(core.NamedQueryRunner.prototype, "run");
+    const { runNamedQueryBatch } = await import("../../src/commands/run-query-batch.js");
+    await runNamedQueryBatch(
+      batchFile([{ name: "a", uid: NQ_LABELS }, { name: "b", uid: NQ_LABELS }, { name: "c", uid: NQ_LABELS }]),
+      { vault: vaultDir, useCache: false },
+      { write: async () => { throw Object.assign(new Error("write EPIPE"), { code: "EPIPE" }); }, progress: () => undefined },
+    );
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(process.exitCode).toBe(1);
   }, 60000);
 });

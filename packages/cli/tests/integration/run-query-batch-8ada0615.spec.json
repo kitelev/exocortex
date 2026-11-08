@@ -48,7 +48,26 @@
     "RQ08_error_message_echoed": {
       "from": "      record = { type: \"result\", name: entry.name, ok: false, error: { type } };",
       "to": "      record = { type: \"result\", name: entry.name, ok: false, error: { type, message: (error as Error).message } };",
-      "expect": ["R4b"]
+      "expect": ["R4b", "R4c"],
+      "_note": "Extra after review round 1: RQ08 forwards every message; R4c holds the execution error, whose message quotes a param value."
+    },
+    "K39_execution_error_message_forwarded": {
+      "from": "      record = { type: \"result\", name: entry.name, ok: false, error: { type } };",
+      "to": "      record = { type: \"result\", name: entry.name, ok: false, error: type === \"syntax\" ? { type } : { type, message: (error as Error).message } };",
+      "expect": ["R4c"],
+      "_note": "Review of PR #4605 (round 1): a wrong implementation that passed all 51 axes of the first edition."
+    },
+    "K15_write_not_awaited": {
+      "from": "      await sink.write(ndjsonLine(record));",
+      "to": "      void sink.write(ndjsonLine(record)).catch(() => { process.exitCode = ExitCodes.GENERAL_ERROR; });",
+      "expect": ["R7", "R7b"],
+      "_note": "Review of PR #4605 (round 1): a wrong implementation that passed all 51 axes of the first edition. Extra after review round 1: Not awaiting the write also loses the EPIPE stop: the rejection lands after the next entries have started."
+    },
+    "K14_keeps_running_after_epipe": {
+      "from": "      process.exitCode = ExitCodes.GENERAL_ERROR;\n      return;\n    }\n  }",
+      "to": "      process.exitCode = ExitCodes.GENERAL_ERROR;\n    }\n  }",
+      "expect": ["R7b"],
+      "_note": "Review of PR #4605 (round 1): a wrong implementation that passed all 51 axes of the first edition."
     }
   }
 }
