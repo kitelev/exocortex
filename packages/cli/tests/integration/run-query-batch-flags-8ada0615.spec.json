@@ -1,0 +1,45 @@
+{
+  "_doc": "Ticket 8ada0615 — packages/cli/src/commands/run-query.ts: --batch refuses flags that shape a single query. Same harness as query-batch-8ada0615.spec.json.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/run-query.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/query-batch-8ada0615.integration.test.ts tests/integration/query-batch-signature-8ada0615.integration.test.ts 2>&1",
+  "red_re": "› ([BR]\\d+\\w?) ",
+  "mutants": {
+    "M15_runquery_flag_clash_not_refused": {
+      "from": "          if (clash.length > 0) {\n",
+      "to": "          if (clash.length > 0 && false) {\n",
+      "expect": ["R2a", "R2b", "R2c", "R2d", "R2e"]
+    },
+    "FR1_param_not_refused": {
+      "from": "            options.param.length > 0 ? \"--param\" : null,",
+      "to": "            null,",
+      "expect": ["R2c"]
+    },
+    "FR2_current_asset_not_refused": {
+      "from": "            options.currentAsset ? \"--current-asset\" : null,",
+      "to": "            null,",
+      "expect": ["R2b"]
+    },
+    "FR3_param_iri_not_refused": {
+      "from": "            options.paramIri.length > 0 ? \"--param-iri\" : null,",
+      "to": "            null,",
+      "expect": ["R2d"]
+    },
+    "FR4_output_not_refused": {
+      "from": "            outputFormat !== \"text\" ? \"--output\" : null,",
+      "to": "            null,",
+      "expect": ["R2e"]
+    },
+    "K65_no_uid_no_batch_not_refused": {
+      "from": "        if (uid === undefined) {",
+      "to": "        if (uid === undefined && false) {",
+      "expect": ["R10"],
+      "_note": "Review of PR #4605 (round 2): a clause of the requirement with no axis of its own."
+    }
+  }
+}

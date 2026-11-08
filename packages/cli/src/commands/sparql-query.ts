@@ -14,6 +14,7 @@ import {
   type UpdateResult,
   type SolutionMapping,
   type ConstructOperation,
+  type AlgebraOperation,
   SPARQL_PREFIXES,
 } from "@kitelev/exocortex-core";
 import { TableFormatter } from "../formatters/TableFormatter.js";
@@ -34,6 +35,7 @@ import { SPARQLErrorEnhancer } from "../utils/SPARQLErrorEnhancer.js";
 import { NTriplesFormatter } from "../utils/NTriplesFormatter.js";
 import { scanVaultNamespaces } from "../utils/VaultNamespaceScanner.js";
 import { injectExocortexPrefixes, transformShorthandNotation, filterOntologyPrefixes } from "../utils/QueryPrefixInjector.js";
+import { runSparqlBatch } from "./query-batch.js";
 
 export interface SparqlQueryOptions {
   vault: string;
@@ -56,6 +58,8 @@ export interface SparqlQueryOptions {
    * callers can opt in directly via the env var.
    */
   strict?: boolean;
+  /** Ticket 8ada0615: path of a JSON batch file — many named queries, one graph load. */
+  batch?: string;
 }
 
 /** Default TTL for query result cache in seconds */
@@ -227,6 +231,44 @@ export async function executeWithTimeout<T>(
   return Promise.race([queryPromise, timeoutPromise]);
 }
 
+/** What one executed (non-UPDATE) query produced. */
+export type ExecutedQuery =
+  | { kind: "construct"; triples: Triple[] }
+  | { kind: "select"; results: SolutionMapping[] };
+
+/**
+ * Ticket 8ada0615 — translate → optimize, ONE implementation for `query` and
+ * `query --batch`: the two paths cannot drift. A new query form (ASK — ticket
+ * 3254ccba) or a repaired `--no-optimize` (bug 954c7dfa) lands in both at once.
+ */
+export function buildAlgebra(ast: Parameters<ExoQLAlgebraTranslator["translate"]>[0], noOptimize: boolean): AlgebraOperation {
+  let algebra = new ExoQLAlgebraTranslator().translate(ast);
+  // Optimization is only applicable to non-CONSTRUCT queries
+  // CONSTRUCT queries have their WHERE clause optimized separately
+  if (!noOptimize && algebra.type !== "construct") {
+    algebra = new AlgebraOptimizer().optimize(algebra);
+  } else if (!noOptimize && algebra.type === "construct") {
+    // Optimize the WHERE clause inside CONSTRUCT
+    const constructOp = algebra as ConstructOperation;
+    algebra = { ...constructOp, where: new AlgebraOptimizer().optimize(constructOp.where) };
+  }
+  return algebra;
+}
+
+/** Ticket 8ada0615 — dispatch by query form and execute under the wall-clock timeout; shared by both paths. */
+export async function executeAlgebra(
+  store: InMemoryTripleStore,
+  algebra: AlgebraOperation,
+  timeoutMs: number,
+  startTime: number,
+): Promise<ExecutedQuery> {
+  const executor = new ExoQLQueryExecutor(store);
+  if (executor.isConstructQuery(algebra)) {
+    return { kind: "construct", triples: await executeWithTimeout(executor.executeConstruct(algebra), timeoutMs, startTime) };
+  }
+  return { kind: "select", results: await executeWithTimeout(executor.executeAll(algebra), timeoutMs, startTime) };
+}
+
 export function sparqlQueryCommand(): Command {
   return new Command("query")
     .description("Execute SPARQL query against Obsidian vault")
@@ -247,6 +289,10 @@ export function sparqlQueryCommand(): Command {
     .option(
       "--strict",
       "Fail on unresolved label-form wikilinks in property paths (sets EXOCORTEX_SPARQL_STRICT=1, Issue #3282)",
+    )
+    .option(
+      "--batch <file>",
+      'Run a JSON array of named queries [{"name","sparql"}] with ONE vault load; NDJSON answers on stdout, progress on stderr',
     )
     .action(async (queryArg: string | undefined, options: SparqlQueryOptions) => {
       const outputFormat = (options.output || "text") as OutputFormat;
@@ -284,6 +330,38 @@ export function sparqlQueryCommand(): Command {
         // Parse cache TTL
         const cacheTtlSeconds = parseCacheTtl(options.cacheTtl);
         const useQueryResultCache = options.cache !== false;
+
+        // Ticket 8ada0615 — batch mode. Flags that shape a SINGLE query or a
+        // human-readable report are refused before anything is loaded.
+        if (options.batch !== undefined) {
+          const clash = [
+            queryArg !== undefined ? "a positional query" : null,
+            options.template ? "--template" : null,
+            options.param ? "--param" : null,
+            options.dryRun ? "--dry-run" : null,
+            options.explain ? "--explain" : null,
+            options.stats ? "--stats" : null,
+            options.format !== "table" && options.format !== "json" ? `--format ${options.format}` : null,
+            outputFormat !== "text" ? "--output" : null,
+          ].filter((x): x is string => x !== null);
+          if (clash.length > 0) {
+            throw new InvalidArgumentsError(
+              `--batch cannot be combined with ${clash.join(", ")}.`,
+              "exocortex query --batch queries.json --vault <path> [--use-cache] [--no-cache] [--timeout 30s]",
+            );
+          }
+          await runSparqlBatch(options.batch, {
+            vault: options.vault,
+            useCache: options.useCache ?? false,
+            useQueryResultCache,
+            cacheTtlSeconds,
+            timeoutMs,
+            noOptimize: options.noOptimize ?? false,
+            buildAlgebra,
+            executeAlgebra,
+          });
+          return;
+        }
         if (options.template) {
           const registry = new TemplateRegistry();
           const params = options.param ? registry.parseParamString(options.param) : {};
@@ -543,23 +621,7 @@ export function sparqlQueryCommand(): Command {
         if (outputFormat === "text") {
           console.log(`🔄 Translating to algebra...`);
         }
-        const translator = new ExoQLAlgebraTranslator();
-        let algebra = translator.translate(ast);
-
-        // Optimization is only applicable to non-CONSTRUCT queries
-        // CONSTRUCT queries have their WHERE clause optimized separately
-        if (!options.noOptimize && algebra.type !== "construct") {
-          const optimizer = new AlgebraOptimizer();
-          algebra = optimizer.optimize(algebra);
-        } else if (!options.noOptimize && algebra.type === "construct") {
-          // Optimize the WHERE clause inside CONSTRUCT
-          const optimizer = new AlgebraOptimizer();
-          const constructOp = algebra as ConstructOperation;
-          algebra = {
-            ...constructOp,
-            where: optimizer.optimize(constructOp.where),
-          };
-        }
+        const algebra = buildAlgebra(ast, options.noOptimize ?? false);
 
         if (options.explain && outputFormat === "text") {
           console.log(`📊 Query Plan:`);
@@ -577,7 +639,6 @@ export function sparqlQueryCommand(): Command {
         }
 
         const execStartTime = Date.now();
-        const executor = new ExoQLQueryExecutor(tripleStore);
 
         // ⛔ There is NO in-executor cancellation. `ExoQLQueryExecutor` has no
         // `setTimeout`, and a `typeof … === "function"` guard around a method
@@ -597,15 +658,12 @@ export function sparqlQueryCommand(): Command {
           ? new ProgressIndicator("Executing query", { delayMs: 2000 })
           : null;
 
-        // Execute based on query type
-        if (executor.isConstructQuery(algebra)) {
+        // Execute based on query type (one dispatch for `query` and `query --batch`)
+        progressIndicator?.start();
+        const executed = await executeAlgebra(tripleStore, algebra, timeoutMs, execStartTime);
+        if (executed.kind === "construct") {
           // CONSTRUCT query - returns triples
-          progressIndicator?.start();
-          const resultTriples = await executeWithTimeout(
-            executor.executeConstruct(algebra),
-            timeoutMs,
-            execStartTime,
-          );
+          const resultTriples = executed.triples;
           const execDuration = Date.now() - execStartTime;
           progressIndicator?.stop();
           const totalDuration = Date.now() - startTime;
@@ -668,12 +726,7 @@ export function sparqlQueryCommand(): Command {
           }
         } else {
           // SELECT query - returns solution mappings
-          progressIndicator?.start();
-          const results = await executeWithTimeout(
-            executor.executeAll(algebra),
-            timeoutMs,
-            execStartTime,
-          );
+          const results = executed.results;
           const execDuration = Date.now() - execStartTime;
           progressIndicator?.stop();
           const totalDuration = Date.now() - startTime;

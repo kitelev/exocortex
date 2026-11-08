@@ -215,6 +215,7 @@ npx @kitelev/exocortex-cli query "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 10" -
 | `--template <name>`     | —       | Use a predefined query template                                                              |
 | `--param <params>`      | —       | Template parameters (`key=value,key2=value2`)                                                |
 | `--strict`              | off     | Fail on unresolved label-form wikilinks in property paths (sets `EXOCORTEX_SPARQL_STRICT=1`) |
+| `--batch <file>`        | —       | Many named queries from a JSON file over ONE graph load — see [Batch mode](#batch-mode)      |
 
 **Built-in templates:** `tasks-by-date`, `tasks-by-status`, `projects-active`, `concepts-by-domain`, `sleep-analysis`.
 
@@ -243,6 +244,72 @@ npx @kitelev/exocortex-cli query --template tasks-by-date --param date=2026-01-1
 npx @kitelev/exocortex-cli query "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }" \
   --format ntriples --vault ~/vault > vault.nt
 ```
+
+#### Batch mode
+
+`query --batch <file>` answers many queries over **one** graph load (a single `query` call pays a full load
+every time). The file is a JSON array of entries `{"name": "...", "sparql": "..."}`; names are unique and match
+`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`. Any path except a directory is accepted. `/dev/stdin` (a pipe)
+works however the CLI is started; `<(...)` works only when the CLI runs directly (the installed
+`exocortex-cli` bin or `node dist/index.js`) — under `npx` the descriptor is not passed on and the batch is
+refused with `cannot be read (EBADF)`, so use `/dev/stdin` or a file there.
+
+```bash
+cat > batch.json <<'EOF'
+[
+  {"name": "tasks", "sparql": "SELECT ?t WHERE { ?t exo:Instance_class ems:Task } LIMIT 5"},
+  {"name": "areas", "sparql": "SELECT ?a WHERE { ?a exo:Instance_class ems:Area }"}
+]
+EOF
+npx @kitelev/exocortex-cli query --batch batch.json --vault ~/vault --no-cache
+```
+
+**Output — NDJSON on stdout, progress and notices on stderr:**
+
+- one `{"type":"result","name":...}` line per entry, in the order of the file:
+  - success — `"ok":true` plus `"kind":"select"`, `"count"`, `"bindings"` (rows as `--format json` prints them)
+    or `"kind":"construct"`, `"triples"`;
+  - failure — `"ok":false`, `"error":{"type": ...}` with type `syntax`, `update-rejected`, `timeout`,
+    `execution` or `load` (the timeout answer also carries the CLI's own message);
+  - every line also carries `"durationMs"`; a successful one carries `"queryResultCacheHit"` (true / false);
+- then one `{"type":"summary",...}` line: `queries`, `ok`, `failed`, `graphLoads` (0 or 1),
+  `queryResultCacheHits`, `loadMode`, `loadDurationMs`, `triples`, `durationMs`.
+
+**Reading it:**
+
+- Tell lines apart by `"type"`, never by `"name"` — an entry may be called `summary`.
+- Split on `"\n"` only (U+2028, U+2029 and U+0085 inside values are written as JSON escapes).
+- **No summary line ⇒ the batch did not finish** (killed, out of memory). Re-run the entries that have no
+  answer one by one (a single `query`, or a batch of one) and always put an external `timeout` over a batch.
+- `--timeout` applies to each entry but does not interrupt a compute-bound query (bug `8fe905e9`): such a
+  query can take the whole batch down with it, where a series of single calls would lose only that query.
+- Each line is written to the pipe before the next entry starts, so answers already printed survive a kill.
+
+**Semantics:** an entry that fails does not stop the batch; `INSERT DATA` / `DELETE DATA` entries are refused,
+not executed; no error quotes the content of the batch file. With the result cache on, the vault signature is
+computed once per batch and entries are served from (and stored to) the same cache a single `query` uses;
+under `--no-cache` no signature is computed at all. A failed write to the result cache keeps the computed
+answer (a warning on stderr). As for a single `query`, an edit behind a directory symlink inside the vault does
+not invalidate cached answers within the TTL (the signature does not follow links) — use `--no-cache` there.
+If the graph cannot be loaded, every entry that needs it answers `load` (one attempt per batch).
+
+**Exit codes:** `0` — every entry succeeded; `5` — at least one entry failed; `2` — refused before start
+(the file is not a valid batch, is a directory or cannot be read — only the errno code is shown — or an
+incompatible flag); `3` — no batch file, or no vault; `1` — the reader closed stdout (no further entry runs).
+
+**Flags:** `--batch` cannot be combined with a positional query, `--template`, `--param`, `--dry-run`,
+`--explain`, `--stats`, `--output json` or `--format csv|ntriples`. Allowed: `--vault`, `--use-cache`,
+`--no-cache`, `--cache-ttl`, `--timeout`, `--no-optimize`, `--strict`, `--format table|json` (ignored — the
+batch always prints NDJSON).
+
+**`run-query --batch <file>`** — the same mode for named queries (`query__NamedQuery` assets): entries are
+`{"name", "uid", "currentAsset"?, "params"?, "paramsIri"?}` — the context of a single `run-query <uid>`
+moves into each entry (`params` are literals, `paramsIri` and `currentAsset` are vault paths passed as IRIs).
+Each answer carries the same data `run-query <uid> --format json` prints (`kind` plus `rows` / `result` /
+`triples`). Error types add `not-found` (no such query, or it has no `sparql` block) and `unset-token` (the
+body keeps a `$parameter` the entry did not fill — a typo would otherwise match every row); errors carry the
+type only, never a message. `--batch` cannot be combined with a positional uid, `--current-asset`, `--param`,
+`--param-iri` or `--output json`; `run-query` with neither a uid nor `--batch` exits 2.
 
 ### index
 

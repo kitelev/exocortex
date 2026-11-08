@@ -1,0 +1,303 @@
+{
+  "_doc": "Ticket 8ada0615 (Ф1 RFC 049bc5f1) — query/run-query --batch. Commit with placeholder paths; run on a copy. red_re keys on the B<N>/R<N> first token of the test title.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/query-batch.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/query-batch-8ada0615.integration.test.ts tests/integration/query-batch-signature-8ada0615.integration.test.ts 2>&1",
+  "red_re": "› ([BR]\\d+\\w?) ",
+  "mutants": {
+    "M1_load_per_query": {
+      "from": "    if (pending) return pending;\n",
+      "to": "    if (pending && false) return pending;\n",
+      "expect": ["B1", "B1c", "B11", "B14c", "B14f", "R1"],
+      "_note": "R1: run-query --batch has no second memo since the M13 finding; B14 counts loads by spy over TWO runs (first run's misses load per entry), B14c expects graphLoads=1 with two misses."
+    },
+    "M2_load_per_query_counter_once": {
+      "from": "    if (pending) return pending;\n    pending = (async () => {\n      const start = Date.now();\n      sink.progress(`📦 Loading vault: ${vaultPath}...`);\n      state.graphLoads += 1;\n",
+      "to": "    if (pending && false) return pending;\n    pending = (async () => {\n      const start = Date.now();\n      sink.progress(`📦 Loading vault: ${vaultPath}...`);\n      state.graphLoads = 1;\n",
+      "expect": ["B1", "B1c", "B11", "B14f", "R1"],
+      "_note": "graphLoads stays 1 (the code lies about itself); only the independent loader spies see the extra loads — B1/B1c/R1 and B14 (spy over two runs). B14c does not see it: it reads graphLoads, which the mutant pins to 1. Extra after review round 1: B11 counts load ATTEMPTS with a spy on the loader (review of PR #4605, MEDIUM 1): a load per entry is seen there too."
+    },
+    "M3_update_not_refused": {
+      "from": "        if (ast.type === \"update\") throw new UpdateRefusedError();\n",
+      "to": "        if (ast.type === \"update\" && false) throw new UpdateRefusedError();\n",
+      "expect": ["B3", "B3b"],
+      "_note": "Extra after review round 1: B3b holds the other update forms (DELETE DATA, PREFIX-led INSERT DATA); no refusal reddens both."
+    },
+    "M4_stop_after_first_failure": {
+      "from": "    record.durationMs = Date.now() - entryStart;\n    try {\n      await sink.write(ndjsonLine(record));\n    } catch {\n      // Nobody reads stdout any more (EPIPE): stop, do not run the rest.\n      process.exitCode = ExitCodes.GENERAL_ERROR;\n      return;\n    }\n",
+      "to": "    record.durationMs = Date.now() - entryStart;\n    try {\n      await sink.write(ndjsonLine(record));\n    } catch {\n      // Nobody reads stdout any more (EPIPE): stop, do not run the rest.\n      process.exitCode = ExitCodes.GENERAL_ERROR;\n      return;\n    }\n    if (record.ok === false) break;\n",
+      "expect": ["B3", "B3b", "B4", "B11", "B11b", "B13", "B13c"],
+      "_note": "B3, B13 and B13c are red too, legitimately: their FIRST entry fails (refused UPDATE / injected timeout); stopping drops the second entry, so the summary sits where the axis expects the second record. Extra after review round 1: B3b's first entry is refused; stopping there leaves its later entries unanswered. Extra after review round 2: B11b's first entry fails with load; stopping there leaves the syntax and cached entries unanswered."
+    },
+    "M5_rc0_on_failure": {
+      "from": "  process.exitCode = failed > 0 ? ExitCodes.OPERATION_FAILED : ExitCodes.SUCCESS;\n",
+      "to": "  process.exitCode = failed > 0 ? ExitCodes.SUCCESS : ExitCodes.SUCCESS;\n",
+      "expect": ["B4", "B11", "B13c", "R1", "R6"],
+      "_note": "finish() is shared by both verbs: R1/R6 (run-query --batch) and B13c read rc 5 too."
+    },
+    "M6_entry_error_echoes_message": {
+      "from": "      if (error instanceof CLIError) errorBody.message = error.message;\n",
+      "to": "      if (error instanceof Error) errorBody.message = error.message;\n",
+      "expect": ["B8", "B8b"],
+      "_note": "Extra after review round 1: M6 forwards every Error message; B8b holds the execution-error message (a literal the translator quotes)."
+    },
+    "M7_batchfile_error_echoes_json_message": {
+      "from": "  } catch {\n    throw batchFileError(batchPath, \"is not valid JSON\");\n",
+      "to": "  } catch (e) {\n    throw batchFileError(batchPath, `is not valid JSON: ${(e as Error).message}`);\n",
+      "expect": ["B7"]
+    },
+    "M8_progress_via_console_log": {
+      "from": "      err.write(`${message}\\n`);\n",
+      "to": "      void err;\n      console.log(message);\n",
+      "expect": ["B5", "B15"],
+      "_note": "B15 reads the cache-write warning from stderr; the mutant sends every progress line to console.log."
+    },
+    "M9_write_not_awaited": {
+      "from": "          if (error) rejectWrite(error);\n          else resolveWrite();\n        });\n",
+      "to": "          if (error) rejectWrite(error);\n        });\n        resolveWrite();\n",
+      "expect": ["B6", "B17", "R7"],
+      "_note": "B17 too: the sink's write resolves without waiting for the callback, so it no longer rejects on EPIPE. Extra after review round 1: streamSink is shared with run-query --batch: R7 is the same flush guarantee on its loop."
+    },
+    "M10_duplicate_names_accepted": {
+      "from": "    if (seen.has(name)) {\n",
+      "to": "    if (seen.has(name) && false) {\n",
+      "expect": ["B9"]
+    },
+    "M11_signature_per_entry": {
+      "from": "    cached.push(cache ? await cache.get(entry.sparql, options.cacheTtlSeconds, signature) : null);\n",
+      "to": "    cached.push(cache ? await cache.get(entry.sparql, options.cacheTtlSeconds, await computeVaultSignature(vaultPath)) : null);\n",
+      "expect": ["B12"]
+    },
+    "M12_signature_under_no_cache": {
+      "from": "  const signature = cache ? await computeVaultSignature(vaultPath) : null;\n",
+      "to": "  const signature = cache || true ? await computeVaultSignature(vaultPath) : null;\n",
+      "expect": ["B12b"]
+    },
+    "M16_timeout_typed_as_execution": {
+      "from": "  if (error instanceof QueryTimeoutError) return \"timeout\";\n",
+      "to": "  if (error instanceof QueryTimeoutError && false) return \"timeout\";\n",
+      "expect": ["B13"]
+    },
+    "M17_timeout_message_dropped": {
+      "from": "      if (error instanceof CLIError) errorBody.message = error.message;\n",
+      "to": "      if (error instanceof CLIError && false) errorBody.message = error.message;\n",
+      "expect": ["B13b"]
+    },
+    "RV01_cache_hit_from_wrong_entry": {
+      "from": "      const hit = cached[i] as",
+      "to": "      const hit = cached[0] as",
+      "expect": ["B11b", "B14", "B14c", "B14e"],
+      "_note": "Extra after review round 2: cached[0] belongs to entry 'a' (not cached), so the cached entry of B11b falls to the failed graph and answers load instead of ok."
+    },
+    "RV02_eager_graph_prefetch": {
+      "from": "  const graph = graphLoader(vaultPath, options.useCache, sink);\n\n  // Result cache",
+      "to": "  const graph = graphLoader(vaultPath, options.useCache, sink);\n  void graph.ensure().catch(() => undefined);\n\n  // Result cache",
+      "expect": ["B14d", "B14f", "B14g"]
+    },
+    "RV03_cache_keyed_by_name": {
+      "from": "    cached.push(cache ? await cache.get(entry.sparql, options.cacheTtlSeconds, signature) : null);",
+      "to": "    cached.push(cache ? await cache.get(entry.name, options.cacheTtlSeconds, signature) : null);",
+      "expect": ["B11b", "B14", "B14c", "B14d", "B14e", "B14f", "B14g"],
+      "_note": "Here only the READ is keyed by name (the write stays keyed by text), so nothing ever hits: every cache axis that expects a hit is red. Extra after review round 2: the cache is written by TEXT and read by NAME, so the cached entry of B11b misses and answers load instead of ok."
+    },
+    "RV04_signature_not_used_on_get": {
+      "from": "    cached.push(cache ? await cache.get(entry.sparql, options.cacheTtlSeconds, signature) : null);",
+      "to": "    cached.push(cache ? await cache.get(entry.sparql, options.cacheTtlSeconds) : null);",
+      "expect": ["B14b"],
+      "_note": "Equivalent pair with RV14: one guarantee (the signature is enforced), two points (get / set); either alone serves a stale answer after an edit — B14b."
+    },
+    "RV05_graphLoads_hardcoded_1": {
+      "from": "    graphLoads: state.graphLoads,",
+      "to": "    graphLoads: 1,",
+      "expect": ["B14d", "B14g"]
+    },
+    "RV06_flush_yield_not_callback": {
+      "from": "          if (error) rejectWrite(error);\n          else resolveWrite();\n        });",
+      "to": "          if (error) rejectWrite(error);\n        });\n        setImmediate(resolveWrite);",
+      "expect": ["B6", "R7"],
+      "_note": "Extra after review round 1: streamSink is shared with run-query --batch: R7 is the same flush guarantee on its loop."
+    },
+    "RV08_timeout_not_counted": {
+      "from": "    } catch (error) {\n      failed += 1;\n      const type: BatchErrorType",
+      "to": "    } catch (error) {\n      if (!(error instanceof QueryTimeoutError)) failed += 1;\n      const type: BatchErrorType",
+      "expect": ["B13c"]
+    },
+    "RV09_name_refusal_echoes_name": {
+      "from": "        `entry #${index}: \"name\" must match ${BATCH_NAME_PATTERN.source}`,",
+      "to": "        `entry #${index}: \"name\" ${JSON.stringify(name)} must match ${BATCH_NAME_PATTERN.source}`,",
+      "expect": ["B7b"]
+    },
+    "RV10_field_refusal_echoes_key": {
+      "from": "        throw batchFileError(batchPath, `entry #${index}: unknown field (allowed: ${allowed.join(\", \")})`);",
+      "to": "        throw batchFileError(batchPath, `entry #${index}: unknown field ${key} (allowed: ${allowed.join(\", \")})`);",
+      "expect": ["B7c"]
+    },
+    "RV11_epipe_continue": {
+      "from": "      // Nobody reads stdout any more (EPIPE): stop, do not run the rest.\n      process.exitCode = ExitCodes.GENERAL_ERROR;\n      return;",
+      "to": "      // Nobody reads stdout any more (EPIPE): stop, do not run the rest.\n      process.exitCode = ExitCodes.GENERAL_ERROR;\n      continue;",
+      "expect": ["B17b"]
+    },
+    "RV14_cache_set_without_signature": {
+      "from": "      await cache.set(entry.sparql, value, options.cacheTtlSeconds, signature);",
+      "to": "      await cache.set(entry.sparql, value, options.cacheTtlSeconds, null);",
+      "expect": ["B14b"],
+      "_note": "Equivalent pair with RV04 (see there)."
+    },
+    "RV15_cached_construct_served_as_select": {
+      "from": "          hit.type === \"construct\"",
+      "to": "          hit.type === \"construct-never\"",
+      "expect": ["B14e"]
+    },
+    "RV16_cache_hit_drops_rows": {
+      "from": "bindings: hit.bindings ?? [] };",
+      "to": "bindings: [] };",
+      "expect": ["B14"]
+    },
+    "M18_cache_write_failure_discards_answer": {
+      "from": "    try {\n      await cache.set(entry.sparql, value, options.cacheTtlSeconds, signature);\n    } catch (error) {",
+      "to": "    {\n      await cache.set(entry.sparql, value, options.cacheTtlSeconds, signature);\n    } if (false as boolean) { const error: unknown = null;",
+      "expect": ["B15"]
+    },
+    "M19_line_separators_not_escaped": {
+      "from": "    /[\\u2028\\u2029\\u0085]/g,",
+      "to": "    /[\\u2028\\u2029\\u0085](?!)/g,",
+      "expect": ["B16"]
+    },
+    "M20_no_error_listener_on_stdout": {
+      "from": "  out.on(\"error\", () => undefined);\n",
+      "to": "  void out;\n",
+      "expect": ["B17"]
+    },
+    "M21_missing_file_not_classified_as_not_found": {
+      "from": "    if (code === \"ENOENT\" || code === \"ENOTDIR\") throw new FileNotFoundError(batchPath);\n",
+      "to": "    if (code === \"ENOTDIR\") throw new FileNotFoundError(batchPath);\n",
+      "expect": ["B18"],
+      "_note": "CodeQL js/file-system-race fix (PR #4605): ENOENT falls through to the generic branch => rc 2 instead of 3."
+    },
+    "M22_enotdir_not_classified_as_not_found": {
+      "from": "    if (code === \"ENOENT\" || code === \"ENOTDIR\") throw new FileNotFoundError(batchPath);\n",
+      "to": "    if (code === \"ENOENT\") throw new FileNotFoundError(batchPath);\n",
+      "expect": ["B18c"],
+      "_note": "A path through a regular file falls through to the generic branch => rc 2 instead of 3 (existsSync said 'missing')."
+    },
+    "M23_directory_not_refused_as_directory": {
+      "from": "    if (code === \"EISDIR\") throw batchFileError(batchPath, \"is a directory\");\n",
+      "to": "    if (code === \"EISDIR_NEVER\") throw batchFileError(batchPath, \"is a directory\");\n",
+      "expect": ["B18b"],
+      "_note": "Type-preserving: the comparison stays, it never matches; a directory is refused generically, without 'is a directory'."
+    },
+    "M24_other_read_error_rethrown_raw": {
+      "from": "    throw batchFileError(batchPath, `cannot be read (${code ?? \"unknown error\"})`);\n",
+      "to": "    throw error;\n",
+      "expect": ["B18d"],
+      "_note": "The raw fs error (message with the errno text) leaves readBatchFile instead of the classified refusal with the code only."
+    },
+    "K13_execution_error_message_forwarded": {
+      "from": "      if (error instanceof CLIError) errorBody.message = error.message;",
+      "to": "      if (!(error instanceof SPARQLParseError)) errorBody.message = (error as Error).message;",
+      "expect": ["B8b"],
+      "_note": "Review of PR #4605 (round 1): a wrong implementation that passed all 51 axes of the first edition."
+    },
+    "K6_load_retried_per_entry_counter_pinned": {
+      "from": "    if (pending) return pending;\n    pending = (async () => {\n      const start = Date.now();\n      sink.progress(`📦 Loading vault: ${vaultPath}...`);\n      state.graphLoads += 1;\n",
+      "to": "    if (pending && state.store) return pending;\n    pending = (async () => {\n      const start = Date.now();\n      sink.progress(`📦 Loading vault: ${vaultPath}...`);\n      state.graphLoads = 1;\n",
+      "expect": ["B11"],
+      "_note": "Review of PR #4605 (round 1): a wrong implementation that passed all 51 axes of the first edition."
+    },
+    "K5_update_refused_only_for_insert": {
+      "from": "if (ast.type === \"update\") throw new UpdateRefusedError();",
+      "to": "if (ast.type === \"update\" && /INSERT/i.test(queryString)) throw new UpdateRefusedError();",
+      "expect": ["B3b"],
+      "_note": "Review of PR #4605 (round 1): a wrong implementation that passed all 51 axes of the first edition."
+    },
+    "K1_name_up_to_256": {
+      "from": "export const BATCH_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;",
+      "to": "export const BATCH_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/;",
+      "expect": ["B9b"],
+      "_note": "Review of PR #4605 (round 1): a wrong implementation that passed all 51 axes of the first edition."
+    },
+    "K2_name_may_start_with_punctuation": {
+      "from": "export const BATCH_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;",
+      "to": "export const BATCH_NAME_PATTERN = /^[A-Za-z0-9_.:-][A-Za-z0-9_.:-]{0,127}$/;",
+      "expect": ["B9c"],
+      "_note": "Review of PR #4605 (round 1): a wrong implementation that passed all 51 axes of the first edition."
+    },
+    "K36_name_regex_multiline_flag": {
+      "from": "export const BATCH_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;",
+      "to": "export const BATCH_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/m;",
+      "expect": ["B9d"],
+      "_note": "Review of PR #4605 (round 1): a wrong implementation that passed all 51 axes of the first edition."
+    },
+    "K3_missing_name_accepted": {
+      "from": "if (typeof name !== \"string\" || !BATCH_NAME_PATTERN.test(name)) {",
+      "to": "if (!BATCH_NAME_PATTERN.test(name as string)) {",
+      "expect": ["B9e"],
+      "_note": "Review of PR #4605 (round 1): a wrong implementation that passed all 51 axes of the first edition."
+    },
+    "K4_blank_sparql_accepted": {
+      "from": "if (typeof entry.sparql !== \"string\" || entry.sparql.trim() === \"\") {",
+      "to": "if (typeof entry.sparql !== \"string\") {",
+      "expect": ["B9f"],
+      "_note": "Review of PR #4605 (round 1): a wrong implementation that passed all 51 axes of the first edition."
+    },
+    "K50_non_array_not_refused_explicitly": {
+      "from": "  if (!Array.isArray(parsed) || parsed.length === 0) {",
+      "to": "  if ((parsed as unknown[]).length === 0) {",
+      "expect": ["B9g"],
+      "_note": "Review of PR #4605 (round 1): a wrong implementation that passed all 51 axes of the first edition."
+    },
+    "K51_null_entry_not_refused_explicitly": {
+      "from": "    if (raw === null || typeof raw !== \"object\" || Array.isArray(raw)) {",
+      "to": "    if (false) {",
+      "expect": ["B9h"],
+      "_note": "Review of PR #4605 (round 1): a wrong implementation that passed all 51 axes of the first edition."
+    },
+    "K7_summary_epipe_swallowed": {
+      "from": "  } catch {\n    process.exitCode = ExitCodes.GENERAL_ERROR;\n    return;\n  }\n  finish(failed);",
+      "to": "  } catch {\n    /* reader gone */\n  }\n  finish(failed);",
+      "expect": ["B17c"],
+      "_note": "Review of PR #4605 (round 1): a wrong implementation that passed all 51 axes of the first edition."
+    },
+    "K46_missing_vault_not_refused": {
+      "from": "    entries = readBatchFile(batchPath, \"sparql\");\n    if (!existsSync(vaultPath)) throw new VaultNotFoundError(vaultPath);",
+      "to": "    entries = readBatchFile(batchPath, \"sparql\");",
+      "expect": ["B19"],
+      "_note": "Review of PR #4605 (round 1): a wrong implementation that passed all 51 axes of the first edition."
+    },
+    "K60b_only_json_paths_accepted": {
+      "from": "    text = readFileSync(full, \"utf-8\");\n",
+      "to": "    if (!full.endsWith(\".json\")) throw Object.assign(new Error(\"not a json file\"), { code: \"ENOENT\" });\n    text = readFileSync(full, \"utf-8\");\n",
+      "expect": ["B18b", "B20"],
+      "_note": "Review of PR #4605 (round 2): a clause of the requirement with no axis of its own. Single-edit form of the reviewer's K60 ('regular files only' via statSync needs two non-adjacent edits, which the driver cannot express): it refuses /dev/stdin, <(…) and a FIFO alike. Extra after review round 2: the directory of B18b is not a .json path either, so it is refused as missing (rc 3) instead of 'is a directory'."
+    },
+    "K61_failed_load_retypes_later_errors": {
+      "from": "(error as Error)?.name === \"BatchLoadError\" ? \"load\" : sparqlErrorType(error);",
+      "to": "(error as Error)?.name === \"BatchLoadError\" || (graph.state.graphLoads > 0 && graph.state.store === null) ? \"load\" : sparqlErrorType(error);",
+      "expect": ["B11b"],
+      "_note": "Review of PR #4605 (round 2): a clause of the requirement with no axis of its own."
+    },
+    "K62_missing_sparql_not_refused_by_typeof": {
+      "from": "if (typeof entry.sparql !== \"string\" || entry.sparql.trim() === \"\") {",
+      "to": "if ((entry.sparql as string).trim() === \"\") {",
+      "expect": ["B9i"],
+      "_note": "Review of PR #4605 (round 2): a clause of the requirement with no axis of its own."
+    },
+    "K63_missing_uid_accepted": {
+      "from": "if (typeof entry.uid !== \"string\" || entry.uid.trim() === \"\") {",
+      "to": "if (false) {",
+      "expect": ["R8"],
+      "_note": "Review of PR #4605 (round 2): a clause of the requirement with no axis of its own."
+    },
+    "K64_unknown_fields_accepted_for_run_query": {
+      "from": "      if (!allowed.includes(key)) {",
+      "to": "      if (!allowed.includes(key) && kind === \"sparql\") {",
+      "expect": ["R9"],
+      "_note": "Review of PR #4605 (round 2): a clause of the requirement with no axis of its own."
+    }
+  }
+}
