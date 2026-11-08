@@ -13,10 +13,11 @@ import { TableFormatter } from "../formatters/TableFormatter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
 import { ErrorCode } from "../responses/index.js";
-import { VaultNotFoundError } from "../utils/errors/index.js";
+import { VaultNotFoundError, InvalidArgumentsError } from "../utils/errors/index.js";
 import { ResponseBuilder } from "../responses/index.js";
 import { loadVaultTriples } from "../cache/loadVaultTriples.js";
 import { buildNamedQueryRunner } from "../services/NamedQueryCliRunner.js";
+import { runNamedQueryBatch } from "./run-query-batch.js";
 
 export interface RunQueryCommandOptions {
   vault: string;
@@ -26,6 +27,8 @@ export interface RunQueryCommandOptions {
   currentAsset?: string;
   param: string[];
   paramIri: string[];
+  /** Ticket 8ada0615: JSON batch [{"name","uid",…}] — one vault load for all. */
+  batch?: string;
 }
 
 /** Commander collector for repeatable options. */
@@ -77,7 +80,7 @@ export function runQueryCommand(): Command {
     .description(
       "Execute a query__NamedQuery asset (read-only SELECT / ASK / CONSTRUCT) by UID and print its result.",
     )
-    .argument("<uid>", "UID of the query__NamedQuery asset to run")
+    .argument("[uid]", "UID of the query__NamedQuery asset to run (omit with --batch)")
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
     .option("--format <type>", "Output format: table|json", "table")
     .option("--output <type>", "Response format: text|json (for MCP tools)", "text")
@@ -98,12 +101,42 @@ export function runQueryCommand(): Command {
       collect,
       [],
     )
-    .action(async (uid: string, options: RunQueryCommandOptions) => {
+    .option(
+      "--batch <file>",
+      'Run a JSON array [{"name","uid","currentAsset?","params?","paramsIri?"}] with ONE vault load; NDJSON answers on stdout',
+    )
+    .action(async (uid: string | undefined, options: RunQueryCommandOptions) => {
       const outputFormat = (options.output || "text") as OutputFormat;
       const asJson = outputFormat === "json" || options.format === "json";
       ErrorHandler.setFormat(outputFormat);
 
       try {
+        if (options.batch !== undefined) {
+          const clash = [
+            uid !== undefined ? "a positional uid" : null,
+            options.currentAsset ? "--current-asset" : null,
+            options.param.length > 0 ? "--param" : null,
+            options.paramIri.length > 0 ? "--param-iri" : null,
+            outputFormat !== "text" ? "--output" : null,
+          ].filter((x): x is string => x !== null);
+          if (clash.length > 0) {
+            throw new InvalidArgumentsError(
+              `--batch cannot be combined with ${clash.join(", ")} (put them into the batch entries).`,
+              "exocortex run-query --batch named.json --vault <path> [--use-cache]",
+            );
+          }
+          await runNamedQueryBatch(options.batch, {
+            vault: options.vault,
+            useCache: options.useCache ?? false,
+          });
+          return;
+        }
+        if (uid === undefined) {
+          throw new InvalidArgumentsError(
+            "run-query needs a <uid> or --batch <file>.",
+            "exocortex run-query <uid> --vault <path>",
+          );
+        }
         const vaultPath = resolve(options.vault);
         if (!existsSync(vaultPath)) {
           throw new VaultNotFoundError(vaultPath);

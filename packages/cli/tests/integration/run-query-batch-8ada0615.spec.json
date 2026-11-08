@@ -1,0 +1,54 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/query-batch-8ada0615.integration.test.ts tests/integration/query-batch-signature-8ada0615.integration.test.ts 2>&1",
+  "red_re": "› ([BR]\\d+\\w?) ",
+  "_doc": "Ticket 8ada0615 — run-query --batch (run-query-batch.ts). Same harness as query-batch-8ada0615.spec.json; RQ* are the spec reviewer's wrong-but-plausible implementations.",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/run-query-batch.ts",
+  "mutants": {
+    "RQ01_paramsIri_as_literal": {
+      "from": "params[k] = { value: vaultPathToIRI(v), kind: \"iri\" };",
+      "to": "params[k] = { value: v, kind: \"literal\" };",
+      "expect": ["R3d"]
+    },
+    "RQ02_currentAsset_ignored": {
+      "from": "  if (entry.currentAsset) {",
+      "to": "  if (entry.currentAsset && false) {",
+      "expect": ["R3a", "R3c"]
+    },
+    "RQ03_currentAsset_not_converted": {
+      "from": "    (context as { currentAsset?: string }).currentAsset = vaultPathToIRI(entry.currentAsset);",
+      "to": "    (context as { currentAsset?: string }).currentAsset = entry.currentAsset;",
+      "expect": ["R3c"]
+    },
+    "RQ04_syntax_typed_as_execution": {
+      "from": "          : error instanceof SPARQLParseError\n            ? \"syntax\"",
+      "to": "          : error instanceof SPARQLParseError\n            ? \"execution\"",
+      "expect": ["R4"]
+    },
+    "RQ05_exception_not_counted_failed": {
+      "from": "    } catch (error) {\n      failed += 1;",
+      "to": "    } catch (error) {",
+      "expect": ["R6"]
+    },
+    "RQ06_paramsIri_dropped": {
+      "from": "  for (const [k, v] of Object.entries(entry.paramsIri ?? {})) params[k] = { value: vaultPathToIRI(v), kind: \"iri\" };",
+      "to": "  void entry.paramsIri;",
+      "expect": ["R3b", "R3d"]
+    },
+    "RQ07_unset_tokens_not_refused": {
+      "from": "{ refuseUnsetTokens: true }",
+      "to": "{ refuseUnsetTokens: false }",
+      "expect": ["R5"]
+    },
+    "RQ08_error_message_echoed": {
+      "from": "      record = { type: \"result\", name: entry.name, ok: false, error: { type } };",
+      "to": "      record = { type: \"result\", name: entry.name, ok: false, error: { type, message: (error as Error).message } };",
+      "expect": ["R4b"]
+    }
+  }
+}

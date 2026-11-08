@@ -1,0 +1,49 @@
+{
+  "_doc": "Ticket 8ada0615 — packages/cli/src/commands/sparql-query.ts: --batch refuses flags that shape a single query. Same harness as query-batch-8ada0615.spec.json.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/sparql-query.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/query-batch-8ada0615.integration.test.ts tests/integration/query-batch-signature-8ada0615.integration.test.ts 2>&1",
+  "red_re": "› ([BR]\\d+\\w?) ",
+  "mutants": {
+    "M14_query_flag_clash_not_refused": {
+      "from": "          if (clash.length > 0) {\n",
+      "to": "          if (clash.length > 0 && false) {\n",
+      "expect": ["B10a", "B10b", "B10c", "B10d", "B10e", "B10f", "B10g", "B10h"]
+    },
+    "FQ1_template_not_refused": {
+      "from": "            options.template ? \"--template\" : null,",
+      "to": "            null,",
+      "expect": ["B10b"]
+    },
+    "FQ2_dry_run_not_refused": {
+      "from": "            options.dryRun ? \"--dry-run\" : null,",
+      "to": "            null,",
+      "expect": ["B10d"]
+    },
+    "FQ3_output_not_refused": {
+      "from": "            outputFormat !== \"text\" ? \"--output\" : null,\n          ].filter((x): x is string => x !== null);\n          if (clash.length > 0) {\n            throw new InvalidArgumentsError(\n              `--batch cannot be combined with ${clash.join(\", \")}.`,",
+      "to": "            null,\n          ].filter((x): x is string => x !== null);\n          if (clash.length > 0) {\n            throw new InvalidArgumentsError(\n              `--batch cannot be combined with ${clash.join(\", \")}.`,",
+      "expect": ["B10g"]
+    },
+    "FQ4_format_csv_not_refused": {
+      "from": "            options.format !== \"table\" && options.format !== \"json\" ? `--format ${options.format}` : null,",
+      "to": "            null,",
+      "expect": ["B10h"]
+    },
+    "FQ5_explain_stats_not_refused": {
+      "from": "            options.explain ? \"--explain\" : null,\n            options.stats ? \"--stats\" : null,",
+      "to": "            null,\n            null,",
+      "expect": ["B10e", "B10f"]
+    },
+    "FQ8_param_not_refused": {
+      "from": "            options.param ? \"--param\" : null,",
+      "to": "            null,",
+      "expect": ["B10c"]
+    }
+  }
+}
