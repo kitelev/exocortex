@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify for bug 0018b193: a built-in class without its own vault workflow inherits the workflow of its nearest built-in ancestor (ems__Meeting ⊑ ems__Task) before the hardcoded fallback. Axes A1–A33 in packages/core/tests/unit/services/WorkflowResolver.builtInInheritance.test.ts (A1–A21 planning, A22–A33 two rounds of independent spec review). Each mutant is a plausible WRONG implementation (M-b = rejected variant (b); K* = the review's survivors of the earlier axes) and must redden exactly its own set; no two mutants share a set. The base flip (origin/main WorkflowResolver.ts) is not one substitution and is recorded in the ticket body: red A1 A7 A11 A12 A14 A16 A19 A20 A21 A26 A28 A29 A31 A33; A22–A25, A27, A30 and A32 are GREEN on base on purpose — they lock preserved behaviour (a red there is a regression). A20 does not lock 'path is a parameter': A26 (accumulating field, K12) and A31 (per-call field, K12b) do. A22's oracle (resolveForClass) shares findDefaultWorkflow with the subject — A30 holds fixed base expectations (K21).",
+  "_doc": "Revert-verify for bug 0018b193: a built-in class without its own vault workflow inherits the workflow of its nearest built-in ancestor (ems__Meeting ⊑ ems__Task) before the hardcoded fallback. Axes A1–A42 in packages/core/tests/unit/services/WorkflowResolver.builtInInheritance.test.ts (A1–A21 planning, A22–A33 two rounds of independent spec review, A34–A42 implementation review of PR #4606). Each mutant is a plausible WRONG implementation (M-b = rejected variant (b); K* = the spec review's survivors of the earlier axes; R* = the implementation review's) and must redden exactly its own set; no two mutants share a set. The base flip (origin/main WorkflowResolver.ts) is not one substitution and is recorded in the ticket body: red A1 A7 A11 A12 A14 A16 A19 A20 A21 A26 A28 A29 A31 A33 A36 A38 A40 A41 A42; A22–A25, A27, A30, A32, A34, A35, A37 and A39 are GREEN on base on purpose — they lock preserved behaviour (a red there is a regression). A20 does not lock 'path is a parameter': A26 (accumulating field, K12) and A31 (per-call field, K12b) do. A22's oracle (resolveForClass) shares findDefaultWorkflow with the subject — A30 holds fixed base expectations (K21).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/WorkflowResolver.ts",
   "symlink_node_modules": ["node_modules", "packages/core/node_modules"],
@@ -21,20 +21,49 @@
         "A23",
         "A24",
         "A25",
-        "A32"
+        "A32",
+        "A34",
+        "A35",
+        "A39",
+        "A41",
+        "A42"
       ]
     },
     "M1_inherit_task_unconditionally": {
       "_note": "Наследование = процесс задачи для любого встроенного класса без своего. Краснит A8 (проект без своего процесса получает процесс задачи) и A13–A15.",
       "from": "      (await this.findInheritedWorkflow(builtIn, new Set([builtIn]))) ??",
       "to": "      (await this.findDefaultWorkflow(AssetClass.TASK)) ??",
-      "expect": ["A8", "A13", "A14", "A15", "A22", "A23", "A29", "A30"]
+      "expect": [
+        "A8",
+        "A13",
+        "A14",
+        "A15",
+        "A22",
+        "A23",
+        "A29",
+        "A30",
+        "A34",
+        "A35",
+        "A41",
+        "A42"
+      ]
     },
     "M2_meeting_hardmapped_to_task": {
       "_note": "Встреча привязана к задаче В КОДЕ, а не через exo__Class_superClass данных. Краснит A13 (встреча без superClass в данных не наследует) и A14/A15 (суффиксное сравнение).",
       "from": "      (await this.findInheritedWorkflow(builtIn, new Set([builtIn]))) ??",
       "to": "      (builtIn === AssetClass.MEETING ? await this.findDefaultWorkflow(AssetClass.TASK) : null) ??",
-      "expect": ["A13", "A14", "A15", "A23", "A29"]
+      "expect": [
+        "A13",
+        "A14",
+        "A15",
+        "A23",
+        "A29",
+        "A34",
+        "A35",
+        "A40",
+        "A41",
+        "A42"
+      ]
     },
     "M3_subclass_walk_returns_null": {
       "_note": "Обход подклассов (OfflineMeeting и др.) возвращает null.",
@@ -58,7 +87,7 @@
       "_note": "Наследуемый процесс ищется суффиксом имени, а не точным классом ⇒ радиус 97ee1608 расширяется на встречи.",
       "from": "        (await this.findDefaultWorkflow(ancestor, true)) ??",
       "to": "        (await this.findDefaultWorkflow(ancestor, false)) ??",
-      "expect": ["A14", "A15", "A23"]
+      "expect": ["A14", "A15", "A23", "A41", "A42"]
     },
     "M10_no_canonical_uid_seed": {
       "_note": "Старт подъёма только по метке: файл класса без метки (ссылка пришла по UID) не находится, результат зависит от формы ссылки.",
@@ -70,7 +99,7 @@
       "_note": "Унаследованный процесс раньше собственного: собственный процесс встречи в данных проигрывает процессу задачи.",
       "from": "      own ??\n      (await this.findInheritedWorkflow(builtIn, new Set([builtIn]))) ??",
       "to": "      (await this.findInheritedWorkflow(builtIn, new Set([builtIn]))) ??\n      own ??",
-      "expect": ["A2"]
+      "expect": ["A2", "A39"]
     },
     "M12_no_hardcoded_fallback": {
       "_note": "Без запасного шаблона у встроенного класса: vault без процессов ⇒ null вместо рабочих статусных кнопок.",
@@ -92,7 +121,10 @@
         "A26",
         "A30",
         "A32",
-        "A33"
+        "A33",
+        "A34",
+        "A35",
+        "A37"
       ]
     },
     "M13_no_recursion_up_builtin_chain": {
@@ -117,7 +149,7 @@
       "_note": "Ревью р.1, H1: собственный процесс встроенного класса ищется ТОЧНЫМ сравнением — нарушает правило 1 (у задач и проектов поведение не меняется ни на одном входе).",
       "from": "    const own = await this.findDefaultWorkflow(builtIn);\n",
       "to": "    const own = await this.findDefaultWorkflow(builtIn, true);\n",
-      "expect": ["A22", "A30"]
+      "expect": ["A22", "A30", "A39"]
     },
     "K2-exact-by-localname": {
       "_note": "Ревью р.1, L1: точное сравнение принимает класс чужого namespace с той же локальной частью (exodev#Task == ems#Task).",
@@ -183,7 +215,55 @@
       "_note": "Ревью р.2, H1: findDefaultWorkflow точный ПО УМОЛЧАНИЮ («заодно починили 97ee1608») — меняет поведение задач и проектов против базы; A22 его не видит, потому что её эталон resolveForClass сдвигается вместе с предметом, — ловит A30.",
       "from": "    exact = false,\n  ): Promise<WorkflowDefinition | null> {",
       "to": "    exact = true,\n  ): Promise<WorkflowDefinition | null> {",
-      "expect": ["A30"]
+      "expect": ["A30", "A39"]
+    },
+    "R1s-search-past-workflowless-nearest": {
+      "_note": "Ревью реализации (PR #4606), находка MEDIUM M1: «идти вверх, пока не встретится встроенный предок С процессом». Ревьюерский R1 — ДВЕ замены (снять `continue` в findNearestBuiltInAncestor + рекурсия от стартового класса) и в драйвер одной заменой не ложится; его ручной флип записан в теле тикета: красные ровно A34 A35, все прочие оси, I и 563 соседних теста зелены. Здесь — однозаменный представитель того же неверного правила (рекурсия от стартового класса, пропуская безпроцессного ближайшего): краснит A34 и A35 (как и R1), плюс A21 — без снятия `continue` цепочка встроенных обрывается.",
+      "from": "(await this.findInheritedWorkflow(ancestor, new Set([...path, ancestor])))",
+      "to": "(await this.findInheritedWorkflow(builtIn, new Set([...path, ancestor])))",
+      "expect": ["A21", "A34", "A35"]
+    },
+    "R2-walk-through-builtin-on-chain": {
+      "_note": "Ревью реализации (PR #4606), LOW: встроенный класс, уже стоящий на пути наследования, обходится насквозь (утверждение docblock «not walked through either» не было заперто). Краснит A35.",
+      "from": "            if (builtIn !== null) continue; // on the chain already — a cycle\n",
+      "to": "",
+      "expect": ["A35"]
+    },
+    "R3-no-label-fallback-seed": {
+      "_note": "Ревью реализации (PR #4606), LOW: старт подъёма без запасного поиска класса по метке (ветку не выполняла ни одна ось). Краснит A36.",
+      "from": "      (await this.resolveClassFileIRI(builtIn))\n    );",
+      "to": "      null\n    );",
+      "expect": ["A36"]
+    },
+    "R4-inherited-ignores-isDefault": {
+      "_note": "Ревью реализации (PR #4606), находка MEDIUM M2: унаследованный процесс берётся и без ems__Workflow_isDefault — встреча получила бы чужой разовый процесс (механизм ems__Effort_workflow). Краснит A37.",
+      "from": "      if (!isDefault) continue;",
+      "to": "      if (!isDefault && !exact) continue;",
+      "expect": ["A37"]
+    },
+    "R5-meeting-own-exact": {
+      "_note": "Ревью реализации (PR #4606), LOW: собственный процесс ВСТРЕЧИ ищется точным сравнением (A30 держит только задачу и проект). Краснит A39.",
+      "from": "    const own = await this.findDefaultWorkflow(builtIn);",
+      "to": "    const own = await this.findDefaultWorkflow(builtIn, builtIn === AssetClass.MEETING);",
+      "expect": ["A39"]
+    },
+    "R8-inherit-only-for-meeting": {
+      "_note": "Ревью реализации (PR #4606), LOW: наследование только для встречи, задача и проект идут прежним resolveForClass (правило 7 плана — общность для встроенных — не было заперто). Краснит A40.",
+      "from": "        return this.resolveForBuiltIn(builtIn);\n      }\n    }",
+      "to": "        return builtIn === AssetClass.MEETING ? this.resolveForBuiltIn(builtIn) : this.resolveForClass(builtIn);\n      }\n    }",
+      "expect": ["A40"]
+    },
+    "R9-cache-key-shared-with-resolveForClass": {
+      "_note": "Ревью реализации (PR #4606), LOW: кэш встроенного делит ключ с resolveForClass — обещание docblock «resolveForClass keeps the class's own default» нарушается после первого резолва. Краснит A38.",
+      "from": "    const cacheKey = `builtin:${builtIn}`;",
+      "to": "    const cacheKey = `class:${builtIn}`;",
+      "expect": ["A38"]
+    },
+    "R12-exact-ignores-uid-forms": {
+      "_note": "Ревью реализации (PR #4606), LOW: точное сравнение класса не распознаёт формы UID (file IRI и литерал [[uid]]) — утверждение комментария «label or UID form» не было заперто. Краснит A41 A42.",
+      "from": "          return name !== null && this.classRefToBuiltInClass(name) === assetClass;",
+      "to": "          return name !== null && name === assetClass;",
+      "expect": ["A41", "A42"]
     }
   }
 }
