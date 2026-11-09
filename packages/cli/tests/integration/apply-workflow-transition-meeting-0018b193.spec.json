@@ -1,0 +1,26 @@
+{
+  "_doc": "Revert-verify for bug 0018b193 at the CLI surface, production shape: the store is built by the CLI converter from fixture files that copy live frontmatter (canonical UIDs, bare [[uid]] refs, exo__Class_superClass). Axes I1a–I3b in packages/cli/tests/integration/apply-workflow-transition-meeting-0018b193.integration.test.ts. cli-jest reads core from src (moduleNameMapper), so a core mutant reaches the CLI without a rebuild. I3a/I3b are canaries (task): green on base, prototype and every mutant here.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/WorkflowResolver.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../cli\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/apply-workflow-transition-meeting-0018b193.integration.test.ts 2>&1",
+  "red_re": "› (I\\d+\\w*) ",
+  "mutants": {
+    "C1_no_inheritance": {
+      "_note": "Наследование снято целиком (findInheritedWorkflow всегда null) — это и есть база: встреча и OfflineMeeting получают голый шаблон, статус меняется, даты остаются. Канарейки I3 зелены.",
+      "from": "    try {\n      const seed = await this.resolveBuiltInClassFileIRI(builtIn);",
+      "to": "    try {\n      if (builtIn !== \"__never__\") return null;\n      const seed = await this.resolveBuiltInClassFileIRI(builtIn);",
+      "expect": ["I1a", "I1b", "I2a", "I2b"]
+    },
+    "C2_subclass_walk_bare_template": {
+      "_note": "Старый обход подклассов (M14 core-спеки): OfflineMeeting берёт голый шаблон встречи. Сама встреча и задача не задеты.",
+      "from": "    return builtIn !== null ? this.resolveForBuiltIn(builtIn) : null;",
+      "to": "    return builtIn !== null ? this.resolveForClass(builtIn) : null;",
+      "expect": ["I2a", "I2b"]
+    }
+  }
+}

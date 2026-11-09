@@ -32,7 +32,11 @@ const KEY_SEP = String.fromCharCode(0);
  *
  * Resolution priority:
  * 1. Asset-specific workflow (ems__Effort_workflow property)
- * 2. Class default workflow (ems__Workflow_isDefault = true)
+ * 2. Class default workflow (ems__Workflow_isDefault = true); on the
+ *    {@link resolveForAssetOrNull} path (the production one) a built-in class
+ *    without its own inherits its nearest built-in ancestor's along
+ *    `exo__Class_superClass` (bug 0018b193 — `ems__Meeting ⊑ ems__Task`);
+ *    `resolveForClass` / `resolveForAsset` keep the class's own default
  * 3. Hardcoded fallback (backward compatibility)
  *
  * Issue #2359
@@ -107,8 +111,11 @@ export class WorkflowResolver {
    *   1. Per-asset override — `ems__Effort_workflow` on the asset itself
    *      (works for ANY class, e.g. a one-off `ems__Bug` with its own workflow).
    *   2. Built-in default — Task / Project / Meeting resolve their
-   *      class-default workflow (a vault `ems__Workflow` ABox with matching
-   *      `Workflow_targetClass` if present, else the hardcoded fallback).
+   *      class-default workflow: a vault `ems__Workflow` ABox with matching
+   *      `Workflow_targetClass` if present, else the one INHERITED from the
+   *      nearest built-in ancestor along `exo__Class_superClass` (bug 0018b193:
+   *      `ems__Meeting ⊑ ems__Task` takes the vault Task workflow, postActions
+   *      included), else the hardcoded fallback.
    *   3. `null` — the class is neither overridden nor a built-in workflow class
    *      (e.g. `ems__Action`'s own one-shot lifecycle, `exo__Asset`, or any
    *      class for which no workflow has been declared). The caller treats this
@@ -139,11 +146,13 @@ export class WorkflowResolver {
 
     // 2. Built-in class default (Task / Project / Meeting only) — try EACH class
     //    ref so a multi-valued `exo__Instance_class` still resolves when a
-    //    built-in class is not listed first.
+    //    built-in class is not listed first. Own vault default → inherited from
+    //    the nearest built-in ancestor → hardcoded (bug 0018b193,
+    //    {@link resolveForBuiltIn}).
     for (const classRef of classRefs) {
       const builtIn = this.classRefToBuiltInClass(classRef);
       if (builtIn !== null) {
-        return this.resolveForClass(builtIn);
+        return this.resolveForBuiltIn(builtIn);
       }
     }
 
@@ -160,6 +169,82 @@ export class WorkflowResolver {
 
     // 3. No applicable workflow — benign, NOT an error.
     return null;
+  }
+
+  /**
+   * Bug 0018b193 — a built-in class resolves its workflow in this order:
+   *   1. its OWN vault default workflow — {@link findDefaultWorkflow}, matching
+   *      unchanged (the suffix comparison is ticket 97ee1608's subject);
+   *   2. the workflow INHERITED from its nearest built-in ancestor along the
+   *      vault class hierarchy (`exo__Class_superClass`) —
+   *      {@link findInheritedWorkflow}; e.g. `ems__Meeting ⊑ ems__Task` takes
+   *      the vault Task workflow, postActions included;
+   *   3. the hardcoded fallback.
+   * Before, step 2 was missing: `ems__Meeting` (no own vault workflow) fell
+   * straight to the postAction-less `TASK_DEFAULT_WORKFLOW` copy, so `re-open`
+   * and `rollback-to-backlog` changed its status but left the timestamps.
+   * Memoised per class; the inheritance walk is seeded by the class's
+   * canonical UID, so the result does not depend on the ref form it came by.
+   */
+  private async resolveForBuiltIn(
+    builtIn: AssetClass,
+  ): Promise<WorkflowDefinition> {
+    const cacheKey = `builtin:${builtIn}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached) return cached;
+
+    const own = await this.findDefaultWorkflow(builtIn);
+    const result =
+      own ??
+      (await this.findInheritedWorkflow(builtIn, new Set([builtIn]))) ??
+      this.getHardcodedFallback(builtIn);
+
+    this.cache.set(cacheKey, result);
+    return result;
+  }
+
+  /**
+   * Bug 0018b193 — the workflow a built-in class inherits: its nearest built-in
+   * ancestor A (BFS over `exo__Class_superClass`, declaration order — the same
+   * rule the subclass walk uses) answers with A's own vault workflow, matched
+   * EXACTLY on the class (not by name suffix, so inheritance does not widen
+   * ticket 97ee1608's radius), else with what A itself inherits. `path` holds
+   * the built-ins already on this inheritance chain: a cyclic `superClass`
+   * terminates, and because the set is per call (not an instance field)
+   * concurrent resolutions cannot see each other's chain.
+   */
+  private async findInheritedWorkflow(
+    builtIn: AssetClass,
+    path: ReadonlySet<AssetClass>,
+  ): Promise<WorkflowDefinition | null> {
+    try {
+      const seed = await this.resolveBuiltInClassFileIRI(builtIn);
+      if (!seed) return null;
+      const ancestor = await this.findNearestBuiltInAncestor([seed], path);
+      if (ancestor === null) return null;
+      return (
+        (await this.findDefaultWorkflow(ancestor, true)) ??
+        (await this.findInheritedWorkflow(ancestor, new Set([...path, ancestor])))
+      );
+    } catch (error) {
+      LoggingService.warn(
+        `[WorkflowResolver] built-in workflow inheritance failed for ${builtIn} — treating as none: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
+  }
+
+  /** Bug 0018b193 — class file of a built-in: canonical UID first, label second. */
+  private async resolveBuiltInClassFileIRI(
+    builtIn: AssetClass,
+  ): Promise<IRI | null> {
+    const uid = Object.keys(CLASS_UID_TO_LABEL).find(
+      (k) => CLASS_UID_TO_LABEL[k] === builtIn,
+    );
+    return (
+      (uid ? await this.findSubjectByUID(uid) : null) ??
+      (await this.resolveClassFileIRI(builtIn))
+    );
   }
 
   /**
@@ -234,12 +319,31 @@ export class WorkflowResolver {
   private async walkAncestryForBuiltIn(
     classRefs: readonly string[],
   ): Promise<WorkflowDefinition | null> {
-    const visited = new Set<string>();
-    let frontier: IRI[] = [];
+    const seeds: IRI[] = [];
     for (const ref of classRefs) {
       const fileIRI = await this.resolveClassFileIRI(ref);
-      if (fileIRI) frontier.push(fileIRI);
+      if (fileIRI) seeds.push(fileIRI);
     }
+    const builtIn = await this.findNearestBuiltInAncestor(seeds, new Set());
+    // Bug 0018b193 — the nearest built-in ancestor answers with its FULL
+    // resolution (own → inherited → hardcoded), so OfflineMeeting ⊑ Meeting ⊑
+    // Task reaches the vault Task workflow instead of Meeting's bare template.
+    return builtIn !== null ? this.resolveForBuiltIn(builtIn) : null;
+  }
+
+  /**
+   * req 915b20b2 / bug 0018b193 — BFS over `exo__Class_superClass` from the
+   * given class files; returns the FIRST built-in ancestor met (nearest level,
+   * declaration order), skipping built-ins in `skip` (already on the caller's
+   * inheritance chain — not walked through either). Cycle-safe (visited set on
+   * file IRIs), depth-bounded. `null` when none.
+   */
+  private async findNearestBuiltInAncestor(
+    seeds: readonly IRI[],
+    skip: ReadonlySet<AssetClass>,
+  ): Promise<AssetClass | null> {
+    const visited = new Set<string>();
+    let frontier: IRI[] = [...seeds];
     let depth = 0;
     while (frontier.length > 0 && depth < WorkflowResolver.MAX_HIERARCHY_DEPTH) {
       const next: IRI[] = [];
@@ -257,7 +361,8 @@ export class WorkflowResolver {
           const parentName = iriToObsidianName(obj.value);
           if (parentName) {
             const builtIn = this.classRefToBuiltInClass(parentName);
-            if (builtIn !== null) return this.resolveForClass(builtIn);
+            if (builtIn !== null && !skip.has(builtIn)) return builtIn;
+            if (builtIn !== null) continue; // on the chain already — a cycle
           }
           // Map the parent to its class-file IRI subject to walk further up.
           const parentFileIRI = obj.value.startsWith("obsidian://vault/")
@@ -346,6 +451,7 @@ export class WorkflowResolver {
    */
   private async findDefaultWorkflow(
     assetClass: AssetClass,
+    exact = false,
   ): Promise<WorkflowDefinition | null> {
     // Find all ems__Workflow instances
     const workflowTriples = await this.tripleStore.match(
@@ -366,6 +472,17 @@ export class WorkflowResolver {
 
       const matchesClass = targetClassTriples.some((t) => {
         const obj = t.object;
+        if (exact) {
+          // Bug 0018b193 — inheritance compares the CLASS (label or UID form),
+          // never a name suffix: `ems#WaitingCheckTask` is not `ems__Task`.
+          const name =
+            obj instanceof IRI
+              ? iriToObsidianName(obj.value)
+              : obj instanceof Literal
+                ? obj.value
+                : null;
+          return name !== null && this.classRefToBuiltInClass(name) === assetClass;
+        }
         if (obj instanceof IRI) {
           return obj.value.endsWith(assetClass.replace(/^ems__/, ""));
         }
