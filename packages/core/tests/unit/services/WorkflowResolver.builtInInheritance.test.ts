@@ -2,8 +2,8 @@
  * Bug 0018b193 — a built-in class without its OWN vault workflow inherits the
  * workflow of its nearest built-in ancestor (`ems__Meeting ⊑ ems__Task`) before
  * falling back to the hardcoded template. Specification axes (edition 4): A1–A21
- * from planning, A22–A33 from the two independent spec-review rounds, A34–A42 from
- * the implementation review of PR #4606 (each locks a wrong implementation that
+ * from planning, A22–A33 from the two independent spec-review rounds, A34–A46 from
+ * the two implementation-review rounds of PR #4606 (each locks a wrong implementation that
  * passed every earlier axis). A synthetic InMemoryTripleStore; the
  * production-shape (converter-built) counterpart is the CLI `apply` suite
  * `apply-workflow-transition-meeting-0018b193.integration.test.ts` (I1a–I3b).
@@ -47,10 +47,14 @@
  * A36 the seed falls back to the class LABEL: a meeting class with a non-canonical UID still inherits
  * A37 only a DEFAULT ancestor workflow is inherited (a non-default Task workflow ⇒ fallback)
  * A38 resolveForClass(MEETING) keeps the own default and does not share a cache entry with the inheritance
- * A39 the meeting's OWN lookup is unchanged vs origin/main (suffix: an ems#OfflineMeeting workflow is its own)
+ * A39 the meeting's OWN lookup is unchanged vs origin/main: three forms it takes as its own (FIXED expectations)
  * A40 inheritance is general for built-ins, not meeting-only: Project ⊑ Task with no Project workflow ⇒ Task's
  * A41 exact class match recognises the FILE-IRI form of the ancestor class in Workflow_targetClass
  * A42 exact class match recognises the [[uid]] literal form of the ancestor class in Workflow_targetClass
+ * A43 inheritance is transitive through a NON-built-in class: Meeting ⊑ Y ⊑ Task ⇒ Task's
+ * A44 a built-in ref wins over a subclass ref in either order: [OfflineMeeting, Project] ⇒ Project's
+ * A45 two built-in refs [Meeting, Project]: the FIRST listed built-in decides
+ * A46 two forms the meeting's own lookup does NOT take on origin/main ⇒ it inherits Task's (FIXED expectations)
  */
 import { InMemoryTripleStore } from "../../../src/infrastructure/rdf/InMemoryTripleStore";
 import { WorkflowResolver } from "../../../src/services/WorkflowResolver";
@@ -527,14 +531,32 @@ describe("WorkflowResolver — built-in class inherits its ancestor's vault work
     expect((await resolver.resolveForClass(AssetClass.MEETING)).id).toBe(fallback(AssetClass.MEETING));
   });
 
-  it("A39 the meeting's OWN lookup is unchanged vs origin/main (suffix: an ems#OfflineMeeting workflow is its own)", async () => {
-    // Fixed expectation characterised on origin/main 136a071d (resolveForClass(MEETING)
-    // returns the OfflineMeeting workflow by name suffix). Like A30, this line changes ON
-    // PURPOSE when ticket 97ee1608 (suffix comparison) is fixed.
-    await seedWorkflow(store, TASK_WF, ems("Task"));
-    await seedWorkflow(store, U(4604), ems("OfflineMeeting"));
-    expect((await resolver.resolveForAssetOrNull(asset, ref(MEETING_CLASS_UID)))?.id).toBe(U(4604));
-  });
+  // A39 / A46 — the meeting's OWN lookup against FIXED expectations: which targetClass forms
+  // resolveForClass(MEETING) takes as the meeting's own on origin/main 136a071d (name
+  // suffix / label literal), characterised there by a probe. A39 "own" ⇒ that workflow wins
+  // (green on base — preserved behaviour); A46 "not own" ⇒ the meeting inherits the vault
+  // Task workflow instead (red on base, which has no inheritance). Like A30, the rows change
+  // ON PURPOSE when ticket 97ee1608 (suffix comparison) is fixed.
+  const meetingOwnBase: Array<[string, () => IRI | Literal, "own" | "not own"]> = [
+    ["ems#OfflineMeeting", () => ems("OfflineMeeting"), "own"],
+    ["exodev#Meeting", () => new IRI("https://exocortex.my/ontology/exodev#Meeting"), "own"],
+    ["label literal ems__Meeting", () => new Literal("ems__Meeting"), "own"],
+    ["UID literal of the Meeting class", () => new Literal(`[[${MEETING_CLASS_UID}]]`), "not own"],
+    ["file IRI of the Meeting class", () => new IRI(`obsidian://vault/${MEETING_CLASS_UID}.md`), "not own"],
+  ];
+  for (const [name, target, exp] of meetingOwnBase) {
+    const title =
+      exp === "own"
+        ? `A39 the meeting's OWN lookup is unchanged vs origin/main — targetClass ${name} is its own`
+        : `A46 a form the meeting's own lookup does not take on origin/main ⇒ it inherits Task's — targetClass ${name}`;
+    it(title, async () => {
+      await seedWorkflow(store, TASK_WF, ems("Task"));
+      await seedWorkflow(store, U(4604), target());
+      expect((await resolver.resolveForAssetOrNull(asset, ref(MEETING_CLASS_UID)))?.id).toBe(
+        exp === "own" ? U(4604) : TASK_WF,
+      );
+    });
+  }
 
   it("A40 inheritance is general for built-ins, not meeting-only: Project ⊑ Task with no Project workflow ⇒ Task's", async () => {
     // Plan rule 7: a built-in without its own workflow inherits along its superClass in
@@ -548,9 +570,11 @@ describe("WorkflowResolver — built-in class inherits its ancestor's vault work
   });
 
   it("A41 exact class match recognises the FILE-IRI form of the ancestor class in Workflow_targetClass", async () => {
-    // Known divergence, not locked here: the Task's OWN lookup (name suffix, ticket
-    // 97ee1608) does not take this form, so such a workflow would serve the meeting but
-    // not the task itself. Live workflows reference the class by bare UID (symbolic IRI).
+    // Known divergence: the Task's OWN lookup (name suffix, ticket 97ee1608) does not take
+    // this form — that half is held by A30's rows "file IRI of the Task class" / "UID literal
+    // of the Task class" — so such a workflow serves the meeting but not the task itself;
+    // all four lines change together when 97ee1608 is fixed. Live workflows reference the
+    // class by bare UID (symbolic IRI).
     await seedWorkflow(store, TASK_WF, new IRI(`obsidian://vault/${TASK_CLASS_UID}.md`));
     expect((await resolver.resolveForAssetOrNull(asset, ref(MEETING_CLASS_UID)))?.id).toBe(TASK_WF);
   });
@@ -558,5 +582,40 @@ describe("WorkflowResolver — built-in class inherits its ancestor's vault work
   it("A42 exact class match recognises the [[uid]] literal form of the ancestor class in Workflow_targetClass", async () => {
     await seedWorkflow(store, TASK_WF, new Literal(`[[${TASK_CLASS_UID}]]`));
     expect((await resolver.resolveForAssetOrNull(asset, ref(MEETING_CLASS_UID)))?.id).toBe(TASK_WF);
+  });
+
+  // A43–A45 — implementation review of PR #4606, round 2.
+
+  it("A43 inheritance is transitive through a NON-built-in class: Meeting ⊑ Y ⊑ Task ⇒ Task's", async () => {
+    // "nearest built-in ancestor along exo__Class_superClass" walks the whole hierarchy, not
+    // only the direct parents — an intermediate class between Meeting and Task keeps the fix.
+    const s = new InMemoryTripleStore();
+    await seedClass(s, TASK_CLASS_UID, "ems__Task");
+    await seedClass(s, U(4605), "ems__Y", "Task");
+    await seedClass(s, MEETING_CLASS_UID, "ems__Meeting", "Y");
+    await seedWorkflow(s, TASK_WF, ems("Task"));
+    expect((await new WorkflowResolver(s).resolveForAssetOrNull(asset, ref(MEETING_CLASS_UID)))?.id).toBe(TASK_WF);
+  });
+
+  it("A44 a built-in ref wins over a subclass ref in either order: [OfflineMeeting, Project] ⇒ Project's (as on base)", async () => {
+    await seedClass(store, OFFLINE_CLASS_UID, "ems__OfflineMeeting", "Meeting");
+    await seedWorkflow(store, TASK_WF, ems("Task"));
+    await seedWorkflow(store, PROJECT_WF, ems("Project"));
+    expect(
+      (await resolver.resolveForAssetOrNull(asset, [`"${OFFLINE_CLASS_UID}"`, `"${PROJECT_CLASS_UID}"`]))?.id,
+    ).toBe(PROJECT_WF);
+    expect(
+      (await resolver.resolveForAssetOrNull(asset, [`"${PROJECT_CLASS_UID}"`, `"${OFFLINE_CLASS_UID}"`]))?.id,
+    ).toBe(PROJECT_WF);
+  });
+
+  it("A45 two built-in refs [Meeting, Project]: the FIRST listed built-in decides (meeting ⇒ inherited Task's)", async () => {
+    // Base loop order is kept: the first built-in ref resolves, even though Project has its
+    // own vault workflow and the meeting only an inherited one.
+    await seedWorkflow(store, TASK_WF, ems("Task"));
+    await seedWorkflow(store, PROJECT_WF, ems("Project"));
+    expect(
+      (await resolver.resolveForAssetOrNull(asset, [`"${MEETING_CLASS_UID}"`, `"${PROJECT_CLASS_UID}"`]))?.id,
+    ).toBe(TASK_WF);
   });
 });
