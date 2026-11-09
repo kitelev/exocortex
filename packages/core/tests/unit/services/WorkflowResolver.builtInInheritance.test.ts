@@ -2,8 +2,8 @@
  * Bug 0018b193 — a built-in class without its OWN vault workflow inherits the
  * workflow of its nearest built-in ancestor (`ems__Meeting ⊑ ems__Task`) before
  * falling back to the hardcoded template. Specification axes (edition 4): A1–A21
- * from planning, A22–A33 from the two independent spec-review rounds, A34–A46 from
- * the two implementation-review rounds of PR #4606 (each locks a wrong implementation that
+ * from planning, A22–A33 from the two independent spec-review rounds, A34–A48 from
+ * the three implementation-review rounds of PR #4606 (each locks a wrong implementation that
  * passed every earlier axis). A synthetic InMemoryTripleStore; the
  * production-shape (converter-built) counterpart is the CLI `apply` suite
  * `apply-workflow-transition-meeting-0018b193.integration.test.ts` (I1a–I3b).
@@ -42,7 +42,7 @@
  * A31 concurrent cold resolutions of a meeting AND a task do not see each other's chain
  * A32 a cycle between two built-ins off the start class (Project ⊑ Task ⊑ Project) terminates
  * A33 invalidateCache(): an OfflineMeeting (subclass walk) picks up a Task workflow added later
- * A34 the nearest built-in WITHOUT a workflow still decides: Meeting ⊑ [Project, Y], Y ⊑ Task ⇒ fallback
+ * A34 the nearest built-in WITHOUT a workflow still decides: Meeting ⊑ [Project, Y] (and [Y, Project]), Y ⊑ Task ⇒ fallback
  * A35 a built-in already on the chain is not walked through: Meeting ⊑ [Project, Task], Project ⊑ Meeting
  * A36 the seed falls back to the class LABEL: a meeting class with a non-canonical UID still inherits
  * A37 only a DEFAULT ancestor workflow is inherited (a non-default Task workflow ⇒ fallback)
@@ -55,6 +55,8 @@
  * A44 a built-in ref wins over a subclass ref in either order: [OfflineMeeting, Project] ⇒ Project's
  * A45 two built-in refs [Meeting, Project]: the FIRST listed built-in decides
  * A46 two forms the meeting's own lookup does NOT take on origin/main ⇒ it inherits Task's (FIXED expectations)
+ * A47 two built-in refs in the REVERSE order [Project, Meeting]: Project, listed first, decides
+ * A48 transitivity beyond two hops: Meeting ⊑ Y ⊑ Z ⊑ Task ⇒ Task's
  */
 import { InMemoryTripleStore } from "../../../src/infrastructure/rdf/InMemoryTripleStore";
 import { WorkflowResolver } from "../../../src/services/WorkflowResolver";
@@ -411,8 +413,9 @@ describe("WorkflowResolver — built-in class inherits its ancestor's vault work
   });
 
   // A30 — rule 1 against FIXED expectations (characterised on origin/main 136a071d), not the
-  // resolveForClass oracle of A22. ⛔ When ticket 97ee1608 (suffix matching) is fixed, the
-  // WaitingCheckTask / DevTask / label-literal rows change ON PURPOSE — update them there.
+  // resolveForClass oracle of A22. ⛔ When ticket 97ee1608 makes the own lookup exact (model:
+  // spec mutant K21), every row except "label literal ems__Task" changes ON PURPOSE — update
+  // them there.
   const fixedBase: Array<[string, () => IRI | Literal, "other" | "fallback", "other" | "fallback"]> = [
     ["ems#WaitingCheckTask", () => ems("WaitingCheckTask"), "other", "fallback"],
     ["exodev#DevTask", () => new IRI("https://exocortex.my/ontology/exodev#DevTask"), "other", "fallback"],
@@ -490,6 +493,18 @@ describe("WorkflowResolver — built-in class inherits its ancestor's vault work
     expect((await r.resolveForAssetOrNull(asset, ref(MEETING_CLASS_UID)))?.id).toBe(
       r.getHardcodedFallback(AssetClass.MEETING).id,
     );
+    // Same graph, Project declared SECOND (Meeting ⊑ [Y, Project]): "nearest" is by depth,
+    // not by declaration order along a depth-first path through Y (review round 3, R20).
+    const s2 = new InMemoryTripleStore();
+    await seedClass(s2, TASK_CLASS_UID, "ems__Task");
+    await seedClass(s2, PROJECT_CLASS_UID, "ems__Project");
+    await seedClass(s2, U(4601), "ems__Y", "Task");
+    await seedClass(s2, MEETING_CLASS_UID, "ems__Meeting", "Y", "Project");
+    await seedWorkflow(s2, TASK_WF, ems("Task"));
+    const r2 = new WorkflowResolver(s2);
+    expect((await r2.resolveForAssetOrNull(asset, ref(MEETING_CLASS_UID)))?.id).toBe(
+      r2.getHardcodedFallback(AssetClass.MEETING).id,
+    );
   });
 
   it("A35 a built-in already on the chain is not walked through: Meeting ⊑ [Project, Task], Project ⊑ Meeting", async () => {
@@ -535,8 +550,9 @@ describe("WorkflowResolver — built-in class inherits its ancestor's vault work
   // resolveForClass(MEETING) takes as the meeting's own on origin/main 136a071d (name
   // suffix / label literal), characterised there by a probe. A39 "own" ⇒ that workflow wins
   // (green on base — preserved behaviour); A46 "not own" ⇒ the meeting inherits the vault
-  // Task workflow instead (red on base, which has no inheritance). Like A30, the rows change
-  // ON PURPOSE when ticket 97ee1608 (suffix comparison) is fixed.
+  // Task workflow instead (red on base, which has no inheritance). Like A30: when ticket
+  // 97ee1608 makes the own lookup exact (model: spec mutant K21), every row except "label
+  // literal ems__Meeting" changes ON PURPOSE.
   const meetingOwnBase: Array<[string, () => IRI | Literal, "own" | "not own"]> = [
     ["ems#OfflineMeeting", () => ems("OfflineMeeting"), "own"],
     ["exodev#Meeting", () => new IRI("https://exocortex.my/ontology/exodev#Meeting"), "own"],
@@ -572,8 +588,9 @@ describe("WorkflowResolver — built-in class inherits its ancestor's vault work
   it("A41 exact class match recognises the FILE-IRI form of the ancestor class in Workflow_targetClass", async () => {
     // Known divergence: the Task's OWN lookup (name suffix, ticket 97ee1608) does not take
     // this form — that half is held by A30's rows "file IRI of the Task class" / "UID literal
-    // of the Task class" — so such a workflow serves the meeting but not the task itself;
-    // all four lines change together when 97ee1608 is fixed. Live workflows reference the
+    // of the Task class" — so such a workflow serves the meeting but not the task itself.
+    // When 97ee1608 makes the own lookup exact (model: spec mutant K21), those two A30 rows
+    // change and the divergence closes; A41 and A42 stay green. Live workflows reference the
     // class by bare UID (symbolic IRI).
     await seedWorkflow(store, TASK_WF, new IRI(`obsidian://vault/${TASK_CLASS_UID}.md`));
     expect((await resolver.resolveForAssetOrNull(asset, ref(MEETING_CLASS_UID)))?.id).toBe(TASK_WF);
@@ -617,5 +634,27 @@ describe("WorkflowResolver — built-in class inherits its ancestor's vault work
     expect(
       (await resolver.resolveForAssetOrNull(asset, [`"${MEETING_CLASS_UID}"`, `"${PROJECT_CLASS_UID}"`]))?.id,
     ).toBe(TASK_WF);
+  });
+
+  // A47–A48 — implementation review of PR #4606, round 3.
+
+  it("A47 two built-in refs in the REVERSE order [Project, Meeting]: Project, listed first, decides (as on base)", async () => {
+    // A45's mirror: a fixed class priority (Meeting before Project) would pass A45 and turn
+    // this pair into the meeting's inherited Task workflow — a regression against base.
+    await seedWorkflow(store, TASK_WF, ems("Task"));
+    await seedWorkflow(store, PROJECT_WF, ems("Project"));
+    expect(
+      (await resolver.resolveForAssetOrNull(asset, [`"${PROJECT_CLASS_UID}"`, `"${MEETING_CLASS_UID}"`]))?.id,
+    ).toBe(PROJECT_WF);
+  });
+
+  it("A48 transitivity beyond two hops: Meeting ⊑ Y ⊑ Z ⊑ Task ⇒ Task's", async () => {
+    const s = new InMemoryTripleStore();
+    await seedClass(s, TASK_CLASS_UID, "ems__Task");
+    await seedClass(s, U(4607), "ems__Z", "Task");
+    await seedClass(s, U(4606), "ems__Y", "Z");
+    await seedClass(s, MEETING_CLASS_UID, "ems__Meeting", "Y");
+    await seedWorkflow(s, TASK_WF, ems("Task"));
+    expect((await new WorkflowResolver(s).resolveForAssetOrNull(asset, ref(MEETING_CLASS_UID)))?.id).toBe(TASK_WF);
   });
 });
