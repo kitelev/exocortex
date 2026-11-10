@@ -17,6 +17,43 @@ import type {
   FilterPattern,
 } from "../SparqljsTypes";
 
+const XSD_INTEGER = "http://www.w3.org/2001/XMLSchema#integer";
+
+/**
+ * The binary operator that SPARQL unary arithmetic is translated with, or
+ * `undefined` when `operator` is not a unary arithmetic operator.
+ *
+ * sparqljs parses `-?x` / `-(?x)` as `{ operator: "UMINUS", args: [?x] }` and
+ * `+?x` as `{ operator: "UPLUS", args: [?x] }`; a negative numeric literal (`-5`)
+ * is a literal, not an operation, and never reaches this (ems__Bug 151b98a1).
+ */
+export function unaryArithmeticOperator(operator: string): "-" | "+" | undefined {
+  if (operator === "UMINUS") return "-";
+  if (operator === "UPLUS") return "+";
+  return undefined;
+}
+
+/**
+ * `-A` / `+A` (SPARQL 1.1 §17.3, op:numeric-unary-minus / -plus) as `0 - A` /
+ * `0 + A` — the same algebra the parser produces for the binary form, so the
+ * evaluator, the SERVICE text generator and the serializer handle it with the
+ * existing binary arithmetic, and `-A` answers exactly what `0 - A` answers
+ * (including how a non-numeric `A` is coerced). It also inherits the binary
+ * form's gaps: the optimizer's filter-variable walk and the async (EXISTS)
+ * evaluator do not descend into arithmetic (ems__Bug a8012c4f). Shared by
+ * BOTH operator tables — `ExpressionTranslator` (FILTER, BIND, ORDER BY,
+ * function arguments) and `AggregateTranslator.transformExpressionWithAggregateVars`
+ * (HAVING, SELECT expressions) — so the two cannot drift (ems__Bug 151b98a1).
+ */
+export function unaryToArithmetic(operator: "-" | "+", operand: Expression): ArithmeticExpression {
+  return {
+    type: "arithmetic",
+    operator,
+    left: { type: "literal", value: 0, datatype: XSD_INTEGER },
+    right: operand,
+  };
+}
+
 /**
  * Translates SPARQL expressions, filters, and function calls
  * from the sparqljs AST into the internal algebra representation.
@@ -143,6 +180,11 @@ export class ExpressionTranslator {
         left: this.translateExpression(exprArgs[0]),
         right: this.translateExpression(exprArgs[1]),
       };
+    }
+
+    const unaryOperator = unaryArithmeticOperator(expr.operator);
+    if (unaryOperator !== undefined) {
+      return unaryToArithmetic(unaryOperator, this.translateExpression(exprArgs[0]));
     }
 
     // Handle EXISTS and NOT EXISTS
