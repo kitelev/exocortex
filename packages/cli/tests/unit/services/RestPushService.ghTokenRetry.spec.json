@@ -1,0 +1,197 @@
+{
+  "_doc": "Revert-verify mutants for ems__Bug 24f760d3 — `RestPushService.resolveGhToken` retries ONLY a timed-out `gh auth token` (classified by `code === \"ETIMEDOUT\"`) with a growing per-attempt limit (15 s, 30 s, 60 s) and names a final timeout as a stall, not an auth failure, keeping exit code 1 and the verdict inside the first 150 chars. M11-M21 are the wrong-but-plausible implementations found by the independent review (W1-W9 and two MEDIUM/LOW findings): each passed the first 13 axes. `red_re` anchors on the `● <suite> › G<n> …` failure header. The harness runs both test files: G21 must mock node:child_process before import. M22-M27 (StageSpecification) are wrong-but-plausible implementations found by the independent review of the specification: each passed all 37 axes of the plan.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› (G\\d+) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/services/RestPushService.ts",
+  "harness": "cd \"$(dirname {subject})/../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/services/RestPushService.ghTokenRetry.test.ts tests/unit/services/RestPushService.ghTokenRetry.defaultRunner.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_no_retry": {
+      "_note": "Every timeout is final (main before 24f760d3): the first 15 s miss throws. G3/G22 redden too: the final text reports the attempts MADE (\"after 1 attempt\"), not the schedule length.",
+      "from": "        if (attempt + 1 >= attemptTimeoutsMs.length) {",
+      "to": "        if (attempt + 1 >= 1) {",
+      "expect": [
+        "G1",
+        "G10",
+        "G16",
+        "G17",
+        "G18",
+        "G19",
+        "G2",
+        "G20",
+        "G21",
+        "G22",
+        "G25",
+        "G26",
+        "G27",
+        "G29",
+        "G3",
+        "G30",
+        "G8"
+      ]
+    },
+    "M2_retry_any_error": {
+      "_note": "A non-zero exit / missing gh / outside kill is retried like a timeout and finally reported as a stall.",
+      "from": "        if (!isSpawnTimeout(err)) {",
+      "to": "        if (!isSpawnTimeout(err) && attempt < 0) {",
+      "expect": ["G14", "G15", "G18", "G4", "G5", "G9"]
+    },
+    "M3_same_limit_every_attempt": {
+      "_note": "The schedule is walked but every attempt gets the first limit (15 s three times).",
+      "from": "        raw = run(attemptTimeoutsMs[attempt]);\n        break;",
+      "to": "        raw = run(attemptTimeoutsMs[0]);\n        break;",
+      "expect": ["G10", "G2", "G21", "G27"]
+    },
+    "M4_default_runner_ignores_limit": {
+      "_note": "The default runner keeps the hardcoded 15 s instead of the per-attempt limit.",
+      "from": "          timeout: timeoutMs,",
+      "to": "          timeout: 15_000,",
+      "expect": ["G16", "G21", "G26", "G8"]
+    },
+    "M5_stall_named_as_auth": {
+      "_note": "The final timeout keeps the old text that sent the capture to auth hypotheses.",
+      "from": "`RestPushService: \\`gh auth token\\` timed out (ETIMEDOUT) after ${",
+      "to": "`RestPushService: \\`gh auth token\\` failed — is GitHub CLI installed and authenticated? (${",
+      "expect": ["G11", "G21", "G22", "G27", "G3"]
+    },
+    "M6_no_redaction_on_timeout": {
+      "_note": "The timeout branch forgets PAT redaction.",
+      "from": "Underlying: ${msg}`.replace(\n              RestPushService.PAT_REGEX,\n              \"***REDACTED***\",\n            ),\n          );\n        }\n      }\n    }",
+      "to": "Underlying: ${msg}`.replace(\n              /(?!)/g,\n              \"***REDACTED***\",\n            ),\n          );\n        }\n      }\n    }",
+      "expect": ["G7"]
+    },
+    "M7_gives_up_one_attempt_early": {
+      "_note": "Off-by-one: the last attempt of the schedule is never made.",
+      "from": "        if (attempt + 1 >= attemptTimeoutsMs.length) {",
+      "to": "        if (attempt + 2 >= attemptTimeoutsMs.length) {",
+      "expect": ["G10", "G16", "G17", "G2", "G21", "G26", "G27", "G3", "G8"]
+    },
+    "M8_empty_schedule_unguarded": {
+      "_note": "An empty schedule calls gh with an undefined limit (no time limit at all).",
+      "from": "    if (attemptTimeoutsMs.length === 0) {",
+      "to": "    if (attemptTimeoutsMs.length < 0) {",
+      "expect": ["G12"]
+    },
+    "M9_elapsed_not_measured": {
+      "_note": "The elapsed time in the final message is a constant 0 — the measurement for the next failure is lost.",
+      "from": "Math.round((monotonicMs() - startedAt) / 1000)",
+      "to": "Math.round((startedAt - startedAt) / 1000)",
+      "expect": ["G13", "G17", "G28"]
+    },
+    "M10_one_attempt_miscounted": {
+      "_note": "A one-attempt schedule is reported as \"1 attempts\".",
+      "from": "made === 1 ? \"\" : \"s\"",
+      "to": "made === -1 ? \"\" : \"s\"",
+      "expect": ["G11"]
+    },
+    "M11_retry_empty_output": {
+      "_note": "Empty output (not authenticated) is retried like a timeout (review W-M11).",
+      "from": "        raw = run(attemptTimeoutsMs[attempt]);\n        break;",
+      "to": "        raw = run(attemptTimeoutsMs[attempt]);\n        if (raw.trim() === \"\" && attempt + 1 < attemptTimeoutsMs.length) continue;\n        break;",
+      "expect": ["G6"]
+    },
+    "M12_classify_by_text": {
+      "_note": "Timeout recognised by the word ETIMEDOUT in the message: a non-zero exit whose stderr says ETIMEDOUT is retried and reported as a stall (review W1).",
+      "from": "(err as { code?: unknown }).code === \"ETIMEDOUT\"",
+      "to": "/ETIMEDOUT/.test(String((err as { message?: unknown }).message))",
+      "expect": ["G14"]
+    },
+    "M13_classify_by_signal": {
+      "_note": "Timeout recognised by signal SIGTERM: an outside kill is retried, a TERM-ignoring child (SIGPIPE) is not (review W2).",
+      "from": "(err as { code?: unknown }).code === \"ETIMEDOUT\"",
+      "to": "(err as { signal?: unknown }).signal === \"SIGTERM\"",
+      "expect": ["G15", "G16", "G26"]
+    },
+    "M14_classify_by_errno": {
+      "_note": "Timeout recognised by the macOS errno -60: on Linux (-110) nothing is retried (review W7).",
+      "from": "(err as { code?: unknown }).code === \"ETIMEDOUT\"",
+      "to": "(err as { errno?: unknown }).errno === -60",
+      "expect": ["G19"]
+    },
+    "M15_elapsed_is_sum_of_limits": {
+      "_note": "Elapsed = sum of the limits, a constant, not a measurement (review W4).",
+      "from": "Math.round((monotonicMs() - startedAt) / 1000)",
+      "to": "Math.round(attemptTimeoutsMs.reduce((a, b) => a + b, 0) / 1000)",
+      "expect": ["G13", "G17", "G24", "G28"]
+    },
+    "M16_auth_check_only_first_attempt": {
+      "_note": "A non-timeout after a timeout is retried and finally named a stall — the diagnosis is inverted (review W5).",
+      "from": "        if (!isSpawnTimeout(err)) {",
+      "to": "        if (!isSpawnTimeout(err) && attempt === 0) {",
+      "expect": ["G18"]
+    },
+    "M17_runner_caps_limit": {
+      "_note": "The default runner caps every limit at 15 s: in production all three attempts get 15 s (review W6).",
+      "from": "          timeout: timeoutMs,",
+      "to": "          timeout: Math.min(timeoutMs, 15_000),",
+      "expect": ["G21"]
+    },
+    "M18_console_noise_on_retry": {
+      "_note": "A retry is announced on the console: noise in consumers that parse `--json 2>&1`, unredacted (review W8). G29 reddens too: under jest an un-mocked console method writes to process.stdout (in production console.error goes to stderr).",
+      "from": "        if (attempt + 1 >= attemptTimeoutsMs.length) {",
+      "to": "        console.error(`gh auth token timed out, retrying: ${msg}`);\n        if (attempt + 1 >= attemptTimeoutsMs.length) {",
+      "expect": ["G20", "G29"]
+    },
+    "M19_env_dropped": {
+      "_note": "The default runner drops `env: process.env` — under jest the fake-gh axes would reach the REAL gh (review W9). Real-spawn axes compare by boolean, so no token is printed.",
+      "from": "          env: process.env,",
+      "to": "          env: undefined,",
+      "expect": ["G14", "G16", "G21", "G26", "G8", "G9"]
+    },
+    "M20_exit_code_shifts": {
+      "_note": "A wording that classifyMessage maps to another exit code (\"not found\" ⇒ FILE_NOT_FOUND): delivery reads rc=1 vs rc=2 differently (review LOW). G3 reddens too: it asserts the same wording.",
+      "from": "— a stall, not an",
+      "to": "— gh not found in time, not an",
+      "expect": ["G23", "G3"]
+    },
+    "M21_keywords_pushed_out_of_head": {
+      "_note": "A longer lead-in pushes ETIMEDOUT / the verdict past the 160-char cut of the delivery log (review MEDIUM).",
+      "from": "`RestPushService: \\`gh auth token\\` timed out (ETIMEDOUT) after ${",
+      "to": "`RestPushService: \\`gh auth token\\` (the GitHub CLI call that resolves the token for --token-from-gh) timed out (ETIMEDOUT) after ${",
+      "expect": ["G22", "G3"]
+    },
+    "M22_partial_stdout_used": {
+      "_note": "A timed-out attempt's partial stdout is taken as the token (review spec P3): a token cut by the kill would be returned instead of retrying.",
+      "from": "        const msg = err instanceof Error ? err.message : String(err);",
+      "to": "        const out = (err as { stdout?: unknown }).stdout;\n        if (isSpawnTimeout(err) && typeof out === \"string\" && out.trim() !== \"\") {\n          raw = out;\n          break;\n        }\n        const msg = err instanceof Error ? err.message : String(err);",
+      "expect": ["G25"]
+    },
+    "M23_timeout_needs_null_status": {
+      "_note": "A timeout is recognised only with status == null (review spec P4): a TERM-ignoring child that exits by itself (code ETIMEDOUT, status 3) is not retried.",
+      "from": "(err as { code?: unknown }).code === \"ETIMEDOUT\"",
+      "to": "(err as { code?: unknown }).code === \"ETIMEDOUT\" &&\n    (err as { status?: unknown }).status == null",
+      "expect": ["G26"]
+    },
+    "M24_geometric_limits": {
+      "_note": "Limits derived as first × 2^n instead of read from the schedule (review spec P5): indistinguishable on the default 15/30/60.",
+      "from": "        raw = run(attemptTimeoutsMs[attempt]);\n        break;",
+      "to": "        raw = run(attemptTimeoutsMs[0] * 2 ** attempt);\n        break;",
+      "expect": ["G27"]
+    },
+    "M25_stdout_noise_on_retry": {
+      "_note": "A retry is announced on stdout (review spec P8): breaks `--json` documents.",
+      "from": "        if (attempt + 1 >= attemptTimeoutsMs.length) {",
+      "to": "        process.stdout.write(\"gh auth token timed out, retrying\\n\");\n        if (attempt + 1 >= attemptTimeoutsMs.length) {",
+      "expect": ["G29"]
+    },
+    "M26_stderr_noise_on_retry": {
+      "_note": "A retry is announced by a raw stderr write (review spec P2), bypassing console.",
+      "from": "        if (attempt + 1 >= attemptTimeoutsMs.length) {",
+      "to": "        process.stderr.write(\"gh auth token timed out, retrying\\n\");\n        if (attempt + 1 >= attemptTimeoutsMs.length) {",
+      "expect": ["G30"]
+    },
+    "M27_wall_clock": {
+      "_note": "The wait is measured by the wall clock (review spec, finding on AC6): a clock step back during the attempts reports a negative or shrunk wait.",
+      "from": "  return performance.now();",
+      "to": "  return Date.now();",
+      "expect": ["G28"]
+    }
+  }
+}
