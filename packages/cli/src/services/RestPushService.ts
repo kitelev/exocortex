@@ -33,10 +33,49 @@ export interface RestPushServiceOptions {
   apiBase?: string;
 }
 
-/** Injectable runner for `gh auth token` (tests stub this). */
-export type GhTokenRunner = () => string;
+/**
+ * Injectable runner for `gh auth token` (tests stub this). Receives the
+ * time limit of the current attempt; a runner that ignores it stays valid.
+ */
+export type GhTokenRunner = (timeoutMs: number) => string;
+
+/**
+ * Time limit of each `gh auth token` attempt, in order (ems__Bug 24f760d3).
+ * Idle, `gh auth token` answers in ~0.03 s; under launchd it missed the single
+ * 15 s limit 36 times between 2026-09-25 and 2026-11-10 (three jobs), and 23 of
+ * the 27 misses that could be checked fell in windows where CLI queries that
+ * normally take 8 s took >= 130 s (vs 15 % of other ticks) — a machine stall,
+ * not an auth failure (measured 2026-11-11). Only a timeout
+ * (`code: "ETIMEDOUT"`) is retried; every other failure — non-zero exit,
+ * missing gh, a kill from outside, empty output — fails on the first attempt,
+ * as before. A timeout is recognised by the code whatever the exit status or
+ * signal (axes G16, G26), and a timed-out attempt's partial output is never
+ * used, even if a token is already in it (axis G25). The limits sum to 105 s,
+ * which is NOT a hard bound: execFileSync waits for a child that ignores
+ * SIGTERM to exit.
+ */
+export const GH_TOKEN_ATTEMPT_TIMEOUTS_MS: readonly number[] = [
+  15_000, 30_000, 60_000,
+];
 
 const FETCH_TIMEOUT_MS = 60_000;
+
+/** `execFileSync` reports a hit time limit as `code: "ETIMEDOUT"`. */
+function isSpawnTimeout(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { code?: unknown }).code === "ETIMEDOUT"
+  );
+}
+
+/**
+ * Monotonic milliseconds for the reported wait: a wall-clock step (NTP, manual
+ * change) during the attempts must not shrink or negate it (axis G28).
+ */
+function monotonicMs(): number {
+  return performance.now();
+}
 
 export class RestPushService {
   // Mirrors plugin GitHubRestClient.PAT_REGEX + BootstrapAssetSpaceService.
@@ -60,28 +99,64 @@ export class RestPushService {
 
   /**
    * Resolve a PAT via `gh auth token`. Injectable runner for tests. Trims
-   * trailing newline. Throws a redacted, actionable error if `gh` is missing
-   * or unauthenticated.
+   * trailing newline. A timed-out attempt is retried with the next limit of
+   * `attemptTimeoutsMs`; any other failure throws at once. Throws a redacted,
+   * actionable error if `gh` is missing, unauthenticated, or never answers.
    */
-  static resolveGhToken(runner?: GhTokenRunner): string {
+  static resolveGhToken(
+    runner?: GhTokenRunner,
+    attemptTimeoutsMs: readonly number[] = GH_TOKEN_ATTEMPT_TIMEOUTS_MS,
+  ): string {
     const run: GhTokenRunner =
       runner ??
-      ((): string =>
+      ((timeoutMs: number): string =>
         execFileSync("gh", ["auth", "token"], {
           encoding: "utf8",
-          timeout: 15_000,
+          timeout: timeoutMs,
+          // Equal to Node's default in production. Under jest it is NOT: jest
+          // does not hand its `process.env` to children, so without this line
+          // the fake-gh axes would resolve and run the user's REAL `gh` (and
+          // read the real token). Locked by axis G21.
+          env: process.env,
         }));
-    let raw: string;
-    try {
-      raw = run();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+    if (attemptTimeoutsMs.length === 0) {
       throw new Error(
-        `RestPushService: \`gh auth token\` failed — is GitHub CLI installed and authenticated? (run \`gh auth login\`). Underlying: ${msg}`.replace(
-          RestPushService.PAT_REGEX,
-          "***REDACTED***",
-        ),
+        "RestPushService: resolveGhToken needs at least one attempt time limit.",
       );
+    }
+    const startedAt = monotonicMs();
+    let raw: string;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        raw = run(attemptTimeoutsMs[attempt]);
+        break;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!isSpawnTimeout(err)) {
+          throw new Error(
+            `RestPushService: \`gh auth token\` failed — is GitHub CLI installed and authenticated? (run \`gh auth login\`). Underlying: ${msg}`.replace(
+              RestPushService.PAT_REGEX,
+              "***REDACTED***",
+            ),
+          );
+        }
+        if (attempt + 1 >= attemptTimeoutsMs.length) {
+          const limits = attemptTimeoutsMs
+            .map((ms) => `${Math.round(ms / 1000)}s`)
+            .join(" + ");
+          const elapsed = Math.round((monotonicMs() - startedAt) / 1000);
+          // The count is the attempts MADE, not the schedule length: equal in
+          // correct code, but the production check of this ticket reads it from
+          // the logs, so a broken loop must report itself.
+          const made = attempt + 1;
+          throw new Error(
+            `RestPushService: \`gh auth token\` timed out (ETIMEDOUT) after ${made} attempt${made === 1 ? "" : "s"} in ${elapsed}s — a stall, not an authentication failure; retry later. Limits: ${limits}. Underlying: ${msg}`.replace(
+              RestPushService.PAT_REGEX,
+              "***REDACTED***",
+            ),
+          );
+        }
+      }
     }
     const token = raw.trim();
     if (token.length === 0) {
