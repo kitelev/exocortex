@@ -1,0 +1,101 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 290965dd: sameTerm compares RDF terms, a query constant included (SPARQL 1.1 §17.4.1.8, RDF 1.1 literal term equality). Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › <axis> ` (ITRV §A44/§A104). Anchors are CODE lines only. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Subject: RDFTermFunctions.sameTerm — RDF 1.1 datatype comparison and a JS primitive against an RDF term.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/sameterm-constant-290965dd.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/filters/functions/RDFTermFunctions.ts",
+  "mutants": {
+    "R1_rdf10_exact_datatype": {
+      "_note": "The RDF 1.0 reading back: a simple literal is not xsd:string. Red: every pair of a simple literal (stored label, STR result, EXISTS-substituted label) with an xsd:string constant / VALUES literal — K2, T1, T4, T10 (SELECT expression), T11 (precondition ASK), T14.",
+      "from": "      return RDFTermFunctions.datatype(term1).value === RDFTermFunctions.datatype(term2).value;",
+      "to": "      return term1.datatype?.value === term2.datatype?.value;",
+      "expect": ["K2", "T1", "T4", "T10", "T11", "T14"]
+    },
+    "R2_no_primitive_coercion": {
+      "_note": "A mixed primitive / term pair is 'different' again (the pre-fix answer). Inserted as a guard at the call site, so primitiveAsLiteral keeps its narrowing (§A36). Red: a computed value (STR, BIND, IF, COALESCE, STRLEN, arithmetic) or an EXISTS-substituted simple label against a term is 'different' — K2, T3, T8, T10, T12, T14, T19 (STRLEN vs \"9\"^^xsd:integer). Also T24: a computed whole number beyond 2^53 against an integer constant.",
+      "from": "    if (typeof term1 !== \"object\") {\n      const lit = RDFTermFunctions.primitiveAsLiteral(term1);",
+      "to": "    if (typeof term1 !== \"object\" || typeof term2 !== \"object\") return false;\n    if (typeof term1 !== \"object\") {\n      const lit = RDFTermFunctions.primitiveAsLiteral(term1);",
+      "expect": ["K2", "T3", "T8", "T10", "T12", "T14", "T19", "T24"]
+    },
+    "R3_number_always_decimal": {
+      "_note": "A computed whole number taken as xsd:decimal. Red: STRLEN / 1+1 against an integer constant (T8, T19, and T24 beyond 2^53) and BIND(42) against the stored \"42\"^^xsd:integer (T3).",
+      "from": "(Number.isInteger(value) ? \"integer\" : \"decimal\")",
+      "to": "\"decimal\"",
+      "expect": ["T3", "T8", "T19", "T24"]
+    },
+    "R4_number_always_integer": {
+      "_note": "A computed fractional number taken as xsd:integer. Red: Only BIND(42.5) against 42.5 carries a fractional computed number.",
+      "from": "(Number.isInteger(value) ? \"integer\" : \"decimal\")",
+      "to": "\"integer\"",
+      "expect": ["T8"]
+    },
+    "R5_empty_string_literal": {
+      "_note": "No guard for the empty string: the engine's Literal throws, the comparison becomes an error. Red: `!sameTerm(?l, \"\")` becomes an evaluation error (the engine's Literal throws on \"\") — the row is dropped instead of kept.",
+      "from": "      return value.length > 0 ? new Literal(value) : undefined;",
+      "to": "      return new Literal(value);",
+      "expect": ["T13"]
+    },
+    "R6_boolean_as_string": {
+      "_note": "A computed boolean taken as the string \"true\". Red: BIND(true) is the string \"true\": unequal to true, equal to \"true\".",
+      "from": "      return new Literal(String(value), new IRI(XSD + \"boolean\"));",
+      "to": "      return new Literal(String(value));",
+      "expect": ["T12"]
+    },
+    "R7_no_primitive_branch": {
+      "_note": "Moved here from unbound-argument-37c80e59-rdf-term-functions.spec.json (M11, §A117): after this fix a primitive pair is ALSO compared by primitiveAsLiteral, which gives the same answer for every primitive but the empty string (the engine's Literal cannot be empty) and NaN (a primitive NaN is not itself, its literal is) — so the branch's remaining guarantee is \"\" vs \"\" (T9), which 37c80e59's harness does not exercise.",
+      "from": "    if (typeof term1 !== \"object\" && typeof term2 !== \"object\") {\n      return typeof term1 === typeof term2 && term1 === term2;\n    }\n",
+      "to": "",
+      "expect": ["T9"]
+    },
+    "R8_string_vs_iri_as_iri": {
+      "_note": "Review MB: a string against an IRI compares as an IRI. Red: T17, T30 (DATATYPE(?l) against STR(DATATYPE(?l))).",
+      "from": "      term2 = lit;",
+      "to": "      term2 = typeof term2 === \"string\" && term1 instanceof IRI ? new IRI(term2) : lit;",
+      "expect": ["T17", "T30"]
+    },
+    "R9_untyped_matches_any_datatype": {
+      "_note": "Review MC: a literal without a datatype matches a literal of ANY datatype — a plausible misreading of the RDF 1.1 rule.",
+      "from": "      return RDFTermFunctions.datatype(term1).value === RDFTermFunctions.datatype(term2).value;",
+      "to": "      return !term1.datatype || !term2.datatype || RDFTermFunctions.datatype(term1).value === RDFTermFunctions.datatype(term2).value;",
+      "expect": ["T18"]
+    },
+    "R10_number_takes_other_type": {
+      "_note": "Review MU: a computed number takes the other side's numeric datatype.",
+      "from": "      term1 = lit;",
+      "to": "      term1 = typeof term1 === \"number\" && term2 instanceof Literal && term2.datatype ? new Literal(String(term1), term2.datatype) : lit;",
+      "expect": ["T19"]
+    },
+    "R11_no_direction_check": {
+      "_note": "The base direction of a directional literal is not compared. Red: T4 (rtl vs none) and T25 (rtl vs ltr).",
+      "from": "      if (term1.direction !== term2.direction) {\n        return false;\n      }",
+      "to": "      if (term1.direction !== term2.direction && term1 === term2) {\n        return false;\n      }",
+      "expect": ["T4", "T25"]
+    },
+    "R12_safe_integer_only": {
+      "_note": "Spec review W2: a whole number beyond 2^53 is taken for xsd:decimal. Red: T24.",
+      "from": "(Number.isInteger(value) ? \"integer\" : \"decimal\")",
+      "to": "(Number.isSafeInteger(value) ? \"integer\" : \"decimal\")",
+      "expect": ["T24"]
+    },
+    "R13_direction_presence_only": {
+      "_note": "Spec review W21: the base direction is compared by presence, not value — rtl equals ltr. Red: T25.",
+      "from": "      if (term1.direction !== term2.direction) {",
+      "to": "      if (term1.hasDirection() !== term2.hasDirection()) {",
+      "expect": ["T25"]
+    },
+    "R14_language_primary_subtag": {
+      "_note": "Spec review W22: the language tag is compared by its primary subtag — en equals en-US. Red: T7.",
+      "from": "      if (term1.language !== term2.language) {",
+      "to": "      if (term1.language?.split(\"-\")[0] !== term2.language?.split(\"-\")[0]) {",
+      "expect": ["T7"]
+    }
+  }
+}

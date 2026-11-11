@@ -1,0 +1,161 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 290965dd: sameTerm compares RDF terms, a query constant included (SPARQL 1.1 §17.4.1.8, RDF 1.1 literal term equality). Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › <axis> ` (ITRV §A44/§A104). Anchors are CODE lines only. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Subject: the sameterm handler, sameTermArgument and constantTerm — a query constant reaches sameTerm as its exact term, DATATYPE(…) as the IRI it names, and a constant the engine cannot build is only the identical constant. `if (!node.datatype) return undefined;` is locked by F10 (spec review W1: the async evaluator's untyped node must keep the old path, T23).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/sameterm-constant-290965dd.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/filters/FunctionRegistry.ts",
+  "mutants": {
+    "F1_left_constant_as_value": {
+      "_note": "The LEFT argument is evaluated to its JS value again — no exact constant term, no IRI for DATATYPE(…). Red: every axis whose distinguishing constant (or IRI constant, or substituted value, or unbuildable constant) is on the LEFT.",
+      "from": "  const term1 = sameTermArgument(args[0], ctx);",
+      "to": "  const term1 = ctx.getTermFromExpression(args[0], ctx.solution);",
+      "expect": [
+        "K3",
+        "K5",
+        "T5",
+        "T7",
+        "T14",
+        "T15",
+        "T16",
+        "T17",
+        "T20",
+        "T21",
+        "T26",
+        "T27",
+        "T30"
+      ]
+    },
+    "F2_right_constant_as_value": {
+      "_note": "The RIGHT argument is evaluated to its JS value again (same technique as F1). Red: most axes put the distinguishing constant on the right.",
+      "from": "  const term2 = sameTermArgument(args[1], ctx);",
+      "to": "  const term2 = ctx.getTermFromExpression(args[1], ctx.solution);",
+      "expect": [
+        "K2",
+        "K3",
+        "K5",
+        "T5",
+        "T6",
+        "T7",
+        "T8",
+        "T10",
+        "T11",
+        "T14",
+        "T15",
+        "T16",
+        "T17",
+        "T18",
+        "T19",
+        "T20",
+        "T21",
+        "T26",
+        "T27",
+        "T30"
+      ]
+    },
+    "F3_lexical_from_value": {
+      "_note": "The constant's lexical form rebuilt from its parsed JS value (4.20 → \"4.2\", \"042\" → \"42\"). Red: T5, T6 (4.20 / \"042\"), T16 (\"0\"^^xsd:boolean), T14 (NaN, which a JSON clone into EXISTS turns into null), T27 (\"\"^^xsd:boolean becomes the buildable \"false\") and T31 (Infinity, the same JSON clone).",
+      "from": "  const lexical = node.lexical ?? String(node.value);",
+      "to": "  const lexical = String(node.value);",
+      "expect": ["T5", "T6", "T14", "T16", "T27", "T31"]
+    },
+    "F4_language_ignored": {
+      "_note": "The language tag is dropped: \"x\"@en and \"x\"@fr become one term. Red: T7 and T15.",
+      "from": "    if (node.language) return new Literal(lexical, undefined, node.language);",
+      "to": "    if (node.language === \"\\u0000\") return new Literal(lexical, undefined, node.language);",
+      "expect": ["T7", "T15"]
+    },
+    "F7_language_after_datatype_guard": {
+      "_note": "The first prototype's order: the datatype guard before the language check drops a language-tagged value substituted into EXISTS (language, no datatype) to the old path, where its tag is lost.",
+      "from": "    if (node.language) return new Literal(lexical, undefined, node.language);\n    if (!node.datatype) return undefined;",
+      "to": "    if (!node.datatype) return undefined;\n    if (node.language) return new Literal(lexical, undefined, node.language);",
+      "expect": ["T15"]
+    },
+    "F8_no_catch": {
+      "_note": "Without the catch a node the engine cannot build throws instead of becoming its own term: `Literal` on \"\" (T9, T13), `IRI` on a scheme its validator rejects (T20, T21, T27).",
+      "from": "  } catch {\n    // `Literal` throws on \"\" and `IRI` on a scheme its validator rejects. The empty",
+      "to": "  } catch (e) {\n    if (e instanceof Error) throw e;\n    // `Literal` throws on \"\" and `IRI` on a scheme its validator rejects. The empty",
+      "expect": ["T9", "T13", "T20", "T21", "T27"]
+    },
+    "F9_iri_constant_as_string": {
+      "_note": "An IRI constant takes the old path (its string) — the plan's first draft, review HIGH. Red: T17, T21; T26 (xsd:string against DATATYPE(…), now an IRI); T27 (<tag:…> is then a string, not an unbuildable constant); T30 (the strings of STR(DATATYPE(…)) and CONCAT(…) meet the IRI constant, which is now a string too).",
+      "from": "    if (node.namedNode) return new IRI(String(node.value));",
+      "to": "    if (node.namedNode && node.value === \"\\u0000\") return new IRI(String(node.value));",
+      "expect": ["T17", "T21", "T26", "T27", "T30"]
+    },
+    "F10_untyped_node_as_simple_literal": {
+      "_note": "Spec review W1: a literal node without a datatype becomes a simple literal of its text instead of keeping the old path. Such a node comes from the async evaluator's wrapper of a computed argument (EXISTS in an argument, ems__Bug 67c8925f) — and also from a simple literal substituted into EXISTS and a BIND string, where the old path is the same term for any non-empty string; the empty string is not (the engine's Literal cannot hold it) — no axis covers that: IF(EXISTS …, 42, 0) would equal \"42\", and an unbound value would become the literal \"undefined\". Red: T23.",
+      "from": "    if (!node.datatype) return undefined;",
+      "to": "    if (!node.datatype) return new Literal(lexical);",
+      "expect": ["T23"]
+    },
+    "F11_datatype_result_as_string": {
+      "_note": "Spec review H1: DATATYPE(…) reaches sameTerm as the IRI's string, which is now a simple literal — sameTerm(DATATYPE(?x), xsd:integer) is always false (the base answered it right, both sides were strings). Red: T26, and T30 (DATATYPE(?l) equals STR(DATATYPE(?l)) again).",
+      "from": "  if (typeof value === \"string\" && expr.type === \"function\" && expr.function === \"datatype\") {",
+      "to": "  if (typeof value === \"string\" && expr.type === \"function\" && expr.function === \"\\u0000datatype\") {",
+      "expect": ["T26", "T30"]
+    },
+    "F12_unbuildable_as_old_path": {
+      "_note": "Spec review M1: a constant the engine cannot build falls back to its JS value (the plan's prototype), which sameTerm now takes for a literal — \"Asset Two\"^^<tag:…> equals the stored label, a VALUES string equals <tag:…>, \"\"^^xsd:boolean equals false. Red: T20 (\"\"^^xsd:integer twice: NaN !== NaN), T27, T29 (\"\"@en and \"\"@fr are both \"\").",
+      "from": "    return new UnbuildableConstant(",
+      "to": "    if (lexical !== \"\\u0000\") return undefined;\n    return new UnbuildableConstant(",
+      "expect": ["T20", "T27", "T29"]
+    },
+    "F13_empty_string_unbuildable": {
+      "_note": "The empty simple literal is taken for an unbuildable constant too — STR(\"\") no longer meets \"\". Red: T9.",
+      "from": "    if (lexical === \"\" && !node.namedNode && !node.language && node.datatype === XSD_STRING) return undefined;",
+      "to": "    if (lexical === \"\" && !node.namedNode && !node.language && node.datatype === \"\\u0000\") return undefined;",
+      "expect": ["T9"]
+    },
+    "F14_unbuildable_key_ignored": {
+      "_note": "Any two unbuildable constants are one term. Red: T20 (\"x\"^^<tag:dt> vs \"y\"^^<tag:dt>, <tag:a> vs <tag:b>), T28 (\"\"^^xsd:integer vs \"\"^^xsd:boolean), T29 (\"\"@en vs \"\"@fr).",
+      "from": "    return term1 instanceof UnbuildableConstant && term2 instanceof UnbuildableConstant && term1.key === term2.key;",
+      "to": "    return term1 instanceof UnbuildableConstant && term2 instanceof UnbuildableConstant && term1.key !== \"\\u0000\";",
+      "expect": ["T20", "T28", "T29"]
+    },
+    "F15_key_lexical_only": {
+      "_note": "Spec review round 2 V1: the unbuildable key holds the lexical form only — \"\"^^xsd:integer equals \"\"^^xsd:boolean, \"\"@en equals \"\"@fr. Red: T28, T29.",
+      "from": "      JSON.stringify([node.namedNode === true, lexical, node.datatype ?? null, node.language ?? null]),",
+      "to": "      JSON.stringify([lexical]),",
+      "expect": ["T28", "T29"]
+    },
+    "F16_key_without_datatype": {
+      "_note": "Spec review round 2 V2: the unbuildable key drops the datatype. Red: T28.",
+      "from": "      JSON.stringify([node.namedNode === true, lexical, node.datatype ?? null, node.language ?? null]),",
+      "to": "      JSON.stringify([node.namedNode === true, lexical, node.language ?? null]),",
+      "expect": ["T28"]
+    },
+    "F17_key_without_language": {
+      "_note": "Spec review round 2 V3: the unbuildable key drops the language. Red: T29.",
+      "from": "      JSON.stringify([node.namedNode === true, lexical, node.datatype ?? null, node.language ?? null]),",
+      "to": "      JSON.stringify([node.namedNode === true, lexical, node.datatype ?? null]),",
+      "expect": ["T29"]
+    },
+    "F18_right_argument_not_evaluated": {
+      "_note": "Spec review round 2 V4: with an unbuildable constant on the left the right argument is never evaluated — an unbound right argument stops being an error. Red: K4.",
+      "from": "  const term1 = sameTermArgument(args[0], ctx);\n  const term2 = sameTermArgument(args[1], ctx);",
+      "to": "  const term1 = sameTermArgument(args[0], ctx);\n  if (term1 instanceof UnbuildableConstant) {\n    const c = constantTerm(args[1]);\n    return c instanceof UnbuildableConstant && c.key === term1.key;\n  }\n  const term2 = sameTermArgument(args[1], ctx);",
+      "expect": ["K4"]
+    },
+    "F19_datatype_by_value_prefix": {
+      "_note": "Spec review round 2 V5: any computed string that looks like a W3C IRI is taken for an IRI — STR(DATATYPE(?n)) equals xsd:integer, a CONCAT of the text equals xsd:string. Red: T30.",
+      "from": "  if (typeof value === \"string\" && expr.type === \"function\" && expr.function === \"datatype\") {",
+      "to": "  if (typeof value === \"string\" && value.startsWith(\"http://www.w3.org/\")) {",
+      "expect": ["T30"]
+    },
+    "F20_key_without_named_node": {
+      "_note": "Declared zero (§A135): the unbuildable key drops its IRI flag. Defensive by construction — an IRI key has no datatype and no language, while an unbuildable literal always carries one of them (a node without a datatype never reaches the catch), so the flag never decides alone. Canary: F14 of this spec reddens on the same key line.",
+      "from": "      JSON.stringify([node.namedNode === true, lexical, node.datatype ?? null, node.language ?? null]),",
+      "to": "      JSON.stringify([lexical, node.datatype ?? null, node.language ?? null]),",
+      "expect": [],
+      "_canary": "F14_unbuildable_key_ignored"
+    }
+  }
+}

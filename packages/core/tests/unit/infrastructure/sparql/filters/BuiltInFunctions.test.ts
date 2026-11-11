@@ -2275,14 +2275,13 @@ describe("BuiltInFunctions", () => {
         expect(BuiltInFunctions.sameTerm(lit1, lit2)).toBe(false);
       });
 
-      it("should return false for plain literal vs xsd:string typed literal", () => {
-        // This is the key semantic difference from Literal.equals()
-        // Per SPARQL 1.1 spec, sameTerm requires exact term identity
+      it("should return true for plain literal vs xsd:string typed literal", () => {
+        // RDF 1.1: a simple literal IS an xsd:string literal — one term, so
+        // sameTerm is true (ems__Bug 290965dd; the old `false` was the RDF 1.0 reading).
         const xsdString = new IRI("http://www.w3.org/2001/XMLSchema#string");
         const plainLit = new Literal("hello");
         const typedLit = new Literal("hello", xsdString);
-        // Plain literal has no datatype, typed has xsd:string - not identical terms
-        expect(BuiltInFunctions.sameTerm(plainLit, typedLit)).toBe(false);
+        expect(BuiltInFunctions.sameTerm(plainLit, typedLit)).toBe(true);
       });
 
       it("should return false for different numeric representations", () => {

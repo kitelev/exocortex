@@ -201,6 +201,23 @@ export interface LiteralExpression {
   value: string | number | boolean;
   datatype?: string;
   /**
+   * The lexical form the parser hands over, kept when `value` — a parsed number or
+   * boolean — does not print it back (`42.0` → `value` 42, `lexical` "42.0"; absent
+   * for a canonical `42`), and always for NaN and ±Infinity, which a JSON clone of
+   * the plan turns into null. Term functions (sameTerm) need the RDF term the query
+   * wrote, not its JS value: `42` and `42.0` are one number but two terms
+   * (ems__Bug 290965dd).
+   */
+  lexical?: string;
+  /** Language tag of a constant `"x"@en` (ems__Bug 290965dd). */
+  language?: string;
+  /**
+   * The constant was an IRI in the query (`<https://…>`). Read only by sameTerm,
+   * which compares it as the IRI term (ems__Bug 290965dd); everywhere else the node
+   * is still evaluated as its string — that is ems__Bug 160034f7.
+   */
+  namedNode?: true;
+  /**
    * The whole expression of a BIND is an IRI written in the query
    * (`BIND(<iri> AS ?v)`, `BIND(ex:name AS ?v)`). A constant IRI is translated to
    * this string node, which FILTERs and functions read as its string; a BIND of it
