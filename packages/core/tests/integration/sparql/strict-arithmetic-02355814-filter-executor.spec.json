@@ -33,10 +33,21 @@
       ]
     },
     "M2_any_literal_parsed": {
-      "_note": "The defect itself, literal half: a Literal of ANY datatype is parsed by parseFloat (the old 'Try to parse as number anyway'). Dates become their year, a plain store literal \"7\" becomes 7. A15: COUNT(?t + 0) counts the coerced values again. Specification: A17 (VALUES literals of a non-numeric datatype are parsed) and A18 (the duration branches call toNumericValue on a store literal) turn red too.",
+      "_note": "The defect itself, literal half: a Literal of ANY datatype is parsed by parseFloat (the old 'Try to parse as number anyway'). Dates become their year, a plain store literal \"7\" becomes 7. A15: COUNT(?t + 0) counts the coerced values again. Specification: A17 (VALUES literals of a non-numeric datatype are parsed) and A18 (the duration branches call toNumericValue on a store literal) turn red too. A4 (ems__Bug 0b24c745 / 97ebe042, merged after this spec): a language-tagged constant (\"7\"@en) is now a language-tagged Literal instead of a bare string, so this mutant parses it with parseFloat and \"7\"@en + 1 is computed — A4 turns red too.",
       "from": "    if (value instanceof Literal && BuiltInFunctions.isNumeric(value)) {",
       "to": "    if (value instanceof Literal) {",
-      "expect": ["A10a", "A10b", "A10c", "A15", "A17", "A18", "A3", "A5", "A6"]
+      "expect": [
+        "A10a",
+        "A10b",
+        "A10c",
+        "A15",
+        "A17",
+        "A18",
+        "A3",
+        "A4",
+        "A5",
+        "A6"
+      ]
     },
     "M3_operand_type_dropped": {
       "_note": "Plausible wrong implementation 'strict toNumericValue only': the operand is evaluated as before, so a numeric literal the engine carries as text (xsd:double / float / derived-integer constant, a store number substituted by a bind join or EXISTS) reaches arithmetic as a bare string and is rejected — on either side of the operator (M8 / M9 drop one side each). Specification: A19 (every numeric constant of the 16 datatypes arrives as a bare string) turns red too.",
