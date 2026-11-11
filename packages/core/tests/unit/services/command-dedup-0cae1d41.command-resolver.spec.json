@@ -1,0 +1,237 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 0cae1d41: CommandResolver.resolveForAssetMulti keeps ONE entry per command (founder decision 2026-11-11: one command — one button). Survivor = best (priority, depth, order), a non-numeric order ranks as 100, full tie ⇒ smaller binding.id; runs after override removal; the collapsed command keeps its first position; a dropped binding that differs in grounding, precondition, variant or style (by content) is reported once through the logger. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct). M7–M13 are the plausible wrong implementations found by the independent review of the plan prototype, M21–M26 (axes D26–D31) those found by the independent review of the specification (both 2026-11-11). `red_re` anchors on the jest failure header `● <suite> › <axis> `. Anchors are CODE lines only. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Equivalent mutant NOT listed: keying the dedup on `binding.commandRef` — `loadCommand(binding.commandRef)` returns `id: commandUID`, i.e. the very commandRef it was called with, so commandRef === command.id by construction.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/CommandResolver.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && CI=true node ../../node_modules/jest/bin/jest.js tests/unit/services/CommandResolver.commandDedup-0cae1d41.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_no_command_dedup": {
+      "_note": "The survivor lookup never matches — every binding of a command stays, i.e. the pre-fix behaviour (the #2958 AC3 contract). Red: every axis where two bindings of one command reach the asset and survive override removal.",
+      "from": "      const at = survivorAt.get(commandId);",
+      "to": "      const at = survivorAt.get(commandId + entry.rc.binding.id);",
+      "expect": [
+        "D1",
+        "D10",
+        "D11",
+        "D12",
+        "D13",
+        "D15",
+        "D16",
+        "D17",
+        "D18",
+        "D19",
+        "D2",
+        "D20",
+        "D21",
+        "D22",
+        "D23",
+        "D24",
+        "D25",
+        "D26",
+        "D27",
+        "D28",
+        "D29",
+        "D3",
+        "D30",
+        "D31",
+        "D4",
+        "D5",
+        "D9"
+      ]
+    },
+    "M2_key_by_command_name": {
+      "_note": "Dedup keyed by the command NAME — two different commands that share a label collapse into one.",
+      "from": "      const commandId = entry.rc.command.id;",
+      "to": "      const commandId = entry.rc.command.name;",
+      "expect": ["D7"]
+    },
+    "M3_survivor_last_not_best": {
+      "_note": "A later entry (equal or worse rank) replaces the kept one — the survivor is the LAST binding, not the best-ranked.",
+      "from": "        compareRank(entry, current) === 0 &&\n        entry.rc.binding.id < current.rc.binding.id",
+      "to": "        compareRank(entry, current) >= 0",
+      "expect": [
+        "D10",
+        "D11",
+        "D12",
+        "D17",
+        "D19",
+        "D2",
+        "D20",
+        "D24",
+        "D26",
+        "D27",
+        "D28",
+        "D3",
+        "D30",
+        "D31",
+        "D4",
+        "D5",
+        "D9"
+      ]
+    },
+    "M4_no_tie_break": {
+      "_note": "On a full tie the first entry by insertion (class order in the input) survives — the survivor depends on frontmatter class order and on which permutation filled the cache.",
+      "from": "        entry.rc.binding.id < current.rc.binding.id",
+      "to": "        entry.rc.binding.id < current.rc.binding.id.slice(0, 0)",
+      "expect": ["D13", "D15", "D16", "D18", "D19", "D28", "D29", "D4"]
+    },
+    "M5_dedup_by_command_before_overrides": {
+      "_note": "A plausible wrong placement: the per-binding map of step 2 keyed by command — the first-inserted binding of a command wins BEFORE override removal and before ranking by order.",
+      "from": "        const existing = byBindingId.get(rc.binding.id);\n        if (!existing || matchDepth < existing.depth) {\n          byBindingId.set(rc.binding.id, { rc, depth: matchDepth });",
+      "to": "        const existing = byBindingId.get(rc.command.id);\n        if (!existing || matchDepth < existing.depth) {\n          byBindingId.set(rc.command.id, { rc, depth: matchDepth });",
+      "expect": [
+        "D11",
+        "D13",
+        "D15",
+        "D16",
+        "D18",
+        "D19",
+        "D21",
+        "D23",
+        "D25",
+        "D26",
+        "D27",
+        "D28",
+        "D29",
+        "D3",
+        "D4",
+        "D5",
+        "D6"
+      ]
+    },
+    "M6_collapse_everything": {
+      "_note": "The dedup key is the same for every entry — distinct commands collapse into one. Locks the over-collapse direction (control axis D8: an asset with one bound class keeps every command).",
+      "from": "      const commandId = entry.rc.command.id;",
+      "to": "      const commandId = entry.rc.command.id.slice(0, 0);",
+      "expect": ["D11", "D13", "D14", "D5", "D7", "D8"]
+    },
+    "M7_tie_ignores_depth": {
+      "_note": "Review W1: the tie test compares priority and order but not depth — a farther (ancestor-class) binding with a smaller id beats the nearer one.",
+      "from": "        compareRank(entry, current) === 0 &&\n",
+      "to": "        rank(entry)[0] === rank(current)[0] &&\n        rank(entry)[2] === rank(current)[2] &&\n",
+      "expect": ["D12"]
+    },
+    "M8_survivor_at_own_position": {
+      "_note": "Review W2: the collapsed command moves to the position of its survivor instead of its first entry.",
+      "from": "    const result = slots.map((entry) => entry.rc);\n",
+      "to": "    const keep = new Set(slots);\n    const result = merged.filter((entry) => keep.has(entry)).map((entry) => entry.rc);\n",
+      "expect": ["D13"]
+    },
+    "M9_total_sort_by_binding_id": {
+      "_note": "Review W3: binding.id becomes a sort key for the whole list — tied DIFFERENT commands change their order.",
+      "from": "      return 0;\n    };\n\n    merged.sort(compareRank);\n",
+      "to": "      return a.rc.binding.id < b.rc.binding.id ? -1 : a.rc.binding.id > b.rc.binding.id ? 1 : 0;\n    };\n\n    merged.sort(compareRank);\n",
+      "expect": ["D14"]
+    },
+    "M10_tie_break_by_label": {
+      "_note": "Review W4: the full tie is broken by the editable binding label instead of its uid.",
+      "from": "        entry.rc.binding.id < current.rc.binding.id\n",
+      "to": "        entry.rc.binding.label < current.rc.binding.label\n",
+      "expect": ["D15"]
+    },
+    "M11_command_of_first_entry": {
+      "_note": "Review W5: the survivor keeps the BINDING of the winner but the COMMAND (grounding picked by targetClass) of the first entry.",
+      "from": "        slots[at] = entry;\n",
+      "to": "        slots[at] = { depth: entry.depth, rc: { command: current.rc.command, binding: entry.rc.binding } };\n",
+      "expect": ["D16", "D29"]
+    },
+    "M12_tie_ignores_priority": {
+      "_note": "Review W6: the tie test ignores priority — a class binding with a smaller id beats a targetAsset binding of equal order.",
+      "from": "        compareRank(entry, current) === 0 &&\n",
+      "to": "        rank(entry)[1] === rank(current)[1] &&\n        rank(entry)[2] === rank(current)[2] &&\n",
+      "expect": ["D17"]
+    },
+    "M13_literal_command_ref_not_normalised": {
+      "_note": "Review W7: a `[[uid]]` literal command reference is not normalised — that binding silently drops out (D10 stays green: its IRI twin survives anyway).",
+      "from": "      return this.normalizeWikilink(obj.value);\n",
+      "to": "      return obj.value;\n",
+      "expect": ["D18"]
+    },
+    "M14_no_nan_order_guard": {
+      "_note": "A non-numeric order stays NaN: every comparison is 'equal' to the sort and never 0 to the tie test, so the survivor follows the class order.",
+      "from": "        order !== undefined && Number.isFinite(order) ? order : 100,",
+      "to": "        order ?? 100,",
+      "expect": ["D19"]
+    },
+    "M15_no_divergence_report": {
+      "_note": "A dropped binding that acts differently is dropped silently.",
+      "from": "      if (fields.length > 0) {",
+      "to": "      if (fields.length < 0) {",
+      "expect": ["D21", "D23", "D25", "D26", "D27", "D29"]
+    },
+    "M16_report_every_drop": {
+      "_note": "Every collapse is reported, interchangeable bindings included — a warning per «Set blocker» pair.",
+      "from": "      if (fields.length > 0) {",
+      "to": "      if (fields.length >= 0) {",
+      "expect": ["D22", "D24", "D29", "D30"]
+    },
+    "M17_grounding_not_compared": {
+      "_note": "A dropped binding with another grounding is not reported.",
+      "from": "      fields.push(\"grounding\");",
+      "to": "      fields.length = fields.length;",
+      "expect": ["D23"]
+    },
+    "M18_precondition_not_compared": {
+      "_note": "A dropped binding with another (binding-level) precondition is not reported.",
+      "from": "      fields.push(\"precondition\");",
+      "to": "      fields.length = fields.length;",
+      "expect": ["D21", "D29"]
+    },
+    "M19_variant_not_compared": {
+      "_note": "A dropped binding with another variant is reported only as a style difference — the report does not name the variant.",
+      "from": "      fields.push(\"variant\");",
+      "to": "      fields.length = fields.length;",
+      "expect": ["D25"]
+    },
+    "M20_style_compared_by_id": {
+      "_note": "Styles compared by id: two identical inline variants (`inline:<binding uid>`) look different — a false report.",
+      "from": "    if (this.styleKey(a.binding.style) !== this.styleKey(b.binding.style)) {",
+      "to": "    if ((a.binding.style?.id ?? null) !== (b.binding.style?.id ?? null)) {",
+      "expect": ["D24"]
+    },
+    "M21_style_not_compared": {
+      "_note": "Spec review 2026-11-11 (RA): the style is never compared — a dropped binding with another linked style is collapsed silently.",
+      "from": "if (this.styleKey(a.binding.style) !== this.styleKey(b.binding.style)) {",
+      "to": "if (this.styleKey(a.binding.style) !== this.styleKey(a.binding.style)) {",
+      "expect": ["D26", "D27"]
+    },
+    "M22_style_key_variant_only": {
+      "_note": "Spec review 2026-11-11 (RB): the style key hashes only the style's variant — showIcon / labelClass / ariaLabel / tooltip / keyboardShortcut differences go unreported.",
+      "from": "      style.variant,\n      style.showIcon,\n      style.labelClass,\n      style.ariaLabel,\n      style.tooltip,\n      style.keyboardShortcut,\n",
+      "to": "      style.variant,\n",
+      "expect": ["D26"]
+    },
+    "M23_tie_vs_first_entry": {
+      "_note": "Spec review 2026-11-11 (RC): the full-tie break compares with the command's FIRST entry, not the current survivor — in a three-way tie the last entry smaller than the first wins.",
+      "from": "entry.rc.binding.id < current.rc.binding.id",
+      "to": "entry.rc.binding.id < merged.find((e) => e.rc.command.id === commandId)!.rc.binding.id",
+      "expect": ["D28"]
+    },
+    "M24_report_vs_first_entry": {
+      "_note": "Spec review 2026-11-11 (RD, single-anchor form): the divergence report compares a dropped binding with the command's first entry, not the final survivor — the report names the wrong binding.",
+      "from": "      const survivor = slots[at].rc;",
+      "to": "      const survivor = merged.find((e) => e.rc.command.id === rc.command.id)!.rc;",
+      "expect": ["D29"]
+    },
+    "M25_precondition_by_binding_field": {
+      "_note": "Spec review 2026-11-11 (RE): the precondition is compared on the binding-level field, not the EFFECTIVE precondition — a binding repeating its command's precondition is reported as a divergence.",
+      "from": "(a.command.precondition?.id ?? null) !==\n      (b.command.precondition?.id ?? null)",
+      "to": "(a.binding.precondition?.id ?? null) !==\n      (b.binding.precondition?.id ?? null)",
+      "expect": ["D30"]
+    },
+    "M26_keep_same_class_twins": {
+      "_note": "Spec review 2026-11-11 (RF): only bindings from DIFFERENT classes are collapsed — two bindings of one command on the same class both stay.",
+      "from": "      if (at === undefined) {\n        survivorAt.set(commandId, slots.length);",
+      "to": "      if (at === undefined || slots[at].rc.binding.targetClass === entry.rc.binding.targetClass) {\n        if (at === undefined) survivorAt.set(commandId, slots.length);",
+      "expect": ["D31"]
+    }
+  }
+}

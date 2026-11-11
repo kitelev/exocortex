@@ -349,8 +349,19 @@ export class CommandResolver {
    * - A universal-root guard ensures `exo__Asset` bindings keep matching even
    *   when the declared chain does not terminate at `exo__Asset`.
    *
-   * Dedup is by `binding.id` (NOT `commandRef` — one command may surface via
-   * several bindings, each once), keeping the nearest (minimum-depth) match.
+   * Dedup is two-level. First by `binding.id`, keeping the nearest
+   * (minimum-depth) match of a binding reached through several classes. Then,
+   * after override removal and sorting, by command (ems__Bug 0cae1d41): a
+   * command reached through several of its bindings (an asset declaring two
+   * bound classes) yields ONE entry — the best-ranked binding, ties broken by
+   * the smaller `binding.id`. A command may still have many bindings; an asset
+   * just shows it once. Per-binding fields of the dropped bindings (their own
+   * precondition, variant, style, grounding pick by `targetClass`, and a panel's
+   * `featuredBinding` / `excludeCommands` naming them by `binding.id`) do not
+   * surface on that asset — the survivor's do; a dropped binding that differs
+   * in grounding, precondition, variant or style is reported once through the
+   * logger. The `overrides` edges of a dropped binding still apply: overrides
+   * are removed before the command dedup.
    *
    * Idempotent under caller pre-expansion: passing a fully-expanded chain yields
    * the SAME result as passing only the declared leaves, because depth is
@@ -364,8 +375,8 @@ export class CommandResolver {
    * @param prototypeIRI - Optional DIRECT prototype ref of the target
    *   (`exo__Asset_prototype`); expanded resolver-side into the transitive
    *   prototype chain for `targetPrototype` matching (@req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec)
-   * @returns Resolved commands sorted by `(priority, depth, order)`; deduped by
-   *          binding.id; overridden bindings removed
+   * @returns Resolved commands sorted by `(priority, depth, order)`; overridden
+   *          bindings removed; at most one entry per command
    */
   async resolveForAssetMulti(
     subjectIRI: string,
@@ -434,17 +445,130 @@ export class CommandResolver {
       .filter(([id]) => !overridden.has(id))
       .map(([, value]) => value);
 
-    merged.sort((a, b) => {
-      const priorityA = this.getBindingPriority(a.rc.binding);
-      const priorityB = this.getBindingPriority(b.rc.binding);
-      if (priorityA !== priorityB) return priorityA - priorityB;
-      if (a.depth !== b.depth) return a.depth - b.depth;
-      return (a.rc.binding.order ?? 100) - (b.rc.binding.order ?? 100);
-    });
+    // A non-numeric `CommandBinding_order` parses to NaN; NaN would make every
+    // comparison "equal" and the full-tie break below unreachable, so it ranks
+    // as the default 100 (ems__Bug 0cae1d41 review).
+    const rank = (entry: { rc: ResolvedCommand; depth: number }): number[] => {
+      const order = entry.rc.binding.order;
+      return [
+        this.getBindingPriority(entry.rc.binding),
+        entry.depth,
+        order !== undefined && Number.isFinite(order) ? order : 100,
+      ];
+    };
+    const compareRank = (
+      a: { rc: ResolvedCommand; depth: number },
+      b: { rc: ResolvedCommand; depth: number },
+    ): number => {
+      const ra = rank(a);
+      const rb = rank(b);
+      for (let i = 0; i < ra.length; i++) {
+        if (ra[i] !== rb[i]) return ra[i] - rb[i];
+      }
+      return 0;
+    };
 
-    const result = merged.map((entry) => entry.rc);
+    merged.sort(compareRank);
+
+    // 5. One command — one entry (ems__Bug 0cae1d41). Several bindings of the
+    //    SAME command can all match one asset — an asset declaring two bound
+    //    classes (`ems__Action` + `jedi2__Task`), or a class and its ancestor.
+    //    Every consumer (plugin buttons, `resolve-buttons`, bots reading its
+    //    `visible`) would otherwise show the command once per binding. The
+    //    survivor is the best-ranked binding of the command — the same
+    //    (priority, depth, order) that already decides the position, so the
+    //    nearest binding wins; on a full tie the smaller `binding.id`, so the
+    //    survivor depends neither on the class order in frontmatter nor on
+    //    which permutation of classes filled the cache. Runs AFTER override
+    //    removal: an overridden binding is never the survivor. The command
+    //    keeps the position of its first entry; the order of all other
+    //    entries is unchanged.
+    const survivorAt = new Map<string, number>();
+    const slots: Array<{ rc: ResolvedCommand; depth: number }> = [];
+    const dropped: Array<{ at: number; rc: ResolvedCommand }> = [];
+    for (const entry of merged) {
+      const commandId = entry.rc.command.id;
+      const at = survivorAt.get(commandId);
+      if (at === undefined) {
+        survivorAt.set(commandId, slots.length);
+        slots.push(entry);
+        continue;
+      }
+      const current = slots[at];
+      if (
+        compareRank(entry, current) === 0 &&
+        entry.rc.binding.id < current.rc.binding.id
+      ) {
+        dropped.push({ at, rc: current.rc });
+        slots[at] = entry;
+      } else {
+        dropped.push({ at, rc: entry.rc });
+      }
+    }
+
+    // The survivor's per-binding fields govern the asset. When a dropped
+    // binding would act differently (another grounding, precondition, variant
+    // or style), say so once per binding pair instead of dropping it silently.
+    for (const { at, rc } of dropped) {
+      const survivor = slots[at].rc;
+      const fields = this.bindingBehaviourDiff(survivor, rc);
+      if (fields.length > 0) {
+        this.warnOnce(
+          `Command ${rc.command.id} reaches an asset through several bindings ` +
+            `that differ in ${fields.join(", ")}: binding ${survivor.binding.id} ` +
+            `surfaces, binding ${rc.binding.id} is dropped (one command — one ` +
+            `entry, ems__Bug 0cae1d41).`,
+        );
+      }
+    }
+
+    const result = slots.map((entry) => entry.rc);
     this.multiCache.set(cacheKey, result);
     return result;
+  }
+
+  /**
+   * Fields in which two resolved entries of the SAME command would act
+   * differently on an asset (ems__Bug 0cae1d41): the grounding picked by the
+   * binding's `targetClass`, the effective precondition (a binding-level one
+   * replaces the command's), the binding's variant and style. Empty ⇒ the two
+   * bindings are interchangeable and collapsing them loses nothing.
+   */
+  private bindingBehaviourDiff(a: ResolvedCommand, b: ResolvedCommand): string[] {
+    const fields: string[] = [];
+    if (a.command.grounding.id !== b.command.grounding.id) {
+      fields.push("grounding");
+    }
+    if (
+      (a.command.precondition?.id ?? null) !==
+      (b.command.precondition?.id ?? null)
+    ) {
+      fields.push("precondition");
+    }
+    if ((a.binding.variant ?? null) !== (b.binding.variant ?? null)) {
+      fields.push("variant");
+    }
+    // By content, not by id: an inline `CommandBinding_variant` shorthand is
+    // synthesised per binding (`inline:<binding uid>`), so two identical
+    // shorthands would differ by id alone.
+    if (this.styleKey(a.binding.style) !== this.styleKey(b.binding.style)) {
+      fields.push("style");
+    }
+    return fields;
+  }
+
+  private styleKey(style: CommandBindingStyleDefinition | undefined): string {
+    if (!style) return "";
+    return [
+      style.variant,
+      style.showIcon,
+      style.labelClass,
+      style.ariaLabel,
+      style.tooltip,
+      style.keyboardShortcut,
+    ]
+      .map((v) => (v === undefined ? "" : String(v)))
+      .join("\u0000");
   }
 
   /**

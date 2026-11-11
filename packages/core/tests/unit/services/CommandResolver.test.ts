@@ -1355,21 +1355,22 @@ describe("CommandResolver", () => {
       expect(names).toEqual(["Task cmd", "Universal cmd"]);
     });
 
-    it("should deduplicate by binding.id when same binding matches multiple classes", async () => {
-      // AC3: dedup by binding.id (NOT commandRef)
+    it("should keep ONE entry per command when two of its bindings match the asset (ems__Bug 0cae1d41)", async () => {
+      // AC3 (#2958) kept both bindings of one command — two buttons with the
+      // same label on an asset declaring both bound classes. Founder decision
+      // 2026-11-11 (0cae1d41): one command — one entry. Full axes:
+      // CommandResolver.commandDedup-0cae1d41.test.ts.
       await addGroundingAsset(store, { uid: "gnd-1", label: "G", type: "property_delete", targetProperty: "p" });
       await addCommandAsset(store, { uid: "cmd-shared", label: "Shared", groundingRef: "gnd-1" });
 
-      // Two SEPARATE bindings to the same command — both should appear (dedupe by binding.id, not commandRef)
       await addBindingAsset(store, { uid: "bind-task", label: "BT", commandRef: "cmd-shared", targetClass: "ems__Task" });
       await addBindingAsset(store, { uid: "bind-univ", label: "BU", commandRef: "cmd-shared", targetClass: "exo__Asset" });
 
       const resolved = await resolver.resolveForAssetMulti("asset-1", ["ems__Task", "exo__Asset"]);
 
-      // Both bindings appear because they have different binding.id
-      expect(resolved).toHaveLength(2);
-      const bindingIds = resolved.map((rc) => rc.binding.id).sort();
-      expect(bindingIds).toEqual(["bind-task", "bind-univ"]);
+      expect(resolved).toHaveLength(1);
+      expect(resolved[0].command.id).toBe("cmd-shared");
+      expect(resolved[0].binding.id).toBe("bind-task");
     });
 
     it("should not duplicate when same binding object is matched twice via different classes", async () => {
