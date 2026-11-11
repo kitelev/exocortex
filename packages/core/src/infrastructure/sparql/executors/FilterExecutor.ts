@@ -533,8 +533,8 @@ export class FilterExecutor {
    * - xsd:dayTimeDuration / number = xsd:dayTimeDuration
    */
   private evaluateArithmetic(expr: ArithmeticExpression, solution: SolutionMapping): number | Literal {
-    const left = this.evaluateExpression(expr.left, solution);
-    const right = this.evaluateExpression(expr.right, solution);
+    const left = this.evaluateArithmeticOperand(expr.left, solution);
+    const right = this.evaluateArithmeticOperand(expr.right, solution);
 
     // Special handling for xsd:date - xsd:date = dayTimeDuration (clean day format)
     // Must check before dateTime since isDateTimeValue also matches dates
@@ -719,45 +719,73 @@ export class FilterExecutor {
   }
 
   /**
-   * Convert a value to a numeric type.
-   * Handles: number, Literal with numeric datatype, string representation.
+   * Evaluate an operand of arithmetic, keeping the datatype of a numeric literal node.
+   *
+   * Two kinds of literal node reach arithmetic with a numeric datatype but a STRING
+   * value, and plain evaluation (`evaluateExpression`, `case "literal"`) returns that
+   * string without its type: a query constant the translator does not turn into a
+   * JS number (`1.5e0`, `"2.5"^^xsd:float`, `"3"^^xsd:int`), and a store value a
+   * bind join or EXISTS substitutes into the expression
+   * (`QueryExecutor.termToAlgebraNode` keeps the lexical form and the datatype).
+   * `toNumericValue` rejects a string, so the operand is rebuilt as the typed literal
+   * it is (ems__Bug 02355814). Only arithmetic reads this, and only for a DIRECT
+   * operand — every other consumer of `evaluateExpression` is left as it was, so a
+   * numeric literal node that loses its type BEFORE arithmetic still arrives as text
+   * and is rejected (ems__Bug c42f1a54): a constant bound by BIND, projected by a
+   * subquery or returned by COALESCE / IF, and equally a substituted store value
+   * that first passes through COALESCE / IF / BIND or a LATERAL projection
+   * (`EXISTS { … FILTER(?m > COALESCE(?n, 0) + 1) }` — unlike 17.18.3, where the
+   * coercion happened to compute it; under NOT EXISTS that means extra rows; writing
+   * `COALESCE(?n + 0, 0)` keeps the value numeric). The `isNumeric` test
+   * here is load-bearing, not defensive: a literal of another datatype must stay the
+   * bare string `evaluateExpression` makes of it. Rebuilt as a typed literal it would
+   * reach the date / duration branches, where `isDateTimeValue` reads a literal by
+   * its datatype (`#date` anywhere in the IRI) but a string by its lexical form — so
+   * `"2026-11-10"^^<urn:x:dt#date> - "2026-11-01"^^<urn:x:dt#date>` would subtract
+   * as a date (P9D) instead of being a type error.
+   */
+  private evaluateArithmeticOperand(node: Expression, solution: SolutionMapping): ExpressionResult {
+    if (node.type === "literal" && typeof node.value === "string" && node.value.length > 0 && node.datatype) {
+      const typed = new Literal(node.value, new IRI(node.datatype));
+      if (BuiltInFunctions.isNumeric(typed)) {
+        return typed;
+      }
+    }
+    return this.evaluateExpression(node, solution);
+  }
+
+  /**
+   * The number an arithmetic operand stands for — or a type error.
+   *
+   * SPARQL 1.1 §17.3 defines `+ - * /` over numeric operands only: a JS number
+   * (constants, function and arithmetic results) or a literal whose datatype is
+   * `xsd:integer`, `xsd:decimal`, `xsd:float`, `xsd:double` or a type derived from
+   * them (`BuiltInFunctions.isNumeric`). Any other operand — a string, a date, a
+   * typed literal of another datatype, an IRI — raises, so FILTER drops the
+   * solution, BIND leaves the variable unbound and COALESCE moves on.
+   *
+   * ⛔ It used to `parseFloat` whatever it got: `0 - "7"` = −7, `0 - "7abc"` = −7,
+   * `0 - "2026-11-10"^^xsd:date` = −2026 (the year) — a plausible number instead
+   * of an error (ems__Bug 02355814). The lexical form of a NUMERIC literal is still
+   * read by `parseFloat`, as before (ems__Bug 8bf29e93): `"7abc"^^xsd:integer` = 7,
+   * and the valid `xsd:double` forms `INF` / `-INF` / `NaN` are type errors. A form
+   * `parseFloat` cannot read at all (`"abc"^^xsd:double`) is a type error, not NaN.
+   * Which reading is right is 8bf29e93's to define, so no test pins `parseFloat` here.
+   *
+   * A query constant whose datatype IRI CONTAINS `#integer` / `#decimal` never reaches
+   * this as a literal: `ExpressionTranslator.translateTermExpression` turns it into a JS
+   * number by substring and `parseFloat`, so `"7"^^<urn:x:dt#integer> + 1` = 8 and
+   * `"abc"^^xsd:integer + 1` = NaN, as on 17.18.3 (ems__Bug efc04321) — except in a
+   * button precondition, whose JSON copy of the plan (`PreconditionEvaluator`) turns
+   * NaN into null, so the expression is an error there.
    */
   private toNumericValue(value: ExpressionResult): number {
     if (typeof value === "number") {
       return value;
     }
 
-    if (value instanceof Literal) {
-      const datatypeValue = value.datatype?.value || "";
-      // Handle numeric datatypes
-      if (
-        datatypeValue.includes("#integer") ||
-        datatypeValue.includes("#decimal") ||
-        datatypeValue.includes("#double") ||
-        datatypeValue.includes("#float")
-      ) {
-        const num = parseFloat(value.value);
-        if (!isNaN(num)) {
-          return num;
-        }
-      }
-      // Try to parse as number anyway
+    if (value instanceof Literal && BuiltInFunctions.isNumeric(value)) {
       const num = parseFloat(value.value);
-      if (!isNaN(num)) {
-        return num;
-      }
-    }
-
-    if (typeof value === "string") {
-      const num = parseFloat(value);
-      if (!isNaN(num)) {
-        return num;
-      }
-    }
-
-    // If value has a .value property (like RDF terms)
-    if (value && typeof value === "object" && "value" in value) {
-      const num = parseFloat(String(value.value));
       if (!isNaN(num)) {
         return num;
       }
