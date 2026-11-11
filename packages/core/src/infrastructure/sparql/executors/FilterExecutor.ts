@@ -704,10 +704,14 @@ export class FilterExecutor {
    * bind join or EXISTS substitutes into the expression
    * (`QueryExecutor.termToAlgebraNode` keeps the lexical form and the datatype).
    * `toNumericValue` rejects a string, so the operand is rebuilt as the typed literal
-   * it is (ems__Bug 02355814). Only arithmetic reads this — every other consumer of
-   * `evaluateExpression` is left as it was, so a constant that loses its type BEFORE
-   * arithmetic (bound by BIND, projected by a subquery, returned by COALESCE / IF)
-   * still arrives as text and is rejected (ems__Bug c42f1a54). The `isNumeric` test
+   * it is (ems__Bug 02355814). Only arithmetic reads this, and only for a DIRECT
+   * operand — every other consumer of `evaluateExpression` is left as it was, so a
+   * numeric literal node that loses its type BEFORE arithmetic still arrives as text
+   * and is rejected (ems__Bug c42f1a54): a constant bound by BIND, projected by a
+   * subquery or returned by COALESCE / IF, and equally a substituted store value
+   * that first passes through COALESCE / IF / BIND or a LATERAL projection
+   * (`EXISTS { … FILTER(?m > COALESCE(?n, 0) + 1) }` — unlike 17.18.3, where the
+   * coercion happened to compute it). The `isNumeric` test
    * here is load-bearing, not defensive: a literal of another datatype must stay the
    * bare string `evaluateExpression` makes of it. Rebuilt as a typed literal it would
    * reach the date / duration branches, where `isDateTimeValue` reads a literal by
@@ -741,6 +745,12 @@ export class FilterExecutor {
    * read by `parseFloat`, as before (ems__Bug 8bf29e93): `"7abc"^^xsd:integer` = 7,
    * and the valid `xsd:double` forms `INF` / `-INF` / `NaN` are type errors. A form
    * `parseFloat` cannot read at all (`"abc"^^xsd:double`) is a type error, not NaN.
+   * Which reading is right is 8bf29e93's to define, so no test pins `parseFloat` here.
+   *
+   * A query constant whose datatype IRI CONTAINS `#integer` / `#decimal` never reaches
+   * this as a literal: `ExpressionTranslator.translateTermExpression` turns it into a JS
+   * number by substring and `parseFloat`, so `"7"^^<urn:x:dt#integer> + 1` = 8 and
+   * `"abc"^^xsd:integer + 1` = NaN, as on 17.18.3 (ems__Bug efc04321).
    */
   private toNumericValue(value: ExpressionResult): number {
     if (typeof value === "number") {

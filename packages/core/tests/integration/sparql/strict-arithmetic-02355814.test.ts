@@ -20,7 +20,7 @@
  * form and the datatype on the node, evaluation drops the datatype). The fix
  * reads the datatype off the operand NODE before evaluating it
  * (`evaluateArithmeticOperand`), for BOTH operands; A8 / A9 lock the right one,
- * A11 / A12 the left one.
+ * A11 / A12 the left one. Only a DIRECT operand keeps its type — see below.
  *
  * ## Not asserted here, on purpose
  *
@@ -29,6 +29,10 @@
  *   `IF(…, "3"^^xsd:int, …)`: evaluation returns the constant as a plain string, so
  *   arithmetic sees text and now rejects it (named limitation of this fix,
  *   ems__Bug c42f1a54, stand forms N1–N4).
+ * - The same for a STORE value a bind join / EXISTS / LATERAL substitutes, when it
+ *   first passes through COALESCE / IF / BIND or a projection:
+ *   `NOT EXISTS { … FILTER(?m > COALESCE(?n, 0) + 1) }` — on 17.18.3 the coercion
+ *   computed it, now it is a type error (named limitation N7, same root c42f1a54).
  * - SUM / AVG over an expression that raises: the aggregate skips the error and an
  *   empty sum is 0 (`AggregateExecutor`), so `SUM(?t + 0)` is 0 where SPARQL 1.1
  *   says unbound. A15 locks only what reaches the aggregate — an error (COUNT 0,
@@ -39,7 +43,12 @@
  * - An ill-typed NUMERIC literal (`"7abc"^^xsd:integer` = 7) and the valid
  *   `xsd:double` forms `INF` / `NaN` — the lexical form of a numeric literal is still
  *   read by `parseFloat`, as before (ems__Bug 8bf29e93). A form it cannot read at all
- *   (`"abc"^^xsd:double`) stays a type error, not NaN — A13 / A14.
+ *   (`"abc"^^xsd:double`) stays a type error, not NaN — A13 / A14. Which reading of
+ *   the lexical form is right is 8bf29e93's to define, so `parseFloat` itself is NOT
+ *   pinned (`Number()` in its place passes these axes).
+ * - A query constant whose datatype IRI contains `#integer` / `#decimal`: the
+ *   translator turns it into a JS number by substring (`"7"^^<urn:x:dt#integer> + 1`
+ *   = 8, `"abc"^^xsd:integer + 1` = NaN), before `toNumericValue` (ems__Bug efc04321).
  *
  * Revert-verify: `strict-arithmetic-02355814-filter-executor.spec.json` removes one
  * guarantee per mutant and names the axes that must turn red. C1–C4 are controls,
