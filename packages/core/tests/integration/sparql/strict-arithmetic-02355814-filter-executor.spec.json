@@ -1,0 +1,181 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 02355814, subject FilterExecutor.ts: arithmetic over a non-numeric operand is a type error (strict toNumericValue), and an operand node that is a numeric literal carried as text keeps its type (evaluateArithmeticOperand). Each mutant removes one guarantee and must redden exactly the axes in `expect`; M13–M20 are the wrong-but-plausible implementations named by the specification and its independent review. `tree`/`subject` are placeholders.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?(?= ))",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/strict-arithmetic-02355814.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/executors/FilterExecutor.ts",
+  "mutants": {
+    "M1_text_parsed_again": {
+      "_note": "The defect itself, text half: a JS string operand is parsed by parseFloat again (numeric prefix taken). Every axis whose operand is a string constant, a function result or a substituted plain string goes red; A3 (typed date/time literals) and A8/A9 (numbers carried as text keep their type) do not. Specification: A16 (a BIND / subquery text constant is parsed again) and A20 (\"2026-11-10\" - \"2026-11-01\" as plain strings is 2026 - 2026 = 0, not an error) turn red too.",
+      "from": "        return num;\n      }\n    }\n\n    throw new FilterExecutorError(`Cannot convert to number: ${String(value)}`);",
+      "to": "        return num;\n      }\n    }\n\n    if (typeof value === \"string\") {\n      const num = parseFloat(value);\n      if (!isNaN(num)) {\n        return num;\n      }\n    }\n\n    throw new FilterExecutorError(`Cannot convert to number: ${String(value)}`);",
+      "expect": [
+        "A1",
+        "A10a",
+        "A10b",
+        "A10c",
+        "A10d",
+        "A16",
+        "A2",
+        "A20",
+        "A4",
+        "A5",
+        "A6",
+        "A7"
+      ]
+    },
+    "M2_any_literal_parsed": {
+      "_note": "The defect itself, literal half: a Literal of ANY datatype is parsed by parseFloat (the old 'Try to parse as number anyway'). Dates become their year, a plain store literal \"7\" becomes 7. A15: COUNT(?t + 0) counts the coerced values again. Specification: A17 (VALUES literals of a non-numeric datatype are parsed) and A18 (the duration branches call toNumericValue on a store literal) turn red too.",
+      "from": "    if (value instanceof Literal && BuiltInFunctions.isNumeric(value)) {",
+      "to": "    if (value instanceof Literal) {",
+      "expect": ["A10a", "A10b", "A10c", "A15", "A17", "A18", "A3", "A5", "A6"]
+    },
+    "M3_operand_type_dropped": {
+      "_note": "Plausible wrong implementation 'strict toNumericValue only': the operand is evaluated as before, so a numeric literal the engine carries as text (xsd:double / float / derived-integer constant, a store number substituted by a bind join or EXISTS) reaches arithmetic as a bare string and is rejected — on either side of the operator (M8 / M9 drop one side each). Specification: A19 (every numeric constant of the 16 datatypes arrives as a bare string) turns red too.",
+      "from": "      if (BuiltInFunctions.isNumeric(typed)) {\n        return typed;\n      }",
+      "to": "      if (BuiltInFunctions.isNumeric(typed)) {\n        return this.evaluateExpression(node, solution);\n      }",
+      "expect": [
+        "A10a",
+        "A10b",
+        "A10c",
+        "A10d",
+        "A11",
+        "A12",
+        "A19",
+        "A8",
+        "A9"
+      ]
+    },
+    "M4_old_numeric_list": {
+      "_note": "Plausible wrong implementation: the numeric test is the old substring list (#integer / #decimal / #double / #float) instead of BuiltInFunctions.isNumeric — the derived integer types (xsd:int, xsd:long, xsd:nonNegativeInteger, xsd:unsignedByte) become type errors. Specification: A19 and A21 (the derived types the substring list does not know — as a constant and from VALUES) turn red too.",
+      "from": "    if (value instanceof Literal && BuiltInFunctions.isNumeric(value)) {",
+      "to": "    if (value instanceof Literal && /#(integer|decimal|double|float)$/.test(value.datatype?.value ?? \"\")) {",
+      "expect": ["A10d", "A11", "A19", "A21", "A8"]
+    },
+    "M5_whole_string_numeric": {
+      "_note": "Plausible wrong implementation 'reject only text that is not WHOLLY a number': a string goes through Number() — \"7abc\" errors, \"7\" still counts as 7. A2 stays green; every other text axis goes red. Specification: A16 (BIND(\"7\" AS ?k) is wholly a number for Number()) turns red too.",
+      "from": "        return num;\n      }\n    }\n\n    throw new FilterExecutorError(`Cannot convert to number: ${String(value)}`);",
+      "to": "        return num;\n      }\n    }\n\n    if (typeof value === \"string\" && value.trim() !== \"\" && !isNaN(Number(value))) {\n      return Number(value);\n    }\n\n    throw new FilterExecutorError(`Cannot convert to number: ${String(value)}`);",
+      "expect": [
+        "A1",
+        "A10a",
+        "A10b",
+        "A10c",
+        "A10d",
+        "A16",
+        "A4",
+        "A5",
+        "A6",
+        "A7"
+      ]
+    },
+    "M7_duration_branch_lenient": {
+      "_note": "Strictness only in the standard numeric branch: the dayTimeDuration * number branch parses its other operand leniently again. Specification: A18 (a store literal and a date times a duration) turns red too.",
+      "from": "      const rightNum = this.toNumericValue(right);\n      return BuiltInFunctions.durationMultiply(left, rightNum);",
+      "to": "      const rightNum = parseFloat(String((right as { value?: unknown })?.value ?? right));\n      return BuiltInFunctions.durationMultiply(left, rightNum);",
+      "expect": ["A18", "A7"]
+    },
+    "M8_left_operand_untyped": {
+      "_note": "Independent review of the plan, HIGH: only the RIGHT operand keeps its numeric type — the left one is evaluated as before, so a numeric literal carried as text on the left (`1.5e0 + ?o`, an outer variable left of the operator in EXISTS / a bind join) is rejected. Every right-side axis stays green. Specification: A19 (its left-operand half) turns red too.",
+      "from": "    const left = this.evaluateArithmeticOperand(expr.left, solution);",
+      "to": "    const left = this.evaluateExpression(expr.left, solution);",
+      "expect": ["A10a", "A10b", "A10c", "A10d", "A11", "A12", "A19"]
+    },
+    "M9_right_operand_untyped": {
+      "_note": "Mirror of M8: only the LEFT operand keeps its numeric type. Specification: A19 (its right-operand half) turns red too.",
+      "from": "    const right = this.evaluateArithmeticOperand(expr.right, solution);",
+      "to": "    const right = this.evaluateExpression(expr.right, solution);",
+      "expect": ["A10a", "A10b", "A10c", "A10d", "A19", "A8", "A9"]
+    },
+    "M10_nan_check_dropped": {
+      "_note": "Independent review of the plan, MEDIUM: the `!isNaN` check of a numeric literal is dropped — `\"abc\"^^xsd:double + 1` becomes NaN instead of a type error (worse than 17.18.3, where it errors), COALESCE no longer moves on.",
+      "from": "    if (value instanceof Literal && BuiltInFunctions.isNumeric(value)) {\n      const num = parseFloat(value.value);\n      if (!isNaN(num)) {\n        return num;\n      }\n    }",
+      "to": "    if (value instanceof Literal && BuiltInFunctions.isNumeric(value)) {\n      return parseFloat(value.value);\n    }",
+      "expect": ["A13", "A14"]
+    },
+    "M11_operand_parsed_directly": {
+      "_note": "Independent review of the plan, MEDIUM: the operand helper returns `parseFloat` of the lexical form instead of the typed literal — readable constants still count, an unreadable one becomes NaN. Shares its anchor with M3 — the driver applies every mutant to a clean copy.",
+      "from": "      if (BuiltInFunctions.isNumeric(typed)) {\n        return typed;\n      }",
+      "to": "      if (BuiltInFunctions.isNumeric(typed)) {\n        return parseFloat(node.value);\n      }",
+      "expect": ["A13"]
+    },
+    "M12_helper_keeps_any_type": {
+      "_note": "Independent review of the spec, MEDIUM: the plan declared this mutant a zero (the isNumeric test 'defensive'). It is not: rebuilt as a typed literal, a constant of another datatype reaches the date / duration branches, where isDateTimeValue reads a Literal by its datatype IRI (`#date` anywhere) — \"2026-11-10\"^^<urn:x:dt#date> - \"2026-11-01\"^^<urn:x:dt#date> = P9D instead of an error. A20 locks it.",
+      "from": "      const typed = new Literal(node.value, new IRI(node.datatype));\n      if (BuiltInFunctions.isNumeric(typed)) {",
+      "to": "      const typed = new Literal(node.value, new IRI(node.datatype));\n      if (BuiltInFunctions.isNumeric(typed) || typed.datatype !== undefined) {",
+      "expect": ["A20"]
+    },
+    "M13_strict_at_entry": {
+      "_note": "Specification, matrix vs axes (integration-test-revert-verify §A159): no mutant held C3. Plausible wrong implementation 'reject a non-numeric operand at the ENTRY of evaluateArithmetic': both operands go through toNumericValue before the date / time / duration branches, so date - date, duration * number and number * duration become type errors. Strict, and wrong for every typed date and duration operand. C3 turns red by design; A11 too, because `1.5e0 * \"PT1H\"^^xsd:dayTimeDuration` (a number LEFT of a duration) goes through the number * duration branch, which the entry check now rejects.",
+      "from": "    const left = this.evaluateArithmeticOperand(expr.left, solution);\n    const right = this.evaluateArithmeticOperand(expr.right, solution);\n",
+      "to": "    const left = this.evaluateArithmeticOperand(expr.left, solution);\n    const right = this.evaluateArithmeticOperand(expr.right, solution);\n    this.toNumericValue(left);\n    this.toNumericValue(right);\n",
+      "expect": ["C3", "A11"]
+    },
+    "M14_only_js_numbers": {
+      "_note": "Specification, matrix vs axes (§A159): no mutant held C2. Plausible wrong implementation 'an operand is numeric only if it is a JS number': a numeric Literal — a store xsd:integer / xsd:decimal value, a COUNT / SUM result, a typed constant rebuilt by evaluateArithmeticOperand — is rejected. The datatype test is replaced by one that never matches, so the shape of the expression (and its type narrowing) is kept. Wide by construction: every axis whose numeric operand arrives as a Literal goes red — C2 (store ?n / ?d, COUNT), C3 (duration * store ?n), A6 (COALESCE(?t + 1, ?n + 1) falls through to unbound), A8 / A11 (typed constants rebuilt as Literals), A9 / A12 (substituted store numbers), A14 (readable VALUES double), A15 (its control COUNT(?n + 0) = 2 drops to 0) and every path of A10. Specification: A19 and A21 turn red too (every typed numeric operand is a Literal).",
+      "from": "    if (value instanceof Literal && BuiltInFunctions.isNumeric(value)) {",
+      "to": "    if (value instanceof Literal && value.datatype?.value === \"urn:02355814:never\") {",
+      "expect": [
+        "A10a",
+        "A10b",
+        "A10c",
+        "A10d",
+        "A11",
+        "A12",
+        "A14",
+        "A15",
+        "A19",
+        "A21",
+        "A6",
+        "A8",
+        "A9",
+        "C2",
+        "C3"
+      ]
+    },
+    "M15_unbound_as_zero": {
+      "_note": "Specification, matrix vs axes (§A159): no mutant held C4. Plausible wrong implementation 'an unbound operand counts as 0' (the COALESCE-like leniency): ?zzz + 1 = 1 instead of an error.",
+      "from": "  private toNumericValue(value: ExpressionResult): number {\n    if (typeof value === \"number\") {\n      return value;\n    }\n",
+      "to": "  private toNumericValue(value: ExpressionResult): number {\n    if (typeof value === \"number\") {\n      return value;\n    }\n    if (value === undefined || value === null) {\n      return 0;\n    }\n",
+      "expect": ["C4"]
+    },
+    "M16_var_numeric_string": {
+      "_note": "Independent review of the spec, HIGH (CV): a plausible attempt to also fix c42f1a54 / N1 — a VARIABLE whose value is a string that is wholly a number counts as that number. Passes the 22 axes of the plan and the stand; brings the defect back for a text constant bound by BIND or projected by a subquery: BIND(\"7\" AS ?k) ?k + 1 = 8.",
+      "from": "    return this.evaluateExpression(node, solution);",
+      "to": "    const v = this.evaluateExpression(node, solution);\n    if (node.type === \"variable\" && typeof v === \"string\" && v.trim() !== \"\" && !isNaN(Number(v))) {\n      return Number(v);\n    }\n    return v;",
+      "expect": ["A16"]
+    },
+    "M17_typed_whole_numeric": {
+      "_note": "Independent review of the spec, HIGH (CS): a Literal of ANY datatype whose lexical form is wholly a number counts as that number. The plan's A4 constants reach arithmetic as JS strings, so no axis judged a Literal INSTANCE of a non-numeric datatype; VALUES {\"7\"^^xsd:string} ?v + 1 = 8, VALUES {\"2026\"^^xsd:gYear} ?v + 1 = 2027, GROUP_CONCAT(?o) + 1 = 8.",
+      "from": "    if (value instanceof Literal && BuiltInFunctions.isNumeric(value)) {",
+      "to": "    if (value instanceof Literal && value.datatype && value.value.trim() !== \"\" && !isNaN(Number(value.value))) {\n      return Number(value.value);\n    }\n    if (value instanceof Literal && BuiltInFunctions.isNumeric(value)) {",
+      "expect": ["A17"]
+    },
+    "M18_duration_literal_lenient": {
+      "_note": "Independent review of the spec, HIGH (CD): the three duration branches (duration * number, number * duration, duration / number) read a Literal operand with parseFloat. The plan's A7 used only a JS string \"2\"; a store literal \"7\", an xsd:dateTime and an xsd:date pass: \"PT1H\"^^xsd:dayTimeDuration * ?t = PT7H, * \"2026-11-10\"^^xsd:date = P84DT10H.",
+      "from": "      const rightNum = this.toNumericValue(right);\n      return BuiltInFunctions.durationMultiply(left, rightNum);\n    }\n\n    // Special handling for number * dayTimeDuration = dayTimeDuration\n    if (expr.operator === \"*\" && !this.isDayTimeDurationValue(left) && this.isDayTimeDurationValue(right)) {\n      const leftNum = this.toNumericValue(left);\n      return BuiltInFunctions.durationMultiply(right, leftNum);\n    }\n\n    // Special handling for dayTimeDuration / number = dayTimeDuration\n    if (expr.operator === \"/\" && this.isDayTimeDurationValue(left) && !this.isDayTimeDurationValue(right)) {\n      const rightNum = this.toNumericValue(right);\n",
+      "to": "      const rightNum = right instanceof Literal ? parseFloat(right.value) : this.toNumericValue(right);\n      return BuiltInFunctions.durationMultiply(left, rightNum);\n    }\n\n    // Special handling for number * dayTimeDuration = dayTimeDuration\n    if (expr.operator === \"*\" && !this.isDayTimeDurationValue(left) && this.isDayTimeDurationValue(right)) {\n      const leftNum = left instanceof Literal ? parseFloat(left.value) : this.toNumericValue(left);\n      return BuiltInFunctions.durationMultiply(right, leftNum);\n    }\n\n    // Special handling for dayTimeDuration / number = dayTimeDuration\n    if (expr.operator === \"/\" && this.isDayTimeDurationValue(left) && !this.isDayTimeDurationValue(right)) {\n      const rightNum = right instanceof Literal ? parseFloat(right.value) : this.toNumericValue(right);\n",
+      "expect": ["A18"]
+    },
+    "M19_short_type_list_constant": {
+      "_note": "Independent review of the spec, MEDIUM (CT), constant half: the operand helper keeps the type only of the datatypes the plan's axes name plus the four primitives, instead of BuiltInFunctions.isNumeric; a constant of xsd:short, xsd:byte, xsd:positiveInteger, xsd:negativeInteger, xsd:nonPositiveInteger, xsd:unsignedLong / Int / Short becomes a type error.",
+      "from": "      if (BuiltInFunctions.isNumeric(typed)) {",
+      "to": "      if ([\"integer\", \"decimal\", \"float\", \"double\", \"int\", \"long\", \"nonNegativeInteger\", \"unsignedByte\"].map((t) => \"http://www.w3.org/2001/XMLSchema#\" + t).includes(typed.datatype?.value ?? \"\")) {",
+      "expect": ["A19"]
+    },
+    "M20_short_type_list_values": {
+      "_note": "Independent review of the spec, MEDIUM (CT), value half: toNumericValue accepts only the short list of datatypes; a VALUES-bound literal of the other eight numeric datatypes becomes a type error. Shares its anchor with M14 / M17 — the driver applies every mutant to a clean copy. A19 turns red too: a constant of a short-list-missing type is rebuilt as a typed literal by the helper and then rejected here.",
+      "from": "    if (value instanceof Literal && BuiltInFunctions.isNumeric(value)) {",
+      "to": "    if (value instanceof Literal && [\"integer\", \"decimal\", \"float\", \"double\", \"int\", \"long\", \"nonNegativeInteger\", \"unsignedByte\"].map((t) => \"http://www.w3.org/2001/XMLSchema#\" + t).includes(value.datatype?.value ?? \"\")) {",
+      "expect": ["A19", "A21"]
+    }
+  }
+}
