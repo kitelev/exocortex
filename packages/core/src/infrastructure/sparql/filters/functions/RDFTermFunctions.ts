@@ -264,6 +264,22 @@ export class RDFTermFunctions {
       return typeof term1 === typeof term2 && term1 === term2;
     }
 
+    // A primitive against an RDF term (STR(?l) against a stored label, a BIND
+    // value against a VALUES literal) stands for the literal of its JS kind —
+    // a string is xsd:string, a whole number xsd:integer, a fractional one
+    // xsd:decimal (the converter's rule for YAML numbers), a boolean xsd:boolean
+    // (ems__Bug 290965dd). Before, a mixed pair was always "different".
+    if (typeof term1 !== "object") {
+      const lit = RDFTermFunctions.primitiveAsLiteral(term1);
+      if (lit === undefined) return false;
+      term1 = lit;
+    }
+    if (typeof term2 !== "object") {
+      const lit = RDFTermFunctions.primitiveAsLiteral(term2);
+      if (lit === undefined) return false;
+      term2 = lit;
+    }
+
     // Different term types = different
     if (term1.constructor !== term2.constructor) {
       return false;
@@ -291,16 +307,35 @@ export class RDFTermFunctions {
         return false;
       }
 
-      // Datatype must match exactly (both undefined or same IRI value)
-      const dt1 = term1.datatype?.value;
-      const dt2 = term2.datatype?.value;
+      // So must the base direction of a directional literal ("x"@ar--rtl)
+      if (term1.direction !== term2.direction) {
+        return false;
+      }
 
-      // Unlike Literal.equals(), we do NOT treat plain literal as xsd:string
-      // sameTerm() requires exact identity
-      return dt1 === dt2;
+      // Datatype must match. In RDF 1.1 a simple literal IS xsd:string and a
+      // language-tagged one is rdf:langString — one term each, so compare the
+      // datatype DATATYPE() reports (ems__Bug 290965dd; the old exact match
+      // was the RDF 1.0 reading and split "a" from "a"^^xsd:string).
+      return RDFTermFunctions.datatype(term1).value === RDFTermFunctions.datatype(term2).value;
     }
 
     return false;
+  }
+
+  /** The literal a JS primitive stands for in sameTerm; undefined if none. */
+  private static primitiveAsLiteral(value: unknown): Literal | undefined {
+    const XSD = "http://www.w3.org/2001/XMLSchema#";
+    if (typeof value === "string") {
+      // The engine's Literal cannot be empty, so "" is the same term as no literal.
+      return value.length > 0 ? new Literal(value) : undefined;
+    }
+    if (typeof value === "number") {
+      return new Literal(String(value), new IRI(XSD + (Number.isInteger(value) ? "integer" : "decimal")));
+    }
+    if (typeof value === "boolean") {
+      return new Literal(String(value), new IRI(XSD + "boolean"));
+    }
+    return undefined;
   }
 
   // SPARQL 1.1 Constructor Functions

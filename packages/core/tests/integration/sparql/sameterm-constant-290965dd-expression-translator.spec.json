@@ -1,0 +1,59 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 290965dd: sameTerm compares RDF terms, a query constant included (SPARQL 1.1 §17.4.1.8, RDF 1.1 literal term equality). Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › <axis> ` (ITRV §A44/§A104). Anchors are CODE lines only. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Subject: translateTermExpression keeps a constant's lexical form and language tag.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/sameterm-constant-290965dd.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/algebra/ExpressionTranslator.ts",
+  "mutants": {
+    "X1_no_lexical": {
+      "_note": "The lexical form of a parsed number / boolean is not kept. Red: the written form is lost — T5, T6, T16; NaN does not survive the JSON clone into EXISTS — T14; the non-canonical node carries no lexical — T22.",
+      "from": "      if (typeof value !== \"string\" && !canonical) node.lexical = term.value;",
+      "to": "      if (typeof value === \"symbol\" && !canonical) node.lexical = term.value;",
+      "expect": ["T5", "T6", "T14", "T16", "T22", "T27", "T31"]
+    },
+    "X2_no_language": {
+      "_note": "The language tag of a constant is not kept. Red: T7 and T15 (constants against \"x\"@ru), T29 (\"\"@en and \"\"@fr become one unbuildable constant).",
+      "from": "      if (term.language) node.language = term.language;",
+      "to": "      if (term.language === \"\\u0000\") node.language = term.language;",
+      "expect": ["T7", "T15", "T29"]
+    },
+    "X3_lexical_only_for_numbers": {
+      "_note": "Review MA: the lexical form is kept for numbers only — \"0\"^^xsd:boolean becomes false (T16), \"\"^^xsd:boolean the buildable \"false\" (T27).",
+      "from": "      if (typeof value !== \"string\" && !canonical) node.lexical = term.value;",
+      "to": "      if (typeof value === \"number\" && !canonical) node.lexical = term.value;",
+      "expect": ["T16", "T27"]
+    },
+    "X4_no_named_node_flag": {
+      "_note": "An IRI constant is not marked — sameTerm takes it as a string (the old path). Red: T17, T21, T26, T27.",
+      "from": "    if (term.termType === \"NamedNode\") node.namedNode = true; // ems__Bug 290965dd",
+      "to": "    if (term.termType === \"BlankNode\") node.namedNode = true; // ems__Bug 290965dd",
+      "expect": ["T17", "T21", "T26", "T27", "T30"]
+    },
+    "X5_lexical_always": {
+      "_note": "Spec 290965dd: the lexical form is kept even where `value` prints it back — `0` gets lexical \"0\" and stops being the node an engine-made constant is (a translation into `0 - A`, as the unary-minus fix of ems__Bug 151b98a1 in PR #4607 does, compares node for node). sameTerm answers on finite canonical constants do not change (constantTerm falls back to String(value)), so only the node-shape axis reddens: T22.",
+      "from": "      const canonical = String(value) === term.value && (typeof value === \"boolean\" || Number.isFinite(value));",
+      "to": "      const canonical = String(value) === \"\\u0000\" && (typeof value === \"boolean\" || Number.isFinite(value));",
+      "expect": ["T22"]
+    },
+    "X6_nan_canonical": {
+      "_note": "Spec review L3: NaN / Infinity count as canonical, so their lexical form is not kept — a JSON clone of the plan (EXISTS substitution) turns the value into null and the constant into \"null\". Red: T14 (NaN), T31 (Infinity).",
+      "from": "      const canonical = String(value) === term.value && (typeof value === \"boolean\" || Number.isFinite(value));",
+      "to": "      const canonical = String(value) === term.value && (typeof value === \"boolean\" || typeof value === \"number\");",
+      "expect": ["T14", "T31"]
+    },
+    "X7_infinity_canonical": {
+      "_note": "Spec review round 2 V6: only NaN counts as non-canonical (isNaN instead of isFinite) — Infinity loses its lexical form in the JSON clone into EXISTS. Red: T31.",
+      "from": "      const canonical = String(value) === term.value && (typeof value === \"boolean\" || Number.isFinite(value));",
+      "to": "      const canonical = String(value) === term.value && (typeof value === \"boolean\" || !Number.isNaN(value));",
+      "expect": ["T31"]
+    }
+  }
+}

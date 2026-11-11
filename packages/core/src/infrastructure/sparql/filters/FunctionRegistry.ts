@@ -14,8 +14,9 @@
 
 import { BuiltInFunctions, type RDFTerm } from "./BuiltInFunctions";
 import { Literal } from "../../../domain/models/rdf/Literal";
+import { IRI } from "../../../domain/models/rdf/IRI";
 import type { SolutionMapping } from "../SolutionMapping";
-import type { Expression } from "../algebra/AlgebraOperation";
+import type { Expression, LiteralExpression } from "../algebra/AlgebraOperation";
 
 // Helper type for casting - matches runtime types from BuiltInFunctions
 type DurationArg = string | Literal;
@@ -266,14 +267,82 @@ functionHandlers.set("istriple", (args, ctx) => {
   return BuiltInFunctions.isTriple(term);
 });
 
+const XSD_STRING = "http://www.w3.org/2001/XMLSchema#string";
+
+/**
+ * A constant the engine cannot build as a term — `""^^xsd:integer`, `""@en`, a
+ * datatype or an IRI with a scheme the engine's IRI rejects (`<tag:…>`). The store
+ * cannot hold such a term, and an expression yields at most its JS value
+ * (`LCASE(""@en)`, a BIND of the constant), which sameTerm takes for a literal of
+ * its JS kind (ems__Bug 864dc82a) — so it is the same term only as the identical
+ * constant written again. Before, it fell back to its JS value, and
+ * `sameTerm(?l, "Asset Two"^^<tag:…>)` was true for the label "Asset Two" (review
+ * of the specification, ems__Bug 290965dd).
+ */
+class UnbuildableConstant {
+  constructor(readonly key: string) {}
+}
+
+/**
+ * The RDF term a constant written in the query stands for, or undefined when
+ * `expr` is not one. Evaluating a constant yields its JS value (`"Asset Two"` → a
+ * string, `42.0` → 42, `<https://…>` → a string), which drops what tells terms
+ * apart — the datatype, the lexical form, the language tag, IRI-ness; sameTerm
+ * compares terms (ems__Bug 290965dd). The same node shape carries a value
+ * substituted into EXISTS (`QueryExecutor.termToAlgebraNode`). A node without a
+ * datatype (the async evaluator's wrapper of a computed value) keeps the old path.
+ */
+function constantTerm(expr: Expression): IRI | Literal | UnbuildableConstant | undefined {
+  if (expr.type !== "literal") return undefined;
+  const node = expr as LiteralExpression;
+  const lexical = node.lexical ?? String(node.value);
+  try {
+    if (node.namedNode) return new IRI(String(node.value));
+    // Language first: a language-tagged value substituted into EXISTS carries a
+    // language and no datatype.
+    if (node.language) return new Literal(lexical, undefined, node.language);
+    if (!node.datatype) return undefined;
+    return new Literal(lexical, new IRI(node.datatype));
+  } catch {
+    // `Literal` throws on "" and `IRI` on a scheme its validator rejects. The empty
+    // simple literal is a term the engine keeps as the JS string "" — it stays on
+    // the old path, where STR("") meets it.
+    if (lexical === "" && !node.namedNode && !node.language && node.datatype === XSD_STRING) return undefined;
+    return new UnbuildableConstant(
+      JSON.stringify([node.namedNode === true, lexical, node.datatype ?? null, node.language ?? null]),
+    );
+  }
+}
+
+/**
+ * sameTerm's view of one argument: the exact term of a constant; for DATATYPE(…)
+ * the IRI it names — the handler yields the IRI's string (`=`, IN and the other
+ * callers read it as one), and against an IRI constant that string would be a
+ * simple literal, so the idiom `sameTerm(DATATYPE(?x), xsd:integer)` would always be
+ * false (review of the specification, ems__Bug 290965dd); else the evaluated value
+ * (an unbound one is an evaluation error).
+ */
+function sameTermArgument(expr: Expression, ctx: FunctionContext): unknown {
+  const constant = constantTerm(expr);
+  if (constant !== undefined) return constant;
+  const value = ctx.getTermFromExpression(expr, ctx.solution);
+  if (typeof value === "string" && expr.type === "function" && expr.function === "datatype") {
+    try {
+      return new IRI(value);
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
 functionHandlers.set("sameterm", (args, ctx) => {
-  const term1 = ctx.getTermFromExpression(args[0], ctx.solution) as
-    | RDFTerm
-    | undefined;
-  const term2 = ctx.getTermFromExpression(args[1], ctx.solution) as
-    | RDFTerm
-    | undefined;
-  return BuiltInFunctions.sameTerm(term1, term2);
+  const term1 = sameTermArgument(args[0], ctx);
+  const term2 = sameTermArgument(args[1], ctx);
+  if (term1 instanceof UnbuildableConstant || term2 instanceof UnbuildableConstant) {
+    return term1 instanceof UnbuildableConstant && term2 instanceof UnbuildableConstant && term1.key === term2.key;
+  }
+  return BuiltInFunctions.sameTerm(term1 as RDFTerm | undefined, term2 as RDFTerm | undefined);
 });
 
 // =============================================================================
