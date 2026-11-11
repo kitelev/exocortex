@@ -61,7 +61,7 @@
       ]
     },
     "F3_lexical_from_value": {
-      "_note": "The constant's lexical form rebuilt from its parsed JS value (4.20 → \"4.2\", \"042\" → \"42\"). Red: T5, T6 (4.20 / \"042\"), T16 (\"0\"^^xsd:boolean), T14 (NaN, which a JSON clone into EXISTS turns into null) and T27 (\"\"^^xsd:boolean becomes the buildable \"false\").",
+      "_note": "The constant's lexical form rebuilt from its parsed JS value (4.20 → \"4.2\", \"042\" → \"42\"). Red: T5, T6 (4.20 / \"042\"), T16 (\"0\"^^xsd:boolean), T14 (NaN, which a JSON clone into EXISTS turns into null) T27 (\"\"^^xsd:boolean becomes the buildable \"false\") and T31 (Infinity, the same JSON clone).",
       "from": "  const lexical = node.lexical ?? String(node.value);",
       "to": "  const lexical = String(node.value);",
       "expect": ["T5", "T6", "T14", "T16", "T27", "T31"]
@@ -85,13 +85,13 @@
       "expect": ["T9", "T13", "T20", "T21", "T27"]
     },
     "F9_iri_constant_as_string": {
-      "_note": "An IRI constant takes the old path (its string) — the plan's first draft, review HIGH. Red: T17, T21; T26 (xsd:string against DATATYPE(…), now an IRI); T27 (<tag:…> is then a string, not an unbuildable constant).",
+      "_note": "An IRI constant takes the old path (its string) — the plan's first draft, review HIGH. Red: T17, T21; T26 (xsd:string against DATATYPE(…), now an IRI); T27 (<tag:…> is then a string, not an unbuildable constant); T30 (the strings of STR(DATATYPE(…)) and CONCAT(…) meet the IRI constant, which is now a string too).",
       "from": "    if (node.namedNode) return new IRI(String(node.value));",
       "to": "    if (node.namedNode && node.value === \"\\u0000\") return new IRI(String(node.value));",
       "expect": ["T17", "T21", "T26", "T27", "T30"]
     },
     "F10_untyped_node_as_simple_literal": {
-      "_note": "Spec review W1: a literal node without a datatype becomes a simple literal of its text instead of keeping the old path. Such a node comes only from the async evaluator's wrapper of a computed argument (EXISTS in an argument, ems__Bug 67c8925f): IF(EXISTS …, 42, 0) would equal \"42\", and an unbound value would become the literal \"undefined\". Red: T23.",
+      "_note": "Spec review W1: a literal node without a datatype becomes a simple literal of its text instead of keeping the old path. Such a node comes from the async evaluator's wrapper of a computed argument (EXISTS in an argument, ems__Bug 67c8925f) — and also from a simple literal substituted into EXISTS and a BIND string, where the old path is the same term: IF(EXISTS …, 42, 0) would equal \"42\", and an unbound value would become the literal \"undefined\". Red: T23.",
       "from": "    if (!node.datatype) return undefined;",
       "to": "    if (!node.datatype) return new Literal(lexical);",
       "expect": ["T23"]
@@ -115,7 +115,7 @@
       "expect": ["T9"]
     },
     "F14_unbuildable_key_ignored": {
-      "_note": "Any two unbuildable constants are one term. Red: T20 (\"x\"^^<tag:dt> vs \"y\"^^<tag:dt>, <tag:a> vs <tag:b>).",
+      "_note": "Any two unbuildable constants are one term. Red: T20 (\"x\"^^<tag:dt> vs \"y\"^^<tag:dt>, <tag:a> vs <tag:b>), T28 (\"\"^^xsd:integer vs \"\"^^xsd:boolean), T29 (\"\"@en vs \"\"@fr).",
       "from": "    return term1 instanceof UnbuildableConstant && term2 instanceof UnbuildableConstant && term1.key === term2.key;",
       "to": "    return term1 instanceof UnbuildableConstant && term2 instanceof UnbuildableConstant && term1.key !== \"\\u0000\";",
       "expect": ["T20", "T28", "T29"]

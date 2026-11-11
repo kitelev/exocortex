@@ -109,8 +109,8 @@ export class ExpressionTranslator {
       // and the language tag — so a term function can rebuild the exact RDF term
       // (ems__Bug 290965dd). Expression evaluation still reads `value`. The
       // lexical form is kept only where `value` does not print it back (`42.0`,
-      // `"0"^^xsd:boolean`, and `NaN`, which a JSON clone of the plan turns into
-      // null): a canonical constant (`0`, `true`) stays exactly the node an engine-
+      // `"0"^^xsd:boolean`, and `NaN` / `±Infinity`, which a JSON clone of the plan
+      // turns into null): a canonical constant (`0`, `true`) stays exactly the node an engine-
       // made constant is, so a translation into `0 - A` compares equal node for node.
       const canonical = String(value) === term.value && (typeof value === "boolean" || Number.isFinite(value));
       if (typeof value !== "string" && !canonical) node.lexical = term.value;

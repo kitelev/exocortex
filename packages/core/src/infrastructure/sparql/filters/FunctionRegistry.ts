@@ -275,9 +275,9 @@ const XSD_STRING = "http://www.w3.org/2001/XMLSchema#string";
  * cannot hold such a term, and an expression yields at most its JS value
  * (`LCASE(""@en)`, a BIND of the constant), which sameTerm takes for a literal of
  * its JS kind (ems__Bug 864dc82a) — so it is the same term only as the identical
- * constant written again. Before, it fell back to its JS value, and
- * `sameTerm(?l, "Asset Two"^^<tag:…>)` was true for the label "Asset Two" (review
- * of the specification, ems__Bug 290965dd).
+ * constant written again. In the plan's prototype it fell back to its JS value,
+ * and `sameTerm(?l, "Asset Two"^^<tag:…>)` was true for the label "Asset Two"
+ * (review of the specification, ems__Bug 290965dd).
  */
 class UnbuildableConstant {
   constructor(readonly key: string) {}
@@ -290,7 +290,8 @@ class UnbuildableConstant {
  * apart — the datatype, the lexical form, the language tag, IRI-ness; sameTerm
  * compares terms (ems__Bug 290965dd). The same node shape carries a value
  * substituted into EXISTS (`QueryExecutor.termToAlgebraNode`). A node without a
- * datatype (the async evaluator's wrapper of a computed value) keeps the old path.
+ * datatype (the async evaluator's wrapper of a computed value, a simple literal
+ * substituted into EXISTS, a BIND string) keeps the old path.
  */
 function constantTerm(expr: Expression): IRI | Literal | UnbuildableConstant | undefined {
   if (expr.type !== "literal") return undefined;

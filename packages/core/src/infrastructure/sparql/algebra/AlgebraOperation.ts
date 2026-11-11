@@ -203,7 +203,8 @@ export interface LiteralExpression {
   /**
    * The lexical form the parser hands over, kept when `value` — a parsed number or
    * boolean — does not print it back (`42.0` → `value` 42, `lexical` "42.0"; absent
-   * for a canonical `42`). Term functions (sameTerm) need the RDF term the query
+   * for a canonical `42`), and always for NaN and ±Infinity, which a JSON clone of
+   * the plan turns into null. Term functions (sameTerm) need the RDF term the query
    * wrote, not its JS value: `42` and `42.0` are one number but two terms
    * (ems__Bug 290965dd).
    */

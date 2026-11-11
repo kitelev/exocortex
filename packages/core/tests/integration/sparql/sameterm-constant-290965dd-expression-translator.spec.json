@@ -14,7 +14,7 @@
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/algebra/ExpressionTranslator.ts",
   "mutants": {
     "X1_no_lexical": {
-      "_note": "The lexical form of a parsed number / boolean is not kept. Red: the written form is lost — T5, T6, T16; NaN does not survive the JSON clone into EXISTS — T14; the non-canonical node carries no lexical — T22.",
+      "_note": "The lexical form of a parsed number / boolean is not kept. Red: the written form is lost — T5, T6, T16; NaN does not survive the JSON clone into EXISTS — T14; the non-canonical node carries no lexical — T22; \"\"^^xsd:boolean and Infinity lose the written form — T27, T31.",
       "from": "      if (typeof value !== \"string\" && !canonical) node.lexical = term.value;",
       "to": "      if (typeof value === \"symbol\" && !canonical) node.lexical = term.value;",
       "expect": ["T5", "T6", "T14", "T16", "T22", "T27", "T31"]
@@ -32,7 +32,7 @@
       "expect": ["T16", "T27"]
     },
     "X4_no_named_node_flag": {
-      "_note": "An IRI constant is not marked — sameTerm takes it as a string (the old path). Red: T17, T21, T26, T27.",
+      "_note": "An IRI constant is not marked — sameTerm takes it as a string (the old path). Red: T17, T21, T26, T27, T30.",
       "from": "    if (term.termType === \"NamedNode\") node.namedNode = true; // ems__Bug 290965dd",
       "to": "    if (term.termType === \"BlankNode\") node.namedNode = true; // ems__Bug 290965dd",
       "expect": ["T17", "T21", "T26", "T27", "T30"]
