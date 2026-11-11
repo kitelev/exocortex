@@ -711,7 +711,8 @@ export class FilterExecutor {
    * subquery or returned by COALESCE / IF, and equally a substituted store value
    * that first passes through COALESCE / IF / BIND or a LATERAL projection
    * (`EXISTS { … FILTER(?m > COALESCE(?n, 0) + 1) }` — unlike 17.18.3, where the
-   * coercion happened to compute it). The `isNumeric` test
+   * coercion happened to compute it; under NOT EXISTS that means extra rows; writing
+   * `COALESCE(?n + 0, 0)` keeps the value numeric). The `isNumeric` test
    * here is load-bearing, not defensive: a literal of another datatype must stay the
    * bare string `evaluateExpression` makes of it. Rebuilt as a typed literal it would
    * reach the date / duration branches, where `isDateTimeValue` reads a literal by
@@ -750,7 +751,9 @@ export class FilterExecutor {
    * A query constant whose datatype IRI CONTAINS `#integer` / `#decimal` never reaches
    * this as a literal: `ExpressionTranslator.translateTermExpression` turns it into a JS
    * number by substring and `parseFloat`, so `"7"^^<urn:x:dt#integer> + 1` = 8 and
-   * `"abc"^^xsd:integer + 1` = NaN, as on 17.18.3 (ems__Bug efc04321).
+   * `"abc"^^xsd:integer + 1` = NaN, as on 17.18.3 (ems__Bug efc04321) — except in a
+   * button precondition, whose JSON copy of the plan (`PreconditionEvaluator`) turns
+   * NaN into null, so the expression is an error there.
    */
   private toNumericValue(value: ExpressionResult): number {
     if (typeof value === "number") {
