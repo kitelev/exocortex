@@ -7,6 +7,7 @@ import type {
   AskOperation,
   DescribeOperation,
   AggregateBinding,
+  OrderComparator,
   IRI,
   Variable,
 } from "./AlgebraOperation";
@@ -77,6 +78,12 @@ export class ExoQLAlgebraTranslator {
       throw new AlgebraTranslatorError("Only query operations are supported (not updates)");
     }
 
+    // One aggregate-name counter per query, reset HERE only: a nested level
+    // (subquery in WHERE or in EXISTS) is translated by `translateSelect` while
+    // the outer level is still collecting, and a reset there handed an outer
+    // ORDER BY aggregate an `__agg` name already taken (ems__Bug 2653916f).
+    this.aggregateTranslator.resetCounter();
+
     if (query.queryType === "SELECT") {
       return this.translateSelect(query as SelectQuery);
     }
@@ -107,8 +114,6 @@ export class ExoQLAlgebraTranslator {
 
     let operation: AlgebraOperation = this.patternTranslator.translateWhere(query.where);
 
-    this.aggregateTranslator.resetCounter();
-
     const aggregateVarMap = new Map<SparqljsExpression, string>();
 
     const selectVars = Array.isArray(query.variables)
@@ -122,15 +127,20 @@ export class ExoQLAlgebraTranslator {
       aggregates,
       aggregateVarMap
     );
+    const orderComparators = this.translateOrderWithAggregates(query.order, aggregates, aggregateVarMap, true);
+    const explicitGroup = (query.group?.length ?? 0) > 0;
 
-    if (aggregates.length > 0 || groupVars.length > 0 || havingExpressions.length > 0) {
+    if (aggregates.length > 0 || groupVars.length > 0 || (explicitGroup && havingExpressions.length > 0)) {
       operation = {
         type: "group",
+        ...(explicitGroup ? { explicit: true } : {}),
         variables: groupVars,
         aggregates,
         having: havingExpressions.length > 0 ? havingExpressions : undefined,
         input: operation,
       };
+    } else {
+      operation = this.havingAsFilter(operation, query.having);
     }
 
     // SELECT expressions (Extend) — computed bindings (e.g. `(?a + ?b AS ?sum)`)
@@ -165,10 +175,10 @@ export class ExoQLAlgebraTranslator {
     // silently turn ORDER BY into a no-op — the rows then leak through in
     // triple-store insertion order, which surfaces most visibly when the
     // subquery is joined with an outer pattern (kitelev/exocortex#3542).
-    if (query.order && query.order.length > 0) {
+    if (orderComparators.length > 0) {
       operation = {
         type: "orderby",
-        comparators: query.order.map((o: Ordering) => this.aggregateTranslator.translateOrderComparator(o)),
+        comparators: orderComparators,
         input: operation,
       };
     }
@@ -220,16 +230,16 @@ export class ExoQLAlgebraTranslator {
    * (§16.3, §18.2.4) gives ASK the same solution modifiers as SELECT minus the
    * projection. GROUP BY / HAVING and LIMIT / OFFSET decide which solutions
    * survive, so they wrap WHERE here in the same order as `translateSelect`:
-   * Group (with HAVING) first, Slice last — ASK answers "the SELECT with the same
-   * modifiers has a row". The grouping step is deliberately the SAME one
-   * `translateSelect` uses, gaps included — among them ems__Bug 2653916f (phantom
-   * group over an empty input, HAVING without an aggregate, EXISTS in HAVING),
-   * 38328fcc (GROUP BY by expression) and 2f27f300 (IN and an aggregate inside a
-   * function call in HAVING); fixing them in the shared step fixes both forms.
-   * ORDER BY is not translated: without an aggregate it only reorders, so it
-   * never changes whether a solution survives (no sort cost). An aggregate in
-   * ORDER BY (also 2653916f) is therefore ignored here, unlike SELECT, which
-   * refuses it — fixing that for SELECT will need this function too.
+   * the grouping step (Group with HAVING, or HAVING as a Filter when nothing
+   * groups) first, Slice last — ASK answers "the SELECT with the same modifiers
+   * has a row". The grouping step is deliberately the SAME one `translateSelect`
+   * uses, gaps included — among them 38328fcc (GROUP BY by expression) and
+   * 2f27f300 (IN and an aggregate inside a function call in HAVING); fixing them
+   * in the shared step fixes both forms (ems__Bug 2653916f fixed four there).
+   * ORDER BY is not translated into a sort: it only reorders, so it never changes
+   * whether a solution survives (no sort cost). Its aggregates are still
+   * collected — an aggregate in ORDER BY groups the query level here as in
+   * SELECT (ems__Bug 2653916f).
    * `@types/sparqljs` types AskQuery without the modifiers, but the parser
    * fills them for ASK as for SELECT (vault-exodev ems__Bug 14fb9cb2).
    */
@@ -238,9 +248,8 @@ export class ExoQLAlgebraTranslator {
       ? this.patternTranslator.translateWhere(query.where)
       : ({ type: "bgp", triples: [] } as BGPOperation);
 
-    const modifiers = query as unknown as Pick<SelectQuery, "group" | "having" | "limit" | "offset">;
+    const modifiers = query as unknown as Pick<SelectQuery, "group" | "having" | "order" | "limit" | "offset">;
 
-    this.aggregateTranslator.resetCounter();
     const aggregateVarMap = new Map<SparqljsExpression, string>();
     const aggregates: AggregateBinding[] = [];
     const groupVars = this.aggregateTranslator.extractGroupVariables(modifiers.group);
@@ -249,15 +258,20 @@ export class ExoQLAlgebraTranslator {
       aggregates,
       aggregateVarMap
     );
+    this.translateOrderWithAggregates(modifiers.order, aggregates, aggregateVarMap, false);
+    const explicitGroup = (modifiers.group?.length ?? 0) > 0;
 
-    if (aggregates.length > 0 || groupVars.length > 0 || havingExpressions.length > 0) {
+    if (aggregates.length > 0 || groupVars.length > 0 || (explicitGroup && havingExpressions.length > 0)) {
       where = {
         type: "group",
+        ...(explicitGroup ? { explicit: true } : {}),
         variables: groupVars,
         aggregates,
         having: havingExpressions.length > 0 ? havingExpressions : undefined,
         input: where,
       };
+    } else {
+      where = this.havingAsFilter(where, modifiers.having);
     }
 
     if (modifiers.limit !== undefined || modifiers.offset !== undefined) {
@@ -265,6 +279,59 @@ export class ExoQLAlgebraTranslator {
     }
 
     return { type: "ask", where };
+  }
+
+  /**
+   * ORDER BY of one query level (SPARQL 1.1 §18.2.4.1). A condition holding an
+   * aggregate has it collected into `aggregates` — an aggregate in ORDER BY
+   * groups the level, as one in SELECT or HAVING does — and reads its group's
+   * value; any other condition is an ordinary expression. With `translate`
+   * false (ASK, which does not sort) only the aggregates are collected and no
+   * comparator is built (ems__Bug 2653916f).
+   */
+  private translateOrderWithAggregates(
+    order: Ordering[] | undefined,
+    aggregates: AggregateBinding[],
+    aggregateVarMap: Map<SparqljsExpression, string>,
+    translate: boolean
+  ): OrderComparator[] {
+    const comparators: OrderComparator[] = [];
+    for (const o of order ?? []) {
+      const added = this.aggregateTranslator.collectAggregates(o.expression, aggregates, aggregateVarMap);
+      if (translate) {
+        const comparator = this.aggregateTranslator.translateOrderComparator(o, added > 0 ? aggregateVarMap : undefined);
+        if (added > 0 && comparator.expression.type !== "variable") {
+          // ORDER BY by an expression does not sort (ems__Bug f7105304), so an
+          // expression over an aggregate would come back silently unsorted — it
+          // was refused before 2653916f and stays refused, with the way round it.
+          throw new AlgebraTranslatorError(
+            "ORDER BY on an expression over an aggregate is not supported: project it and order by the variable — SELECT … ((<expression>) AS ?k) … ORDER BY ?k"
+          );
+        }
+        comparators.push(comparator);
+      }
+    }
+    return comparators;
+  }
+
+  /**
+   * HAVING of a query level that does not group (no GROUP BY, no aggregate in
+   * SELECT, HAVING or ORDER BY): the aggregate step is skipped and each HAVING
+   * condition is a Filter over the solutions — SPARQL 1.1 §18.2.4.2
+   * `P := Filter(E, P)`. One Filter per condition makes them a conjunction where
+   * an error in any drops the solution, as over a group. A group built here
+   * instead turned the solutions into one empty row (ems__Bug 2653916f).
+   */
+  private havingAsFilter(input: AlgebraOperation, having: SparqljsExpression[] | undefined): AlgebraOperation {
+    let operation = input;
+    for (const expr of having ?? []) {
+      operation = {
+        type: "filter",
+        expression: this.expressionTranslator.translateExpression(expr),
+        input: operation,
+      };
+    }
+    return operation;
   }
 
   private translateDescribe(query: ExtendedDescribeQuery): DescribeOperation {

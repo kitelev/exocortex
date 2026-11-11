@@ -131,6 +131,16 @@ export class AggregateTranslator {
 
     if ("type" in expr && expr.type === "operation" && "args" in expr) {
       const opExpr = expr as OperationExpression;
+
+      // EXISTS / NOT EXISTS take a graph pattern, not expressions, and an
+      // aggregate of this query level cannot occur inside it — the full
+      // expression translator owns it. Through the argument filter below the
+      // pattern was dropped or rejected ("Unsupported expression structure"), so
+      // EXISTS failed in HAVING and in SELECT expressions (ems__Bug 2653916f).
+      if (opExpr.operator === "exists" || opExpr.operator === "notexists") {
+        return this.translateExpressionFn(expr);
+      }
+
       const transformedArgs = opExpr.args
         .filter((arg): arg is SparqljsExpression => !Array.isArray(arg) && !("patterns" in arg))
         .map((arg: SparqljsExpression) =>
@@ -182,11 +192,38 @@ export class AggregateTranslator {
     return this.translateExpressionFn(expr);
   }
 
-  translateOrderComparator(order: Ordering): OrderComparator {
+  /**
+   * Translate an ORDER BY condition. With `aggregateVarMap` the condition holds an
+   * aggregate of this query level, which reads its group's pre-computed value
+   * (SPARQL 1.1 §18.2.4.1 replaces it with aggi); without, the condition is an
+   * ordinary expression (ems__Bug 2653916f).
+   */
+  translateOrderComparator(
+    order: Ordering,
+    aggregateVarMap?: Map<SparqljsExpression, string>
+  ): OrderComparator {
     return {
-      expression: this.translateExpressionFn(order.expression),
+      expression: aggregateVarMap
+        ? this.transformExpressionWithAggregateVars(order.expression, aggregateVarMap)
+        : this.translateExpressionFn(order.expression),
       descending: order.descending || false,
     };
+  }
+
+  /**
+   * Collect the aggregates of `expr` (HAVING / ORDER BY condition) into
+   * `aggregates`, each under a fresh variable recorded in `aggregateVarMap`.
+   * Returns how many were added — an aggregate anywhere in SELECT, HAVING or
+   * ORDER BY makes the query level grouped (SPARQL 1.1 §18.2.4.1).
+   */
+  collectAggregates(
+    expr: SparqljsExpression,
+    aggregates: AggregateBinding[],
+    aggregateVarMap: Map<SparqljsExpression, string>
+  ): number {
+    const before = aggregates.length;
+    this.collectNestedAggregates(expr, aggregates, aggregateVarMap);
+    return aggregates.length - before;
   }
 
   /**

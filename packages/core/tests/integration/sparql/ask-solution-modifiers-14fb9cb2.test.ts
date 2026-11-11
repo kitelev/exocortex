@@ -12,8 +12,8 @@
  * GROUP BY) over an EMPTY WHERE answered `false` instead of `true`.
  *
  * The fix wraps WHERE the way `translateSelect` does — Group (with HAVING) first,
- * Slice last — and leaves ORDER BY out: without an aggregate it only reorders, it
- * never removes a solution (an aggregate in ORDER BY is ems__Bug 2653916f).
+ * Slice last — and leaves ORDER BY out: it only reorders, it never removes a
+ * solution (an aggregate in ORDER BY still groups the level — ems__Bug 2653916f).
  *
  * ## The paths under test
  *
@@ -28,19 +28,18 @@
  * controls, green on the pre-fix engine by construction.
  *
  * Not asserted here, on purpose: the grouping step is the one SELECT uses, and
- * its own gaps are those bugs' axes — among them ems__Bug 2653916f (phantom
- * group over an empty input, HAVING without an aggregate is not a Filter,
- * EXISTS in HAVING), 38328fcc (GROUP BY by expression) and 2f27f300 (IN / NOT
- * IN and an aggregate inside a function call in HAVING). The ASK answers they
- * give follow SELECT, not the standard: A12 (aggregate / slice forms) and A21
- * (HAVING without an aggregate) lock "ASK ⇔ the SELECT with the same modifiers
- * has a row" on their forms, so fixing a gap in the shared step fixes both.
- * Two exceptions: GROUP BY by expression with OFFSET is held by an ABSOLUTE
- * axis (A22) — its answers do not change when 38328fcc is fixed (with HAVING it
- * follows SELECT and is 38328fcc's to fix); and an aggregate in ORDER
- * BY (2653916f) is NOT shared — ASK does not translate ORDER BY, so it ignores
- * the aggregate while SELECT refuses the query, and fixing it for SELECT will
- * need `translateAsk` too.
+ * its own gaps are those bugs' axes — among them 38328fcc (GROUP BY by
+ * expression) and 2f27f300 (IN / NOT IN and an aggregate inside a function call
+ * in HAVING); ems__Bug 2653916f (phantom group over an empty input, HAVING
+ * without an aggregate as a Filter, an aggregate in ORDER BY, EXISTS in HAVING)
+ * was fixed there and has its own harness (aggregation-step-2653916f). A12
+ * (aggregate / slice forms) and A21 (HAVING without an aggregate) lock "ASK ⇔
+ * the SELECT with the same modifiers has a row" on their forms, so fixing a gap
+ * in the shared step fixes both. One exception: GROUP BY by expression with
+ * OFFSET is held by an ABSOLUTE axis (A22) — its answers do not change when
+ * 38328fcc is fixed (with HAVING it follows SELECT and is 38328fcc's to fix).
+ * An aggregate in ORDER BY is shared since 2653916f: ASK collects it (it groups)
+ * but still builds no sort (A10).
  */
 
 import "reflect-metadata";
@@ -443,10 +442,9 @@ describe("ASK solution modifiers (ems__Bug 14fb9cb2)", () => {
   });
 
   // HAVING WITHOUT an aggregate (and without GROUP BY). By SPARQL 1.1 there is no
-  // grouping then and HAVING acts as a Filter; the shared grouping step builds a
-  // group anyway (ems__Bug 2653916f), so SELECT answers otherwise — and so does
-  // ASK. Parity is the design: a Filter branch in ASK alone would make ASK and
-  // SELECT disagree, and the fix of 2653916f in the shared step fixes both.
+  // grouping then and HAVING acts as a Filter — in SELECT and in ASK alike since
+  // ems__Bug 2653916f. Parity is the design: a Filter branch in one form alone
+  // would make ASK and SELECT disagree (M21 brings the old group back in ASK).
   const NO_AGG_FORMS: Array<{ where: string; mods: string; proj: string }> = [
     { where: W, mods: `HAVING (?l = "Asset One")`, proj: "?l" },
     { where: W, mods: `HAVING (true)`, proj: "?l" },

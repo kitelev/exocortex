@@ -1,0 +1,41 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 2653916f: the aggregation step of SPARQL 1.1 (§18.2.4.1 grouping, §18.2.4.2 HAVING) — GROUP BY over an empty input has no group, HAVING without grouping is a Filter, an aggregate in ORDER BY groups the level, EXISTS works in HAVING and SELECT expressions. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct across the four specs of this harness). `red_re` anchors on the jest failure header `● <suite> › <axis> ` (ITRV §A44/§A104). C1–C3 are controls; A12 and A18 lock unchanged behaviour and are green on the pre-fix engine by construction. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/aggregation-step-2653916f.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/executors/AggregateExecutor.ts",
+  "mutants": {
+    "M1_explicit_empty_guard_off": {
+      "_note": "The guard for GROUP BY over an empty input is gone. With a GROUP BY variable groupSolutions still finds no group, so only GROUP BY by an expression (variables empty, 38328fcc) falls into the implicit single group: one phantom row again.",
+      "from": "    if (operation.explicit === true && inputSolutions.length === 0) {",
+      "to": "    if (operation.explicit === true && inputSolutions.length < 0) {",
+      "expect": ["A2", "A2b", "A2c"]
+    },
+    "M2_empty_input_never_groups": {
+      "_note": "Plausible over-fix: an empty input never yields a row — the implicit group of an aggregate without GROUP BY (COUNT(*) = 0, w3c agg-empty-group-count-2) is lost too.",
+      "from": "    if (operation.explicit === true && inputSolutions.length === 0) {",
+      "to": "    if (operation.explicit !== null && inputSolutions.length === 0) {",
+      "expect": ["A11", "A19a", "A19b", "A19c", "A19d", "A3", "A9", "A9b", "C2"]
+    },
+    "M17_explicit_guard_requires_aggregate": {
+      "_note": "Review X3: the guard rewritten from the old createEmptyAggregateResult also asks for an aggregate — GROUP BY by an expression with HAVING and no aggregate over an empty input builds the phantom group again (A2c).",
+      "from": "    if (operation.explicit === true && inputSolutions.length === 0) {",
+      "to": "    if (operation.explicit === true && inputSolutions.length === 0 && operation.aggregates.length > 0) {",
+      "expect": ["A2c"]
+    },
+    "M22_both_empty_guards_off": {
+      "_note": "Spec stage (axis coverage, §A159): A1 is guarded TWICE — the explicit-GROUP-BY early return AND the deleted fallback group — so neither M1 (guard off) nor restoring the fallback alone turns it red (defensive pair, ITRV §A43). This mutant breaks BOTH in one anchor: no early return, and an empty row whenever no group formed (the 17.18.1 phantom). Expect set measured by the driver.",
+      "from": "    if (operation.explicit === true && inputSolutions.length === 0) {\n      return [];\n    }\n\n    const groups = this.groupSolutions(inputSolutions, operation.variables);\n    const results: SolutionMapping[] = [];\n\n    for (const [_groupKey, groupSolutions] of groups.entries()) {\n      const resultBindings: Map<string, unknown> = new Map();\n\n      for (const varName of operation.variables) {\n        if (groupSolutions.length > 0) {\n          const term = groupSolutions[0].get(varName);\n          if (term) {\n            resultBindings.set(varName, term);\n          }\n        }\n      }\n\n      for (const aggregate of operation.aggregates) {\n        const value = this.computeAggregate(\n          aggregate.expression,\n          groupSolutions\n        );\n        resultBindings.set(aggregate.variable, value);\n      }\n\n      // Create a fresh result with ONLY GROUP BY variables and aggregate results\n      // Per SPARQL 1.1 spec: aggregated results should contain only:\n      // 1. Variables from GROUP BY clause\n      // 2. Variables bound to aggregate expressions\n      // This fixes Issue #534 Blocker 1: aggregate functions returning extra variables\n      const result = new SolutionMapping();\n      for (const [key, value] of resultBindings.entries()) {\n        // `resultBindings` is `Map<string, unknown>`; the lazy `require`\n        // previously typed the class as `any`, silently accepting these values.\n        // Runtime behaviour is unchanged — cast to the set() param type.\n        // An unbound aggregate (MIN / MAX of no values) is absent from the row, not\n        // an `undefined` entry — otherwise it reads as bound (ems__Bug 37c80e59).\n        if (value === undefined) continue;\n        result.set(key, value as Parameters<typeof result.set>[1]);\n      }\n      results.push(result);\n    }\n\n    return results;\n  }\n\n  private groupSolutions(",
+      "to": "\n    const groups = this.groupSolutions(inputSolutions, operation.variables);\n    const results: SolutionMapping[] = [];\n\n    for (const [_groupKey, groupSolutions] of groups.entries()) {\n      const resultBindings: Map<string, unknown> = new Map();\n\n      for (const varName of operation.variables) {\n        if (groupSolutions.length > 0) {\n          const term = groupSolutions[0].get(varName);\n          if (term) {\n            resultBindings.set(varName, term);\n          }\n        }\n      }\n\n      for (const aggregate of operation.aggregates) {\n        const value = this.computeAggregate(\n          aggregate.expression,\n          groupSolutions\n        );\n        resultBindings.set(aggregate.variable, value);\n      }\n\n      // Create a fresh result with ONLY GROUP BY variables and aggregate results\n      // Per SPARQL 1.1 spec: aggregated results should contain only:\n      // 1. Variables from GROUP BY clause\n      // 2. Variables bound to aggregate expressions\n      // This fixes Issue #534 Blocker 1: aggregate functions returning extra variables\n      const result = new SolutionMapping();\n      for (const [key, value] of resultBindings.entries()) {\n        // `resultBindings` is `Map<string, unknown>`; the lazy `require`\n        // previously typed the class as `any`, silently accepting these values.\n        // Runtime behaviour is unchanged — cast to the set() param type.\n        // An unbound aggregate (MIN / MAX of no values) is absent from the row, not\n        // an `undefined` entry — otherwise it reads as bound (ems__Bug 37c80e59).\n        if (value === undefined) continue;\n        result.set(key, value as Parameters<typeof result.set>[1]);\n      }\n      results.push(result);\n    }\n\n    if (results.length === 0 && operation.aggregates.length > 0) {\n      results.push(new SolutionMapping());\n    }\n\n    return results;\n  }\n\n  private groupSolutions(",
+      "expect": ["A1", "A2", "A2b", "A2c", "A3", "A20a", "A20b", "A20c"]
+    }
+  }
+}

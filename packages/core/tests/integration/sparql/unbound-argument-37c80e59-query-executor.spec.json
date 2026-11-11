@@ -20,9 +20,9 @@
       "expect": ["B1", "B2", "B3", "L1"]
     },
     "M4_having_error_fails_query": {
-      "_note": "HAVING without the guard: an erroring condition fails the whole query instead of dropping the group.",
-      "from": "          try {\n            return this.filterExecutor.evaluateExpression(expr, result) === true;\n          } catch {\n            return false;\n          }\n",
-      "to": "          return this.filterExecutor.evaluateExpression(expr, result) === true;\n",
+      "_note": "HAVING without the guard: an erroring condition fails the whole query instead of dropping the group. Re-anchored by ems__Bug 2653916f: HAVING is evaluated by evaluateExpressionAsync in a loop now; same expect.",
+      "from": "          try {\n            const value = havingIsAsync[i]\n              ? await this.filterExecutor.evaluateExpressionAsync(operation.having[i], result)\n              : this.filterExecutor.evaluateExpression(operation.having[i], result);\n            passesHaving = value === true;\n          } catch {\n            passesHaving = false;\n          }\n",
+      "to": "          const value = havingIsAsync[i]\n            ? await this.filterExecutor.evaluateExpressionAsync(operation.having[i], result)\n            : this.filterExecutor.evaluateExpression(operation.having[i], result);\n          passesHaving = value === true;\n",
       "expect": ["U4"]
     },
     "M12_join_sees_bind_primitive": {

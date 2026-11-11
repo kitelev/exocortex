@@ -1,0 +1,160 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 2653916f: the aggregation step of SPARQL 1.1 (§18.2.4.1 grouping, §18.2.4.2 HAVING) — GROUP BY over an empty input has no group, HAVING without grouping is a Filter, an aggregate in ORDER BY groups the level, EXISTS works in HAVING and SELECT expressions. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct across the four specs of this harness). `red_re` anchors on the jest failure header `● <suite> › <axis> ` (ITRV §A44/§A104). C1–C3 are controls; A12 and A18 lock unchanged behaviour and are green on the pre-fix engine by construction. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/aggregation-step-2653916f.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/algebra/AlgebraTranslator.ts",
+  "mutants": {
+    "M3_select_no_explicit_flag": {
+      "_note": "SELECT does not mark GROUP BY on the node: GROUP BY by an expression over an empty input answers the phantom row again (A2); ASK still right ⇒ the differential reddens.",
+      "from": "        ...(explicitGroup ? { explicit: true } : {}),\n        variables: groupVars,\n        aggregates,\n        having: havingExpressions.length > 0 ? havingExpressions : undefined,\n        input: operation,",
+      "to": "        ...(explicitGroup ? { explicit: false } : {}),\n        variables: groupVars,\n        aggregates,\n        having: havingExpressions.length > 0 ? havingExpressions : undefined,\n        input: operation,",
+      "expect": ["A2", "A21", "A2c"]
+    },
+    "M4_ask_no_explicit_flag": {
+      "_note": "The same for ASK (A2b) — the two group blocks are separate code, each needs its axis.",
+      "from": "        ...(explicitGroup ? { explicit: true } : {}),\n        variables: groupVars,\n        aggregates,\n        having: havingExpressions.length > 0 ? havingExpressions : undefined,\n        input: where,",
+      "to": "        ...(explicitGroup ? { explicit: false } : {}),\n        variables: groupVars,\n        aggregates,\n        having: havingExpressions.length > 0 ? havingExpressions : undefined,\n        input: where,",
+      "expect": ["A21", "A2b", "A2c"]
+    },
+    "M5_select_having_builds_group": {
+      "_note": "The pre-fix condition in SELECT: HAVING alone builds a group, so HAVING without an aggregate collapses the solutions into one empty row (form 2). Spec stage: also A25 — a group built for HAVING answers one empty row where the FILTER twin keeps the solutions.",
+      "from": "    const explicitGroup = (query.group?.length ?? 0) > 0;\n\n    if (aggregates.length > 0 || groupVars.length > 0 || (explicitGroup && havingExpressions.length > 0)) {",
+      "to": "    const explicitGroup = (query.group?.length ?? 0) > 0;\n\n    if (aggregates.length > 0 || groupVars.length > 0 || (havingExpressions.length > 0)) {",
+      "expect": [
+        "A4",
+        "A5",
+        "A6",
+        "A7",
+        "A8",
+        "A21",
+        "A25",
+        "A20a",
+        "A20b",
+        "A20c"
+      ]
+    },
+    "M6_ask_having_builds_group": {
+      "_note": "The pre-fix condition in ASK only: ASK answers by the old group, SELECT by the Filter. Spec stage: also A23 / A24 (an ASK group has no ?l, so HAVING (?l = …) and IN are false) and A25 (ASK HAVING differs from its FILTER twin).",
+      "from": "    const explicitGroup = (modifiers.group?.length ?? 0) > 0;\n\n    if (aggregates.length > 0 || groupVars.length > 0 || (explicitGroup && havingExpressions.length > 0)) {",
+      "to": "    const explicitGroup = (modifiers.group?.length ?? 0) > 0;\n\n    if (aggregates.length > 0 || groupVars.length > 0 || (havingExpressions.length > 0)) {",
+      "expect": [
+        "A5",
+        "A8",
+        "A21",
+        "A23",
+        "A24",
+        "A25",
+        "A19a",
+        "A19b",
+        "A19c",
+        "A19d"
+      ]
+    },
+    "M7_having_filter_first_only": {
+      "_note": "Plausible wrong Filter: only the first HAVING condition is kept (A6).",
+      "from": "    for (const expr of having ?? []) {\n      operation = {\n        type: \"filter\",",
+      "to": "    for (const expr of (having ?? []).slice(0, 1)) {\n      operation = {\n        type: \"filter\",",
+      "expect": ["A6"]
+    },
+    "M8_having_filter_via_aggregate_table": {
+      "_note": "The Filter is translated through the aggregate-aware operator table instead of the full expression translator: IN in HAVING without grouping drops its list (A4). Spec stage: also A24 — the aggregate-aware table loses the IN list on the ASK path too.",
+      "from": "        expression: this.expressionTranslator.translateExpression(expr),",
+      "to": "        expression: this.aggregateTranslator.transformExpressionWithAggregateVars(expr, new Map()),",
+      "expect": ["A4", "A24"]
+    },
+    "M9_order_aggregates_not_collected": {
+      "_note": "ORDER BY aggregates are not collected (SELECT and ASK): SELECT refuses the query again, ASK builds no group (form 3).",
+      "from": "      const added = this.aggregateTranslator.collectAggregates(o.expression, aggregates, aggregateVarMap);",
+      "to": "      const added = 0 * o.expression.toString().length;",
+      "expect": [
+        "A10",
+        "A10b",
+        "A11",
+        "A19a",
+        "A19b",
+        "A19c",
+        "A19d",
+        "A20a",
+        "A20b",
+        "A20c",
+        "A21",
+        "A22",
+        "A9",
+        "A9b"
+      ]
+    },
+    "M10_order_comparator_without_map": {
+      "_note": "The comparator of an aggregate condition is translated without the aggregate map: the group exists, but SELECT refuses the ORDER BY condition; ASK unaffected.",
+      "from": "        const comparator = this.aggregateTranslator.translateOrderComparator(o, added > 0 ? aggregateVarMap : undefined);",
+      "to": "        const comparator = this.aggregateTranslator.translateOrderComparator(o, added > 9 ? aggregateVarMap : undefined);",
+      "expect": [
+        "A10",
+        "A10b",
+        "A20a",
+        "A20b",
+        "A20c",
+        "A21",
+        "A22",
+        "A9",
+        "A9b"
+      ]
+    },
+    "M11_ask_order_not_collected": {
+      "_note": "ASK ignores the aggregate in ORDER BY again (pre-fix ASK): no implicit group.",
+      "from": "    this.translateOrderWithAggregates(modifiers.order, aggregates, aggregateVarMap, false);",
+      "to": "    void modifiers.order;",
+      "expect": ["A11", "A19a", "A19b", "A19c", "A19d", "A21"]
+    },
+    "M18_select_group_ignores_order_aggregates": {
+      "_note": "Review X2: the ORDER BY aggregates are collected, but SELECT decides whether to group from the count taken before them — the most natural form of it is ORDER BY left where it was. Only a level whose ONLY aggregate is in ORDER BY tells (A9b).",
+      "from": "    const orderComparators = this.translateOrderWithAggregates(query.order, aggregates, aggregateVarMap, true);\n    const explicitGroup = (query.group?.length ?? 0) > 0;\n\n    if (aggregates.length > 0 ||",
+      "to": "    const aggregatesBeforeOrder = aggregates.length;\n    const orderComparators = this.translateOrderWithAggregates(query.order, aggregates, aggregateVarMap, true);\n    const explicitGroup = (query.group?.length ?? 0) > 0;\n\n    if (aggregatesBeforeOrder > 0 ||",
+      "expect": ["A9b"]
+    },
+    "M19_counter_reset_per_level": {
+      "_note": "Review R4: the aggregate-name counter is reset in translateSelect again. A subquery inside EXISTS in HAVING is translated while the outer level still collects, so the ORDER BY aggregate gets the name of the HAVING one (A22).",
+      "from": "    let operation: AlgebraOperation = this.patternTranslator.translateWhere(query.where);\n\n    const aggregateVarMap",
+      "to": "    let operation: AlgebraOperation = this.patternTranslator.translateWhere(query.where);\n\n    this.aggregateTranslator.resetCounter();\n    const aggregateVarMap",
+      "expect": ["A22"]
+    },
+    "M20_order_expression_over_aggregate_accepted": {
+      "_note": "Review R5: the refusal of an expression over an aggregate in ORDER BY is gone — the query is accepted and comes back silently unsorted (f7105304) instead of failing loudly.",
+      "from": "        if (added > 0 && comparator.expression.type !== \"variable\") {",
+      "to": "        if (added < 0 && comparator.expression.type !== \"variable\") {",
+      "expect": ["A10b"]
+    },
+    "W1_ask_having_filter_after_slice": {
+      "_note": "Review of the spec, W1 (the reviewer's patch verbatim): ASK applies HAVING-as-Filter AFTER the Slice. Passed all 146 tests of the plan: in A21 the matching label was the first solution, so both orders agreed. A23 (and A21 with its \"Asset Two\" forms) must turn red. Measured: A21 too — its forms now include HAVING (?l = \"Asset Two\") with LIMIT / OFFSET, where SELECT filters before the slice.",
+      "from": "    } else {\n      where = this.havingAsFilter(where, modifiers.having);\n    }\n\n    if (modifiers.limit !== undefined || modifiers.offset !== undefined) {\n      where = { type: \"slice\", limit: modifiers.limit, offset: modifiers.offset, input: where };\n    }\n",
+      "to": "    }\n\n    if (modifiers.limit !== undefined || modifiers.offset !== undefined) {\n      where = { type: \"slice\", limit: modifiers.limit, offset: modifiers.offset, input: where };\n    }\n    if (!(aggregates.length > 0 || groupVars.length > 0 || (explicitGroup && havingExpressions.length > 0))) {\n      where = this.havingAsFilter(where, modifiers.having);\n    }\n",
+      "expect": ["A21", "A23"]
+    },
+    "W2_ask_having_via_aggregate_table": {
+      "_note": "Review of the spec, W2 (the reviewer's patch verbatim): ASK reuses the HAVING conditions already translated through the aggregate-aware operator table instead of havingAsFilter — the most natural implementation; that table loses the IN list (2f27f300). Passed all 146 tests of the plan: IN was checked in SELECT only (A4), and M8 mutates the shared havingAsFilter, not the ASK path. A24 must turn red. Measured: A21 too — its forms now include HAVING (?l IN (\"Asset Two\")), which SELECT answers through the full translator.",
+      "from": "      where = this.havingAsFilter(where, modifiers.having);\n",
+      "to": "      // reuse the HAVING conditions already translated above\n      for (const expression of havingExpressions) {\n        where = { type: \"filter\", expression, input: where };\n      }\n",
+      "expect": ["A21", "A24"]
+    },
+    "M23_select_any_order_groups": {
+      "_note": "Spec stage (axis coverage, §A159): A12 was green on the base and held by NO mutant — the plan named M9 / M10, the driver shows neither reddens it. Plausible misreading of §18.2.4.1: any ORDER BY groups the SELECT level.",
+      "from": "    if (aggregates.length > 0 || groupVars.length > 0 || (explicitGroup && havingExpressions.length > 0)) {\n      operation = {",
+      "to": "    if (aggregates.length > 0 || groupVars.length > 0 || (explicitGroup && havingExpressions.length > 0) || orderComparators.length > 0) {\n      operation = {",
+      "expect": ["A12", "C3"]
+    },
+    "M24_ask_any_order_groups": {
+      "_note": "Spec stage (axis coverage, §A159): the ASK half of A12 — any ORDER BY groups the ASK level.",
+      "from": "    if (aggregates.length > 0 || groupVars.length > 0 || (explicitGroup && havingExpressions.length > 0)) {\n      where = {",
+      "to": "    if (aggregates.length > 0 || groupVars.length > 0 || (explicitGroup && havingExpressions.length > 0) || (modifiers.order?.length ?? 0) > 0) {\n      where = {",
+      "expect": ["A12"]
+    }
+  }
+}
