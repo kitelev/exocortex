@@ -116,47 +116,70 @@ functionHandlers.set("strlen", (args, ctx) => {
   return BuiltInFunctions.strlen(str);
 });
 
+/**
+ * A string function returns a literal of the same kind as its first argument — the
+ * language tag and the base direction stay (SPARQL 1.1 §17.4.3.1.3, 1.2 §17.4.3):
+ * UCASE("x"@en) is "X"@en. Needed since `=` compares the tag (ems__Bug 97ebe042):
+ * without it LCASE(?o) = ?o is false for a stored "x"@ru. An empty result stays the
+ * JS string "" — `Literal` rejects it — as STRBEFORE / STRAFTER without a match
+ * return the empty simple literal anyway.
+ */
+function sameKind(arg: unknown, result: unknown): unknown {
+  if (typeof result !== "string" || result === "" || !(arg instanceof Literal) || !arg.language) return result;
+  return new Literal(result, undefined, arg.language, arg.direction);
+}
+
 functionHandlers.set("ucase", (args, ctx) => {
-  const str = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
-  return BuiltInFunctions.ucase(str);
+  const arg = ctx.evaluateExpression(args[0], ctx.solution);
+  return sameKind(arg, BuiltInFunctions.ucase(ctx.getStringValue(arg)));
 });
 
 functionHandlers.set("lcase", (args, ctx) => {
-  const str = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
-  return BuiltInFunctions.lcase(str);
+  const arg = ctx.evaluateExpression(args[0], ctx.solution);
+  return sameKind(arg, BuiltInFunctions.lcase(ctx.getStringValue(arg)));
 });
 
 functionHandlers.set("substr", (args, ctx) => {
-  const str = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
+  const arg = ctx.evaluateExpression(args[0], ctx.solution);
+  const str = ctx.getStringValue(arg);
   const start = Number(ctx.evaluateExpression(args[1], ctx.solution));
   if (args[2]) {
     const length = Number(ctx.evaluateExpression(args[2], ctx.solution));
-    return BuiltInFunctions.substr(str, start, length);
+    return sameKind(arg, BuiltInFunctions.substr(str, start, length));
   }
-  return BuiltInFunctions.substr(str, start);
+  return sameKind(arg, BuiltInFunctions.substr(str, start));
 });
 
 functionHandlers.set("strbefore", (args, ctx) => {
-  const str = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
+  const arg = ctx.evaluateExpression(args[0], ctx.solution);
   const sep = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
-  return BuiltInFunctions.strBefore(str, sep);
+  return sameKind(arg, BuiltInFunctions.strBefore(ctx.getStringValue(arg), sep));
 });
 
 functionHandlers.set("strafter", (args, ctx) => {
-  const str = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
+  const arg = ctx.evaluateExpression(args[0], ctx.solution);
   const sep = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
-  return BuiltInFunctions.strAfter(str, sep);
+  return sameKind(arg, BuiltInFunctions.strAfter(ctx.getStringValue(arg), sep));
 });
 
 functionHandlers.set("concat", (args, ctx) => {
-  const concatArgs = args.map((arg) =>
-    ctx.getStringValue(ctx.evaluateExpression(arg, ctx.solution)),
-  );
-  return BuiltInFunctions.concat(...concatArgs);
+  const values = args.map((arg) => ctx.evaluateExpression(arg, ctx.solution));
+  const result = BuiltInFunctions.concat(...values.map((v) => ctx.getStringValue(v)));
+  // The tag and direction survive only when every argument carries the same ones
+  // (SPARQL 1.1 §17.4.3.12, 1.2 §17.4.3.10).
+  const first = values[0];
+  const common =
+    first instanceof Literal &&
+    !!first.language &&
+    values.every(
+      (v) => v instanceof Literal && v.language === first.language && v.direction === first.direction,
+    );
+  return common ? sameKind(first, result) : result;
 });
 
 functionHandlers.set("replace", (args, ctx) => {
-  const str = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
+  const arg = ctx.evaluateExpression(args[0], ctx.solution);
+  const str = ctx.getStringValue(arg);
   const pattern = ctx.getStringValue(
     ctx.evaluateExpression(args[1], ctx.solution),
   );
@@ -166,7 +189,7 @@ functionHandlers.set("replace", (args, ctx) => {
   const flags = args[3]
     ? ctx.getStringValue(ctx.evaluateExpression(args[3], ctx.solution))
     : undefined;
-  return BuiltInFunctions.replace(str, pattern, replacement, flags);
+  return sameKind(arg, BuiltInFunctions.replace(str, pattern, replacement, flags));
 });
 
 functionHandlers.set("regex", (args, ctx) => {
@@ -300,8 +323,9 @@ function constantTerm(expr: Expression): IRI | Literal | UnbuildableConstant | u
   try {
     if (node.namedNode) return new IRI(String(node.value));
     // Language first: a language-tagged value substituted into EXISTS carries a
-    // language and no datatype.
-    if (node.language) return new Literal(lexical, undefined, node.language);
+    // language and no datatype. Defensive since ems__Bug 0b24c745 — the old path now
+    // evaluates such a node to the same Literal (FilterExecutor).
+    if (node.language) return new Literal(lexical, undefined, node.language, node.direction);
     if (!node.datatype) return undefined;
     return new Literal(lexical, new IRI(node.datatype));
   } catch {
@@ -310,7 +334,7 @@ function constantTerm(expr: Expression): IRI | Literal | UnbuildableConstant | u
     // the old path, where STR("") meets it.
     if (lexical === "" && !node.namedNode && !node.language && node.datatype === XSD_STRING) return undefined;
     return new UnbuildableConstant(
-      JSON.stringify([node.namedNode === true, lexical, node.datatype ?? null, node.language ?? null]),
+      JSON.stringify([node.namedNode === true, lexical, node.datatype ?? null, node.language ?? null, node.direction ?? null]),
     );
   }
 }

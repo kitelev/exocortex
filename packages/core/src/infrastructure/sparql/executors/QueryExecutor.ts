@@ -953,6 +953,9 @@ export class ExoQLQueryExecutor {
         value: valueRecord.value,
         datatype: (valueRecord.datatype as Record<string, unknown>)?.value ?? (valueRecord._datatype as Record<string, unknown>)?.value,
         language: valueRecord.language ?? valueRecord._language,
+        // A bound "x"@ar--rtl substituted into EXISTS / a bind join stays that term
+        // (ems__Bug 0b24c745).
+        direction: valueRecord.direction ?? valueRecord._direction,
       };
     }
 

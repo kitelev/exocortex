@@ -450,6 +450,9 @@ export class InMemoryTripleStore implements ITripleStore {
         key += `^^${node.datatype.value}`;
       } else if (node.language) {
         key += `@${node.language}`;
+        // The base direction is part of the term: "x"@ar--rtl and "x"@ar are two
+        // nodes (RDF 1.2; ems__Bug 0b24c745).
+        if (node.direction) key += `--${node.direction}`;
       }
       return key;
     }

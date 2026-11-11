@@ -1,0 +1,24 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 0b24c745 (a query constant keeps its base direction; the direction is bound to ITS literal, not to its language) and ems__Bug 97ebe042 (a language-tagged constant is the language-tagged literal; `=` / `!=` compare the language tag and direction of any literal). Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › <axis> `. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted. Subject: termToAlgebraNode keeps the direction of a bound value substituted into EXISTS / a bind join (review finding 1).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/directional-constant-0b24c745.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/executors/QueryExecutor.ts",
+  "mutants": {
+    "QE1_substitution_without_direction": {
+      "_note": "A bound \"x\"@ar--rtl substituted into EXISTS becomes \"x\"@ar.",
+      "from": "        direction: valueRecord.direction ?? valueRecord._direction,\n",
+      "to": "",
+      "expect": ["T15", "T22"],
+      "_note_split": "T22 — the store-matching half of the former T15 (split at the specification stage, 11.11)."
+    }
+  }
+}

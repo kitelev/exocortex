@@ -1,0 +1,60 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 0b24c745 (a query constant keeps its base direction; the direction is bound to ITS literal, not to its language) and ems__Bug 97ebe042 (a language-tagged constant is the language-tagged literal; `=` / `!=` compare the language tag and direction of any literal). Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › <axis> `. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted. Subject: constantTerm builds a directional constant's exact term; an unbuildable constant's identity includes its direction.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/directional-constant-0b24c745.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/filters/FunctionRegistry.ts",
+  "mutants": {
+    "F1_constant_term_without_direction": {
+      "_note": "sameTerm's view of a constant drops the direction (the evaluated value keeps it — T10 stays green).",
+      "from": "    if (node.language) return new Literal(lexical, undefined, node.language, node.direction);",
+      "to": "    if (node.language) return new Literal(lexical, undefined, node.language);",
+      "expect": ["T1", "T2", "T3", "T4", "T5", "T10", "T11", "T15"]
+    },
+    "F2_unbuildable_key_without_direction": {
+      "_note": "\"\"@ar--rtl and \"\"@ar — terms the engine cannot build — become the same identity.",
+      "from": "      JSON.stringify([node.namedNode === true, lexical, node.datatype ?? null, node.language ?? null, node.direction ?? null]),",
+      "to": "      JSON.stringify([node.namedNode === true, lexical, node.datatype ?? null, node.language ?? null]),",
+      "expect": ["T12"]
+    },
+    "F3_string_functions_drop_tag": {
+      "_note": "Every string function returns the bare text again (review finding 2: `=` now compares the tag, so LCASE(?o) = ?o would be false).",
+      "from": "  return new Literal(result, undefined, arg.language, arg.direction);",
+      "to": "  return result;",
+      "expect": ["T16", "T19", "T20", "T23"],
+      "_note_review": "Axes added at the specification stage (11.11): T23 — SUBSTR with a length is one of the string functions this mutant strips."
+    },
+    "F4_concat_direction_ignored": {
+      "_note": "CONCAT keeps the tag when the languages agree, whatever the directions.",
+      "from": "      (v) => v instanceof Literal && v.language === first.language && v.direction === first.direction,",
+      "to": "      (v) => v instanceof Literal && v.language === first.language,",
+      "expect": ["T20"]
+    },
+    "F5_concat_first_argument_only": {
+      "_note": "CONCAT takes the first argument's tag without looking at the others.",
+      "from": "      (v) => v instanceof Literal && v.language === first.language && v.direction === first.direction,",
+      "to": "      (v) => v === v,",
+      "expect": ["T19", "T20"]
+    },
+    "F6_string_result_without_direction": {
+      "_note": "A string function keeps the language but drops the direction.",
+      "from": "  return new Literal(result, undefined, arg.language, arg.direction);",
+      "to": "  return new Literal(result, undefined, arg.language);",
+      "expect": ["T16", "T20"]
+    },
+    "F7_substr_with_length_drops_tag": {
+      "_note": "Review of the specification (11.11, MU1): SUBSTR with a length argument returns the bare substring — every axis before T23 stayed green.",
+      "from": "    return sameKind(arg, BuiltInFunctions.substr(str, start, length));",
+      "to": "    return BuiltInFunctions.substr(str, start, length);",
+      "expect": ["T23"]
+    }
+  }
+}
