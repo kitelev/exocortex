@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 0cae1d41 on the resolve-buttons path (real markdown → NoteToRDFConverter → CommandResolver → PreconditionEvaluator). Subject is the engine method; the CLI jest maps @kitelev/exocortex-core to core/src, so the mutant reaches the oracle without a build. `tree`/`subject` are placeholders (§A145).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/CommandResolver.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/resolve-buttons-command-dedup-0cae1d41.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_no_command_dedup": {
+      "_note": "The survivor lookup never matches — every binding of a command stays, i.e. the pre-fix behaviour (the #2958 AC3 contract). Red: every axis where two bindings of one command reach the asset and survive override removal.",
+      "from": "      const at = survivorAt.get(commandId);",
+      "to": "      const at = survivorAt.get(commandId + entry.rc.binding.id);",
+      "expect": ["C1", "C2", "C4"]
+    },
+    "M6_collapse_everything": {
+      "_note": "The dedup key is the same for every entry — distinct commands collapse into one. Locks the over-collapse direction (control axis D8: an asset with one bound class keeps every command).",
+      "from": "      const commandId = entry.rc.command.id;",
+      "to": "      const commandId = entry.rc.command.id.slice(0, 0);",
+      "expect": ["C1", "C2", "C3"]
+    }
+  }
+}
