@@ -1,0 +1,37 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 0b24c745 (a query constant keeps its base direction; the direction is bound to ITS literal, not to its language) and ems__Bug 97ebe042 (a language-tagged constant is the language-tagged literal; `=` / `!=` compare the language tag and direction of any literal). Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › <axis> `. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted. Subject: a language-tagged constant evaluates to the language-tagged Literal.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/directional-constant-0b24c745.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/executors/FilterExecutor.ts",
+  "mutants": {
+    "X1_tagged_constant_as_text": {
+      "_note": "A tagged constant evaluates to its bare text again (the pre-fix state of ems__Bug 97ebe042): LANG is \"\" (T8, the precondition in T11), BIND drops the tag, `=` sees a simple literal. K2 turns red too, and must: the language-aware `=` WITHOUT this half makes the stored \"x\"@ru = \"x\"@ru false — the two halves of 97ebe042 ship together.",
+      "from": "        if (tagged) return tagged;",
+      "to": "        void tagged;",
+      "expect": [
+        "K2",
+        "T7",
+        "T8",
+        "T10",
+        "T11",
+        "T14",
+        "T16",
+        "T18",
+        "T22",
+        "T24",
+        "T26"
+      ],
+      "_note_split": "T22 — the store-matching half of the former T15 (split at the specification stage, 11.11); no longer T15: the EXISTS-filter forms compare the bound value and the constant both as text, so they still agree; the store join is what this mutant breaks (T22).",
+      "_note_review": "Axes added at the specification stage (11.11): T24 — as bare text \"x\" = \"x\"@en is a text comparison and true; T26 — DATATYPE of bare text is xsd:string."
+    }
+  }
+}

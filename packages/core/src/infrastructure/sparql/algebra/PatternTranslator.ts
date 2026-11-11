@@ -307,7 +307,11 @@ export class PatternTranslator {
           language: litTerm.language || undefined,
         };
         if (litTerm.language) {
-          const direction = this.directionMappings.get(litTerm.language.toLowerCase());
+          // The literal's own direction (SPARQLParser.restoreDirections); the
+          // language-keyed map is the legacy API (ems__Bug 0b24c745).
+          const direction =
+            (litTerm as { direction?: "ltr" | "rtl" }).direction ??
+            this.directionMappings.get(litTerm.language.toLowerCase());
           if (direction) {
             literal.direction = direction;
           }

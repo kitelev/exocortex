@@ -1,0 +1,56 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 0b24c745 (a query constant keeps its base direction; the direction is bound to ITS literal, not to its language) and ems__Bug 97ebe042 (a language-tagged constant is the language-tagged literal; `=` / `!=` compare the language tag and direction of any literal). Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › <axis> `. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted. Subject: compare: `=` / `!=` against a language-tagged literal also compare its language tag and direction.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/directional-constant-0b24c745.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/filters/functions/LogicalFunctions.ts",
+  "mutants": {
+    "L1_values_only": {
+      "_note": "The language branch never runs — values only (the pre-fix state).",
+      "from": "    if ((operator === \"=\" || operator === \"!=\") && (LogicalFunctions.isLanguageTagged(a) || LogicalFunctions.isLanguageTagged(b))) {",
+      "to": "    if ((operator === \"=\" || operator === \"!=\") && (LogicalFunctions.isLanguageTagged(a) || LogicalFunctions.isLanguageTagged(b)) && false) {",
+      "expect": ["T4", "T7", "T9", "T14", "T16", "T24"],
+      "_note_review": "Axes added at the specification stage (11.11): T24 — comparing values only makes \"x\" = \"x\"@en true."
+    },
+    "L2_only_when_both_tagged": {
+      "_note": "Plausible wrong fix: the language counts only when BOTH sides carry a tag — a tagged literal still equals the simple literal of its text.",
+      "from": "(LogicalFunctions.isLanguageTagged(a) || LogicalFunctions.isLanguageTagged(b))",
+      "to": "(LogicalFunctions.isLanguageTagged(a) && LogicalFunctions.isLanguageTagged(b))",
+      "expect": ["T7", "T9", "T14", "T24"],
+      "_note_review": "Axes added at the specification stage (11.11): T24 — a plain left side is not tagged, so the value comparison makes \"x\" = \"x\"@en true."
+    },
+    "L3_direction_ignored": {
+      "_note": "The key compares the language only — \"x\"@ar--rtl = \"x\"@ar.",
+      "from": "    return value instanceof Literal && value.language ? `${value.language}--${value.direction ?? \"\"}` : \"\";",
+      "to": "    return value instanceof Literal && value.language ? `${value.language}` : \"\";",
+      "expect": ["T4", "T7", "T16"]
+    },
+    "L4_not_equal_not_negated": {
+      "_note": "`!=` returns the equality itself.",
+      "from": "      return operator === \"=\" ? equal : !equal;",
+      "to": "      return equal;",
+      "expect": ["T14", "T16", "T24"],
+      "_note_review": "Axes added at the specification stage (11.11): T24 — \"x\" != \"x\"@en answers as = and drops both rows."
+    },
+    "L5_plain_left_skips_tag": {
+      "_note": "Review of the specification (11.11, MU10): the language branch is skipped when only the RIGHT side is tagged and the left is a plain string — \"x\" = \"x\"@en became true again.",
+      "from": "(LogicalFunctions.isLanguageTagged(a) || LogicalFunctions.isLanguageTagged(b))",
+      "to": "(LogicalFunctions.isLanguageTagged(a) || (LogicalFunctions.isLanguageTagged(b) && typeof a !== \"string\"))",
+      "expect": ["T24"]
+    },
+    "L6_ordering_operators_take_equality_branch": {
+      "_note": "Review of the specification (11.11, MU9): the language branch is entered for every operator but < and > — <= / >= over tagged literals answer as != and the guarantee «< > <= >= stay as they were» breaks.",
+      "from": "if ((operator === \"=\" || operator === \"!=\") && (",
+      "to": "if ((operator !== \"<\" && operator !== \">\") && (",
+      "expect": ["T25"]
+    }
+  }
+}

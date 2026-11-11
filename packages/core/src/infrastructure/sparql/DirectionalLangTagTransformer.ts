@@ -74,6 +74,78 @@ export class DirectionalLangTagTransformer {
   }
 
   /**
+   * Like `transform`, but the direction stays with ITS literal: `"x"@ar--rtl` is
+   * rewritten to `"x"@ar-x-exodir-rtl` — a private-use subtag sparqljs accepts as
+   * part of an ordinary language tag — and `restoreDirections` turns the parsed
+   * tag back into `ar` plus `direction: "rtl"` on that very term. The language-keyed
+   * map (`getDirection`) cannot tell `"x"@ar--rtl` from `"y"@ar` in one query, and
+   * nothing hands it to the translator anyway (ems__Bug 0b24c745). The map is
+   * still filled for the public API.
+   */
+  encode(query: string): string {
+    this.directionMappings.clear();
+
+    return query.replace(
+      DirectionalLangTagTransformer.DIRECTIONAL_TAG_REGEX,
+      (_match, quote, stringContent, langTag, direction) => {
+        this.directionMappings.set(langTag.toLowerCase(), direction as BaseDirection);
+        return `${quote}${stringContent}${quote}@${langTag}${DirectionalLangTagTransformer.DIRECTION_SUBTAG}${direction}`;
+      }
+    );
+  }
+
+  /** Subtag `encode` appends before the direction; sparqljs lower-cases the tag. */
+  static readonly DIRECTION_SUBTAG = "-x-exodir-";
+
+  private static readonly ENCODED_TAG_REGEX = /^(.+)-x-exodir-(ltr|rtl)$/;
+
+  private static readonly ENCODED_IN_TEXT_REGEX = /@([a-zA-Z]+(?:-[a-zA-Z0-9]+)*?)-x-exodir-(ltr|rtl)/g;
+
+  /**
+   * Split a language tag written by `encode` into the language and its direction;
+   * any other tag comes back unchanged with no direction.
+   */
+  static splitEncodedLanguage(tag: string): { language: string; direction?: BaseDirection } {
+    const m = DirectionalLangTagTransformer.ENCODED_TAG_REGEX.exec(tag);
+    return m ? { language: m[1], direction: m[2] as BaseDirection } : { language: tag };
+  }
+
+  /**
+   * Walk a sparqljs AST produced from an `encode`d query and give every literal
+   * whose tag `encode` marked its own `direction`, restoring the plain language
+   * tag (`ar-x-exodir-rtl` → `language: "ar"`, `direction: "rtl"`). Mutates in place.
+   */
+  static restoreDirections(ast: unknown): void {
+    const seen = new WeakSet<object>();
+    const walk = (node: unknown): void => {
+      if (node === null || typeof node !== "object" || seen.has(node)) return;
+      seen.add(node);
+      if (Array.isArray(node)) {
+        for (const item of node) walk(item);
+        return;
+      }
+      const rec = node as Record<string, unknown>;
+      // encode() rewrites the raw query text, a string literal's contents included
+      // ('a "x"@ar--rtl b'): give that text back verbatim.
+      if (rec.termType === "Literal" && typeof rec.value === "string" && rec.value.includes("-x-exodir-")) {
+        rec.value = rec.value.replace(
+          DirectionalLangTagTransformer.ENCODED_IN_TEXT_REGEX,
+          (_m: string, lang: string, dir: string) => `@${lang}--${dir}`,
+        );
+      }
+      if (rec.termType === "Literal" && typeof rec.language === "string" && rec.language) {
+        const { language, direction } = DirectionalLangTagTransformer.splitEncodedLanguage(rec.language);
+        if (direction) {
+          rec.language = language;
+          rec.direction = direction;
+        }
+      }
+      for (const key of Object.keys(rec)) walk(rec[key]);
+    };
+    walk(ast);
+  }
+
+  /**
    * Check if a language tag has a direction mapping stored.
    *
    * @param languageTag - The language tag to check (will be normalized to lowercase)

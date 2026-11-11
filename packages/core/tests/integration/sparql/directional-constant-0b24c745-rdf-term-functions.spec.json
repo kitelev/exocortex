@@ -1,0 +1,30 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 0b24c745 (a query constant keeps its base direction; the direction is bound to ITS literal, not to its language) and ems__Bug 97ebe042 (a language-tagged constant is the language-tagged literal; `=` / `!=` compare the language tag and direction of any literal). Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › <axis> `. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted. Subject: DATATYPE of a directional literal is rdf:dirLangString (RDF 1.2; SPARQL 1.2 §17.4.2.12).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/directional-constant-0b24c745.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/filters/functions/RDFTermFunctions.ts",
+  "mutants": {
+    "RT1_directional_as_langString": {
+      "_note": "DATATYPE(\"x\"@ar--rtl) is rdf:langString again.",
+      "from": "        if (term.direction) return new IRI(\"http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString\");",
+      "to": "        void term.direction;",
+      "expect": ["T18", "T26"],
+      "_note_review": "Axes added at the specification stage (11.11): T26 — the ltr twin of T18."
+    },
+    "RT2_only_rtl_is_dirLangString": {
+      "_note": "Review of the specification (11.11, MU4): only an rtl literal is typed rdf:dirLangString — T18 asserted rtl alone.",
+      "from": "if (term.direction) return new IRI(",
+      "to": "if (term.direction === \"rtl\") return new IRI(",
+      "expect": ["T26"]
+    }
+  }
+}

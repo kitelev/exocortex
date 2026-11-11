@@ -37,6 +37,22 @@ export class LogicalFunctions {
     const aValue = LogicalFunctions.toComparableValue(a);
     const bValue = LogicalFunctions.toComparableValue(b);
 
+    // A language-tagged literal equals only a literal with the same text, language
+    // tag and base direction (RDFterm-equal, SPARQL 1.1 §17.4.1.7; SPARQL 1.2): its
+    // value alone made "x"@en = "x", "x"@en = "x"@de and a stored "x"@ru = "x" true
+    // (ems__Bug 97ebe042, 0b24c745). `<` / `>` / `<=` / `>=` do not take this branch
+    // and keep comparing the text — SPARQL does not order a language-tagged literal.
+    // One class of ordering answers still changes, upstream of this branch — a tagged
+    // duration-like constant against an xsd:dayTimeDuration (all four operators,
+    // either operand order): a tagged constant now arrives as a Literal, so the
+    // mixed-duration branches above no longer read it as a raw duration string, and
+    // `"PT1H"@en < "PT2H"^^xsd:dayTimeDuration` is now false (a type error by
+    // SPARQL), where it used to compare the two durations.
+    if ((operator === "=" || operator === "!=") && (LogicalFunctions.isLanguageTagged(a) || LogicalFunctions.isLanguageTagged(b))) {
+      const equal = aValue === bValue && LogicalFunctions.languageKey(a) === LogicalFunctions.languageKey(b);
+      return operator === "=" ? equal : !equal;
+    }
+
     switch (operator) {
       case "=":
         return aValue === bValue;
@@ -65,6 +81,15 @@ export class LogicalFunctions {
       return datatypeValue === "http://www.w3.org/2001/XMLSchema#dayTimeDuration";
     }
     return false;
+  }
+
+  private static isLanguageTagged(value: RDFTerm | string | number): boolean {
+    return value instanceof Literal && !!value.language;
+  }
+
+  /** Language tag and base direction of a literal; "" for anything else. */
+  private static languageKey(value: RDFTerm | string | number): string {
+    return value instanceof Literal && value.language ? `${value.language}--${value.direction ?? ""}` : "";
   }
 
   private static toComparableValue(value: RDFTerm | string | number): string | number {

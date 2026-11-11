@@ -213,6 +213,11 @@ export class FilterExecutor {
 
       case "literal": {
         const litExpr = expr as import("../algebra/AlgebraOperation").Literal;
+        // A language-tagged constant is the language-tagged literal, not its bare
+        // text: LANG("x"@en) is "en", "x"@en = "x" is false, BIND keeps the tag; the
+        // base direction is part of the term (ems__Bug 97ebe042, 0b24c745).
+        const tagged = FilterExecutor.languageTaggedConstant(litExpr.value, litExpr.language, litExpr.direction);
+        if (tagged) return tagged;
         if (litExpr.datatype && litExpr.value.length > 0 && this.shouldPreserveDatatype(litExpr.datatype)) {
           return new Literal(litExpr.value, new IRI(litExpr.datatype));
         }
@@ -650,14 +655,33 @@ export class FilterExecutor {
   }
 
   /**
+   * The language-tagged literal a constant `"x"@en` / `"x"@ar--rtl` stands for, or
+   * undefined when the constant has no tag or the engine cannot build it (`""@en`
+   * — `Literal` rejects the empty value; it stays the JS string "").
+   */
+  private static languageTaggedConstant(
+    value: unknown,
+    language: string | undefined,
+    direction: "ltr" | "rtl" | undefined,
+  ): Literal | undefined {
+    if (!language || typeof value !== "string") return undefined;
+    try {
+      return new Literal(value, undefined, language, direction);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * Whether a literal's datatype is one whose semantics affect arithmetic /
    * type-guard dispatch in `evaluateArithmetic` and must therefore survive as
    * a `Literal` instance instead of being collapsed to a bare string.
    *
-   * Restricted to date/time/duration types so that string-tagged literals
-   * (xsd:string, language tags, plain identifiers) keep their pre-existing
-   * primitive-string behaviour and do not regress equality / IF / projection
-   * paths that compare to plain strings.
+   * Restricted to date/time/duration types so that string-typed literals
+   * (xsd:string, plain identifiers) keep their pre-existing primitive-string
+   * behaviour and do not regress equality / IF / projection paths that compare
+   * to plain strings. A language-tagged constant is the exception — it is its
+   * Literal (`languageTaggedConstant`, ems__Bug 97ebe042).
    *
    * Issue #3088.
    */
