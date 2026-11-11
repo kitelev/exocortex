@@ -61,7 +61,7 @@
       ]
     },
     "F3_lexical_from_value": {
-      "_note": "The constant's lexical form rebuilt from its parsed JS value (4.20 → \"4.2\", \"042\" → \"42\"). Red: T5, T6 (4.20 / \"042\"), T16 (\"0\"^^xsd:boolean), T14 (NaN, which a JSON clone into EXISTS turns into null) T27 (\"\"^^xsd:boolean becomes the buildable \"false\") and T31 (Infinity, the same JSON clone).",
+      "_note": "The constant's lexical form rebuilt from its parsed JS value (4.20 → \"4.2\", \"042\" → \"42\"). Red: T5, T6 (4.20 / \"042\"), T16 (\"0\"^^xsd:boolean), T14 (NaN, which a JSON clone into EXISTS turns into null), T27 (\"\"^^xsd:boolean becomes the buildable \"false\") and T31 (Infinity, the same JSON clone).",
       "from": "  const lexical = node.lexical ?? String(node.value);",
       "to": "  const lexical = String(node.value);",
       "expect": ["T5", "T6", "T14", "T16", "T27", "T31"]
@@ -91,7 +91,7 @@
       "expect": ["T17", "T21", "T26", "T27", "T30"]
     },
     "F10_untyped_node_as_simple_literal": {
-      "_note": "Spec review W1: a literal node without a datatype becomes a simple literal of its text instead of keeping the old path. Such a node comes from the async evaluator's wrapper of a computed argument (EXISTS in an argument, ems__Bug 67c8925f) — and also from a simple literal substituted into EXISTS and a BIND string, where the old path is the same term: IF(EXISTS …, 42, 0) would equal \"42\", and an unbound value would become the literal \"undefined\". Red: T23.",
+      "_note": "Spec review W1: a literal node without a datatype becomes a simple literal of its text instead of keeping the old path. Such a node comes from the async evaluator's wrapper of a computed argument (EXISTS in an argument, ems__Bug 67c8925f) — and also from a simple literal substituted into EXISTS and a BIND string, where the old path is the same term for any non-empty string; the empty string is not (the engine's Literal cannot hold it) — no axis covers that: IF(EXISTS …, 42, 0) would equal \"42\", and an unbound value would become the literal \"undefined\". Red: T23.",
       "from": "    if (!node.datatype) return undefined;",
       "to": "    if (!node.datatype) return new Literal(lexical);",
       "expect": ["T23"]
