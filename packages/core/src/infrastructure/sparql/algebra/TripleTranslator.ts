@@ -146,7 +146,11 @@ export class TripleTranslator {
           language: element.language,
         };
         if (element.language) {
-          const direction = this.directionMappings.get(element.language.toLowerCase());
+          // The literal's own direction (SPARQLParser.restoreDirections); the
+          // language-keyed map is the legacy API (ems__Bug 0b24c745).
+          const direction =
+            (element as { direction?: "ltr" | "rtl" }).direction ??
+            this.directionMappings.get(element.language.toLowerCase());
           if (direction) {
             literal.direction = direction;
           }

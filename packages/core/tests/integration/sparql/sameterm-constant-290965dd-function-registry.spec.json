@@ -14,16 +14,14 @@
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/filters/FunctionRegistry.ts",
   "mutants": {
     "F1_left_constant_as_value": {
-      "_note": "The LEFT argument is evaluated to its JS value again — no exact constant term, no IRI for DATATYPE(…). Red: every axis whose distinguishing constant (or IRI constant, or substituted value, or unbuildable constant) is on the LEFT.",
+      "_note": "The LEFT argument is evaluated to its JS value again — no exact constant term, no IRI for DATATYPE(…). Red: every axis whose distinguishing constant (or IRI constant, or substituted value, or unbuildable constant) is on the LEFT. Since ems__Bug 0b24c745 a language-tagged constant also EVALUATES to its exact Literal (FilterExecutor), so the evaluated path keeps the tag: T7 and T15 stay green under this mutant by mechanism, not by vacuity — they are still reddened by F4 (constantTerm without the language) and by X1 of directional-constant-0b24c745-filter-executor.",
       "from": "  const term1 = sameTermArgument(args[0], ctx);",
       "to": "  const term1 = ctx.getTermFromExpression(args[0], ctx.solution);",
       "expect": [
         "K3",
         "K5",
         "T5",
-        "T7",
         "T14",
-        "T15",
         "T16",
         "T17",
         "T20",
@@ -34,7 +32,7 @@
       ]
     },
     "F2_right_constant_as_value": {
-      "_note": "The RIGHT argument is evaluated to its JS value again (same technique as F1). Red: most axes put the distinguishing constant on the right.",
+      "_note": "The RIGHT argument is evaluated to its JS value again (same technique as F1). Red: most axes put the distinguishing constant on the right. Since ems__Bug 0b24c745 a language-tagged constant also EVALUATES to its exact Literal (FilterExecutor), so the evaluated path keeps the tag: T7 and T15 stay green under this mutant by mechanism, not by vacuity — they are still reddened by F4 (constantTerm without the language) and by X1 of directional-constant-0b24c745-filter-executor.",
       "from": "  const term2 = sameTermArgument(args[1], ctx);",
       "to": "  const term2 = ctx.getTermFromExpression(args[1], ctx.solution);",
       "expect": [
@@ -43,12 +41,10 @@
         "K5",
         "T5",
         "T6",
-        "T7",
         "T8",
         "T10",
         "T11",
         "T14",
-        "T15",
         "T16",
         "T17",
         "T18",
@@ -67,16 +63,17 @@
       "expect": ["T5", "T6", "T14", "T16", "T27", "T31"]
     },
     "F4_language_ignored": {
-      "_note": "The language tag is dropped: \"x\"@en and \"x\"@fr become one term. Red: T7 and T15.",
-      "from": "    if (node.language) return new Literal(lexical, undefined, node.language);",
-      "to": "    if (node.language === \"\\u0000\") return new Literal(lexical, undefined, node.language);",
+      "_note": "The language tag is dropped: \"x\"@en and \"x\"@fr become one term. Red: T7 and T15. Re-anchored by ems__Bug 0b24c745: the constant term and the identity key now also carry the base direction; the mutation is unchanged.",
+      "from": "    if (node.language) return new Literal(lexical, undefined, node.language, node.direction);",
+      "to": "    if (node.language === \"\u0000\") return new Literal(lexical, undefined, node.language, node.direction);",
       "expect": ["T7", "T15"]
     },
     "F7_language_after_datatype_guard": {
-      "_note": "The first prototype's order: the datatype guard before the language check drops a language-tagged value substituted into EXISTS (language, no datatype) to the old path, where its tag is lost.",
-      "from": "    if (node.language) return new Literal(lexical, undefined, node.language);\n    if (!node.datatype) return undefined;",
-      "to": "    if (!node.datatype) return undefined;\n    if (node.language) return new Literal(lexical, undefined, node.language);",
-      "expect": ["T15"]
+      "_note": "The first prototype's order: the datatype guard before the language check drops a language-tagged value substituted into EXISTS (language, no datatype) to the old path, where its tag is lost. Re-anchored by ems__Bug 0b24c745: the constant term and the identity key now also carry the base direction; the mutation is unchanged. Declared zero since ems__Bug 0b24c745: a node with a language and no datatype (a value substituted into EXISTS) now evaluates on the old path to the same Literal, so the order is defensive (marked in constantTerm); the canary F4 proves the language axes still redden.",
+      "from": "    if (node.language) return new Literal(lexical, undefined, node.language, node.direction);\n    if (!node.datatype) return undefined;",
+      "to": "    if (!node.datatype) return undefined;\n    if (node.language) return new Literal(lexical, undefined, node.language, node.direction);",
+      "expect": [],
+      "_canary": "F4_language_ignored"
     },
     "F8_no_catch": {
       "_note": "Without the catch a node the engine cannot build throws instead of becoming its own term: `Literal` on \"\" (T9, T13), `IRI` on a scheme its validator rejects (T20, T21, T27).",
@@ -121,21 +118,21 @@
       "expect": ["T20", "T28", "T29"]
     },
     "F15_key_lexical_only": {
-      "_note": "Spec review round 2 V1: the unbuildable key holds the lexical form only — \"\"^^xsd:integer equals \"\"^^xsd:boolean, \"\"@en equals \"\"@fr. Red: T28, T29.",
-      "from": "      JSON.stringify([node.namedNode === true, lexical, node.datatype ?? null, node.language ?? null]),",
+      "_note": "Spec review round 2 V1: the unbuildable key holds the lexical form only — \"\"^^xsd:integer equals \"\"^^xsd:boolean, \"\"@en equals \"\"@fr. Red: T28, T29. Re-anchored by ems__Bug 0b24c745: the constant term and the identity key now also carry the base direction; the mutation is unchanged.",
+      "from": "      JSON.stringify([node.namedNode === true, lexical, node.datatype ?? null, node.language ?? null, node.direction ?? null]),",
       "to": "      JSON.stringify([lexical]),",
       "expect": ["T28", "T29"]
     },
     "F16_key_without_datatype": {
-      "_note": "Spec review round 2 V2: the unbuildable key drops the datatype. Red: T28.",
-      "from": "      JSON.stringify([node.namedNode === true, lexical, node.datatype ?? null, node.language ?? null]),",
-      "to": "      JSON.stringify([node.namedNode === true, lexical, node.language ?? null]),",
+      "_note": "Spec review round 2 V2: the unbuildable key drops the datatype. Red: T28. Re-anchored by ems__Bug 0b24c745: the constant term and the identity key now also carry the base direction; the mutation is unchanged.",
+      "from": "      JSON.stringify([node.namedNode === true, lexical, node.datatype ?? null, node.language ?? null, node.direction ?? null]),",
+      "to": "      JSON.stringify([node.namedNode === true, lexical, node.language ?? null, node.direction ?? null]),",
       "expect": ["T28"]
     },
     "F17_key_without_language": {
-      "_note": "Spec review round 2 V3: the unbuildable key drops the language. Red: T29.",
-      "from": "      JSON.stringify([node.namedNode === true, lexical, node.datatype ?? null, node.language ?? null]),",
-      "to": "      JSON.stringify([node.namedNode === true, lexical, node.datatype ?? null]),",
+      "_note": "Spec review round 2 V3: the unbuildable key drops the language. Red: T29. Re-anchored by ems__Bug 0b24c745: the constant term and the identity key now also carry the base direction; the mutation is unchanged.",
+      "from": "      JSON.stringify([node.namedNode === true, lexical, node.datatype ?? null, node.language ?? null, node.direction ?? null]),",
+      "to": "      JSON.stringify([node.namedNode === true, lexical, node.datatype ?? null, node.direction ?? null]),",
       "expect": ["T29"]
     },
     "F18_right_argument_not_evaluated": {
@@ -151,9 +148,9 @@
       "expect": ["T30"]
     },
     "F20_key_without_named_node": {
-      "_note": "Declared zero (§A135): the unbuildable key drops its IRI flag. Defensive by construction — an IRI key has no datatype and no language, while an unbuildable literal always carries one of them (a node without a datatype never reaches the catch), so the flag never decides alone. Canary: F14 of this spec reddens on the same key line.",
-      "from": "      JSON.stringify([node.namedNode === true, lexical, node.datatype ?? null, node.language ?? null]),",
-      "to": "      JSON.stringify([lexical, node.datatype ?? null, node.language ?? null]),",
+      "_note": "Declared zero (§A135): the unbuildable key drops its IRI flag. Defensive by construction — an IRI key has no datatype and no language, while an unbuildable literal always carries one of them (a node without a datatype never reaches the catch), so the flag never decides alone. Canary: F14 of this spec reddens on the same key line. Re-anchored by ems__Bug 0b24c745: the constant term and the identity key now also carry the base direction; the mutation is unchanged.",
+      "from": "      JSON.stringify([node.namedNode === true, lexical, node.datatype ?? null, node.language ?? null, node.direction ?? null]),",
+      "to": "      JSON.stringify([lexical, node.datatype ?? null, node.language ?? null, node.direction ?? null]),",
       "expect": [],
       "_canary": "F14_unbuildable_key_ignored"
     }

@@ -212,6 +212,11 @@ export interface LiteralExpression {
   /** Language tag of a constant `"x"@en` (ems__Bug 290965dd). */
   language?: string;
   /**
+   * Base direction of a directional constant `"x"@ar--rtl` (SPARQL 1.2) — part of
+   * the term: `"x"@ar--rtl` and `"x"@ar` are two terms (ems__Bug 0b24c745).
+   */
+  direction?: "ltr" | "rtl";
+  /**
    * The constant was an IRI in the query (`<https://…>`). Read only by sameTerm,
    * which compares it as the IRI term (ems__Bug 290965dd); everywhere else the node
    * is still evaluated as its string — that is ems__Bug 160034f7.

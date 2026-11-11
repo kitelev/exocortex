@@ -428,13 +428,14 @@ describe("SPARQL 1.2 Directional Language Tags Integration Tests", () => {
         SELECT ?resource ?label
         WHERE {
           ?resource rdfs:label ?label .
-          FILTER(?label = "Test")
+          FILTER(STR(?label) = "Test")
         }
       `;
 
       const results = await executeQuery(query);
 
-      // Both should be found
+      // Both should be found — by their text: a language-tagged literal is not
+      // equal to the simple literal "Test" (RDFterm-equal; ems__Bug 97ebe042)
       expect(results).toHaveLength(2);
 
       // Verify different directions

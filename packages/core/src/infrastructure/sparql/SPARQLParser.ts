@@ -150,7 +150,7 @@ export class ExoQLParser {
       let transformedQuery = describeResult.query;
 
       // Transform directional language tags (SPARQL 1.2) - e.g., @ar--rtl → @ar
-      transformedQuery = this.directionalLangTagTransformer.transform(transformedQuery);
+      transformedQuery = this.directionalLangTagTransformer.encode(transformedQuery);
       this.lastDirectionMappings = this.directionalLangTagTransformer.getAllMappings();
 
       // Transform LATERAL joins to marked subqueries (SPARQL 1.2)
@@ -160,6 +160,8 @@ export class ExoQLParser {
       // Transform triple term syntax <<( s p o )>> to << s p o >> (SPARQL 1.2 RDF-Star)
       transformedQuery = this.tripleTermTransformer.transform(transformedQuery);
       const parsed = this.parser.parse(transformedQuery);
+      // Each directional literal keeps ITS direction (ems__Bug 0b24c745).
+      if (this.lastDirectionMappings.size > 0) DirectionalLangTagTransformer.restoreDirections(parsed);
       this.validateQuery(parsed);
 
       // Attach DESCRIBE options to the parsed query if present
@@ -246,7 +248,7 @@ export class ExoQLParser {
       let transformedQuery = describeResult.query;
 
       // Transform directional language tags (SPARQL 1.2) - e.g., @ar--rtl → @ar
-      transformedQuery = this.directionalLangTagTransformer.transform(transformedQuery);
+      transformedQuery = this.directionalLangTagTransformer.encode(transformedQuery);
       this.lastDirectionMappings = this.directionalLangTagTransformer.getAllMappings();
 
       // First, transform PREFIX* declarations to regular PREFIX declarations
@@ -258,6 +260,8 @@ export class ExoQLParser {
       // Transform triple term syntax <<( s p o )>> to << s p o >> (SPARQL 1.2 RDF-Star)
       transformedQuery = this.tripleTermTransformer.transform(transformedQuery);
       const parsed = this.parser.parse(transformedQuery);
+      // Each directional literal keeps ITS direction — the async path too (ems__Bug 0b24c745).
+      if (this.lastDirectionMappings.size > 0) DirectionalLangTagTransformer.restoreDirections(parsed);
       this.validateQuery(parsed);
 
       // Attach DESCRIBE options to the parsed query if present

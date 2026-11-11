@@ -74,10 +74,10 @@
       "expect": ["T19"]
     },
     "R11_no_direction_check": {
-      "_note": "The base direction of a directional literal is not compared. Red: T4 (rtl vs none) and T25 (rtl vs ltr).",
+      "_note": "The base direction of a directional literal is not compared. Red: T4 (rtl vs none) and T25 (rtl vs ltr). Since ems__Bug 0b24c745 DATATYPE of a directional literal is rdf:dirLangString, so the datatype comparison already separates \"a\"@ar--rtl from \"a\"@ar: T4 is held by both checks and stays green under this mutant by mechanism; T25 (rtl vs ltr — one datatype) is the direction check's own axis.",
       "from": "      if (term1.direction !== term2.direction) {\n        return false;\n      }",
       "to": "      if (term1.direction !== term2.direction && term1 === term2) {\n        return false;\n      }",
-      "expect": ["T4", "T25"]
+      "expect": ["T25"]
     },
     "R12_safe_integer_only": {
       "_note": "Spec review W2: a whole number beyond 2^53 is taken for xsd:decimal. Red: T24.",

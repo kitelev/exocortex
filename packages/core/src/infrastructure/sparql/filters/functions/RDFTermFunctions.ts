@@ -18,6 +18,8 @@ export class RDFTermFunctions {
         return term.datatype;
       }
       if (term.language) {
+        // A directional literal is an rdf:dirLangString (RDF 1.2; SPARQL 1.2 §17.4.2.12).
+        if (term.direction) return new IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString");
         return new IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#langString");
       }
       return new IRI("http://www.w3.org/2001/XMLSchema#string");

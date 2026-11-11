@@ -339,7 +339,11 @@ export class AggregateExecutor {
     // For all other expression types (arithmetic, function, comparison, etc.),
     // delegate to FilterExecutor which has full expression evaluation support
     try {
-      return this.filterExecutor.evaluateExpression(expr, solution);
+      const value = this.filterExecutor.evaluateExpression(expr, solution);
+      // A language-tagged constant now evaluates to its Literal (ems__Bug 97ebe042);
+      // the aggregates read its text, as they do for a variable bound to one.
+      if (value instanceof Literal && value.language) return value.value;
+      return value;
     } catch {
       // If evaluation fails (e.g., missing variable, type error), return undefined
       // This matches SPARQL semantics where errors result in unbound values

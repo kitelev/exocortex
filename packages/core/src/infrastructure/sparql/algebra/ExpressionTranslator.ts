@@ -116,6 +116,9 @@ export class ExpressionTranslator {
       const canonical = String(value) === term.value && (typeof value === "boolean" || Number.isFinite(value));
       if (typeof value !== "string" && !canonical) node.lexical = term.value;
       if (term.language) node.language = term.language;
+      // Set by SPARQLParser.restoreDirections on the very literal (ems__Bug 0b24c745).
+      const direction = (term as { direction?: "ltr" | "rtl" }).direction;
+      if (term.language && direction) node.direction = direction;
       return node;
     }
 
