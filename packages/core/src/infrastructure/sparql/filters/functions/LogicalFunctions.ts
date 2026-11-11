@@ -42,10 +42,12 @@ export class LogicalFunctions {
     // value alone made "x"@en = "x", "x"@en = "x"@de and a stored "x"@ru = "x" true
     // (ems__Bug 97ebe042, 0b24c745). `<` / `>` / `<=` / `>=` do not take this branch
     // and keep comparing the text — SPARQL does not order a language-tagged literal.
-    // One ordering answer still changes, upstream of this branch: a tagged constant
-    // now arrives as a Literal, so the mixed-duration branches above no longer read
-    // it as a raw duration string — `"PT1H"@en < "PT2H"^^xsd:dayTimeDuration` is now
-    // false (a type error by SPARQL), where it used to compare the two durations.
+    // One class of ordering answers still changes, upstream of this branch — a tagged
+    // duration-like constant against an xsd:dayTimeDuration (all four operators,
+    // either operand order): a tagged constant now arrives as a Literal, so the
+    // mixed-duration branches above no longer read it as a raw duration string, and
+    // `"PT1H"@en < "PT2H"^^xsd:dayTimeDuration` is now false (a type error by
+    // SPARQL), where it used to compare the two durations.
     if ((operator === "=" || operator === "!=") && (LogicalFunctions.isLanguageTagged(a) || LogicalFunctions.isLanguageTagged(b))) {
       const equal = aValue === bValue && LogicalFunctions.languageKey(a) === LogicalFunctions.languageKey(b);
       return operator === "=" ? equal : !equal;
