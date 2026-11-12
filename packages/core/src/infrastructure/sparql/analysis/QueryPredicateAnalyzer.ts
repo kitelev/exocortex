@@ -170,8 +170,8 @@ class AnalysisState {
   /** The predicate IRIs of every property path whose subject is free. */
   readonly freeSubjectPaths: string[][] = [];
   /**
-   * LIMIT/OFFSET, SAMPLE, GROUP_CONCAT, SUM/AVG (floating-point addition in row order)
-   * or a custom aggregate: the answer depends on row ORDER.
+   * LIMIT/OFFSET, SAMPLE, GROUP_CONCAT, SUM/AVG (floating-point addition in row order),
+   * a custom aggregate or GROUP BY with variables: the answer depends on row ORDER.
    */
   orderSensitive = false;
   private lastGroup = 0;
@@ -290,7 +290,7 @@ function finish(
   // matches in a cut store (the store indexes by predicate and the cut keeps all of
   // it), but a free subject takes its start nodes in the order each node FIRST appears
   // in the whole graph — and that order moves when other predicates are cut away. An
-  // answer that depends on order (LIMIT/OFFSET, SAMPLE, GROUP_CONCAT, SUM/AVG) differs.
+  // answer that depends on order (LIMIT/OFFSET, SAMPLE, GROUP_CONCAT, SUM/AVG, GROUP BY) differs.
   if (state.freeSubjectPaths.length > 0 && state.orderSensitive) {
     state.fail({ kind: "free-subject-path-order" });
   }
@@ -422,6 +422,10 @@ function walkOperation(
       walkOperation(op.input, group, state);
       return;
     case "group":
+      // GROUP BY keys a group by the LEXICAL value of its terms and binds the group
+      // variable to the term of the group's FIRST row (AggregateExecutor), so "5" and
+      // "5"^^xsd:integer share a group and row order picks the term (review round 2).
+      if (op.variables.length > 0) state.orderSensitive = true;
       for (const aggregate of op.aggregates)
         walkAggregate(aggregate.expression, state);
       for (const having of op.having ?? []) walkExpression(having, state);

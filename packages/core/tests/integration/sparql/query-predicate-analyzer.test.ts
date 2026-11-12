@@ -111,6 +111,16 @@ const R = {
   n2: uid(),
   n3: uid(),
 };
+/** Review round 2: GROUP BY keeps the FIRST row's term of a group keyed by lexical value. */
+const Q = {
+  refb: uid(),
+  n4: uid(),
+  n5: uid(),
+  x2: uid(),
+  s3: uid(),
+  s4: uid(),
+  stmt2: uid(),
+};
 
 const NOTES: FixtureNote[] = [
   // ---- class TBox
@@ -209,6 +219,30 @@ const NOTES: FixtureNote[] = [
   note(R.n1, { exo__Asset_label: "N one", test__val: "0.1" }),
   note(R.n2, { exo__Asset_label: "N two", test__val: "0.2" }),
   note(R.n3, { exo__Asset_label: "N three", test__val: "0.3" }),
+  // ---- review round 2: "5"^^xsd:integer (YAML number) and "5" (YAML string) share a
+  // GROUP BY group; which term the group returns depends on row order.
+  note(Q.refb, { exo__Asset_label: "Ref B", test__ref: `[[${Q.n5}]]` }),
+  note(Q.n4, { exo__Asset_label: "N four", test__num: 5 }),
+  note(Q.n5, { exo__Asset_label: "N five", test__num: "5" }),
+  // ---- review round 2: the same through a namespace-admitted variable predicate.
+  note(Q.x2, { exo__Asset_label: "X2 target" }),
+  note(Q.s3, {
+    exo__Asset_label: "S three",
+    exo__Asset_relates: `[[${Q.x2}]]`,
+    test__num: 7,
+  }),
+  note(Q.s4, {
+    exo__Asset_label: "S four",
+    flow__WorkItem_stage: `[[${Q.x2}]]`,
+    test__num: "7",
+  }),
+  note(Q.stmt2, {
+    exo__Asset_label: "Stmt2",
+    exo__Instance_class: "[[exo__Statement]]",
+    exo__Statement_subject: `[[${Q.s3}]]`,
+    exo__Statement_predicate: "flow__WorkItem_stage",
+    exo__Statement_object: `[[${Q.x2}]]`,
+  }),
 ];
 
 /**
@@ -1225,6 +1259,53 @@ describe("QueryPredicateAnalyzer — review round 1 (witnesses and order counter
       "SELECT (AVG(?v) AS ?s) WHERE { ?x test:val+ ?v }",
       "free-subject-path-order",
       [TEST("val")],
+    );
+  });
+});
+
+describe("QueryPredicateAnalyzer — review round 2 (GROUP BY order, LATERAL group, two admitted predicates)", () => {
+  test("PD57 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 full load is needed: GROUP BY over a free-subject path (first row's term)", async () => {
+    await expectFullLoadIsNeeded(
+      "SELECT ?v (COUNT(?x) AS ?n) WHERE { ?x test:num+ ?v } GROUP BY ?v",
+      "free-subject-path-order",
+      [TEST("num")],
+    );
+  });
+
+  test("PD58 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 full load is needed: GROUP BY over a namespace-admitted variable predicate", async () => {
+    await expectFullLoadIsNeeded(
+      `SELECT ?v (COUNT(?s) AS ?n) WHERE { ?s ?p <obsidian://vault/${Q.x2}.md> . ?s test:num ?v FILTER(STRSTARTS(STR(?p), "https://exocortex.my/ontology/flow#")) } GROUP BY ?v`,
+      "namespace-filter-order",
+      [FLOW("WorkItem_stage"), FLOW("WorkItem_note"), TEST("num")],
+    );
+  });
+
+  test("PD59 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 full load is needed: GROUP BY without an aggregate over a free-subject path", async () => {
+    await expectFullLoadIsNeeded(
+      "SELECT ?v WHERE { ?x test:num+ ?v } GROUP BY ?v",
+      "free-subject-path-order",
+      [TEST("num")],
+    );
+  });
+
+  test("PD60 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 MIN / MAX / COUNT(DISTINCT) and DISTINCT over a free-subject path prune and keep the answer", async () => {
+    await expectSameAnswer(
+      "SELECT (MIN(?v) AS ?m) (MAX(?v) AS ?M) (COUNT(DISTINCT ?v) AS ?c) WHERE { ?x test:num+ ?v }",
+    );
+    await expectSameAnswer("SELECT DISTINCT ?v WHERE { ?x test:num+ ?v }");
+  });
+
+  test("PD61 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 a filter inside a LATERAL aggregate subquery does not bound the outer ?p", async () => {
+    await expectSound(
+      'SELECT ?s ?p ?v ?n WHERE { ?s ?p ?v LATERAL { SELECT (COUNT(?x) AS ?n) WHERE { ?s flow:WorkItem_note ?x FILTER(CONTAINS(STR(?p), "ontology/flow#")) } } }',
+    );
+  });
+
+  test("PD62 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 full load is needed: TWO admitted variable predicates + LIMIT", async () => {
+    await expectFullLoadIsNeeded(
+      `SELECT ?s WHERE { ?s ?p <obsidian://vault/${R.x}.md> . ?s ?q ?w FILTER(STRSTARTS(STR(?p), "https://exocortex.my/ontology/flow#") && STRSTARTS(STR(?q), "https://exocortex.my/ontology/flow#")) } LIMIT 1`,
+      "namespace-filter-order",
+      [FLOW("WorkItem_stage"), FLOW("WorkItem_note")],
     );
   });
 });
