@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for the query predicate analyzer (RFC 308a52c3 «Загрузка по запросу», phase 1a, vault-exodev task 03523fef). Each mutant is a plausible wrong implementation of ONE guarantee and must redden exactly the axes in `expect` (pairwise distinct sets, ITRV §A147). PA axes judge the analyzer's verdict; PD axes judge the guarantee itself on the REAL engine through the CLI path (translate → AlgebraOptimizer.optimize → execute) — full store vs store cut to P'. PA0 and PA21 (fixture forms) have no mutant by design: they guard the fixture, not the subject. N-mutants come from the independent spec review; R-mutants and M43–M45 from the independent review of the implementation (round 1), with their witness axes PA21–PA41 / PD39–PD56; M46, M47, R49, E12 from round 2 (axes PD57–PD62). `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145).",
+  "_doc": "Revert-verify mutants for the query predicate analyzer (RFC 308a52c3 «Загрузка по запросу», phase 1a, vault-exodev task 03523fef). Each mutant is a plausible wrong implementation of ONE guarantee and must redden exactly the axes in `expect` (pairwise distinct sets, ITRV §A147). PA axes judge the analyzer's verdict; PD axes judge the guarantee itself on the REAL engine through the CLI path (translate → AlgebraOptimizer.optimize → execute) — full store vs store cut to P'. PA0 and PA21 (fixture forms) have no mutant by design: they guard the fixture, not the subject. N-mutants come from the independent spec review; R-mutants and M43–M45 from the independent review of the implementation (round 1), with their witness axes PA21–PA41 / PD39–PD56; M46, M47, R49, E12 from round 2 (axes PD57–PD62); G6, G7, G11 from round 3 (axes PD63–PD65). `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -127,8 +127,8 @@
     "M11_subquery_not_walked": {
       "from": "      walkOperation(op.query, state.newGroup(), state);",
       "to": "      void op.query;",
-      "expect": ["PD46", "PD9"],
-      "_note": "Review round 1 added witness axes for the same guard: PD46 — the witness joins a subquery."
+      "expect": ["PD46", "PD64", "PD9"],
+      "_note": "Review round 1 added witness axes for the same guard: PD46 — the witness joins a subquery. Review round 3 added axes for the same guard: PD64 — the GROUP BY sits inside the subquery."
     },
     "M12_membership_variable_object_no_bridge": {
       "from": "  if (object.type === \"literal\") return false;\n  return true;",
@@ -286,9 +286,12 @@
         "PD53",
         "PD54",
         "PD57",
-        "PD59"
+        "PD59",
+        "PD63",
+        "PD64",
+        "PD65"
       ],
-      "_note": "Review round 1 added witness axes for the same guard: PA28–PA30, PD53, PD54 — the order witnesses over a free-subject path. Review round 2 added axes for the same guard: PD57 and PD59 — GROUP BY over a free-subject path."
+      "_note": "Review round 1 added witness axes for the same guard: PA28–PA30, PD53, PD54 — the order witnesses over a free-subject path. Review round 2 added axes for the same guard: PD57 and PD59 — GROUP BY over a free-subject path. Review round 3 added axes for the same guard: PD63–PD65 — every GROUP BY form over a free-subject path."
     },
     "M34_free_path_closure_ignored": {
       "from": "    const reached = [...iris, ...iris.flatMap((iri) => closureOf(iri))];",
@@ -390,9 +393,12 @@
         "PD53",
         "PD54",
         "PD57",
-        "PD59"
+        "PD59",
+        "PD63",
+        "PD64",
+        "PD65"
       ],
-      "_note": "Review round 1 added witness axes for the same guard: PA28–PA30, PD53, PD54 — the order witnesses over a free-subject path. Review round 2 added axes for the same guard: PD57 and PD59 — GROUP BY over a free-subject path."
+      "_note": "Review round 1 added witness axes for the same guard: PA28–PA30, PD53, PD54 — the order witnesses over a free-subject path. Review round 2 added axes for the same guard: PD57 and PD59 — GROUP BY over a free-subject path. Review round 3 added axes for the same guard: PD63–PD65 — every GROUP BY form over a free-subject path."
     },
     "M40_slice_not_order_sensitive": {
       "from": "    case \"slice\":\n      state.orderSensitive = true;",
@@ -419,9 +425,12 @@
         "PD58",
         "PD59",
         "PD60",
+        "PD63",
+        "PD64",
+        "PD65",
         "PD8"
       ],
-      "_note": "Review round 1 added witness axes for the same guard: PA28, PA29, PD52–PD54 — the aggregates' inputs carry the free-subject path / namespace pattern. Review round 2 added axes for the same guard: PD57–PD60 — the group axes' patterns are inside the group's input."
+      "_note": "Review round 1 added witness axes for the same guard: PA28, PA29, PD52–PD54 — the aggregates' inputs carry the free-subject path / namespace pattern. Review round 2 added axes for the same guard: PD57–PD60 — the group axes' patterns are inside the group's input. Review round 3 added axes for the same guard: PD63–PD65 — their free-subject path is the group's input."
     },
     "M43_sum_not_order_sensitive": {
       "from": "    fn === \"sum\" ||\n    fn === \"avg\"",
@@ -618,8 +627,8 @@
     "M46_group_by_not_order_sensitive": {
       "from": "      if (op.variables.length > 0) state.orderSensitive = true;\n",
       "to": "      void op.variables;\n",
-      "expect": ["PD57", "PD58", "PD59"],
-      "_note": "review round 2 HIGH-1: GROUP BY keys groups by lexical value and returns the FIRST row's term"
+      "expect": ["PD57", "PD58", "PD59", "PD63", "PD64", "PD65"],
+      "_note": "review round 2 HIGH-1: GROUP BY keys groups by lexical value and returns the FIRST row's term Review round 3 added axes for the same guard: PD63–PD65 — the HAVING, subquery and two-key forms of the same rule."
     },
     "M47_group_without_keys_order_sensitive": {
       "from": "      if (op.variables.length > 0) state.orderSensitive = true;\n",
@@ -638,6 +647,24 @@
       "to": "    admittedVariablePredicate = occurrence === state.variablePredicates[0];\n",
       "expect": ["PD62"],
       "_note": "review round 2 MEDIUM-3: the flag must be set monotonically — a second admitted occurrence must not clear it"
+    },
+    "G6_group_skipped_when_having": {
+      "from": "      if (op.variables.length > 0) state.orderSensitive = true;",
+      "to": "      if (op.variables.length > 0 && op.having === undefined) state.orderSensitive = true;",
+      "expect": ["PD63"],
+      "_note": "review round 3 MEDIUM-1: a GROUP BY with HAVING is order-sensitive too"
+    },
+    "G7_group_only_in_root_group": {
+      "from": "      if (op.variables.length > 0) state.orderSensitive = true;",
+      "to": "      if (op.variables.length > 0 && group === 1) state.orderSensitive = true;",
+      "expect": ["PD64"],
+      "_note": "review round 3 MEDIUM-1: a GROUP BY inside a subquery is order-sensitive too"
+    },
+    "G11_group_exactly_one_key": {
+      "from": "      if (op.variables.length > 0) state.orderSensitive = true;",
+      "to": "      if (op.variables.length === 1) state.orderSensitive = true;",
+      "expect": ["PD65"],
+      "_note": "review round 3 MEDIUM-1: a GROUP BY with several keys is order-sensitive too"
     }
   }
 }

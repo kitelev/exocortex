@@ -1309,3 +1309,29 @@ describe("QueryPredicateAnalyzer — review round 2 (GROUP BY order, LATERAL gro
     );
   });
 });
+
+describe("QueryPredicateAnalyzer — review round 3 (every GROUP BY form)", () => {
+  test("PD63 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 full load is needed: GROUP BY + HAVING over a free-subject path", async () => {
+    await expectFullLoadIsNeeded(
+      "SELECT ?v (COUNT(?x) AS ?n) WHERE { ?x test:num+ ?v } GROUP BY ?v HAVING (COUNT(?x) > 0)",
+      "free-subject-path-order",
+      [TEST("num")],
+    );
+  });
+
+  test("PD64 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 full load is needed: GROUP BY inside a subquery over a free-subject path", async () => {
+    await expectFullLoadIsNeeded(
+      "SELECT ?v ?n WHERE { { SELECT ?v (COUNT(?x) AS ?n) WHERE { ?x test:num+ ?v } GROUP BY ?v } }",
+      "free-subject-path-order",
+      [TEST("num")],
+    );
+  });
+
+  test("PD65 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 full load is needed: GROUP BY with two keys over a free-subject path", async () => {
+    await expectFullLoadIsNeeded(
+      'SELECT ?v ?t (COUNT(?x) AS ?n) WHERE { ?x test:num+ ?v BIND("t" AS ?t) } GROUP BY ?v ?t',
+      "free-subject-path-order",
+      [TEST("num")],
+    );
+  });
+});
