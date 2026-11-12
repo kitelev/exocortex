@@ -54,6 +54,7 @@ export type FullLoadReason =
   | { kind: "zero-length-path-free-subject" }
   | { kind: "class-bridge-path-free-subject" }
   | { kind: "free-subject-path-order" }
+  | { kind: "namespace-filter-order" }
   | { kind: "uuid-lookup" }
   | { kind: "namespace-filter-without-predicate-list"; variable: string };
 
@@ -168,7 +169,10 @@ class AnalysisState {
   readonly namespaceTests: NamespaceTest[] = [];
   /** The predicate IRIs of every property path whose subject is free. */
   readonly freeSubjectPaths: string[][] = [];
-  /** LIMIT/OFFSET, SAMPLE, GROUP_CONCAT or a custom aggregate: the answer depends on row ORDER. */
+  /**
+   * LIMIT/OFFSET, SAMPLE, GROUP_CONCAT, SUM/AVG (floating-point addition in row order)
+   * or a custom aggregate: the answer depends on row ORDER.
+   */
   orderSensitive = false;
   private lastGroup = 0;
   classBridge = false;
@@ -188,8 +192,10 @@ class AnalysisState {
 
 /**
  * The sub-property index of a LOADED store, computed by the decorator itself
- * (`PropertyHierarchyResolvingStore`), so the analyzer and the engine cannot
- * disagree on what a predicate widens to.
+ * (`PropertyHierarchyResolvingStore`), so the analyzer and the engine share one
+ * index. Which predicates the decorator widens at all (ontology predicates except
+ * the two class-bridge ones) is MIRRORED here in `closureOf` — not shared; axes
+ * pin it on both sides.
  */
 export function computeSubPropertyIndex(
   store: ITripleStore,
@@ -235,6 +241,7 @@ function finish(
   // VL-3 — a variable predicate is admitted only when a namespace filter of its own
   // group bounds it; otherwise it reads every predicate.
   let storePredicates: string[] | null = null;
+  let admittedVariablePredicate = false;
   const namespacePredicates = new Set<string>();
   for (const occurrence of state.variablePredicates) {
     const tests = state.namespaceTests.filter(
@@ -253,6 +260,7 @@ function finish(
       continue;
     }
     storePredicates ??= [...context.storePredicates];
+    admittedVariablePredicate = true;
     for (const predicate of storePredicates) {
       if (tests.every((test) => namespaceTestHolds(test, predicate))) {
         namespacePredicates.add(predicate);
@@ -278,13 +286,19 @@ function finish(
     }
   }
 
-  // Row ORDER: a pattern's matches keep their relative order in a cut store (the
-  // store iterates insertion order, the cut is a subsequence), but a free subject
-  // takes its start nodes in the order each node FIRST appears in the whole graph —
-  // and that order moves when other predicates are cut away. An answer that depends
-  // on order (LIMIT, SAMPLE, GROUP_CONCAT) then differs.
+  // Row ORDER: a pattern with a CONSTANT predicate keeps the relative order of its
+  // matches in a cut store (the store indexes by predicate and the cut keeps all of
+  // it), but a free subject takes its start nodes in the order each node FIRST appears
+  // in the whole graph — and that order moves when other predicates are cut away. An
+  // answer that depends on order (LIMIT/OFFSET, SAMPLE, GROUP_CONCAT, SUM/AVG) differs.
   if (state.freeSubjectPaths.length > 0 && state.orderSensitive) {
     state.fail({ kind: "free-subject-path-order" });
+  }
+  // A variable predicate admitted by a namespace filter reorders too: with a constant
+  // object the store answers through its object index, grouped by subject in the order
+  // each subject FIRST meets that object under ANY predicate — a cut predicate moves it.
+  if (admittedVariablePredicate && state.orderSensitive) {
+    state.fail({ kind: "namespace-filter-order" });
   }
 
   if (state.reasons.length > 0) {
@@ -510,6 +524,10 @@ function objectCanBeSymbolicClass(object: TripleElement): boolean {
   return true;
 }
 
+/**
+ * A variable — or a blank node, counted as free CONSERVATIVELY: a free subject can only
+ * add full-load reasons, never a predicate, so over-counting never prunes wrongly.
+ */
 function isFree(element: TripleElement): boolean {
   return element.type === "variable" || element.type === "blank";
 }
@@ -543,7 +561,13 @@ function walkAggregate(
   state: AnalysisState,
 ): void {
   const fn = aggregate.aggregation;
-  if (typeof fn !== "string" || fn === "sample" || fn === "group_concat") {
+  if (
+    typeof fn !== "string" ||
+    fn === "sample" ||
+    fn === "group_concat" ||
+    fn === "sum" ||
+    fn === "avg"
+  ) {
     state.orderSensitive = true;
   }
   if (aggregate.expression) walkExpression(aggregate.expression, state);

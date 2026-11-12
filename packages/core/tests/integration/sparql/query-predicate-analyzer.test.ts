@@ -98,6 +98,19 @@ const A = {
   nouid: uid(),
   d1: uid(),
 };
+/** Review round 1: declarations whose PARENT the decorator never widens (bridge / W3C). */
+const W = { kind: uid(), alias: uid() };
+/** Review round 1: row-ORDER counterexamples (namespace filter + object index; SUM/AVG). */
+const R = {
+  x: uid(),
+  s1: uid(),
+  s2: uid(),
+  stmt: uid(),
+  ref: uid(),
+  n1: uid(),
+  n2: uid(),
+  n3: uid(),
+};
 
 const NOTES: FixtureNote[] = [
   // ---- class TBox
@@ -165,6 +178,37 @@ const NOTES: FixtureNote[] = [
     { exo__Asset_label: "Legacy", ems__Effort_status: "legacy" },
     false,
   ),
+  // ---- review round 1: sub-property declarations under parents the decorator never
+  // widens — a class-bridge predicate and a W3C one (the index carries them).
+  note(W.kind, {
+    exo__Asset_label: "test__kind",
+    exo__Property_superProperty: `[[${P.instanceClass}]]`,
+  }),
+  note(W.alias, {
+    exo__Asset_label: "test__alias",
+    exo__Property_superProperty: "rdfs__label",
+  }),
+  // ---- review round 1, row order through the OBJECT index: the reified statement
+  // gives S1 a flow edge to X AFTER S2's, while S1 met X first under Asset_relates.
+  note(R.x, { exo__Asset_label: "X target" }),
+  note(R.s1, { exo__Asset_label: "S one", exo__Asset_relates: `[[${R.x}]]` }),
+  note(R.s2, { exo__Asset_label: "S two", flow__WorkItem_stage: `[[${R.x}]]` }),
+  note(R.stmt, {
+    exo__Asset_label: "Stmt",
+    exo__Instance_class: "[[exo__Statement]]",
+    exo__Statement_subject: `[[${R.s1}]]`,
+    exo__Statement_predicate: "flow__WorkItem_stage",
+    exo__Statement_object: `[[${R.x}]]`,
+  }),
+  // ---- review round 1, SUM/AVG over a free-subject path: N3/N2 first appear as
+  // objects of Ref, so the start-node order differs once test:ref is cut away.
+  note(R.ref, {
+    exo__Asset_label: "Ref",
+    test__ref: [`[[${R.n3}]]`, `[[${R.n2}]]`],
+  }),
+  note(R.n1, { exo__Asset_label: "N one", test__val: "0.1" }),
+  note(R.n2, { exo__Asset_label: "N two", test__val: "0.2" }),
+  note(R.n3, { exo__Asset_label: "N three", test__val: "0.3" }),
 ];
 
 /**
@@ -377,6 +421,18 @@ async function expectFullLoadIsNeeded(
   expect(await answer(cut(naive), algebra)).not.toEqual(full);
 }
 
+const kinds = (a: PredicateAnalysis): string[] =>
+  a.mode === "full" ? a.reasons.map((r) => r.kind) : ["PRUNE"];
+const expectFull = (q: string, kind: string): void => {
+  expect(kinds(analyze(q))).toContain(kind);
+};
+const exactP = (q: string, preds: string[]): void => {
+  const a = analyze(q);
+  expect(a.mode).toBe("prune");
+  if (a.mode === "prune")
+    expect([...a.predicates].sort()).toEqual([...preds].sort());
+};
+
 describe("QueryPredicateAnalyzer — fixture forms (asserted before they are relied on)", () => {
   test("PA0 the converter emits the forms the axes rely on", () => {
     const has = (s: string, p: string, o: string): boolean =>
@@ -413,9 +469,10 @@ describe("QueryPredicateAnalyzer — fixture forms (asserted before they are rel
     expect([...(context.subPropertyIndex.get(RELATES) ?? [])].sort()).toEqual(
       [RELATED, TEST("deep")].sort(),
     );
-    expect(context.subPropertyIndex.get(TEST("memberOf"))).toEqual([
-      EXO("Instance_class"),
-    ]);
+    // transitive: test:kind ⊑ exo:Instance_class ⊑ test:memberOf (review round 1)
+    expect(
+      [...(context.subPropertyIndex.get(TEST("memberOf")) ?? [])].sort(),
+    ).toEqual([EXO("Instance_class"), TEST("kind")].sort());
     // the note without exo__Asset_uid carries no exo:Asset_uid triple
     expect(
       allTriples.some(
@@ -882,6 +939,292 @@ describe("QueryPredicateAnalyzer — differential axes (real engine, full store 
   test("PD35 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 rdfs:subClassOf with a symbolic subject pulls the bridge", async () => {
     await expectSameAnswer(
       "SELECT ?p WHERE { test:Gadget rdfs:subClassOf ?p }",
+    );
+  });
+});
+
+describe("QueryPredicateAnalyzer — review round 1 (witnesses and order counterexamples)", () => {
+  test("PA21 the index carries a bridge parent and a W3C parent (fixture form)", () => {
+    expect(context.subPropertyIndex.get(EXO("Instance_class"))).toEqual([
+      TEST("kind"),
+    ]);
+    expect(context.subPropertyIndex.get(RDFS_LABEL)).toEqual([TEST("alias")]);
+  });
+
+  test("PD39 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 the DISTINCT input is read", async () => {
+    await expectSameAnswer(
+      "SELECT DISTINCT ?s WHERE { ?s ems:Effort_status ?o }",
+    );
+  });
+
+  test("PD40 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 the REDUCED input is read", async () => {
+    await expectSameAnswer(
+      "SELECT REDUCED ?s WHERE { ?s ems:Effort_status ?o }",
+    );
+  });
+
+  test("PD41 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 the ORDER BY input is read", async () => {
+    await expectSameAnswer(
+      "SELECT ?s WHERE { ?s ems:Effort_status ?o } ORDER BY ?s",
+    );
+  });
+
+  test("PA22 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 byUUID on the RIGHT of a comparison is seen", () => {
+    expectFull(
+      `SELECT ?s WHERE { ?s exo:Asset_label ?l FILTER("x" != STR(exo:byUUID("${A.y}"))) }`,
+      "uuid-lookup",
+    );
+  });
+
+  test("PA23 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 byUUID inside a logical operand is seen", () => {
+    expectFull(
+      `SELECT ?s WHERE { ?s exo:Asset_label ?l FILTER(BOUND(?s) || STR(exo:byUUID("${A.y}")) = "x") }`,
+      "uuid-lookup",
+    );
+  });
+
+  test("PA24 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 byUUID as the TESTED expression of IN is seen", () => {
+    expectFull(
+      `SELECT ?s WHERE { ?s exo:Asset_label ?l FILTER(exo:byUUID("${A.y}") IN (?s)) }`,
+      "uuid-lookup",
+    );
+  });
+
+  test("PA40 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 byUUID inside the LIST of IN is seen", () => {
+    expectFull(
+      `SELECT ?s WHERE { ?s exo:Asset_label ?l FILTER(?s IN (exo:byUUID("${A.y}"))) }`,
+      "uuid-lookup",
+    );
+  });
+
+  test("PA25 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 byUUID inside arithmetic is seen", () => {
+    expectFull(
+      `SELECT ?s WHERE { ?s exo:Asset_label ?l FILTER(STRLEN(STR(exo:byUUID("${A.y}"))) + 1 > 0) }`,
+      "uuid-lookup",
+    );
+  });
+
+  test("PA26 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 byUUID inside an aggregate is seen", () => {
+    expectFull(
+      `SELECT (COUNT(exo:byUUID("${A.y}")) AS ?n) WHERE { ?s exo:Asset_label ?l }`,
+      "uuid-lookup",
+    );
+  });
+
+  test("PA27 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 byUUID as a slash-local-name function IRI is seen", () => {
+    expectFull(
+      `SELECT ?x WHERE { ?s exo:Asset_label ?l BIND(<http://example.org/fn/byUUID>("${A.y}") AS ?x) }`,
+      "uuid-lookup",
+    );
+  });
+
+  test("PD42 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 a nullable SEQUENCE path with a free subject is a full load", async () => {
+    const q = `SELECT ?c WHERE { ?c (ems:Effort_status?/flow:WorkItem_note?) <obsidian://vault/${A.x}.md> }`;
+    await expectSound(q);
+    expectFull(q, "zero-length-path-free-subject");
+  });
+
+  test("PD43 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 every item of a sequence path is collected", async () => {
+    await expectSameAnswer(
+      `SELECT ?y WHERE { <obsidian://vault/${A.a1}.md> concept:Concept_related/ems:Effort_status ?y }`,
+    );
+  });
+
+  test("PD44 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 membership inside a constant-subject path pulls the bridge", async () => {
+    await expectSameAnswer(
+      "SELECT ?s WHERE { test:Gadget ^exo:Instance_class ?s }",
+    );
+  });
+
+  test("PD45 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 a namespace test on ANOTHER variable does not bound ?p", async () => {
+    await expectSound(
+      'SELECT ?s ?p ?v WHERE { ?s ?p ?v FILTER(CONTAINS(STR(?v), "ontology/test#")) }',
+    );
+  });
+
+  test("PD46 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 an outer filter does not bound ?p inside a subquery (row multiplicity)", async () => {
+    await expectSound(
+      'SELECT ?s ?v WHERE { ?s ?p ?v FILTER(CONTAINS(STR(?p), "ontology/flow#")) { SELECT ?s WHERE { ?s ?p ?x } } }',
+    );
+  });
+
+  test("PA28 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 SAMPLE + a free-subject path is order-sensitive", () => {
+    expectFull(
+      "SELECT (SAMPLE(?x) AS ?s) WHERE { ?x exo:Property_superProperty+ ?y }",
+      "free-subject-path-order",
+    );
+  });
+
+  test("PA29 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 a custom aggregate + a free-subject path is order-sensitive", () => {
+    expectFull(
+      "PREFIX agg: <https://exocortex.my/ontology/agg#> SELECT (agg:median(?n) AS ?m) WHERE { ?x exo:Property_superProperty+ ?y BIND(1 AS ?n) }",
+      "free-subject-path-order",
+    );
+  });
+
+  test("PA30 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 OFFSET + a free-subject path is order-sensitive", () => {
+    expectFull(
+      "SELECT ?x WHERE { ?x exo:Property_superProperty+ ?y } OFFSET 1",
+      "free-subject-path-order",
+    );
+  });
+
+  test("PA31 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 a quoted triple (subject or object) is a full load", () => {
+    expectFull(
+      "SELECT ?x WHERE { << ?s exo:Asset_label ?l >> exo:Asset_relates ?x }",
+      "quoted-triple",
+    );
+    expectFull(
+      "SELECT ?x WHERE { ?x exo:Asset_relates << ?s exo:Asset_label ?l >> }",
+      "quoted-triple",
+    );
+  });
+
+  test("PD47 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 STRENDS and LCASE are not namespace tests", async () => {
+    await expectSound(
+      'SELECT ?s ?p ?v WHERE { ?s ?p ?v FILTER(STRENDS(STR(?p), "_note")) }',
+    );
+    await expectSound(
+      'SELECT ?s ?p ?v WHERE { ?s ?p ?v FILTER(CONTAINS(LCASE(STR(?p)), "workitem")) }',
+    );
+    await expectSound(
+      'SELECT ?s ?p ?v WHERE { ?s ?p ?v FILTER(CONTAINS(LCASE(?p), "workitem")) }',
+    );
+  });
+
+  test("PD48 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 the LEFT of OPTIONAL stays in the filter's group (VL-3 precision)", async () => {
+    await expectSameAnswer(
+      'SELECT * WHERE { ?s ?p ?v OPTIONAL { ?s exo:Asset_label ?l } FILTER(CONTAINS(STR(?p), "ontology/flow#")) }',
+    );
+  });
+
+  test("PD55 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 the LEFT of MINUS stays in the filter's group (VL-3 precision)", async () => {
+    await expectSameAnswer(
+      'SELECT * WHERE { ?s ?p ?v MINUS { ?s ems:Effort_status "doing" } FILTER(CONTAINS(STR(?p), "ontology/flow#")) }',
+    );
+  });
+
+  test("PA32 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 two namespace conjuncts intersect", () => {
+    exactP(
+      'SELECT * WHERE { ?s ?p ?v FILTER(CONTAINS(STR(?p), "ontology/flow#") && CONTAINS(STR(?p), "_note")) }',
+      [FLOW("WorkItem_note")],
+    );
+  });
+
+  test("PA33 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 STRSTARTS is a prefix test, not a substring test", () => {
+    exactP(
+      'SELECT * WHERE { ?s ?p ?v FILTER(STRSTARTS(STR(?p), "WorkItem")) }',
+      [],
+    );
+  });
+
+  test("PA34 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 the decorator never widens Instance_class or a W3C parent: P' stays exact", () => {
+    exactP("SELECT ?s WHERE { ?s exo:Instance_class test:Gadget }", SIX);
+    exactP("SELECT ?s ?l WHERE { ?s rdfs:label ?l }", [RDFS_LABEL]);
+  });
+
+  test("PA35 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 full-load reasons are deduplicated", () => {
+    const a = analyze(
+      `SELECT * WHERE { ?a ems:Effort_status* <obsidian://vault/${A.x}.md> . ?b ems:Effort_status* <obsidian://vault/${A.y}.md> }`,
+    );
+    expect(a).toEqual({
+      mode: "full",
+      reasons: [{ kind: "zero-length-path-free-subject" }],
+    });
+  });
+
+  test("PA36 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 sources say why each predicate is in P'", () => {
+    const a = analyze("SELECT ?s ?o WHERE { ?s exo:Asset_relates ?o }");
+    if (a.mode !== "prune") throw new Error("prune expected");
+    const src = (p: string) => [...(a.sources.get(p) ?? [])].sort();
+    expect(src(RELATES)).toEqual(["query"]);
+    expect(src(RELATED)).toEqual(["sub-property"]);
+    expect(src(EXO("Property_superProperty"))).toEqual([
+      "sub-property-declarations",
+    ]);
+    const b = analyze("SELECT ?s WHERE { ?s exo:Instance_class test:Gadget }");
+    if (b.mode !== "prune") throw new Error("prune expected");
+    expect([...(b.sources.get(RDFS_LABEL) ?? [])]).toEqual(["class-bridge"]);
+    expect([...(b.sources.get(EXO("Instance_class")) ?? [])].sort()).toEqual([
+      "class-bridge",
+      "query",
+    ]);
+    const c = analyze(
+      'SELECT ?s ?p ?v WHERE { ?s ?p ?v FILTER(CONTAINS(STR(?p), "ontology/flow#")) }',
+    );
+    if (c.mode !== "prune") throw new Error("prune expected");
+    expect([...(c.sources.get(FLOW("WorkItem_note")) ?? [])]).toEqual([
+      "namespace-filter",
+    ]);
+  });
+
+  test("PA37 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 membership with a literal object does not pull the bridge", () => {
+    exactP('SELECT ?s WHERE { ?s exo:Instance_class "x" }', [
+      EXO("Instance_class"),
+    ]);
+  });
+
+  test("PA38 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 a namespace test is matched to a variable predicate by its variable NAME", () => {
+    expectFull(
+      'SELECT ?s ?p ?v WHERE { ?s ?p ?v FILTER(CONTAINS(STR(?s), "ontology/flow#")) }',
+      "variable-predicate",
+    );
+  });
+
+  test("PD49 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 a filter inside MINUS does not bound the outer ?p", async () => {
+    await expectSound(
+      'SELECT * WHERE { ?s ?p ?v MINUS { ?s flow:WorkItem_note ?n FILTER(CONTAINS(STR(?p), "ontology/flow#")) } }',
+    );
+  });
+
+  test("PD50 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 a filter inside LATERAL does not bound the outer ?p", async () => {
+    await expectSound(
+      'SELECT * WHERE { ?s ?p ?v LATERAL { SELECT ?n WHERE { ?s flow:WorkItem_note ?n FILTER(CONTAINS(STR(?p), "ontology/flow#")) } } }',
+    );
+  });
+
+  test("PD56 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 a namespace filter inside a UNION branch bounds ?p of THAT branch", async () => {
+    await expectSameAnswer(
+      'SELECT * WHERE { { ?s ?p ?v FILTER(CONTAINS(STR(?p), "ontology/flow#")) } UNION { ?s exo:Asset_label ?v } }',
+    );
+  });
+
+  test("PA41 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 byUUID inside the SECOND argument of a two-argument custom aggregate is seen", () => {
+    expectFull(
+      `PREFIX agg: <https://exocortex.my/ontology/agg#> SELECT (agg:corr(?n, STRLEN(STR(exo:byUUID("${A.y}")))) AS ?r) WHERE { ?s exo:Asset_label ?l BIND(1 AS ?n) }`,
+      "uuid-lookup",
+    );
+  });
+
+  test("PD51 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 full load is needed: namespace-bounded variable predicate + LIMIT (object-index order)", async () => {
+    await expectFullLoadIsNeeded(
+      `SELECT ?s WHERE { ?s ?p <obsidian://vault/${R.x}.md> FILTER(STRSTARTS(STR(?p), "https://exocortex.my/ontology/flow#")) } LIMIT 1`,
+      "namespace-filter-order",
+      [FLOW("WorkItem_stage"), FLOW("WorkItem_note")],
+    );
+  });
+
+  test("PD52 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 full load is needed: namespace-bounded variable predicate + GROUP_CONCAT", async () => {
+    await expectFullLoadIsNeeded(
+      `SELECT (GROUP_CONCAT(STR(?s)) AS ?g) WHERE { ?s ?p <obsidian://vault/${R.x}.md> FILTER(STRSTARTS(STR(?p), "https://exocortex.my/ontology/flow#")) }`,
+      "namespace-filter-order",
+      [FLOW("WorkItem_stage"), FLOW("WorkItem_note")],
+    );
+  });
+
+  test("PD53 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 full load is needed: SUM over a free-subject path (floating-point addition order)", async () => {
+    await expectFullLoadIsNeeded(
+      "SELECT (SUM(?v) AS ?s) WHERE { ?x test:val+ ?v }",
+      "free-subject-path-order",
+      [TEST("val")],
+    );
+  });
+
+  test("PD54 @req:f5db994b-9f10-4d7c-9b25-e0022a789db6 full load is needed: AVG over a free-subject path", async () => {
+    await expectFullLoadIsNeeded(
+      "SELECT (AVG(?v) AS ?s) WHERE { ?x test:val+ ?v }",
+      "free-subject-path-order",
+      [TEST("val")],
     );
   });
 });

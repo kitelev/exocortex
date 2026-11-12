@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for the query predicate analyzer (RFC 308a52c3 «Загрузка по запросу», phase 1a, vault-exodev task 03523fef). Each mutant is a plausible wrong implementation of ONE guarantee and must redden exactly the axes in `expect` (pairwise distinct sets, ITRV §A147). PA axes judge the analyzer's verdict; PD axes judge the guarantee itself on the REAL engine through the CLI path (translate → AlgebraOptimizer.optimize → execute) — full store vs store cut to P'. PA0 (fixture forms) has no mutant by design: it guards the fixture, not the subject. N-mutants come from the independent spec review. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145).",
+  "_doc": "Revert-verify mutants for the query predicate analyzer (RFC 308a52c3 «Загрузка по запросу», phase 1a, vault-exodev task 03523fef). Each mutant is a plausible wrong implementation of ONE guarantee and must redden exactly the axes in `expect` (pairwise distinct sets, ITRV §A147). PA axes judge the analyzer's verdict; PD axes judge the guarantee itself on the REAL engine through the CLI path (translate → AlgebraOptimizer.optimize → execute) — full store vs store cut to P'. PA0 and PA21 (fixture forms) have no mutant by design: they guard the fixture, not the subject. N-mutants come from the independent spec review; R-mutants and M43–M45 from the independent review of the implementation (round 1), with their witness axes PA21–PA41 / PD39–PD56. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -16,13 +16,16 @@
     "M1_no_subproperty_widening": {
       "from": "      ? (context.subPropertyIndex.get(predicate) ?? [])",
       "to": "      ? []",
-      "expect": ["PA16", "PA2", "PD1", "PD12", "PD24", "PD36"]
+      "expect": ["PA16", "PA2", "PA36", "PD1", "PD12", "PD24", "PD36"],
+      "_note": "Review round 1 added witness axes for the same guard: PA36 — the sources of P' no longer list Concept_related as a sub-property."
     },
     "M2_bridge_without_rdfs_label": {
       "from": "  RDFS_SUBCLASS_OF,\n  RDFS_LABEL,\n",
       "to": "  RDFS_SUBCLASS_OF,\n",
       "expect": [
         "PA3",
+        "PA34",
+        "PA36",
         "PD13",
         "PD2",
         "PD22",
@@ -31,14 +34,17 @@
         "PD3",
         "PD34",
         "PD35",
-        "PD4"
-      ]
+        "PD4",
+        "PD44"
+      ],
+      "_note": "Review round 1 added witness axes for the same guard: PA34/PA36 — the exact P' and the class-bridge source of rdfs:label; PD44 — a membership path through the bridge needs the label."
     },
     "M3_prune_on_variable_predicate": {
       "from": "      state.fail({ kind: \"variable-predicate\", variable: occurrence.variable });\n      continue;",
       "to": "      continue;",
       "expect": [
         "PA11",
+        "PA38",
         "PA5",
         "PD14",
         "PD16",
@@ -46,24 +52,46 @@
         "PD27",
         "PD31",
         "PD32",
-        "PD33"
-      ]
+        "PD33",
+        "PD45",
+        "PD46",
+        "PD47",
+        "PD49",
+        "PD50"
+      ],
+      "_note": "Review round 1 added witness axes for the same guard: PA38, PD45, PD46, PD47, PD49, PD50 — every VL-3 witness whose ?p is NOT bounded in its own group now prunes."
     },
     "M4_prune_zero_length_free_subject": {
       "from": "    if (isNullable(predicate) && isFree(triple.subject)) {",
       "to": "    if (isNullable(predicate) && isFree(triple.subject) && triple.subject.type === \"iri\") {",
-      "expect": ["PA6", "PD15", "PD28", "PD29"]
+      "expect": ["PA35", "PA6", "PD15", "PD28", "PD29", "PD42"],
+      "_note": "Review round 1 added witness axes for the same guard: PA35 (deduplicated zero-length reason) and PD42 (nullable sequence) expect that reason."
     },
     "M5_namespace_filter_scope_unchecked": {
       "from": "  return test.group === occurrence.group;",
       "to": "  return test.group >= 0 || occurrence.group >= 0;",
-      "expect": ["PA11", "PD16", "PD31", "PD32", "PD33"]
+      "expect": ["PA11", "PD16", "PD31", "PD32", "PD33", "PD46", "PD49"],
+      "_note": "Review round 1 added witness axes for the same guard: PD46/PD49 — a filter in a subquery / MINUS now bounds the outer ?p."
     },
     "M6_byuuid_not_full_load": {
       "from": "        state.fail({ kind: \"uuid-lookup\" });",
       "to": "        void expression;",
-      "expect": ["PA15", "PA17", "PA19", "PA9", "PD5"],
-      "_note": "RFC listed exo:Asset_uid for byUUID; the UUID index covers every loaded subject (a materialized statement edge, a note without the key) — full load is the guarantee."
+      "expect": [
+        "PA15",
+        "PA17",
+        "PA19",
+        "PA22",
+        "PA23",
+        "PA24",
+        "PA25",
+        "PA26",
+        "PA27",
+        "PA40",
+        "PA41",
+        "PA9",
+        "PD5"
+      ],
+      "_note": "RFC listed exo:Asset_uid for byUUID; the UUID index covers every loaded subject (a materialized statement edge, a note without the key) — full load is the guarantee. Review round 1 added witness axes for the same guard: PA22–PA27, PA40, PA41 — every byUUID witness (comparison, logical, IN, arithmetic, aggregate, function-IRI, two-argument aggregate)."
     },
     "M7_describe_treated_as_ask": {
       "from": "    case \"describe\":\n      state.fail({ kind: \"describe\" });\n      return;",
@@ -78,7 +106,8 @@
     "M9_bind_expression_not_walked": {
       "from": "      else walkExpression(op.expression, state);",
       "to": "      else void op.expression;",
-      "expect": ["PA17", "PA9", "PD5", "PD7"]
+      "expect": ["PA17", "PA27", "PA9", "PD5", "PD7"],
+      "_note": "Review round 1 added witness axes for the same guard: PA27 — the function-IRI byUUID sits in a BIND."
     },
     "M10_having_not_walked": {
       "from": "      for (const having of op.having ?? []) walkExpression(having, state);",
@@ -88,7 +117,8 @@
     "M11_subquery_not_walked": {
       "from": "      walkOperation(op.query, state.newGroup(), state);",
       "to": "      void op.query;",
-      "expect": ["PD9"]
+      "expect": ["PD46", "PD9"],
+      "_note": "Review round 1 added witness axes for the same guard: PD46 — the witness joins a subquery."
     },
     "M12_membership_variable_object_no_bridge": {
       "from": "  if (object.type === \"literal\") return false;\n  return true;",
@@ -98,7 +128,8 @@
     "M13_widening_without_declarations": {
       "from": "  if (closure.length > 0) {",
       "to": "  if (closure.length > 0 && closure.length < 0) {",
-      "expect": ["PA16", "PD1", "PD12", "PD24"]
+      "expect": ["PA16", "PA36", "PD1", "PD12", "PD24"],
+      "_note": "Review round 1 added witness axes for the same guard: PA36 — the sub-property-declarations source disappears."
     },
     "M14_hierarchy_triple_no_bridge": {
       "from": "  if (HIERARCHY_PREDICATES.has(predicate.value)) state.classBridge = true;",
@@ -108,7 +139,8 @@
     "M15_path_no_bridge": {
       "from": "      if (HIERARCHY_PREDICATES.has(iri) || MEMBERSHIP_PREDICATES.has(iri))\n        state.classBridge = true;",
       "to": "      void iri;",
-      "expect": ["PD13"]
+      "expect": ["PD13", "PD44"],
+      "_note": "Review round 1 added witness axes for the same guard: PD44 — a membership path from a constant subject needs the bridge."
     },
     "M16_free_path_hierarchy_only": {
       "from": "    if (reached.some((iri) => BRIDGE_PREDICATES.has(iri))) {",
@@ -119,7 +151,8 @@
     "M17_union_right_not_walked": {
       "from": "    case \"union\":\n      walkOperation(op.left, state.newGroup(), state);\n      walkOperation(op.right, state.newGroup(), state);",
       "to": "    case \"union\":\n      walkOperation(op.left, state.newGroup(), state);\n      void op.right;",
-      "expect": ["PD19"]
+      "expect": ["PD19", "PD56"],
+      "_note": "Review round 1 added witness axes for the same guard: PD56 — the namespace-bounded branch is the right one."
     },
     "M18_minus_right_not_walked": {
       "from": "    case \"minus\":\n      walkOperation(op.left, group, state);\n      walkOperation(op.right, state.newGroup(), state);",
@@ -129,7 +162,8 @@
     "M19_optional_right_not_walked": {
       "from": "    case \"leftjoin\":\n      walkOperation(op.left, group, state);\n      walkOperation(op.right, state.newGroup(), state);",
       "to": "    case \"leftjoin\":\n      walkOperation(op.left, group, state);\n      void op.right;",
-      "expect": ["PD21"]
+      "expect": ["PD21", "PD48"],
+      "_note": "Review round 1 added witness axes for the same guard: PD48 — its OPTIONAL side reads exo:Asset_label."
     },
     "M20_lateral_right_not_walked": {
       "from": "    case \"lateraljoin\":\n      walkOperation(op.left, group, state);\n      walkOperation(op.right, state.newGroup(), state);",
@@ -155,17 +189,31 @@
     "M25_join_right_not_walked": {
       "from": "    case \"join\":\n      walkOperation(op.left, group, state);\n      walkOperation(op.right, group, state);",
       "to": "    case \"join\":\n      walkOperation(op.left, group, state);\n      void op.right;",
-      "expect": ["PD22", "PD4", "PD9"]
+      "expect": ["PD22", "PD4", "PD46", "PD9"],
+      "_note": "Review round 1 added witness axes for the same guard: PD46 — the subquery is the right side of a join."
     },
     "M26_filter_expression_not_walked": {
       "from": "    case \"filter\": {\n      walkExpression(op.expression, state);",
       "to": "    case \"filter\": {\n      void op.expression;",
-      "expect": ["PD6"]
+      "expect": ["PA22", "PA23", "PA24", "PA25", "PA40", "PD6"],
+      "_note": "Review round 1 added witness axes for the same guard: PA22–PA25, PA40 — byUUID witnesses inside FILTER."
     },
     "M27_bridge_always_on": {
       "from": "  if (bridge) {",
       "to": "  if (bridge || state.reasons.length === 0) {",
-      "expect": ["PA1", "PA10", "PA16", "PA18", "PA4", "PD11"]
+      "expect": [
+        "PA1",
+        "PA10",
+        "PA16",
+        "PA18",
+        "PA32",
+        "PA33",
+        "PA34",
+        "PA37",
+        "PA4",
+        "PD11"
+      ],
+      "_note": "Review round 1 added witness axes for the same guard: PA32, PA33, PA34, PA37 — exact-P' witnesses gain the six bridge predicates."
     },
     "M28_membership_any_iri_object_bridges": {
       "from": "  if (object.type === \"iri\") return object.value.startsWith(EXO_ONTOLOGY_BASE);",
@@ -175,12 +223,28 @@
     "M29_namespace_filter_ignored": {
       "from": "      for (const test of namespaceTests(op.expression, group))\n        state.namespaceTests.push(test);",
       "to": "      for (const test of namespaceTests(op.expression, group)) void test;",
-      "expect": ["PA10", "PA18", "PD11", "PD22", "PD23"]
+      "expect": [
+        "PA10",
+        "PA18",
+        "PA32",
+        "PA33",
+        "PA36",
+        "PD11",
+        "PD22",
+        "PD23",
+        "PD48",
+        "PD51",
+        "PD52",
+        "PD55",
+        "PD56"
+      ],
+      "_note": "Review round 1 added witness axes for the same guard: PA32, PA33, PA36, PD48, PD55, PD56 (prune expected) and PD51/PD52 (namespace-filter-order expected) — every namespace witness turns into variable-predicate."
     },
     "M30_contains_read_as_strstarts": {
       "from": "  return test.kind === \"contains\"\n    ? predicate.includes(test.literal)\n    : predicate.startsWith(test.literal);",
       "to": "  return test.kind === \"contains\"\n    ? predicate.startsWith(test.literal)\n    : predicate.startsWith(test.literal);",
-      "expect": ["PA10", "PD11"]
+      "expect": ["PA10", "PA32", "PA36", "PD11", "PD48", "PD55", "PD56"],
+      "_note": "Review round 1 added witness axes for the same guard: PA32, PA36, PD48, PD55, PD56 — their CONTAINS tests admit nothing as a prefix."
     },
     "M31_missing_predicate_list_not_full": {
       "from": "      state.fail({\n        kind: \"namespace-filter-without-predicate-list\",\n        variable: occurrence.variable,\n      });\n      continue;",
@@ -190,12 +254,26 @@
     "M32_constant_subject_counted_free": {
       "from": "  return element.type === \"variable\" || element.type === \"blank\";",
       "to": "  return element.type !== \"literal\";",
-      "expect": ["PA6", "PD13"]
+      "expect": ["PA6", "PD13", "PD44"],
+      "_note": "Review round 1 added witness axes for the same guard: PD44 — test:Gadget ^exo:Instance_class ?s has a constant subject."
     },
     "M33_free_subject_path_not_judged": {
       "from": "    if (isFree(triple.subject)) state.freeSubjectPaths.push(iris);",
       "to": "    if (isFree(triple.subject)) void iris;",
-      "expect": ["PA13", "PD17", "PD25", "PD36", "PD37", "PD38"]
+      "expect": [
+        "PA13",
+        "PA28",
+        "PA29",
+        "PA30",
+        "PD17",
+        "PD25",
+        "PD36",
+        "PD37",
+        "PD38",
+        "PD53",
+        "PD54"
+      ],
+      "_note": "Review round 1 added witness axes for the same guard: PA28–PA30, PD53, PD54 — the order witnesses over a free-subject path."
     },
     "M34_free_path_closure_ignored": {
       "from": "    const reached = [...iris, ...iris.flatMap((iri) => closureOf(iri))];",
@@ -245,8 +323,8 @@
     "N8_subquery_shares_group": {
       "from": "      walkOperation(op.query, state.newGroup(), state);",
       "to": "      walkOperation(op.query, group, state);",
-      "expect": ["PD32"],
-      "_note": "A plausible wrong implementation from the independent spec review (it passed every axis before its witness axis was added)."
+      "expect": ["PD32", "PD46"],
+      "_note": "A plausible wrong implementation from the independent spec review (it passed every axis before its witness axis was added). Review round 1 added witness axes for the same guard: PD46 — the outer filter then bounds ?p inside the subquery."
     },
     "N9_exists_in_root_group": {
       "from": "      walkOperation(expression.pattern, state.newGroup(), state);",
@@ -269,27 +347,236 @@
     "M22_byuuid_name_not_normalized": {
       "from": "      if (functionName(expression.function) === \"byuuid\")\n        state.fail",
       "to": "      if (expression.function === \"byuuid\")\n        state.fail",
-      "expect": ["PA15", "PA19", "PA9", "PD5"]
+      "expect": [
+        "PA15",
+        "PA19",
+        "PA22",
+        "PA23",
+        "PA24",
+        "PA25",
+        "PA26",
+        "PA27",
+        "PA40",
+        "PA41",
+        "PA9",
+        "PD5"
+      ],
+      "_note": "Review round 1 added witness axes for the same guard: PA22–PA27, PA40, PA41 — every byUUID witness (the name is normalized for all of them)."
     },
     "M39_order_check_removed": {
       "from": "  if (state.freeSubjectPaths.length > 0 && state.orderSensitive) {",
       "to": "  if (state.freeSubjectPaths.length > 0 && state.orderSensitive && state.classBridge !== state.classBridge) {",
-      "expect": ["PD37", "PD38"]
+      "expect": ["PA28", "PA29", "PA30", "PD37", "PD38", "PD53", "PD54"],
+      "_note": "Review round 1 added witness axes for the same guard: PA28–PA30, PD53, PD54 — the order witnesses over a free-subject path."
     },
     "M40_slice_not_order_sensitive": {
       "from": "    case \"slice\":\n      state.orderSensitive = true;",
       "to": "    case \"slice\":\n      void state.orderSensitive;",
-      "expect": ["PD37"]
+      "expect": ["PA30", "PD37", "PD51"],
+      "_note": "Review round 1 added witness axes for the same guard: PA30 (OFFSET) and PD51 (namespace filter + LIMIT)."
     },
     "M41_order_aggregates_not_sensitive": {
-      "from": "  if (typeof fn !== \"string\" || fn === \"sample\" || fn === \"group_concat\") {",
-      "to": "  if (typeof fn !== \"string\" || fn === \"sample\") {",
-      "expect": ["PD38"]
+      "from": "    fn === \"group_concat\" ||\n    fn === \"sum\" ||",
+      "to": "    fn === \"sum\" ||",
+      "expect": ["PD38", "PD52"]
     },
     "M42_group_input_not_walked": {
       "from": "      for (const having of op.having ?? []) walkExpression(having, state);\n      walkOperation(op.input, group, state);",
       "to": "      for (const having of op.having ?? []) walkExpression(having, state);\n      void op.input;",
-      "expect": ["PD38", "PD8"]
+      "expect": ["PA28", "PA29", "PD38", "PD52", "PD53", "PD54", "PD8"],
+      "_note": "Review round 1 added witness axes for the same guard: PA28, PA29, PD52–PD54 — the aggregates' inputs carry the free-subject path / namespace pattern."
+    },
+    "M43_sum_not_order_sensitive": {
+      "from": "    fn === \"sum\" ||\n    fn === \"avg\"",
+      "to": "    fn === \"avg\"",
+      "expect": ["PD53"],
+      "_note": "review round 1 HIGH-2: SUM adds floats in row order (AggregateExecutor parseFloat + reduce)"
+    },
+    "M44_avg_not_order_sensitive": {
+      "from": "    fn === \"sum\" ||\n    fn === \"avg\"\n  ) {",
+      "to": "    fn === \"sum\"\n  ) {",
+      "expect": ["PD54"],
+      "_note": "review round 1 HIGH-2: AVG — same addition, divided"
+    },
+    "M45_namespace_order_unchecked": {
+      "from": "    admittedVariablePredicate = true;\n",
+      "to": "    void admittedVariablePredicate;\n",
+      "expect": ["PD51", "PD52"],
+      "_note": "review round 1 HIGH-1: a namespace-admitted variable predicate with a constant object reads the object index, grouped by subject in first-meeting order across ALL predicates"
+    },
+    "R1_distinct_reduced_input_not_walked": {
+      "from": "    case \"project\":\n    case \"distinct\":\n    case \"reduced\":\n      walkOperation(op.input, group, state);\n      return;",
+      "to": "    case \"distinct\":\n    case \"reduced\":\n      return;\n    case \"project\":\n      walkOperation(op.input, group, state);\n      return;",
+      "expect": ["PD39", "PD40"],
+      "_note": "review round 1 R1"
+    },
+    "R2_orderby_input_not_walked": {
+      "from": "        walkExpression(comparator.expression, state);\n      walkOperation(op.input, group, state);",
+      "to": "        walkExpression(comparator.expression, state);\n      void op.input;",
+      "expect": ["PD41"],
+      "_note": "review round 1 R2"
+    },
+    "R3_comparison_arith_right_not_walked": {
+      "from": "      walkExpression(expression.left, state);\n      walkExpression(expression.right, state);",
+      "to": "      walkExpression(expression.left, state);\n      void expression.right;",
+      "expect": ["PA22"],
+      "_note": "review round 1 R3"
+    },
+    "R4_logical_first_operand_only": {
+      "from": "      for (const operand of expression.operands) walkExpression(operand, state);",
+      "to": "      walkExpression(expression.operands[0], state);",
+      "expect": ["PA23"],
+      "_note": "review round 1 R4"
+    },
+    "R5_in_list_not_walked": {
+      "from": "      for (const item of expression.list) walkExpression(item, state);",
+      "to": "      void expression.list;",
+      "expect": ["PA40"],
+      "_note": "review round 1 R5"
+    },
+    "R6_in_tested_expression_not_walked": {
+      "from": "      walkExpression(expression.expression, state);\n      for (const item",
+      "to": "      void expression.expression;\n      for (const item",
+      "expect": ["PA24"],
+      "_note": "review round 1 R6"
+    },
+    "R7_aggregate_expression_not_walked": {
+      "from": "  if (aggregate.expression) walkExpression(aggregate.expression, state);",
+      "to": "  void aggregate.expression;",
+      "expect": ["PA26"],
+      "_note": "review round 1 R7"
+    },
+    "R8_function_name_slash_form_lost": {
+      "from": "    : iri.split(\"/\").pop();",
+      "to": "    : iri;",
+      "expect": ["PA27"],
+      "_note": "review round 1 R8"
+    },
+    "R9_sequence_never_nullable": {
+      "from": "      return path.items.every((item) => isNullable(item));",
+      "to": "      return false;",
+      "expect": ["PD42"],
+      "_note": "review round 1 R9"
+    },
+    "R11_path_first_item_only": {
+      "from": "  for (const item of path.items) collectPathIris(item, out);",
+      "to": "  collectPathIris(path.items[0], out);",
+      "expect": ["PD43"],
+      "_note": "review round 1 R11"
+    },
+    "R12_membership_in_path_no_bridge": {
+      "from": "      if (HIERARCHY_PREDICATES.has(iri) || MEMBERSHIP_PREDICATES.has(iri))",
+      "to": "      if (HIERARCHY_PREDICATES.has(iri))",
+      "expect": ["PD44"],
+      "_note": "review round 1 R12"
+    },
+    "R13_test_variable_not_matched": {
+      "from": "        test.variable === occurrence.variable && covers(test, occurrence),",
+      "to": "        covers(test, occurrence),",
+      "expect": ["PA38", "PD45"],
+      "_note": "review round 1 R13"
+    },
+    "R14_occurrence_in_root_group": {
+      "from": "    state.variablePredicates.push({ variable: predicate.value, group });",
+      "to": "    state.variablePredicates.push({ variable: predicate.value, group: 1 });",
+      "expect": ["PD46", "PD56"],
+      "_note": "review round 1 R14"
+    },
+    "R15_covers_le": {
+      "from": "  return test.group === occurrence.group;",
+      "to": "  return test.group <= occurrence.group;",
+      "expect": ["PD46"],
+      "_note": "review round 1 R15"
+    },
+    "R16_sample_not_order_sensitive": {
+      "from": "    fn === \"sample\" ||\n    fn === \"group_concat\" ||",
+      "to": "    fn === \"group_concat\" ||",
+      "expect": ["PA28"],
+      "_note": "review round 1 R16"
+    },
+    "R17_custom_not_order_sensitive": {
+      "from": "    typeof fn !== \"string\" ||\n    fn === \"sample\" ||",
+      "to": "    fn === \"sample\" ||",
+      "expect": ["PA29"],
+      "_note": "review round 1 R17"
+    },
+    "R18_quoted_only_when_both": {
+      "from": "  if (triple.subject.type === \"quoted\" || triple.object.type === \"quoted\") {",
+      "to": "  if (triple.subject.type === \"quoted\" && triple.object.type === \"quoted\") {",
+      "expect": ["PA31"],
+      "_note": "review round 1 R18"
+    },
+    "R20_str_wrapper_not_required": {
+      "from": "      target.function !== \"str\" ||",
+      "to": "      target.function === \"__never__\" ||",
+      "expect": ["PD47"],
+      "_note": "review round 1 R20"
+    },
+    "R21_tests_union_not_intersection": {
+      "from": "      if (tests.every((test) => namespaceTestHolds(test, predicate))) {",
+      "to": "      if (tests.some((test) => namespaceTestHolds(test, predicate))) {",
+      "expect": ["PA32"],
+      "_note": "review round 1 R21"
+    },
+    "R22_strstarts_read_as_contains": {
+      "from": "    : predicate.startsWith(test.literal);",
+      "to": "    : predicate.includes(test.literal);",
+      "expect": ["PA33"],
+      "_note": "review round 1 R22"
+    },
+    "R23_not_widened_gate_dropped": {
+      "from": "    predicate.startsWith(EXO_ONTOLOGY_BASE) && !NOT_WIDENED.has(predicate)",
+      "to": "    predicate.startsWith(EXO_ONTOLOGY_BASE)",
+      "expect": ["PA3", "PA34", "PA37"],
+      "_note": "review round 1 MEDIUM-5 (R23): the widening gate is mirrored, not shared. PA3 reddens too: with the gate dropped exo:Instance_class widens to test:kind (fixture W.kind), so the exact P' of the symbolic-membership query gains test:kind and the sub-property declarations"
+    },
+    "R24_ontology_base_gate_dropped": {
+      "from": "    predicate.startsWith(EXO_ONTOLOGY_BASE) && !NOT_WIDENED.has(predicate)",
+      "to": "    !NOT_WIDENED.has(predicate)",
+      "expect": ["PA34"],
+      "_note": "review round 1 MEDIUM-5 (R24)"
+    },
+    "R25_reasons_not_deduplicated": {
+      "from": "    if (!this.reasons.some((r) => JSON.stringify(r) === key))\n      this.reasons.push(reason);",
+      "to": "    void key;\n    this.reasons.push(reason);",
+      "expect": ["PA35"],
+      "_note": "review round 1 R25"
+    },
+    "R26_sources_mislabelled": {
+      "from": "  for (const predicate of state.queryPredicates) add(predicate, \"query\");",
+      "to": "  for (const predicate of state.queryPredicates) add(predicate, \"class-bridge\");",
+      "expect": ["PA36"],
+      "_note": "review round 1 MEDIUM-6 (R26): sources feed --prune-report"
+    },
+    "R27_optional_left_new_group": {
+      "from": "    case \"leftjoin\":\n      walkOperation(op.left, group, state);",
+      "to": "    case \"leftjoin\":\n      walkOperation(op.left, state.newGroup(), state);",
+      "expect": ["PD48"],
+      "_note": "review round 1 R27"
+    },
+    "R28_minus_left_new_group": {
+      "from": "    case \"minus\":\n      walkOperation(op.left, group, state);",
+      "to": "    case \"minus\":\n      walkOperation(op.left, state.newGroup(), state);",
+      "expect": ["PD55"],
+      "_note": "review round 1 R28"
+    },
+    "R29_literal_membership_object_bridges": {
+      "from": "  if (object.type === \"literal\") return false;\n  return true;",
+      "to": "  if (object.type === \"literal\") return true;\n  return true;",
+      "expect": ["PA37"],
+      "_note": "review round 1 R29"
+    },
+    "R48_minus_right_same_group": {
+      "from": "    case \"minus\":\n      walkOperation(op.left, group, state);\n      walkOperation(op.right, state.newGroup(), state);",
+      "to": "    case \"minus\":\n      walkOperation(op.left, group, state);\n      walkOperation(op.right, group, state);",
+      "expect": ["PD49"],
+      "_note": "review round 1 R48"
+    },
+    "R32_expression2_not_walked": {
+      "from": "  if (aggregate.expression2) walkExpression(aggregate.expression2, state);",
+      "to": "  void aggregate.expression2;",
+      "expect": ["PA41"],
+      "_note": "review round 1 R32: the second argument of a two-argument custom aggregate (agg:corr) can hide byUUID; PA41 added"
     }
   }
 }

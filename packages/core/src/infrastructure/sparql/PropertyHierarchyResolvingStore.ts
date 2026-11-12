@@ -244,7 +244,8 @@ export class PropertyHierarchyResolvingStore implements ITripleStore {
   /**
    * The sub-property index this decorator widens with — parent predicate IRI → its
    * transitive sub-properties — as predicate IRI strings. The query predicate
-   * analyzer (RFC 308a52c3 Д1) takes it from here so the two cannot drift.
+   * analyzer (RFC 308a52c3 Д1) takes the index from here so both use one index; which
+   * predicates this decorator widens at all is mirrored in the analyzer, not shared.
    */
   async getSubPropertyIndex(): Promise<Map<string, string[]>> {
     const index = await this.getIndex();
