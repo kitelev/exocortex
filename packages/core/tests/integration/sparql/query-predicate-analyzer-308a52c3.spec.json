@@ -1,0 +1,295 @@
+{
+  "_doc": "Revert-verify mutants for the query predicate analyzer (RFC 308a52c3 «Загрузка по запросу», phase 1a, vault-exodev task 03523fef). Each mutant is a plausible wrong implementation of ONE guarantee and must redden exactly the axes in `expect` (pairwise distinct sets, ITRV §A147). PA axes judge the analyzer's verdict; PD axes judge the guarantee itself on the REAL engine through the CLI path (translate → AlgebraOptimizer.optimize → execute) — full store vs store cut to P'. PA0 (fixture forms) has no mutant by design: it guards the fixture, not the subject. N-mutants come from the independent spec review. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› (P[AD]\\d+) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/analysis/QueryPredicateAnalyzer.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/query-predicate-analyzer.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_no_subproperty_widening": {
+      "from": "      ? (context.subPropertyIndex.get(predicate) ?? [])",
+      "to": "      ? []",
+      "expect": ["PA16", "PA2", "PD1", "PD12", "PD24", "PD36"]
+    },
+    "M2_bridge_without_rdfs_label": {
+      "from": "  RDFS_SUBCLASS_OF,\n  RDFS_LABEL,\n",
+      "to": "  RDFS_SUBCLASS_OF,\n",
+      "expect": [
+        "PA3",
+        "PD13",
+        "PD2",
+        "PD22",
+        "PD23",
+        "PD24",
+        "PD3",
+        "PD34",
+        "PD35",
+        "PD4"
+      ]
+    },
+    "M3_prune_on_variable_predicate": {
+      "from": "      state.fail({ kind: \"variable-predicate\", variable: occurrence.variable });\n      continue;",
+      "to": "      continue;",
+      "expect": [
+        "PA11",
+        "PA5",
+        "PD14",
+        "PD16",
+        "PD26",
+        "PD27",
+        "PD31",
+        "PD32",
+        "PD33"
+      ]
+    },
+    "M4_prune_zero_length_free_subject": {
+      "from": "    if (isNullable(predicate) && isFree(triple.subject)) {",
+      "to": "    if (isNullable(predicate) && isFree(triple.subject) && triple.subject.type === \"iri\") {",
+      "expect": ["PA6", "PD15", "PD28", "PD29"]
+    },
+    "M5_namespace_filter_scope_unchecked": {
+      "from": "  return test.group === occurrence.group;",
+      "to": "  return test.group >= 0 || occurrence.group >= 0;",
+      "expect": ["PA11", "PD16", "PD31", "PD32", "PD33"]
+    },
+    "M6_byuuid_not_full_load": {
+      "from": "        state.fail({ kind: \"uuid-lookup\" });",
+      "to": "        void expression;",
+      "expect": ["PA15", "PA17", "PA19", "PA9", "PD5"],
+      "_note": "RFC listed exo:Asset_uid for byUUID; the UUID index covers every loaded subject (a materialized statement edge, a note without the key) — full load is the guarantee."
+    },
+    "M7_describe_treated_as_ask": {
+      "from": "    case \"describe\":\n      state.fail({ kind: \"describe\" });\n      return;",
+      "to": "    case \"describe\":\n      if (op.where) walkOperation(op.where, state.newGroup(), state);\n      return;",
+      "expect": ["PA8"]
+    },
+    "M8_exists_pattern_not_walked": {
+      "from": "      walkOperation(expression.pattern, state.newGroup(), state);",
+      "to": "      void expression.pattern;",
+      "expect": ["PD6", "PD7"]
+    },
+    "M9_bind_expression_not_walked": {
+      "from": "      else walkExpression(op.expression, state);",
+      "to": "      else void op.expression;",
+      "expect": ["PA17", "PA9", "PD5", "PD7"]
+    },
+    "M10_having_not_walked": {
+      "from": "      for (const having of op.having ?? []) walkExpression(having, state);",
+      "to": "      for (const having of op.having ?? []) void having;",
+      "expect": ["PA19"]
+    },
+    "M11_subquery_not_walked": {
+      "from": "      walkOperation(op.query, state.newGroup(), state);",
+      "to": "      void op.query;",
+      "expect": ["PD9"]
+    },
+    "M12_membership_variable_object_no_bridge": {
+      "from": "  if (object.type === \"literal\") return false;\n  return true;",
+      "to": "  if (object.type === \"literal\") return false;\n  return false;",
+      "expect": ["PD4"]
+    },
+    "M13_widening_without_declarations": {
+      "from": "  if (closure.length > 0) {",
+      "to": "  if (closure.length > 0 && closure.length < 0) {",
+      "expect": ["PA16", "PD1", "PD12", "PD24"]
+    },
+    "M14_hierarchy_triple_no_bridge": {
+      "from": "  if (HIERARCHY_PREDICATES.has(predicate.value)) state.classBridge = true;",
+      "to": "  void HIERARCHY_PREDICATES;",
+      "expect": ["PD3", "PD35"]
+    },
+    "M15_path_no_bridge": {
+      "from": "      if (HIERARCHY_PREDICATES.has(iri) || MEMBERSHIP_PREDICATES.has(iri))\n        state.classBridge = true;",
+      "to": "      void iri;",
+      "expect": ["PD13"]
+    },
+    "M16_free_path_hierarchy_only": {
+      "from": "    if (reached.some((iri) => BRIDGE_PREDICATES.has(iri))) {",
+      "to": "    if (reached.some((iri) => HIERARCHY_PREDICATES.has(iri))) {",
+      "expect": ["PD25", "PD36"],
+      "_note": "Review finding MEDIUM-4: membership predicates in a free-subject path reach the bridge too (?c ^exo:Instance_class ?s)."
+    },
+    "M17_union_right_not_walked": {
+      "from": "    case \"union\":\n      walkOperation(op.left, state.newGroup(), state);\n      walkOperation(op.right, state.newGroup(), state);",
+      "to": "    case \"union\":\n      walkOperation(op.left, state.newGroup(), state);\n      void op.right;",
+      "expect": ["PD19"]
+    },
+    "M18_minus_right_not_walked": {
+      "from": "    case \"minus\":\n      walkOperation(op.left, group, state);\n      walkOperation(op.right, state.newGroup(), state);",
+      "to": "    case \"minus\":\n      walkOperation(op.left, group, state);\n      void op.right;",
+      "expect": ["PD20"]
+    },
+    "M19_optional_right_not_walked": {
+      "from": "    case \"leftjoin\":\n      walkOperation(op.left, group, state);\n      walkOperation(op.right, state.newGroup(), state);",
+      "to": "    case \"leftjoin\":\n      walkOperation(op.left, group, state);\n      void op.right;",
+      "expect": ["PD21"]
+    },
+    "M20_lateral_right_not_walked": {
+      "from": "    case \"lateraljoin\":\n      walkOperation(op.left, group, state);\n      walkOperation(op.right, state.newGroup(), state);",
+      "to": "    case \"lateraljoin\":\n      walkOperation(op.left, group, state);\n      void op.right;",
+      "expect": ["PD18"]
+    },
+    "M21_orderby_not_walked": {
+      "from": "      for (const comparator of op.comparators)\n        walkExpression(comparator.expression, state);",
+      "to": "      for (const comparator of op.comparators) void comparator;",
+      "expect": ["PA15"],
+      "_note": "Reddens only a verdict axis: the engine's ORDER BY evaluates variables and literals only (QueryExecutor.getExpressionValue, ems__Bug 3cc50b83) — the walk is defensive."
+    },
+    "M23_unknown_operation_silent": {
+      "from": "      throw new Error(\n        `QueryPredicateAnalyzer: unsupported operation type ${(unknown as { type: string }).type}`,\n      );",
+      "to": "      void unknown;\n      return;",
+      "expect": ["PA14"]
+    },
+    "M24_one_or_more_nullable": {
+      "from": "    case \"*\":\n    case \"?\":\n      return true;",
+      "to": "    case \"*\":\n    case \"?\":\n    case \"+\":\n      return true;",
+      "expect": ["PA13", "PA20", "PA7"]
+    },
+    "M25_join_right_not_walked": {
+      "from": "    case \"join\":\n      walkOperation(op.left, group, state);\n      walkOperation(op.right, group, state);",
+      "to": "    case \"join\":\n      walkOperation(op.left, group, state);\n      void op.right;",
+      "expect": ["PD22", "PD4", "PD9"]
+    },
+    "M26_filter_expression_not_walked": {
+      "from": "    case \"filter\": {\n      walkExpression(op.expression, state);",
+      "to": "    case \"filter\": {\n      void op.expression;",
+      "expect": ["PD6"]
+    },
+    "M27_bridge_always_on": {
+      "from": "  if (bridge) {",
+      "to": "  if (bridge || state.reasons.length === 0) {",
+      "expect": ["PA1", "PA10", "PA16", "PA18", "PA4", "PD11"]
+    },
+    "M28_membership_any_iri_object_bridges": {
+      "from": "  if (object.type === \"iri\") return object.value.startsWith(EXO_ONTOLOGY_BASE);",
+      "to": "  if (object.type === \"iri\") return object.value.length >= 0;",
+      "expect": ["PA4"]
+    },
+    "M29_namespace_filter_ignored": {
+      "from": "      for (const test of namespaceTests(op.expression, group))\n        state.namespaceTests.push(test);",
+      "to": "      for (const test of namespaceTests(op.expression, group)) void test;",
+      "expect": ["PA10", "PA18", "PD11", "PD22", "PD23"]
+    },
+    "M30_contains_read_as_strstarts": {
+      "from": "  return test.kind === \"contains\"\n    ? predicate.includes(test.literal)\n    : predicate.startsWith(test.literal);",
+      "to": "  return test.kind === \"contains\"\n    ? predicate.startsWith(test.literal)\n    : predicate.startsWith(test.literal);",
+      "expect": ["PA10", "PD11"]
+    },
+    "M31_missing_predicate_list_not_full": {
+      "from": "      state.fail({\n        kind: \"namespace-filter-without-predicate-list\",\n        variable: occurrence.variable,\n      });\n      continue;",
+      "to": "      continue;",
+      "expect": ["PA12"]
+    },
+    "M32_constant_subject_counted_free": {
+      "from": "  return element.type === \"variable\" || element.type === \"blank\";",
+      "to": "  return element.type !== \"literal\";",
+      "expect": ["PA6", "PD13"]
+    },
+    "M33_free_subject_path_not_judged": {
+      "from": "    if (isFree(triple.subject)) state.freeSubjectPaths.push(iris);",
+      "to": "    if (isFree(triple.subject)) void iris;",
+      "expect": ["PA13", "PD17", "PD25", "PD36", "PD37", "PD38"]
+    },
+    "M34_free_path_closure_ignored": {
+      "from": "    const reached = [...iris, ...iris.flatMap((iri) => closureOf(iri))];",
+      "to": "    const reached = [...iris];",
+      "expect": ["PD36"]
+    },
+    "M37_namespace_predicates_no_bridge": {
+      "from": "    [...namespacePredicates, ...closure].some((p) => BRIDGE_PREDICATES.has(p));",
+      "to": "    [...closure].some((p) => BRIDGE_PREDICATES.has(p));",
+      "expect": ["PD22", "PD23"]
+    },
+    "M38_closure_predicates_no_bridge": {
+      "from": "    [...namespacePredicates, ...closure].some((p) => BRIDGE_PREDICATES.has(p));",
+      "to": "    [...namespacePredicates].some((p) => BRIDGE_PREDICATES.has(p));",
+      "expect": ["PD24"]
+    },
+    "N1_any_logical_operator_bounds": {
+      "from": "    if (e.type === \"logical\" && e.operator === \"&&\") {",
+      "to": "    if (e.type === \"logical\") {",
+      "expect": ["PD26", "PD27"],
+      "_note": "A plausible wrong implementation from the independent spec review (it passed every axis before its witness axis was added)."
+    },
+    "N3_plus_inverse_not_nullable": {
+      "from": "    case \"^\":\n      return isNullable(path.items[0]);",
+      "to": "    case \"^\":\n      return false;",
+      "expect": ["PD28"],
+      "_note": "A plausible wrong implementation from the independent spec review (it passed every axis before its witness axis was added)."
+    },
+    "N4_alternative_every_branch": {
+      "from": "      return path.items.some((item) => isNullable(item));",
+      "to": "      return path.items.every((item) => isNullable(item));",
+      "expect": ["PD29"],
+      "_note": "A plausible wrong implementation from the independent spec review (it passed every axis before its witness axis was added)."
+    },
+    "N5_first_subproperty_only": {
+      "from": "    for (const sub of closureOf(predicate)) closure.push(sub);",
+      "to": "    for (const sub of closureOf(predicate).slice(0, 1)) closure.push(sub);",
+      "expect": ["PA16", "PA2", "PD1", "PD12"],
+      "_note": "A plausible wrong implementation from the independent spec review (it passed every axis before its witness axis was added)."
+    },
+    "N7_union_branches_share_group": {
+      "from": "    case \"union\":\n      walkOperation(op.left, state.newGroup(), state);\n      walkOperation(op.right, state.newGroup(), state);",
+      "to": "    case \"union\":\n      walkOperation(op.left, group, state);\n      walkOperation(op.right, group, state);",
+      "expect": ["PD31"],
+      "_note": "A plausible wrong implementation from the independent spec review (it passed every axis before its witness axis was added)."
+    },
+    "N8_subquery_shares_group": {
+      "from": "      walkOperation(op.query, state.newGroup(), state);",
+      "to": "      walkOperation(op.query, group, state);",
+      "expect": ["PD32"],
+      "_note": "A plausible wrong implementation from the independent spec review (it passed every axis before its witness axis was added)."
+    },
+    "N9_exists_in_root_group": {
+      "from": "      walkOperation(expression.pattern, state.newGroup(), state);",
+      "to": "      walkOperation(expression.pattern, 1, state);",
+      "expect": ["PD33"],
+      "_note": "A plausible wrong implementation from the independent spec review (it passed every axis before its witness axis was added)."
+    },
+    "N15_rdf_type_not_membership": {
+      "from": "  EXO_INSTANCE_CLASS,\n  RDF_TYPE,\n]);\n/** Every predicate",
+      "to": "  EXO_INSTANCE_CLASS,\n]);\n/** Every predicate",
+      "expect": ["PD34"],
+      "_note": "A plausible wrong implementation from the independent spec review (it passed every axis before its witness axis was added)."
+    },
+    "N16_subclassof_not_hierarchy": {
+      "from": "  EXO_CLASS_SUPER_CLASS,\n  RDFS_SUBCLASS_OF,\n]);\n/** `ClassHierarchyResolvingStore.MEMBERSHIP",
+      "to": "  EXO_CLASS_SUPER_CLASS,\n]);\n/** `ClassHierarchyResolvingStore.MEMBERSHIP",
+      "expect": ["PD35"],
+      "_note": "A plausible wrong implementation from the independent spec review (it passed every axis before its witness axis was added)."
+    },
+    "M22_byuuid_name_not_normalized": {
+      "from": "      if (functionName(expression.function) === \"byuuid\")\n        state.fail",
+      "to": "      if (expression.function === \"byuuid\")\n        state.fail",
+      "expect": ["PA15", "PA19", "PA9", "PD5"]
+    },
+    "M39_order_check_removed": {
+      "from": "  if (state.freeSubjectPaths.length > 0 && state.orderSensitive) {",
+      "to": "  if (state.freeSubjectPaths.length > 0 && state.orderSensitive && state.classBridge !== state.classBridge) {",
+      "expect": ["PD37", "PD38"]
+    },
+    "M40_slice_not_order_sensitive": {
+      "from": "    case \"slice\":\n      state.orderSensitive = true;",
+      "to": "    case \"slice\":\n      void state.orderSensitive;",
+      "expect": ["PD37"]
+    },
+    "M41_order_aggregates_not_sensitive": {
+      "from": "  if (typeof fn !== \"string\" || fn === \"sample\" || fn === \"group_concat\") {",
+      "to": "  if (typeof fn !== \"string\" || fn === \"sample\") {",
+      "expect": ["PD38"]
+    },
+    "M42_group_input_not_walked": {
+      "from": "      for (const having of op.having ?? []) walkExpression(having, state);\n      walkOperation(op.input, group, state);",
+      "to": "      for (const having of op.having ?? []) walkExpression(having, state);\n      void op.input;",
+      "expect": ["PD38", "PD8"]
+    }
+  }
+}

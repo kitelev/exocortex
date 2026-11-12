@@ -404,6 +404,17 @@ export { DescribeOptionsTransformer, DescribeOptionsTransformerError, type Descr
 export { ExoQLAlgebraTranslator, AlgebraTranslator } from "./infrastructure/sparql/algebra/AlgebraTranslator";
 export { AlgebraOptimizer } from "./infrastructure/sparql/algebra/AlgebraOptimizer";
 export { AlgebraSerializer } from "./infrastructure/sparql/algebra/AlgebraSerializer";
+export {
+  analyzeAlgebraPredicates,
+  analyzeParsedQuery,
+  computeSubPropertyIndex,
+  CLASS_BRIDGE_SKELETON,
+  SUB_PROPERTY_DECLARATION_SKELETON,
+  type PredicateAnalysis,
+  type PredicateAnalysisContext,
+  type PredicateSource,
+  type FullLoadReason,
+} from "./infrastructure/sparql/analysis/QueryPredicateAnalyzer";
 export type {
   AlgebraOperation,
   BGPOperation,
