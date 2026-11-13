@@ -1,0 +1,182 @@
+{
+  "_doc": "Analyzer mutants against the double-run oracle (RFC 308a52c3 Д3, phase 2, task 2588fa84): the RFC criterion «a mutant that breaks the skeleton reddens the oracle on at least one corpus query» on the SYNTHETIC corpus — O2 (the oracle's own verdict) is red for every skeleton, fail-safe and walker mutant, not only the entry's verdict axis. M1–M42 take `from`/`to` of query-predicate-analyzer-308a52c3.spec.json (the analyzer's own matrix): a change of the analyzer moves both. M50/M51 are oracle-specific: M51 removes both barriers of the membership entry O1.3 with one anchor (ITRV §A159). O1.20 (the empty answer) carries no mutant by construction: a cut only removes triples and the entry has no negation, so its empty answer stays empty under any skeleton mutant — it is the witness of O2's «one empty judged», whose mutant is K26 in query-prune-oracle-2588fa84.spec.json. Measured 2026-11-13, re-measured 2026-11-14 after review round 2, control 0. `tree`/`subject` are placeholders (§A145).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› (O\\d+(?:\\.\\d+)?[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/analysis/QueryPredicateAnalyzer.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../../cli\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/query-prune-oracle-2588fa84.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_no_subproperty_widening": {
+      "from": "      ? (context.subPropertyIndex.get(predicate) ?? [])",
+      "to": "      ? []",
+      "expect": [
+        "O1.1",
+        "O1.10",
+        "O1.18",
+        "O1.19",
+        "O1.2",
+        "O1.9",
+        "O13",
+        "O2",
+        "O30",
+        "O30b",
+        "O31",
+        "O4"
+      ],
+      "_note": "skeleton (sub-properties): every sub-property entry diverges — the parent and child patterns, the subquery, the count and the LIMIT 1 entry (O1.1, O1.2, O1.9, O1.10, O1.18, O1.19) — and the oracle reddens (O2); no sub-property source is left for the canary (O4); O13 takes the sub-property entry. Axes O30, O30b, O31 (review round 2) drive the sub-property entry: its cut now diverges, so its verdict is no longer equal."
+    },
+    "M13_widening_without_declarations": {
+      "from": "  if (closure.length > 0) {",
+      "to": "  if (closure.length > 0 && closure.length < 0) {",
+      "expect": [
+        "O1.1",
+        "O1.10",
+        "O1.18",
+        "O1.19",
+        "O1.2",
+        "O1.9",
+        "O13",
+        "O2",
+        "O30",
+        "O30b",
+        "O31"
+      ],
+      "_note": "skeleton (sub-property declarations): the decorator cannot build its index on the cut — every widened entry diverges (O1.1, O1.2, O1.9, O1.10, O1.18, O1.19, O2); O13 — as M1. Axes O30, O30b, O31 (review round 2) drive the sub-property entry: its cut now diverges, so its verdict is no longer equal."
+    },
+    "N5_first_subproperty_only": {
+      "from": "    for (const sub of closureOf(predicate)) closure.push(sub);",
+      "to": "    for (const sub of closureOf(predicate).slice(0, 1)) closure.push(sub);",
+      "expect": [
+        "O1.1",
+        "O1.10",
+        "O1.18",
+        "O1.9",
+        "O13",
+        "O2",
+        "O30",
+        "O30b",
+        "O31"
+      ],
+      "_note": "skeleton (closure truncated to the first sub-property): the grandchild edge is lost on the parent entries (O1.1, O1.9, O1.10, O1.18, O2); the child entry has a one-element closure and stays equal, and so does the LIMIT 1 entry (its first row survives). Axes O30, O30b, O31 (review round 2) drive the sub-property entry: its cut now diverges, so its verdict is no longer equal."
+    },
+    "M2_bridge_without_rdfs_label": {
+      "from": "  RDFS_SUBCLASS_OF,\n  RDFS_LABEL,\n",
+      "to": "  RDFS_SUBCLASS_OF,\n",
+      "expect": ["O1.11", "O1.4", "O2"],
+      "_note": "skeleton (class bridge without rdfs:label — the only LITERAL label the bridge indexes): the hierarchy entry and the constant-subject path lose their rows (O1.4, O1.11, O2)."
+    },
+    "M14_hierarchy_triple_no_bridge": {
+      "from": "  if (HIERARCHY_PREDICATES.has(predicate.value)) state.classBridge = true;",
+      "to": "  void HIERARCHY_PREDICATES;",
+      "expect": ["O1.4", "O2", "O3"],
+      "_note": "skeleton (a hierarchy pattern does not pull the bridge): the hierarchy entry diverges (O1.4, O2) and leaves no bridge predicate for the canary (O3)."
+    },
+    "M3_prune_on_variable_predicate": {
+      "from": "      state.fail({ kind: \"variable-predicate\", variable: occurrence.variable });\n      continue;",
+      "to": "      continue;",
+      "expect": ["O1.12", "O1.15", "O2"],
+      "_note": "fail-safe (variable predicate): both variable-predicate entries are cut and diverge (O1.12, O1.15, O2)."
+    },
+    "M4_prune_zero_length_free_subject": {
+      "from": "    if (isNullable(predicate) && isFree(triple.subject)) {",
+      "to": "    if (isNullable(predicate) && isFree(triple.subject) && triple.subject.type === \"iri\") {",
+      "expect": ["O1.13", "O2"],
+      "_note": "fail-safe (zero-length path, free subject): the both-ends-free path pairs every node of the graph — the cut has fewer (O1.13, O2)."
+    },
+    "M5_namespace_filter_scope_unchecked": {
+      "from": "  return test.group === occurrence.group;",
+      "to": "  return test.group >= 0 || occurrence.group >= 0;",
+      "expect": ["O1.15", "O2"],
+      "_note": "fail-safe (namespace filter in another group): the outer variable predicate is cut to flow# and diverges (O1.15, O2)."
+    },
+    "M6_byuuid_not_full_load": {
+      "from": "        state.fail({ kind: \"uuid-lookup\" });",
+      "to": "        void expression;",
+      "expect": ["O1.14", "O2"],
+      "_note": "fail-safe (exo:byUUID): the statement-edge subject has no exo:Asset_uid — absent from the cut, found in the full graph (O1.14, O2)."
+    },
+    "M29_namespace_filter_ignored": {
+      "from": "      for (const test of namespaceTests(op.expression, group))\n        state.namespaceTests.push(test);",
+      "to": "      for (const test of namespaceTests(op.expression, group)) void test;",
+      "expect": ["O1.16", "O1.5", "O2"],
+      "_note": "VL-3 (namespace filter not read): both namespace entries lose the flow# predicates (O1.5, O1.16, O2)."
+    },
+    "M17_union_right_not_walked": {
+      "from": "    case \"union\":\n      walkOperation(op.left, state.newGroup(), state);\n      walkOperation(op.right, state.newGroup(), state);",
+      "to": "    case \"union\":\n      walkOperation(op.left, state.newGroup(), state);\n      void op.right;",
+      "expect": ["O1.6", "O2"],
+      "_note": "walker (UNION right side): flow:WorkItem_note is missing from P' (O1.6, O2)."
+    },
+    "M18_minus_right_not_walked": {
+      "from": "    case \"minus\":\n      walkOperation(op.left, group, state);\n      walkOperation(op.right, state.newGroup(), state);",
+      "to": "    case \"minus\":\n      walkOperation(op.left, group, state);\n      void op.right;",
+      "expect": ["O1.7", "O2"],
+      "_note": "walker (MINUS right side): ems:Effort_status is missing, MINUS removes nothing on the cut (O1.7, O2)."
+    },
+    "M19_optional_right_not_walked": {
+      "from": "    case \"leftjoin\":\n      walkOperation(op.left, group, state);\n      walkOperation(op.right, state.newGroup(), state);",
+      "to": "    case \"leftjoin\":\n      walkOperation(op.left, group, state);\n      void op.right;",
+      "expect": ["O1.16", "O1.6", "O2"],
+      "_note": "walker (OPTIONAL right side): the OPTIONAL entries lose their optional predicates (O1.6, O1.16, O2)."
+    },
+    "M8_exists_pattern_not_walked": {
+      "from": "      walkOperation(expression.pattern, state.newGroup(), state);",
+      "to": "      void expression.pattern;",
+      "expect": ["O1.17", "O1.7", "O2"],
+      "_note": "walker (FILTER EXISTS pattern): the EXISTS predicates are missing (O1.7, O1.17, O2)."
+    },
+    "M42_group_input_not_walked": {
+      "from": "      for (const having of op.having ?? []) walkExpression(having, state);\n      walkOperation(op.input, group, state);",
+      "to": "      for (const having of op.having ?? []) walkExpression(having, state);\n      void op.input;",
+      "expect": ["O1.12", "O1.13", "O1.18", "O1.8", "O2"],
+      "_note": "walker (GROUP input): the group entries are analyzed as empty — the count entries diverge (O1.8, O1.18, O2) and the COUNT(*) fail-safe entries lose their reasons (O1.12, O1.13)."
+    },
+    "M11_subquery_not_walked": {
+      "from": "      walkOperation(op.query, state.newGroup(), state);",
+      "to": "      void op.query;",
+      "expect": ["O1.9", "O2"],
+      "_note": "walker (subquery): Asset_relates and its sub-properties are missing (O1.9, O2)."
+    },
+    "M50_query_predicates_dropped": {
+      "from": "for (const predicate of state.queryPredicates) add(predicate, \"query\");",
+      "to": "for (const predicate of [] as string[]) add(predicate, \"query\");",
+      "expect": [
+        "O1.1",
+        "O1.10",
+        "O1.16",
+        "O1.17",
+        "O1.18",
+        "O1.2",
+        "O1.6",
+        "O1.7",
+        "O1.8",
+        "O1.9",
+        "O13",
+        "O14",
+        "O2",
+        "O24",
+        "O30",
+        "O30b",
+        "O31",
+        "O32",
+        "O36b",
+        "O6",
+        "O9"
+      ],
+      "_note": "the query's own predicates are not put into P': every entry whose predicate is not also a skeleton predicate diverges (O1.1, O1.2, O1.6–O1.10, O1.16–O1.18, O2); the axes that drive single entries see it too — the plain entry's cut loses more than the one injected row (O6) and is no longer equal (O9), the sub-property entry O13 drives is no longer equal; on the membership entry Instance_class is now in P' ONLY through the class bridge, so the bridge canary drops it and stops being silent (O14, O24). The membership and hierarchy entries themselves stay equal — Instance_class and the hierarchy predicates come in through the bridge too; M51 is their mutant. Axes added after review round 2: the sub-property entry is no longer equal (O30, O30b, O31); the plain entry's cut loses every row, so a reordered cut is diverged, not order-only (O32); the plain and the flow-note entries now share the empty P', so [A, B, A] builds the cut once (O36b)."
+    },
+    "M51_membership_predicate_never_cut_in": {
+      "from": "const add = (predicate: string, source: PredicateSource): void => {",
+      "to": "const add = (predicate: string, source: PredicateSource): void => {\n    if (predicate.endsWith(\"Instance_class\")) return;",
+      "expect": ["O1.3", "O14", "O2", "O24"],
+      "_note": "the membership predicate is treated as metadata and never put into P' — it removes BOTH barriers of the membership entry (its query predicate and the class bridge) with one anchor: O1.3 diverges (O2), the membership witness is no longer silent (O14) and the order-only witness on that entry changes content (O24)."
+    }
+  }
+}

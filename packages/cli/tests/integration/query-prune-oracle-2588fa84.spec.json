@@ -1,0 +1,245 @@
+{
+  "_doc": "Revert-verify mutants for the double-run oracle `query --batch --prune-oracle` (RFC 308a52c3 «Загрузка по запросу» Д3, phase 2, vault-exodev task 2588fa84). Each mutant is a plausible wrong implementation of ONE guarantee of the oracle module and reddens exactly `expect` (pairwise distinct sets; measured by mutant-driver, control 0, 2026-11-13; K27–K35 and the re-measure — 2026-11-14 after review round 2). Axes without a mutant here: O1.* (the analyzer mutants, query-prune-oracle-2588fa84.analyzer.spec.json), O11/O17/O33/O34 (the flag wiring, query-prune-oracle-2588fa84.flag.spec.json), O9 (the module has NO result-cache read — the axis locks an absence; it also reddens under analyzer M50; the WRITE half is O9b, mutant K30). `red_re` admits a letter suffix (O8b): without it O8b never matched and K22 looked like a harness crash. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› (O\\d+(?:\\.\\d+)?[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/query-prune-oracle.ts",
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/query-prune-oracle-2588fa84.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "K1_compare_always_equal": {
+      "from": "  if (reference.length === candidate.length && reference.every((r, i) => r === candidate[i])) {",
+      "to": "  if (true || (reference.length === candidate.length && reference.every((r, i) => r === candidate[i]))) {",
+      "expect": [
+        "O10",
+        "O13",
+        "O15",
+        "O16",
+        "O18",
+        "O19",
+        "O20",
+        "O21",
+        "O25",
+        "O29",
+        "O3",
+        "O31",
+        "O31b",
+        "O32",
+        "O4",
+        "O5",
+        "O6"
+      ],
+      "_note": "every comparison says equal: no canary detects (O3, O4, O13), an injected divergence is missed (O6), the unit verdicts and counts fail (O10, O16), every canonicalization unit reads two different rows as one (O18–O21), an unstable full answer looks stable (O5, O15, O25). Axes added after review round 2 see it too: the size-keyed lossy cut reads equal (O29), a canary difference reads equal so the canary is silent, not unstable (O31), a lossy cut reads equal, not unstable (O31b), a reordered cut reads equal, not order-only (O32)."
+    },
+    "K2_cut_keeps_everything": {
+      "from": "  return triples.filter((t) => predicates.has(t.predicate.value));",
+      "to": "  return triples.filter((t) => predicates.has(t.predicate.value) || true);",
+      "expect": ["O29", "O3", "O4"],
+      "_note": "the cut is the full graph: no canary can detect a skeleton break (O3, O4) — the oracle compares the graph with itself. The size-keyed stub of O29 never fires on a cut that IS the full graph, so the lossy cut is never produced and the entry reads equal (O29)."
+    },
+    "K3_no_stability_check": {
+      "from": "        if (cmp.verdict !== \"equal\" && !(await fullIsStable())) {",
+      "to": "        if (cmp.verdict !== \"equal\" && false && !(await fullIsStable())) {",
+      "expect": ["O15", "O25", "O31b", "O5"],
+      "_note": "a clock-driven difference is reported as diverged (O5), counted as judged (O15), and a reordered second full answer is not seen (O25). A lossy cut whose full re-run fails is reported diverged instead of unstable (O31b)."
+    },
+    "K4_canary_unconfirmed": {
+      "from": "            const detected = differs && (await fullIsStable());",
+      "to": "            const detected = differs;",
+      "expect": ["O13", "O31"],
+      "_note": "a canary difference that came with an unstable full answer is counted as detected (O13). A canary difference whose full re-run times out is counted detected instead of unstable (O31)."
+    },
+    "K5_order_only_is_equal": {
+      "from": "    verdict: onlyReference === 0 && onlyCandidate === 0 ? \"order-only\" : \"diverged\",",
+      "to": "    verdict: onlyReference === 0 && onlyCandidate === 0 ? (\"equal\" as \"order-only\") : \"diverged\",",
+      "expect": ["O10", "O25", "O32"],
+      "_note": "a row-order difference is hidden as equal (O10); two full answers that differ only in order look stable (O25). A cut that only reorders rows reads equal, not order-only (O32)."
+    },
+    "K6_counts_one_side": {
+      "from": "    else if (n < 0) onlyCandidate -= n;",
+      "to": "    else if (n < 0) onlyCandidate += 0;",
+      "expect": ["O16"],
+      "_note": "rows only in the cut are not counted (O16)."
+    },
+    "K7_diverged_not_failing": {
+      "from": "  process.exitCode = tally.diverged > 0 || failed > 0 ? ExitCodes.OPERATION_FAILED : ExitCodes.SUCCESS;",
+      "to": "  process.exitCode = failed > 0 ? ExitCodes.OPERATION_FAILED : ExitCodes.SUCCESS;",
+      "expect": ["O6"],
+      "_note": "a divergence exits 0 — a shell caller reads the code (O6)."
+    },
+    "K8_cut_error_is_failure": {
+      "from": "      } else if (error instanceof OracleExecutionError && error.side === \"cut\") {",
+      "to": "      } else if (error instanceof OracleExecutionError && error.side === \"cut\" && false) {",
+      "expect": ["O7"],
+      "_note": "a cut run that throws is filed as a failed entry instead of a divergence (O7)."
+    },
+    "K9_values_leak": {
+      "from": "          full: { count: first.length },",
+      "to": "          full: { count: first.length, rows: first },",
+      "expect": ["O8", "O8b"],
+      "_note": "the canonical rows reach stdout — values of private graphs (O8) and, through the sub-property entry's answer, predicate IRIs (O8b)."
+    },
+    "K10_canary_drops_shared_predicates": {
+      "from": "      sources !== undefined && sources.size > 0 && [...sources].every((s) => removable.has(s));",
+      "to": "      sources !== undefined && sources.size > 0 && [...sources].some((s) => removable.has(s));",
+      "expect": ["O14", "O24"],
+      "_note": "a canary drops a predicate the query itself needs and 'detects' a break that is not the skeleton's (O14: the membership entry stops being silent; O24: the order-only witness becomes a content change)."
+    },
+    "K11_unstable_counted_judged": {
+      "from": "  const judged = tally.equal + tally[\"order-only\"] + tally.diverged;",
+      "to": "  const judged = tally.equal + tally[\"order-only\"] + tally.diverged + tally.unstable;",
+      "expect": ["O15", "O31b"],
+      "_note": "an unstable entry inflates the denominator of «0 diverged» (O15). The unstable entry of O31b is counted twice (judged AND unstable), so the accounting invariant breaks (O31b)."
+    },
+    "K12_full_load_executes_nothing_named": {
+      "from": "        const kinds: string[] = analysis.reasons.map((r: { kind: string }) => r.kind);",
+      "to": "        const kinds: string[] = [];",
+      "expect": ["O1.12", "O1.13", "O1.14", "O1.15"],
+      "_note": "a full-load verdict loses its reason, so the fail-safe entries cannot be told apart (O1.12–O1.15)."
+    },
+    "K13_full_load_not_counted": {
+      "from": "        tally[\"full-load\"] += 1;",
+      "to": "        tally[\"full-load\"] += 0;",
+      "expect": ["O12"],
+      "_note": "the summary no longer accounts for every entry (O12)."
+    },
+    "K14_value_dropped": {
+      "from": ".map(([variable, value]) => [variable, termKey(value)] as const)",
+      "to": ".map(([variable]) => [variable, null] as const)",
+      "expect": ["O18", "O19", "O20", "O25", "O32"],
+      "_note": "the bound value is not part of the row key: every value-level unit collapses (O18, O19, O20) and the reordered full answers become one key (O25). Rows without values are identical, so the reordered cut of O32 reads equal, not order-only (O32)."
+    },
+    "K15_literal_type_dropped": {
+      "from": "return [\"L\", t.value, t.datatype?.value ?? null, t.language ?? null, t.direction ?? null];",
+      "to": "return [\"L\", t.value];",
+      "expect": ["O19"],
+      "_note": "a literal's datatype and language are not part of the row: \"5\"^^xsd:integer equals \"5\" (O19)."
+    },
+    "K16_iri_dropped": {
+      "from": "return [\"T\", t.toString()];",
+      "to": "return [\"T\"];",
+      "expect": ["O20", "O21"],
+      "_note": "an IRI is reduced to its kind: two different IRIs compare equal (O20) and so do two CONSTRUCT triples (O21)."
+    },
+    "K17_construct_predicate_only": {
+      "from": "JSON.stringify([termKey(t.subject), termKey(t.predicate), termKey(t.object)]),",
+      "to": "JSON.stringify([termKey(t.predicate)]),",
+      "expect": ["O21"],
+      "_note": "a CONSTRUCT triple is keyed by its predicate only (O21)."
+    },
+    "K18_analyzer_reads_optimized": {
+      "from": "(q: never) => new ExoQLAlgebraTranslator().translate(q),",
+      "to": "(q: never) => (new ExoQLAlgebraTranslator(), options.buildAlgebra(q, options.noOptimize)),",
+      "expect": ["O22", "O23"],
+      "_note": "the analyzer reads the optimized algebra: buildAlgebra runs twice per entry (O22) and the noOptimize probe sees extra calls (O23)."
+    },
+    "K19_no_optimize_ignored": {
+      "from": "const algebra = options.buildAlgebra(ast as never, options.noOptimize);",
+      "to": "const algebra = options.buildAlgebra(ast as never, true);",
+      "expect": ["O23"],
+      "_note": "the execution plan is always unoptimized — the flag does not reach it (O23)."
+    },
+    "K20_canary_order_counts": {
+      "from": "              differs = compareAnswers(first, await run(\"cut\", canaryStore, algebra)).verdict === \"diverged\";",
+      "to": "              differs = compareAnswers(first, await run(\"cut\", canaryStore, algebra)).verdict !== \"equal\";",
+      "expect": ["O24"],
+      "_note": "a canary that only reorders rows is counted as detected (O24)."
+    },
+    "K21_stability_ignores_order": {
+      "from": "              stable = compareAnswers(first, await run(\"full\", full, algebra)).verdict === \"equal\";",
+      "to": "              stable = compareAnswers(first, await run(\"full\", full, algebra)).verdict !== \"diverged\";",
+      "expect": ["O25"],
+      "_note": "two full answers that differ only in order are called stable (O25)."
+    },
+    "K22_predicates_printed": {
+      "from": "predicates: analysis.predicates.size,",
+      "to": "predicates: [...analysis.predicates],",
+      "expect": ["O8b"],
+      "_note": "the record carries the predicate IRIs of P' instead of its size (O8b)."
+    },
+    "K23_cut_timeout_is_divergence": {
+      "from": "if (error instanceof OracleExecutionError && error.side === \"cut\" && error.errorType === \"timeout\") {",
+      "to": "if (error instanceof OracleExecutionError && error.side === \"cut\" && error.errorType === \"timeout\" && false) {",
+      "expect": ["O26"],
+      "_note": "a cut run that times out is reported as diverged instead of cut-timeout (O26)."
+    },
+    "K24_update_not_refused": {
+      "from": "if (ast.type === \"update\") throw new UpdateRefusedError();",
+      "to": "if (ast.type === \"update\" && false) throw new UpdateRefusedError();",
+      "expect": ["O27"],
+      "_note": "an UPDATE entry is executed instead of refused (O27)."
+    },
+    "K25_full_load_not_executed": {
+      "from": "const rows = await run(\"full\", full, algebra);",
+      "to": "const rows: string[] = [];",
+      "expect": ["O28"],
+      "_note": "a full-load entry is not executed, so a query the product cannot run (DESCRIBE) is not a failed entry (O28)."
+    },
+    "K26_empty_counted_informative": {
+      "from": "if (first.length > 0) judgedNonEmpty += 1;",
+      "to": "judgedNonEmpty += 1;",
+      "expect": ["O2"],
+      "_note": "an empty answer is counted as informative: the «non-empty judged» count equals the judged count (O2)."
+    },
+    "K27_reference_over_cut": {
+      "from": "        const first = await run(\"full\", full, algebra);",
+      "to": "        const first = await run(\"full\", (await cutStore(analysis.predicates)).store, algebra);",
+      "expect": ["O29"],
+      "_note": "the reference full answer is computed over the CUT: a cut that loses rows is compared with itself and reads `equal` — a real skeleton defect passes as equal (O29; wrong implementation X1 of review round 2)."
+    },
+    "K28_rerun_over_cut": {
+      "from": "              stable = compareAnswers(first, await run(\"full\", full, algebra)).verdict === \"equal\";",
+      "to": "              stable = compareAnswers(first, await run(\"full\", (await cutStore(analysis.predicates)).store, algebra)).verdict === \"equal\";",
+      "expect": ["O29b"],
+      "_note": "the full re-run goes over the CUT: every real divergence becomes `unstable` and hides under the not-judged ceiling (O29; X2 of review round 2)."
+    },
+    "K29_order_only_is_diverged": {
+      "from": "        const cmp = compareAnswers(first, pruned);",
+      "to": "        const cmp0 = compareAnswers(first, pruned);\n        const cmp = cmp0.verdict === \"order-only\" ? { ...cmp0, verdict: \"diverged\" as const } : cmp0;",
+      "expect": ["O32"],
+      "_note": "a cut that only reorders rows is reported `diverged` (exit OPERATION_FAILED) although the RFC judges after canonicalising order (O32; X3 of review round 2)."
+    },
+    "K30_cut_answer_cached": {
+      "from": "        const pruned = await run(\"cut\", cut.store, algebra);",
+      "to": "        const pruned = await run(\"cut\", cut.store, algebra);\n        await new (await import(\"../cache/QueryResultCache.js\")).QueryResultCache().set(entry.sparql, { type: \"select\", count: pruned.length, bindings: [] }, 300, null);",
+      "expect": ["O9b"],
+      "_note": "the cut answer is written to the query result cache — a consumer could read a truncated answer from it (O9b; X4 of review round 2)."
+    },
+    "K31_canary_error_is_silent": {
+      "from": "              differs = true; // a non-timeout failure: the main cut would be `diverged` (cutError)",
+      "to": "              differs = false;",
+      "expect": ["O30b"],
+      "_note": "a canary run that throws (not a timeout) counts as silent, although the main cut on that P' would be `diverged` with `cutError` (O30b; X5 of review round 2)."
+    },
+    "K32_canary_timeout_is_detected": {
+      "from": "              if (error instanceof OracleExecutionError && error.errorType === \"timeout\") {",
+      "to": "              if (error instanceof OracleExecutionError && error.errorType === \"timeout\" && false) {",
+      "expect": ["O30"],
+      "_note": "a canary run that times out counts as `detected` — under load the live-graph floor would be met by timeouts, not by a skeleton break (O30; MED-1 of review round 2)."
+    },
+    "K33_rerun_failure_is_failed": {
+      "from": "              stable = false; // a failed re-run proves nothing about the cut: not judged, never `failed`",
+      "to": "              throw new OracleExecutionError(\"full\", \"timeout\");",
+      "expect": ["O31", "O31b"],
+      "_note": "a failed full re-run escapes as a failed entry: after a counted canary it is counted twice and turns an equal entry red (O31; MED-2 of review round 2). The main path asks the same re-run, so the lossy cut with a failed re-run becomes failed instead of unstable too (O31b)."
+    },
+    "K34_cut_cache_unbounded": {
+      "from": "    if (cutStores.size >= MAX_CUT_STORES) cutStores.delete(cutStores.keys().next().value as string);",
+      "to": "    // eviction removed",
+      "expect": ["O36b"],
+      "_note": "the cut-store cache is never evicted — the form that ran vault-exodev out of heap at entry 72 of 107 in the first prototype (O36; X6 of review round 2)."
+    },
+    "K35_cut_cache_never_reused": {
+      "from": "    if (known) return { store: known, size: await known.count() };",
+      "to": "    if (known && false) return { store: known, size: await known.count() };",
+      "expect": ["O36"],
+      "_note": "the cut store is rebuilt for every entry even when consecutive entries share P' (O36; X7 of review round 2)."
+    }
+  }
+}

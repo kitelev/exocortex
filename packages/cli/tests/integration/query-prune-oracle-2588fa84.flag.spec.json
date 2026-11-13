@@ -1,0 +1,41 @@
+{
+  "_doc": "Mutants of the `--prune-oracle` wiring in `sparql-query.ts` (task 2588fa84, RFC 308a52c3 Д3). `tree`/`subject` are placeholders (§A145). `--no-optimize` carries no mutant: the flag is dead product-wide (commander sets `options.optimize`, the code reads `options.noOptimize` — bug 954c7dfa), the oracle wires it exactly as `query --batch` does; its axis lands with that fix.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› (O\\d+(?:\\.\\d+)?[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/sparql-query.ts",
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/query-prune-oracle-2588fa84.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "S1_refusal_without_batch_removed": {
+      "from": "        if (options.pruneOracle && options.batch === undefined) {",
+      "to": "        if (options.pruneOracle && options.batch === undefined && false) {",
+      "expect": ["O11"],
+      "_note": "--prune-oracle without --batch runs a single query silently as if the flag were absent (O11)."
+    },
+    "S2_oracle_flag_not_dispatched": {
+      "from": "          if (options.pruneOracle) {",
+      "to": "          if (options.pruneOracle && false) {",
+      "expect": ["O17", "O33", "O34"],
+      "_note": "--batch … --prune-oracle prints answers instead of verdicts (O17). The axes that drive the flag through the command see it too: no oracle summary comes back, so neither `--timeout` (O33) nor `--use-cache` (O34) can be judged."
+    },
+    "S3_timeout_not_wired": {
+      "from": "            await runPruneOracleBatch(options.batch, {\n              vault: options.vault,\n              useCache: options.useCache ?? false,\n              timeoutMs,",
+      "to": "            await runPruneOracleBatch(options.batch, {\n              vault: options.vault,\n              useCache: options.useCache ?? false,\n              timeoutMs: 30_000,",
+      "expect": ["O33"],
+      "_note": "`--timeout` does not reach the oracle's runs: every run uses 30 s whatever the caller passed (O33; F1 of review round 2)."
+    },
+    "S4_use_cache_not_wired": {
+      "from": "            await runPruneOracleBatch(options.batch, {\n              vault: options.vault,\n              useCache: options.useCache ?? false,\n              timeoutMs,",
+      "to": "            await runPruneOracleBatch(options.batch, {\n              vault: options.vault,\n              useCache: false,\n              timeoutMs,",
+      "expect": ["O34"],
+      "_note": "`--use-cache` does not reach the oracle's graph load: every night re-parses the vault (O34; F2 of review round 2)."
+    }
+  }
+}

@@ -60,6 +60,11 @@ export interface SparqlQueryOptions {
   strict?: boolean;
   /** Ticket 8ada0615: path of a JSON batch file — many named queries, one graph load. */
   batch?: string;
+  /**
+   * Ticket 2588fa84 (RFC 308a52c3 Д3): with `--batch`, judge every entry — full graph
+   * against the graph cut to the analyzer's P' — instead of printing answers.
+   */
+  pruneOracle?: boolean;
 }
 
 /** Default TTL for query result cache in seconds */
@@ -294,6 +299,10 @@ export function sparqlQueryCommand(): Command {
       "--batch <file>",
       'Run a JSON array of named queries [{"name","sparql"}] with ONE vault load; NDJSON answers on stdout, progress on stderr',
     )
+    .option(
+      "--prune-oracle",
+      "With --batch: compare each answer over the full graph and over the graph cut to the predicates the query needs (RFC 308a52c3); prints verdicts, never values",
+    )
     .action(async (queryArg: string | undefined, options: SparqlQueryOptions) => {
       const outputFormat = (options.output || "text") as OutputFormat;
       ErrorHandler.setFormat(outputFormat);
@@ -333,6 +342,12 @@ export function sparqlQueryCommand(): Command {
 
         // Ticket 8ada0615 — batch mode. Flags that shape a SINGLE query or a
         // human-readable report are refused before anything is loaded.
+        if (options.pruneOracle && options.batch === undefined) {
+          throw new InvalidArgumentsError(
+            "--prune-oracle requires --batch.",
+            "exocortex query --batch queries.json --prune-oracle --vault <path> [--use-cache] [--timeout 30s]",
+          );
+        }
         if (options.batch !== undefined) {
           const clash = [
             queryArg !== undefined ? "a positional query" : null,
@@ -349,6 +364,21 @@ export function sparqlQueryCommand(): Command {
               `--batch cannot be combined with ${clash.join(", ")}.`,
               "exocortex query --batch queries.json --vault <path> [--use-cache] [--no-cache] [--timeout 30s]",
             );
+          }
+          if (options.pruneOracle) {
+            // Ticket 2588fa84 — loaded lazily: the oracle imports analyzer names from core
+            // that this module does not, and two unit suites replace core with a
+            // hand-written factory (harness-invocation-surface §A146).
+            const { runPruneOracleBatch } = await import("./query-prune-oracle.js");
+            await runPruneOracleBatch(options.batch, {
+              vault: options.vault,
+              useCache: options.useCache ?? false,
+              timeoutMs,
+              noOptimize: options.noOptimize ?? false,
+              buildAlgebra,
+              executeAlgebra,
+            });
+            return;
           }
           await runSparqlBatch(options.batch, {
             vault: options.vault,
