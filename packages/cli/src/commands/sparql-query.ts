@@ -65,6 +65,12 @@ export interface SparqlQueryOptions {
    * against the graph cut to the analyzer's P' — instead of printing answers.
    */
   pruneOracle?: boolean;
+  /**
+   * Ticket dc5ed554 (RFC 308a52c3 Д1, phase 1b): print what the query-predicate analyzer
+   * would load — P', the full-load reasons, the share of loaded triples — instead of the
+   * answer. Loading is unchanged (the full graph is loaded); the query is not executed.
+   */
+  pruneReport?: boolean;
 }
 
 /** Default TTL for query result cache in seconds */
@@ -303,6 +309,10 @@ export function sparqlQueryCommand(): Command {
       "--prune-oracle",
       "With --batch: compare each answer over the full graph and over the graph cut to the predicates the query needs (RFC 308a52c3); prints verdicts, never values",
     )
+    .option(
+      "--prune-report",
+      "Print the predicates the query needs (P'), the full-load reasons and the share of loaded triples instead of the answer (RFC 308a52c3); loading is unchanged, the query is not executed",
+    )
     .action(async (queryArg: string | undefined, options: SparqlQueryOptions) => {
       const outputFormat = (options.output || "text") as OutputFormat;
       ErrorHandler.setFormat(outputFormat);
@@ -342,6 +352,12 @@ export function sparqlQueryCommand(): Command {
 
         // Ticket 8ada0615 — batch mode. Flags that shape a SINGLE query or a
         // human-readable report are refused before anything is loaded.
+        if (options.pruneReport && options.pruneOracle) {
+          throw new InvalidArgumentsError(
+            "--prune-report cannot be combined with --prune-oracle.",
+            "exocortex query <query> --prune-report --vault <path> [--use-cache] or exocortex query --batch queries.json --prune-report --vault <path>",
+          );
+        }
         if (options.pruneOracle && options.batch === undefined) {
           throw new InvalidArgumentsError(
             "--prune-oracle requires --batch.",
@@ -364,6 +380,15 @@ export function sparqlQueryCommand(): Command {
               `--batch cannot be combined with ${clash.join(", ")}.`,
               "exocortex query --batch queries.json --vault <path> [--use-cache] [--no-cache] [--timeout 30s]",
             );
+          }
+          if (options.pruneReport) {
+            // Ticket dc5ed554 — loaded lazily for the same reason as the oracle below.
+            const { runPruneReportBatch } = await import("./query-prune-report.js");
+            await runPruneReportBatch(options.batch, {
+              vault: options.vault,
+              useCache: options.useCache ?? false,
+            });
+            return;
           }
           if (options.pruneOracle) {
             // Ticket 2588fa84 — loaded lazily: the oracle imports analyzer names from core
@@ -414,6 +439,41 @@ export function sparqlQueryCommand(): Command {
             "Either a query argument or --template flag is required.",
             'exocortex query "SELECT * WHERE { ?s ?p ?o }" or exocortex query --template tasks-by-date --param date=2024-01-15'
           );
+        }
+
+        // Ticket dc5ed554 — the prune report branches BEFORE the result cache (a cached
+        // answer must not swallow the report); only the template header may already be
+        // printed. Flags that shape an execution report are refused first.
+        if (options.pruneReport) {
+          // ⛔ Pairs, not the `cond ? "--flag" : null` list above: those lines are mutant
+          // anchors of another spec (sparql-query-batch-flags-8ada0615), and a second copy
+          // makes each of them match twice — check-spec-anchors refuses a doubled anchor.
+          const reportClash = (
+            [
+              ["--dry-run", options.dryRun],
+              ["--explain", options.explain],
+              ["--stats", options.stats],
+              [`--format ${options.format}`, options.format !== "table"],
+            ] as const
+          )
+            .filter(([, on]) => on === true)
+            .map(([flag]) => flag);
+          if (reportClash.length !== 0) {
+            throw new InvalidArgumentsError(
+              `--prune-report cannot be combined with ${reportClash.join(", ")}.`,
+              "exocortex query <query> --prune-report --vault <path> [--use-cache] [--output json]",
+            );
+          }
+          // The text the parser will see — so a syntax error quotes the right lines (the
+          // catch below reads `queryString`, as for plain `query`).
+          queryString = injectExocortexPrefixes(transformShorthandNotation(queryString));
+          const { runPruneReport } = await import("./query-prune-report.js");
+          await runPruneReport(queryString, {
+            vault: options.vault,
+            useCache: options.useCache ?? false,
+            output: outputFormat === "json" ? "json" : "text",
+          });
+          return;
         }
 
         // Issue #3979: fix the write-only result cache. The cache key MUST be
