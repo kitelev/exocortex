@@ -1,0 +1,147 @@
+{
+  "_doc": "Revert-verify mutants for the WIRING of `--prune-report` in sparql-query.ts (RFC 308a52c3 Д1, phase 1b, vault-exodev task dc5ed554): the flag reaches the single and the batch report, both branch before the query result cache, the single report returns instead of executing, conflicting flags are refused before the load. Each mutant reddens exactly `expect` (pairwise distinct; mutant-driver, control 0, 2026-11-14; F13–F14 — found by the specification review). F6 and the module spec's P12 redden the same R15 — one value, producer and consumer. `tree`/`subject` are placeholders (§A145).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› (R\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/sparql-query.ts",
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/query-prune-report-dc5ed554.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "F1_single_branch_off": {
+      "from": "        if (options.pruneReport) {\n          // ⛔ Pairs",
+      "to": "        if (options.pruneReport && options.batch === \"\\u0000\") {\n          // ⛔ Pairs",
+      "expect": [
+        "R1",
+        "R10",
+        "R11b",
+        "R11c",
+        "R11d",
+        "R11e",
+        "R15",
+        "R17",
+        "R2",
+        "R21",
+        "R23",
+        "R24",
+        "R27",
+        "R3",
+        "R4",
+        "R5",
+        "R6",
+        "R7",
+        "R8",
+        "R9"
+      ],
+      "_note": "the single flag is ignored: plain query runs — every single-mode axis reddens (R1–R10, the refusals R11b–R11e, R15); the batch axes stay green. The review axes on the single report (R17, R21, R23, R24, R27) redden with the rest."
+    },
+    "F2_batch_branch_off": {
+      "from": "          if (options.pruneReport) {\n            // Ticket dc5ed554",
+      "to": "          if (options.pruneReport && options.batch === \"\\u0000\") {\n            // Ticket dc5ed554",
+      "expect": ["R12", "R15b"],
+      "_note": "the batch flag dispatches to plain query --batch: answers instead of reports (R12, R15b)."
+    },
+    "F3_single_falls_through": {
+      "from": "            output: outputFormat === \"json\" ? \"json\" : \"text\",\n          });\n          return;\n",
+      "to": "            output: outputFormat === \"json\" ? \"json\" : \"text\",\n          });\n",
+      "expect": [
+        "R10",
+        "R17",
+        "R2",
+        "R21",
+        "R23",
+        "R24",
+        "R4",
+        "R5",
+        "R6",
+        "R7",
+        "R8",
+        "R9"
+      ],
+      "_note": "the report does not return: the query is executed and its answer printed after the report — the JSON is no longer ONE document (R2, R4–R8), the result cache is written (R9), the answer's value reaches stdout (R10). The review's JSON axes (R17, R21, R23, R24) cannot parse a document followed by an answer either."
+    },
+    "F4_oracle_combo_allowed": {
+      "from": "        if (options.pruneReport && options.pruneOracle) {",
+      "to": "        if (options.pruneReport && options.pruneOracle && options.batch === undefined) {",
+      "expect": ["R11a"],
+      "_note": "--prune-report with --prune-oracle (in a batch) is no longer refused (R11a)."
+    },
+    "F5_stats_allowed": {
+      "from": "              [\"--stats\", options.stats],",
+      "to": "              [\"--stats\", false],",
+      "expect": ["R11d"],
+      "_note": "--stats is no longer refused (R11d); one axis name per refusal so the refusals stay distinguishable."
+    },
+    "F6_single_use_cache_dropped": {
+      "from": "            useCache: options.useCache ?? false,\n            output:",
+      "to": "            useCache: false,\n            output:",
+      "expect": ["R15"],
+      "_note": "--use-cache does not reach the single report (R15)."
+    },
+    "F7_batch_use_cache_dropped": {
+      "from": "              useCache: options.useCache ?? false,\n            });\n            return;\n          }\n          if (options.pruneOracle) {",
+      "to": "              useCache: false,\n            });\n            return;\n          }\n          if (options.pruneOracle) {",
+      "expect": ["R15b"],
+      "_note": "--use-cache does not reach the batch report (R15b)."
+    },
+    "F8_output_json_dropped": {
+      "from": "            output: outputFormat === \"json\" ? \"json\" : \"text\",",
+      "to": "            output: \"text\",",
+      "expect": [
+        "R17",
+        "R2",
+        "R21",
+        "R23",
+        "R24",
+        "R26",
+        "R4",
+        "R5",
+        "R6",
+        "R7",
+        "R8"
+      ],
+      "_note": "--output json does not reach the report: every JSON axis reddens (R2, R4–R8). Every JSON axis reddens, R26 included: the text-mode load lines precede the JSON error document."
+    },
+    "F9_result_cache_read_first": {
+      "from": "          queryString = injectExocortexPrefixes(transformShorthandNotation(queryString));\n",
+      "to": "          if (useQueryResultCache && (await new QueryResultCache().get(queryString, cacheTtlSeconds, await computeVaultSignature(resolve(options.vault)))) !== null) return;\n          queryString = injectExocortexPrefixes(transformShorthandNotation(queryString));\n",
+      "expect": ["R9"],
+      "_note": "a warmed result-cache entry (keyed on the RAW text, as plain query keys it) answers instead of the report: R9's report-after-plain-query prints nothing."
+    },
+    "F10_dry_run_allowed": {
+      "from": "              [\"--dry-run\", options.dryRun],",
+      "to": "              [\"--dry-run\", false],",
+      "expect": ["R11b"],
+      "_note": "--dry-run is no longer refused (R11b)."
+    },
+    "F11_explain_allowed": {
+      "from": "              [\"--explain\", options.explain],",
+      "to": "              [\"--explain\", false],",
+      "expect": ["R11c"],
+      "_note": "--explain is no longer refused (R11c)."
+    },
+    "F12_format_allowed": {
+      "from": "              [`--format ${options.format}`, options.format !== \"table\"],",
+      "to": "              [`--format ${options.format}`, false],",
+      "expect": ["R11e"],
+      "_note": "--format other than table is no longer refused (R11e)."
+    },
+    "F13_template_ignored": {
+      "from": "          await runPruneReport(queryString, {",
+      "to": "          await runPruneReport(queryArg ?? \"\", {",
+      "expect": ["R23", "R26"],
+      "_note": "the report reads the positional argument, not the resolved query text: --template is lost (R23), and the syntax error is parsed from the unprepared text — its context differs from plain query's (R26)."
+    },
+    "F14_text_not_prepared": {
+      "from": "          queryString = injectExocortexPrefixes(transformShorthandNotation(queryString));\n",
+      "to": "",
+      "expect": ["R26"],
+      "_note": "the caller does not prepare the text: the report's syntax error quotes other lines than plain query's (R26 — found by the spec review)."
+    }
+  }
+}

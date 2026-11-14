@@ -1,0 +1,155 @@
+{
+  "_doc": "Revert-verify mutants for `query --prune-report` — the report module (RFC 308a52c3 «Загрузка по запросу» Д1, phase 1b, vault-exodev task dc5ed554). Each mutant is a plausible wrong implementation of ONE guarantee of query-prune-report.ts and reddens exactly `expect` (pairwise distinct sets; measured by mutant-driver, control 0, 2026-11-14; P15–P23 and F13–F14 — the wrong implementations found by the independent review of the specification). The flag wiring in sparql-query.ts has its own spec (query-prune-report-dc5ed554.flag.spec.json). The analysis input (the translator's algebra BEFORE the optimizer) has no mutant: no input is known where the optimizer changes the analyzer's verdict — the contract is the analyzer's, the oracle locks its own use (O22). `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› (R\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/query-prune-report.ts",
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/query-prune-report-dc5ed554.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "P1_share_counts_unique_triples": {
+      "from": "  for (const t of triples) if (analysis.predicates.has(t.predicate.value)) triplesCut += 1;",
+      "to": "  triplesCut = new Set(triples.filter((t) => analysis.predicates.has(t.predicate.value)).map((t) => `${t.subject.toString()} ${t.predicate.value} ${t.object.toString()}`)).size;",
+      "expect": ["R19", "R7"],
+      "_note": "the cut counted as the deduplicated store (the oracle's cutTriples unit): R7, whose fixture carries duplicates under P' (a symbolic status value linked from two files). R19 also reddens: it requires the entry's triplesCut to equal the (raw) union count."
+    },
+    "P2_namespace_mode_never": {
+      "from": "  const namespace = predicates.some((p) => p.sources.includes(\"namespace-filter\"));",
+      "to": "  const namespace = predicates.some((p) => p.sources.includes(\"namespace-filter-none\"));",
+      "expect": ["R12", "R17", "R2"],
+      "_note": "the namespace label never fires: VL-3's mode name (R2) and the batch mode count (R12). R17 (the mixed query) loses the label too."
+    },
+    "P3_full_share_zero": {
+      "from": "      share: 1,",
+      "to": "      share: 0,",
+      "expect": ["R12", "R3", "R4"],
+      "_note": "a full load reported as share 0: the text (R3), the JSON (R4), the batch median that counts a full load as 1 (R12)."
+    },
+    "P4_median_drops_full": {
+      "from": "      shares.push(report.share);",
+      "to": "      if (analysis.mode !== \"full\") shares.push(report.share);",
+      "expect": ["R12"],
+      "_note": "the median skips full loads — the RFC criterion counts them (R12)."
+    },
+    "P5_union_ignores_full": {
+      "from": "        unionFull = true;",
+      "to": "        unionFull = false;",
+      "expect": ["R13"],
+      "_note": "one full entry no longer makes the batch union full (R13)."
+    },
+    "P6_update_not_refused": {
+      "from": "      if (ast.type === \"update\") throw new UpdateRefusedError();",
+      "to": "      if (ast.type === \"update-never\") throw new UpdateRefusedError();",
+      "expect": ["R14"],
+      "_note": "an UPDATE is analyzed (full load «update») instead of refused as query --batch refuses it (R14)."
+    },
+    "P7_no_store_predicates": {
+      "from": "    storePredicates: new Set(triples.map((t) => t.predicate.value)),",
+      "to": "    storePredicates: undefined,",
+      "expect": ["R12", "R13", "R17", "R2", "R24"],
+      "_note": "no predicate list in the context: VL-3 falls back to full load (namespace-filter-without-predicate-list) — R2, the batch counts (R12) and the pruned union (R13). R17 (mixed) and R24 (namespace query on the empty graph) fall back to full load as well."
+    },
+    "P8_no_sub_property_index": {
+      "from": "    subPropertyIndex: await computeSubPropertyIndex(store),",
+      "to": "    subPropertyIndex: new Map(),",
+      "expect": ["R12", "R21", "R5"],
+      "_note": "no sub-property index: the closure and its declarations leave P' (R5); R12 reddens through its non-vacuity guard (the two medians coincide once the sub-property entry shrinks). R21 reddens through its guard «≥ 3 predicates» (the sub-property query keeps only its own predicate)."
+    },
+    "P9_sources_unsorted": {
+      "from": "    .map((iri) => ({ iri, sources: [...(analysis.sources.get(iri) ?? [])].sort() }));",
+      "to": "    .map((iri) => ({ iri, sources: [...(analysis.sources.get(iri) ?? [])] }));",
+      "expect": ["R6"],
+      "_note": "sources in discovery order: Class_superClass reads [query, class-bridge] (R6) — the output order is deterministic by design."
+    },
+    "P10_variable_without_mark": {
+      "from": "    const v = reason.variable.startsWith(\"_:\") ? reason.variable : `?${reason.variable}`;",
+      "to": "    const v = reason.variable;",
+      "expect": ["R3"],
+      "_note": "the variable of a reason printed without '?' (R3)."
+    },
+    "P11_json_without_type": {
+      "from": "      { type: \"prune-report\", ...report },",
+      "to": "      { ...report },",
+      "expect": ["R23", "R8"],
+      "_note": "the JSON document loses data.type (R8). R23 reads data.type of the template report."
+    },
+    "P12_single_ignores_use_cache": {
+      "from": "  const loaded = await loadVaultTriples(vaultPath, { useCache: options.useCache });",
+      "to": "  const loaded = await loadVaultTriples(vaultPath, { useCache: false });",
+      "expect": ["R15"],
+      "_note": "the single report ignores --use-cache (R15); the flag spec's F6 reddens the same axis one link earlier (the wiring) — producer and consumer of one value."
+    },
+    "P13_median_even_takes_upper": {
+      "from": "  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;",
+      "to": "  return sorted[mid];",
+      "expect": ["R12", "R16"],
+      "_note": "the median of an even count takes the upper middle value: R16 and the 4-entry batch of R12."
+    },
+    "P14_percent_one_decimal": {
+      "from": "  return `${(share * 100).toFixed(2)} %`;",
+      "to": "  return `${(share * 100).toFixed(1)} %`;",
+      "expect": ["R1", "R3"],
+      "_note": "the text share loses its second decimal: R1 and R3 pin the printed line."
+    },
+    "P15_namespace_mode_every": {
+      "from": "  const namespace = predicates.some((p) => p.sources.includes(\"namespace-filter\"));",
+      "to": "  const namespace = predicates.every((p) => p.sources.includes(\"namespace-filter\"));",
+      "expect": ["R17", "R24"],
+      "_note": "`every` instead of `some`: a constant beside a namespace filter loses the label (R17 — found by the spec review; the live corpus has no mixed query). R24 too: `every` over the EMPTY P' of the empty graph is vacuously true ⇒ prune-namespace instead of prune."
+    },
+    "P16_union_cut_summed": {
+      "from": "      for (const t of triples) if (union.has(t.predicate.value)) cut += 1;",
+      "to": "      cut = Math.round(pruneShares.reduce((a, b) => a + b, 0) * triples.length);",
+      "expect": ["R18"],
+      "_note": "the union counted as the SUM of the entries' shares: overlapping entries count twice (R18)."
+    },
+    "P17_union_cut_dedup": {
+      "from": "      for (const t of triples) if (union.has(t.predicate.value)) cut += 1;",
+      "to": "      cut = new Set(triples.filter((t) => union.has(t.predicate.value)).map((t) => `${t.subject.toString()} ${t.predicate.value} ${t.object.toString()}`)).size;",
+      "expect": ["R19"],
+      "_note": "the union counted without duplicates — the oracle-unit mix, in the union (R19)."
+    },
+    "P18_union_skips_skeletons": {
+      "from": "        for (const p of analysis.predicates) union.add(p);",
+      "to": "        for (const p of analysis.predicates) if ([...(analysis.sources.get(p) ?? [])].some((s) => s === \"query\" || s === \"namespace-filter\")) union.add(p);",
+      "expect": ["R19", "R20"],
+      "_note": "the union keeps only the query's own and namespace predicates: the sub-property skeleton (R20) and the class-bridge skeleton of the membership entry (R19) drop out."
+    },
+    "P19_predicates_unsorted": {
+      "from": "  const predicates = [...analysis.predicates]\n    .sort()\n",
+      "to": "  const predicates = [...analysis.predicates]\n",
+      "expect": ["R21"],
+      "_note": "P' in discovery order (R21)."
+    },
+    "P20_batch_record_trimmed": {
+      "from": "      record = { type: \"prune-report\", name: entry.name, ok: true, ...report };",
+      "to": "      record = { type: \"prune-report\", name: entry.name, ok: true, mode: report.mode, share: report.share };",
+      "expect": ["R19", "R20", "R22"],
+      "_note": "a batch record without P', reasons and counts (R22); R19 and R20 read the entry's triplesCut."
+    },
+    "P21_single_executes_query": {
+      "from": "  const report = pruneReport(analyze(ast, await analysisContext(store, loaded.triples)), loaded.triples);",
+      "to": "  const report = pruneReport(analyze(ast, await analysisContext(store, loaded.triples)), loaded.triples);\n  await new (await import(\"@kitelev/exocortex-core\")).ExoQLQueryExecutor(store).executeAll(new ExoQLAlgebraTranslator().translate(ast as never));",
+      "expect": ["R10", "R27"],
+      "_note": "a hidden execution after the report — nothing printed, the executor called (R10: found by the spec review). R27 too: the hidden executeAll throws on the UPDATE (the translator has no update algebra)."
+    },
+    "P22_empty_graph_share_one": {
+      "from": "    share: triplesLoaded === 0 ? 0 : triplesCut / triplesLoaded,",
+      "to": "    share: triplesLoaded === 0 ? 1 : triplesCut / triplesLoaded,",
+      "expect": ["R24"],
+      "_note": "an empty graph reports a prune as share 1 (R24)."
+    },
+    "P23_analysis_error_as_syntax": {
+      "from": "  return \"analysis\";\n}",
+      "to": "  return \"syntax\";\n}",
+      "expect": ["R25"],
+      "_note": "a failed analysis typed as a syntax error (R25)."
+    }
+  }
+}
