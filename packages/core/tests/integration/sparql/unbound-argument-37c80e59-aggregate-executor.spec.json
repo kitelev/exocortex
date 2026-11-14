@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 37c80e59: an unbound SPARQL function argument is an evaluation error (SPARQL 1.1 §17.3), STR takes any expression, a BIND primitive is substituted into EXISTS / LATERAL but not into a join operand. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › <axis> ` (ITRV §A44/§A104). Anchors are CODE lines only — the fix's comments may be reworded freely. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Subject: AggregateExecutor — MIN / MAX of a group with no values, and the absent aggregate in the result row. Anchors are code lines of the shipped fix (ems__Bug 37c80e59, PR #4580): rewriting one of them means moving its anchor and re-taking every `expect` from a finished driver run — pairwise-distinct sets stay required.",
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 37c80e59: an unbound SPARQL function argument is an evaluation error (SPARQL 1.1 §17.3), STR takes any expression, a BIND primitive is substituted into EXISTS / LATERAL but not into a join operand. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › <axis> ` (ITRV §A44/§A104). Anchors are CODE lines only — the fix's comments may be reworded freely. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145). Subject: AggregateExecutor — MIN / MAX of a group with no values, and the absent aggregate in the result row. Anchors are code lines of the shipped fix (ems__Bug 37c80e59, PR #4580): rewriting one of them means moving its anchor and re-taking every `expect` from a finished driver run — pairwise-distinct sets stay required. M16_empty_input_min_max_sample_literal was retired by ems__Bug 2653916f together with its subject, createEmptyAggregateResult: GROUP BY over an empty input has no group now, so no aggregate is computed for it (U9 holds by construction; aggregation-step-2653916f A1 pins the row count).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -31,12 +31,6 @@
       "to": "        if (value === null) continue;",
       "expect": [],
       "_canary": "M7_max_empty_literal"
-    },
-    "M16_empty_input_min_max_sample_literal": {
-      "_note": "MIN / MAX / SAMPLE over an EMPTY input with GROUP BY build Literal(\"\") again — \"Literal value cannot be empty\" fails the whole query.",
-      "from": "        case \"sample\":\n          break;\n",
-      "to": "        case \"sample\":\n          result.set(aggregate.variable, new Literal(\"\", XSD_STRING));\n          break;\n",
-      "expect": ["U9"]
     }
   }
 }

@@ -514,7 +514,7 @@ describe(SUITE, () => {
   it("U9 GROUP BY with MIN / MAX / SAMPLE over a FILTER that keeps no row does not fail the query", async () => {
     // A NamedQuery run without its parameter now keeps no rows (U1) — the empty
     // input must not turn into "Literal value cannot be empty". ⛔ The row count is
-    // NOT pinned: one row instead of zero groups is ems__Bug f7105304 item 4.
+    // NOT pinned here: zero groups since ems__Bug 2653916f (aggregation-step-2653916f A1).
     for (const agg of ["MAX", "MIN", "SAMPLE"]) {
       const rows = await run(`SELECT ?s (${agg}(?l) AS ?m) WHERE { ${BUGS_WHERE}
         FILTER(CONTAINS(?l, ?nope)) } GROUP BY ?s`);

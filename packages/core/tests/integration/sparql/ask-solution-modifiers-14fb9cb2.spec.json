@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 14fb9cb2: ASK honours GROUP BY / HAVING and LIMIT / OFFSET (SPARQL 1.1 §16.3, §18.2.4) — `translateAsk` wraps WHERE in Group (with HAVING) then Slice, and does NOT translate ORDER BY. M8/M9 are the planning review's plausible wrong implementations R1/R2, M10–M17 the specification review's V8/V5/V1–V4/V6/V9, M18–M23 the implementation review's (last GROUP BY variable only, aggregate counter reset per HAVING constraint, DISTINCT before the slice, HAVING without an aggregate as a Filter; round 2: Group on the raw GROUP BY, an empty-pattern shortcut that slices only LIMIT 0) — each passed the harness of its time. `aggregates.length > 0` in the group condition is implied by HAVING here (aggregates come only from HAVING) — kept verbatim from `translateSelect`, so no mutant on it. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct). `red_re` anchors on the jest failure header `● <suite> › <axis> ` (ITRV §A44/§A104). Anchors are CODE lines of `translateAsk` only; the group-condition line repeats in `translateSelect`, so its anchor carries the preceding `modifiers.having` call to stay unique. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145).",
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 14fb9cb2: ASK honours GROUP BY / HAVING and LIMIT / OFFSET (SPARQL 1.1 §16.3, §18.2.4) — `translateAsk` wraps WHERE in Group (with HAVING) then Slice, and does NOT translate ORDER BY. M8/M9 are the planning review's plausible wrong implementations R1/R2, M10–M17 the specification review's V8/V5/V1–V4/V6/V9, M18–M23 the implementation review's (last GROUP BY variable only, aggregate counter reset per HAVING constraint, DISTINCT before the slice, HAVING without an aggregate as a Filter — inverted to M21_having_no_aggregate_groups by ems__Bug 2653916f; round 2: Group on the raw GROUP BY, an empty-pattern shortcut that slices only LIMIT 0) — each passed the harness of its time. `aggregates.length > 0` in the group condition is implied by HAVING here (aggregates come only from HAVING) — kept verbatim from `translateSelect`, so no mutant on it. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct). `red_re` anchors on the jest failure header `● <suite> › <axis> ` (ITRV §A44/§A104). Anchors are CODE lines of `translateAsk` only; the group-condition line repeats in `translateSelect`, so its anchor carries the preceding `modifiers.having` call to stay unique. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -38,15 +38,10 @@
       ]
     },
     "M2_no_group": {
-      "_note": "The defect for GROUP BY / HAVING: Group is not built. A11 is split per path (A11a precondition, A11b run-query, A11c ExoQL.ask, A11d plugin): all four see the missing step. A15/A15b/A18* use the implicit group (HAVING without GROUP BY); A16 and A17 use GROUP BY with OFFSET / HAVING. A16b slices 3 ungrouped solutions instead of 2 groups; A21 — HAVING dropped, ASK no longer matches SELECT.",
-      "from": "      modifiers.having,\n      aggregates,\n      aggregateVarMap\n    );\n\n    if (aggregates.length > 0 || groupVars.length > 0 || havingExpressions.length > 0) {",
-      "to": "      modifiers.having,\n      aggregates,\n      aggregateVarMap\n    );\n\n    if (aggregates.length < 0 && groupVars.length < 0 && havingExpressions.length < 0) {",
+      "_note": "The defect for GROUP BY / HAVING: Group is not built. A11 is split per path (A11a precondition, A11b run-query, A11c ExoQL.ask, A11d plugin): all four see the missing step. A15/A15b/A18* use the implicit group (HAVING without GROUP BY); A16 and A17 use GROUP BY with OFFSET / HAVING. A16b slices 3 ungrouped solutions instead of 2 groups; A21 — HAVING dropped, ASK no longer matches SELECT. Re-anchored and re-taken by ems__Bug 2653916f: with no Group the step now applies HAVING as a Filter (the branch 2653916f added), so A21 (ASK = SELECT on HAVING without an aggregate) and A11a (the precondition turns the Filter's aggregate error into false) no longer redden, while A7, A15c and C3 do.",
+      "from": "    const explicitGroup = (modifiers.group?.length ?? 0) > 0;\n\n    if (aggregates.length > 0 || groupVars.length > 0 || (explicitGroup && havingExpressions.length > 0)) {",
+      "to": "    const explicitGroup = (modifiers.group?.length ?? 0) > 0;\n\n    if (aggregates.length < 0 && groupVars.length < 0 && (explicitGroup && havingExpressions.length < 0)) {",
       "expect": [
-        "A5",
-        "A6",
-        "A8",
-        "A9",
-        "A11a",
         "A11b",
         "A11c",
         "A11d",
@@ -55,6 +50,7 @@
         "A14",
         "A15",
         "A15b",
+        "A15c",
         "A16",
         "A16b",
         "A17",
@@ -62,7 +58,12 @@
         "A18b",
         "A18c",
         "A18d",
-        "A21"
+        "A5",
+        "A6",
+        "A7",
+        "A8",
+        "A9",
+        "C3"
       ]
     },
     "M3_slice_before_group": {
@@ -78,21 +79,22 @@
       "expect": ["A1", "A4", "A10", "A11a", "A11b", "A11c", "A11d", "A12"]
     },
     "M5_no_implicit_group": {
-      "_note": "Plausible wrong guard: Group only with an explicit GROUP BY — HAVING without GROUP BY is dropped. A15/A15b (several HAVING constraints) and A18* (`W0 HAVING (COUNT(*) = 0)`) have no GROUP BY. A21's HAVING has no GROUP BY either, so it is dropped and ASK no longer matches SELECT.",
-      "from": "      modifiers.having,\n      aggregates,\n      aggregateVarMap\n    );\n\n    if (aggregates.length > 0 || groupVars.length > 0 || havingExpressions.length > 0) {",
-      "to": "      modifiers.having,\n      aggregates,\n      aggregateVarMap\n    );\n\n    if (groupVars.length > 0 && (aggregates.length >= 0 || havingExpressions.length >= 0)) {",
+      "_note": "Plausible wrong guard: Group only with an explicit GROUP BY — HAVING without GROUP BY is dropped. A15/A15b (several HAVING constraints) and A18* (`W0 HAVING (COUNT(*) = 0)`) have no GROUP BY. A21's HAVING has no GROUP BY either, so it is dropped and ASK no longer matches SELECT. Re-anchored and re-taken by ems__Bug 2653916f: HAVING without GROUP BY now falls to the Filter branch, so A21 no longer reddens (parity holds) and A15c / A17 do.",
+      "from": "    const explicitGroup = (modifiers.group?.length ?? 0) > 0;\n\n    if (aggregates.length > 0 || groupVars.length > 0 || (explicitGroup && havingExpressions.length > 0)) {",
+      "to": "    const explicitGroup = (modifiers.group?.length ?? 0) > 0;\n\n    if (groupVars.length > 0 && (aggregates.length >= 0 || (explicitGroup && havingExpressions.length >= 0))) {",
       "expect": [
-        "A8",
-        "A9",
         "A12",
         "A14",
         "A15",
         "A15b",
+        "A15c",
+        "A17",
         "A18a",
         "A18b",
         "A18c",
         "A18d",
-        "A21"
+        "A8",
+        "A9"
       ]
     },
     "M6_slice_drops_offset": {
@@ -125,9 +127,9 @@
       "expect": ["A12", "A13"]
     },
     "M9_no_group_on_empty_pattern": {
-      "_note": "Plausible wrong guard (review R2): no Group when WHERE is empty — `ASK {}` is one empty solution and groups like any other.",
-      "from": "      modifiers.having,\n      aggregates,\n      aggregateVarMap\n    );\n\n    if (aggregates.length > 0 || groupVars.length > 0 || havingExpressions.length > 0) {",
-      "to": "      modifiers.having,\n      aggregates,\n      aggregateVarMap\n    );\n\n    if ((query.where?.length ?? 0) > 0 && (aggregates.length > 0 || groupVars.length > 0 || havingExpressions.length > 0)) {",
+      "_note": "Plausible wrong guard (review R2): no Group when WHERE is empty — `ASK {}` is one empty solution and groups like any other. Re-anchored by ems__Bug 2653916f; same expect.",
+      "from": "    const explicitGroup = (modifiers.group?.length ?? 0) > 0;\n\n    if (aggregates.length > 0 || groupVars.length > 0 || (explicitGroup && havingExpressions.length > 0)) {",
+      "to": "    const explicitGroup = (modifiers.group?.length ?? 0) > 0;\n\n    if ((query.where?.length ?? 0) > 0 && (aggregates.length > 0 || groupVars.length > 0 || (explicitGroup && havingExpressions.length > 0))) {",
       "expect": ["A14"]
     },
     "M10_throw_on_slice": {
@@ -220,16 +222,16 @@
       "to": "      where = { type: \"slice\", limit: modifiers.limit, offset: modifiers.offset, input: { type: \"distinct\", input: where } };",
       "expect": ["A20"]
     },
-    "M21_having_no_aggregate_as_filter": {
-      "_note": "Implementation review (R3 of the planning review): HAVING without an aggregate and without GROUP BY translated as a Filter. Correct by SPARQL 1.1, but ASK then disagrees with SELECT, whose shared grouping step builds a group (ems__Bug 2653916f) — parity is the design, locked by A21.",
-      "from": "      modifiers.having,\n      aggregates,\n      aggregateVarMap\n    );\n\n    if (aggregates.length > 0 || groupVars.length > 0 || havingExpressions.length > 0) {",
-      "to": "      modifiers.having,\n      aggregates,\n      aggregateVarMap\n    );\n\n    if (aggregates.length === 0 && groupVars.length === 0 && havingExpressions.length > 0) {\n      for (const h of havingExpressions) where = { type: \"filter\", expression: h, input: where };\n    } else if (aggregates.length > 0 || groupVars.length > 0 || havingExpressions.length > 0) {",
+    "M21_having_no_aggregate_groups": {
+      "_note": "Inverted by ems__Bug 2653916f (was M21_having_no_aggregate_as_filter): HAVING without an aggregate and without GROUP BY is now a Filter in BOTH translateSelect and translateAsk (SPARQL 1.1 §18.2.4.2). The mutant brings the pre-fix group back in ASK only, so ASK and SELECT disagree again — parity is locked by A21.",
+      "from": "    const explicitGroup = (modifiers.group?.length ?? 0) > 0;\n\n    if (aggregates.length > 0 || groupVars.length > 0 || (explicitGroup && havingExpressions.length > 0)) {",
+      "to": "    const explicitGroup = (modifiers.group?.length ?? 0) > 0;\n\n    if (aggregates.length > 0 || groupVars.length > 0 || (havingExpressions.length > 0)) {",
       "expect": ["A21"]
     },
     "M22_group_on_raw_group_by": {
-      "_note": "Implementation review round 2 (V31): Group built from the RAW `GROUP BY` instead of the translated variables. GROUP BY by an expression yields no variable today (ems__Bug 38328fcc), so the solutions collapse into ONE group — `GROUP BY (STR(?s)) OFFSET 1` answers false, worse than the base. Locked by the absolute axis A22.",
-      "from": "      modifiers.having,\n      aggregates,\n      aggregateVarMap\n    );\n\n    if (aggregates.length > 0 || groupVars.length > 0 || havingExpressions.length > 0) {",
-      "to": "      modifiers.having,\n      aggregates,\n      aggregateVarMap\n    );\n\n    if ((modifiers.group?.length ?? 0) > 0 || havingExpressions.length > 0) {",
+      "_note": "Implementation review round 2 (V31): Group built from the RAW `GROUP BY` instead of the translated variables. GROUP BY by an expression yields no variable today (ems__Bug 38328fcc), so the solutions collapse into ONE group — `GROUP BY (STR(?s)) OFFSET 1` answers false, worse than the base. Locked by the absolute axis A22. Re-anchored by ems__Bug 2653916f: the raw GROUP BY is `explicitGroup` now; HAVING alone no longer groups, so the mutant drops that half to stay one concern.",
+      "from": "    const explicitGroup = (modifiers.group?.length ?? 0) > 0;\n\n    if (aggregates.length > 0 || groupVars.length > 0 || (explicitGroup && havingExpressions.length > 0)) {",
+      "to": "    const explicitGroup = (modifiers.group?.length ?? 0) > 0;\n\n    if (explicitGroup || aggregates.length > 0 || groupVars.length > 0) {",
       "expect": ["A22"]
     },
     "M23_empty_pattern_limit_zero_only": {

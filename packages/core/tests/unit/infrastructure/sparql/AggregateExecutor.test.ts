@@ -997,7 +997,7 @@ describe("AggregateExecutor", () => {
     });
   });
 
-  describe("createEmptyAggregateResult edge cases", () => {
+  describe("empty input without GROUP BY (the implicit group) edge cases", () => {
     it("should create empty result for sum aggregate", () => {
       const solutions: SolutionMapping[] = [];
       const operation = createGroupOperation([], [createSumAggregate("total", "value")]);

@@ -572,17 +572,26 @@ export class ExoQLQueryExecutor {
 
     // Apply HAVING filter if present
     if (operation.having && operation.having.length > 0) {
+      // A condition holding EXISTS is evaluated asynchronously — synchronously
+      // EXISTS threw and dropped every group (ems__Bug 2653916f); any other
+      // condition keeps the synchronous path. Decided once, not per group.
+      const havingIsAsync = operation.having.map((expr) => this.filterExecutor.expressionContainsExists(expr));
       for (const result of results) {
         // All HAVING conditions must be true
-        const passesHaving = operation.having.every((expr) => {
+        let passesHaving = true;
+        for (let i = 0; i < operation.having.length; i++) {
           // HAVING is a filter over groups: an evaluation error drops the group
           // instead of failing the whole query (ems__Bug 37c80e59).
           try {
-            return this.filterExecutor.evaluateExpression(expr, result) === true;
+            const value = havingIsAsync[i]
+              ? await this.filterExecutor.evaluateExpressionAsync(operation.having[i], result)
+              : this.filterExecutor.evaluateExpression(operation.having[i], result);
+            passesHaving = value === true;
           } catch {
-            return false;
+            passesHaving = false;
           }
-        });
+          if (!passesHaving) break;
+        }
         if (passesHaving) {
           yield result;
         }

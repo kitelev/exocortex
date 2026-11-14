@@ -1,0 +1,53 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 2653916f: the aggregation step of SPARQL 1.1 (§18.2.4.1 grouping, §18.2.4.2 HAVING) — GROUP BY over an empty input has no group, HAVING without grouping is a Filter, an aggregate in ORDER BY groups the level, EXISTS works in HAVING and SELECT expressions. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct across the four specs of this harness). `red_re` anchors on the jest failure header `● <suite> › <axis> ` (ITRV §A44/§A104). C1–C3 are controls; A12 and A18 lock unchanged behaviour and are green on the pre-fix engine by construction. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/aggregation-step-2653916f.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/executors/QueryExecutor.ts",
+  "mutants": {
+    "M14_having_sync": {
+      "_note": "HAVING evaluated synchronously again: EXISTS throws, the catch drops every group (form 4 over groups). ASK and SELECT agree (both drop) ⇒ the differential stays green.",
+      "from": "            const value = havingIsAsync[i]\n",
+      "to": "            const value = havingIsAsync[i] && i < 0\n",
+      "expect": [
+        "A13",
+        "A14",
+        "A15",
+        "A19a",
+        "A19b",
+        "A19c",
+        "A19d",
+        "A20a",
+        "A20b",
+        "A20c",
+        "A22"
+      ]
+    },
+    "M15_having_error_fails_query": {
+      "_note": "An error in a HAVING condition fails the whole query instead of dropping the group (37c80e59 U4 holds the same for HAVING without EXISTS). Spec stage: also A26 — its HAVING with EXISTS under arithmetic errs (a8012c4f); dropping the group keeps parity with FILTER, failing the query does not.",
+      "from": "          } catch {\n            passesHaving = false;\n          }",
+      "to": "          } catch (e) {\n            throw e;\n          }",
+      "expect": ["A17", "A26"]
+    },
+    "M16_having_first_condition_only": {
+      "_note": "The loop stops after the first HAVING condition whatever it answered (A18).",
+      "from": "          if (!passesHaving) break;",
+      "to": "          break;",
+      "expect": ["A18"]
+    },
+    "M21_having_last_condition_decides": {
+      "_note": "Review X1: the loop never stops early, so the LAST HAVING condition decides; a false condition followed by a true one keeps the group (A18b). The pre-fix `every` was right.",
+      "from": "          if (!passesHaving) break;",
+      "to": "          if (!passesHaving && i < 0) break;",
+      "expect": ["A18b"]
+    }
+  }
+}

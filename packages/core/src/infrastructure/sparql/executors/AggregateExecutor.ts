@@ -41,6 +41,17 @@ export class AggregateExecutor {
     operation: GroupOperation,
     inputSolutions: SolutionMapping[]
   ): SolutionMapping[] {
+    // SPARQL 1.1 §18.2.4.1: GROUP BY over an empty input has no group, so no row;
+    // only the implicit group of an aggregate without GROUP BY exists over an
+    // empty input (COUNT(*) = 0). With a GROUP BY variable `groupSolutions` finds
+    // no group by itself; this guard covers GROUP BY whose every key is an
+    // expression, which leaves `variables` empty (38328fcc) and would otherwise
+    // fall into the implicit single group. An empty group built for any GROUP BY
+    // used to answer a phantom row with an unbound key (ems__Bug 2653916f).
+    if (operation.explicit === true && inputSolutions.length === 0) {
+      return [];
+    }
+
     const groups = this.groupSolutions(inputSolutions, operation.variables);
     const results: SolutionMapping[] = [];
 
@@ -80,13 +91,6 @@ export class AggregateExecutor {
         result.set(key, value as Parameters<typeof result.set>[1]);
       }
       results.push(result);
-    }
-
-    if (results.length === 0 && operation.aggregates.length > 0) {
-      const emptyResult = this.createEmptyAggregateResult(operation);
-      if (emptyResult) {
-        results.push(emptyResult);
-      }
     }
 
     return results;
@@ -465,46 +469,5 @@ export class AggregateExecutor {
     if (typeof first === "number") return first;
     const num = parseFloat(String(first));
     return !isNaN(num) ? num : String(first);
-  }
-
-  private createEmptyAggregateResult(operation: GroupOperation): SolutionMapping | null {
-    const result = new SolutionMapping();
-
-    for (const aggregate of operation.aggregates) {
-      const agg = aggregate.expression.aggregation;
-
-      // Handle custom aggregates
-      if (isCustomAggregation(agg)) {
-        // Custom aggregates return decimal 0 for empty groups
-        result.set(aggregate.variable, new Literal("0", XSD_DECIMAL));
-        continue;
-      }
-
-      switch (agg) {
-        case "count":
-          result.set(aggregate.variable, new Literal("0", XSD_INTEGER));
-          break;
-        case "sum":
-        case "avg":
-          result.set(aggregate.variable, new Literal("0", XSD_DECIMAL));
-          break;
-        case "group_concat":
-          result.set(aggregate.variable, new Literal(" ", XSD_STRING));
-          break;
-        // MIN / MAX / SAMPLE of no values is unbound (SPARQL 1.1 §18.5.1), so the
-        // variable is left out. It used to build Literal(""), which throws "Literal
-        // value cannot be empty" and failed the whole query — reached far more often
-        // once a FILTER over an unbound parameter keeps no rows (ems__Bug 37c80e59).
-        case "min":
-        case "max":
-        case "sample":
-          break;
-        default:
-          // Exhaustive check handled by TypeScript - unreachable for StandardAggregation
-          result.set(aggregate.variable, new Literal("", XSD_STRING));
-      }
-    }
-
-    return result;
   }
 }

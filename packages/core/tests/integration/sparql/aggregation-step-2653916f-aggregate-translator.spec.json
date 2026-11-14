@@ -1,0 +1,47 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 2653916f: the aggregation step of SPARQL 1.1 (§18.2.4.1 grouping, §18.2.4.2 HAVING) — GROUP BY over an empty input has no group, HAVING without grouping is a Filter, an aggregate in ORDER BY groups the level, EXISTS works in HAVING and SELECT expressions. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct across the four specs of this harness). `red_re` anchors on the jest failure header `● <suite> › <axis> ` (ITRV §A44/§A104). C1–C3 are controls; A12 and A18 lock unchanged behaviour and are green on the pre-fix engine by construction. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted (§A145).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/aggregation-step-2653916f.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/algebra/AggregateTranslator.ts",
+  "mutants": {
+    "M12_exists_not_delegated": {
+      "_note": "EXISTS / NOT EXISTS go through the operator table again: the pattern is dropped or rejected in HAVING and SELECT expressions (form 4). A8 (HAVING without grouping) reddens too: the HAVING conditions are translated through this table BEFORE the step decides whether the level groups, so a throw here fails the Filter path as well. Spec stage: also A25 (the EXISTS condition of HAVING without grouping is refused again, so its HAVING form throws while the FILTER twin answers) and A26 (EXISTS under arithmetic in a SELECT expression is refused again, the BIND twin answers).",
+      "from": "      if (opExpr.operator === \"exists\" || opExpr.operator === \"notexists\") {",
+      "to": "      if (opExpr.operator === \"no-exists\" || opExpr.operator === \"no-notexists\") {",
+      "expect": [
+        "A8",
+        "A13",
+        "A14",
+        "A15",
+        "A16",
+        "A17",
+        "A21",
+        "A22",
+        "A25",
+        "A26",
+        "A19a",
+        "A19b",
+        "A19c",
+        "A19d",
+        "A20a",
+        "A20b",
+        "A20c"
+      ]
+    },
+    "M13_not_exists_not_delegated": {
+      "_note": "Only EXISTS is delegated; NOT EXISTS still fails.",
+      "from": "      if (opExpr.operator === \"exists\" || opExpr.operator === \"notexists\") {",
+      "to": "      if (opExpr.operator === \"exists\" || opExpr.operator === \"no-notexists\") {",
+      "expect": ["A13", "A16", "A21"]
+    }
+  }
+}

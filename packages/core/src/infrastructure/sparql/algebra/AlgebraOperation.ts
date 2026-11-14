@@ -434,6 +434,15 @@ export interface GroupOperation {
   aggregates: AggregateBinding[];
   /** HAVING clause filter expressions. Applied after grouping and aggregation. */
   having?: Expression[];
+  /**
+   * `true` when the query level has a GROUP BY clause — SPARQL 1.1 §18.2.4.1
+   * `Group(exprlist, P)`, which yields NO group over an empty input. Absent or
+   * `false` is the implicit `Group((1), P)` an aggregate brings without GROUP BY:
+   * exactly one group, even over an empty input. With a GROUP BY variable an
+   * empty input has no group anyway; the flag decides when every GROUP BY key is
+   * an expression, which `variables` does not carry (ems__Bug 2653916f, 38328fcc).
+   */
+  explicit?: boolean;
   input: AlgebraOperation;
 }
 
