@@ -162,8 +162,9 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
   /**
    * ems__Bug 67e9be8b — one {@link getFrontmatter} read per file per vault walk.
    * (The lazy alias/basename index of `getFirstLinkpathDest` is a separate pass
-   * with its own `readFileSync`, built once per adapter on the first non-UID
-   * link — it is not routed through this memory.)
+   * with its own `readFileSync`, built once per adapter on the first link that
+   * is neither a UID nor an existing relative path — it is not routed through
+   * this memory.)
    *
    * While `run` is pending, {@link getFrontmatter} answers each path from
    * memory after its first read (a `null` answer included). The core converter
@@ -197,7 +198,7 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
    * entry where a shared instance could appear.
    *
    * Cost: the parsed frontmatter of every walked file is held until the scope
-   * ends (measured ≈ 9 MB on a 6 965-file corpus, about 6.5 % of the triples'
+   * ends (measured ≈ 9 MB on a corpus of ≈ 7 000 files, about 6.5 % of the triples'
    * own footprint); it is released with the scope.
    *
    * Nested scopes share the outer memory; it is dropped when the outermost one
