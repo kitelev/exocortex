@@ -136,7 +136,14 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
   }
 
   getFrontmatter(file: IFile): IFrontmatter | null {
-    const fullPath = this.resolvePath(file.path);
+    let fullPath: string;
+    try {
+      fullPath = this.resolvePath(file.path);
+    } catch {
+      // A malformed IFile (no string path) — the contract before the snapshot
+      // answered `null` here, not a TypeError. Nothing is remembered for it.
+      return null;
+    }
     const memo = this.snapshotMemo;
     if (memo !== null && memo.has(fullPath)) {
       return memo.get(fullPath) ?? null;
@@ -153,7 +160,10 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
   }
 
   /**
-   * ems__Bug 67e9be8b — one disk read per file per vault walk.
+   * ems__Bug 67e9be8b — one {@link getFrontmatter} read per file per vault walk.
+   * (The lazy alias/basename index of `getFirstLinkpathDest` is a separate pass
+   * with its own `readFileSync`, built once per adapter on the first non-UID
+   * link — it is not routed through this memory.)
    *
    * While `run` is pending, {@link getFrontmatter} answers each path from
    * memory after its first read (a `null` answer included). The core converter
@@ -178,6 +188,17 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
    * ⛔ Within the scope the SAME object is handed to every caller asking for one
    * path, so a caller that mutates it changes what the next caller sees. The
    * converter and `discoverFileSpaceExclusions` only read it.
+   *
+   * ⛔ The memory belongs to the adapter INSTANCE, not to an async context: any
+   * other task on the same instance while the scope is open gets remembered
+   * answers too. Do not share one instance between a walk and code that writes
+   * files around the adapter (plain `fs`) during that walk — every walk in the
+   * CLI today uses its own instance; `loadVaultTriples({ vaultAdapter })` is the
+   * entry where a shared instance could appear.
+   *
+   * Cost: the parsed frontmatter of every walked file is held until the scope
+   * ends (measured ≈ 9 MB on a 6 965-file corpus, about 6.5 % of the triples'
+   * own footprint); it is released with the scope.
    *
    * Nested scopes share the outer memory; it is dropped when the outermost one
    * settles, on success or failure alike.

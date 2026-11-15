@@ -97,6 +97,12 @@
       "to": "      return await run();\n    } catch (error) {\n      this.snapshotDepth++;\n      throw error;\n    } finally {",
       "expect": ["R7"],
       "_note": "A walk that throws leaves the depth at 1, so the memory is never dropped."
+    },
+    "SM15_malformed_file_throws": {
+      "from": "    let fullPath: string;\n    try {\n      fullPath = this.resolvePath(file.path);\n    } catch {",
+      "to": "    let fullPath: string;\n    {\n      fullPath = this.resolvePath(file.path);\n    }\n    if (false) {",
+      "expect": ["R13"],
+      "_note": "Review LOW-1: resolvePath outside the try turns a malformed IFile into a TypeError instead of the pre-snapshot null."
     }
   },
   "_coverage": {

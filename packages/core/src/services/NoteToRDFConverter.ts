@@ -1080,8 +1080,8 @@ export class NoteToRDFConverter {
     // once more in `discoverFileSpaceExclusions`. On an adapter whose
     // `getFrontmatter` reads the disk (the CLI one) that was one read per
     // reference: 745 368 reads for 66 244 files of vault-exodev. The optional
-    // snapshot capability makes it one read per file for the duration of this
-    // walk; an adapter without it (the plugin's metadataCache, the in-memory
+    // snapshot capability makes it one `getFrontmatter` read per file for the
+    // duration of this walk; an adapter without it (the plugin's metadataCache, the in-memory
     // doubles) runs the walk exactly as before.
     const walk = () => this.walkVaultWithValidation(options);
     return this.vault.withFrontmatterSnapshot

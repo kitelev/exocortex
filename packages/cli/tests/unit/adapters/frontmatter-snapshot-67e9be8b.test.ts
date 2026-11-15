@@ -121,7 +121,9 @@ describe("ems__Bug 67e9be8b — one read per file per vault walk", () => {
     expect(relates).toHaveLength(REFERRERS);
     expect(counts.get(path.resolve(files.target))).toBe(1);
     expect(counts.get(path.resolve(files.klass))).toBe(1);
-    // No file of the vault is read twice by one walk.
+    // No file of the vault is read twice by one walk. (The fixture links by UID
+    // only; a non-UID link would build the adapter's alias index — a separate,
+    // once-per-adapter pass with its own reads, not routed through the snapshot.)
     expect(Math.max(...counts.values())).toBe(1);
   });
 
@@ -330,6 +332,16 @@ describe("ems__Bug 67e9be8b — one read per file per vault walk", () => {
       return [before, adapter.getFrontmatter(referrer)?.exo__Asset_relates];
     });
     expect(seen).toEqual([`[[${TARGET_UID}]]`, "[[renamed-target]]"]);
+  });
+
+  it("R13 a malformed file reference answers null, inside or outside a snapshot", async () => {
+    const adapter = new FileSystemVaultAdapter(root);
+    const bad = { path: undefined } as unknown as Parameters<typeof adapter.getFrontmatter>[0];
+    expect(adapter.getFrontmatter(bad)).toBeNull();
+    const inside = await adapter.withFrontmatterSnapshot(async () =>
+      adapter.getFrontmatter(bad),
+    );
+    expect(inside).toBeNull();
   });
 
   it("R8 outside a snapshot every read is fresh (default behaviour unchanged)", () => {
