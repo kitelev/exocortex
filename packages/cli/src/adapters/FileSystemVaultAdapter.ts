@@ -56,6 +56,12 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
    */
   private aliasIndex: Map<string, string> | null = null;
 
+  /** Open {@link withFrontmatterSnapshot} scopes; the memory lives while > 0. */
+  private snapshotDepth = 0;
+
+  /** Absolute path → frontmatter read in the open snapshot (`null` = none). */
+  private snapshotMemo: Map<string, IFrontmatter | null> | null = null;
+
   constructor(private rootPath: string) {}
 
   async read(file: IFile): Promise<string> {
@@ -73,6 +79,7 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     }
     await fs.ensureDir(path.dirname(fullPath));
     await fs.writeFile(fullPath, content, "utf-8");
+    this.forgetFrontmatter(fullPath);
     return this.createFileObject(filePath);
   }
 
@@ -82,6 +89,7 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
       throw new Error(`File not found: ${file.path}`);
     }
     await fs.writeFile(fullPath, newContent, "utf-8");
+    this.forgetFrontmatter(fullPath);
   }
 
   async delete(file: IFile): Promise<void> {
@@ -90,6 +98,7 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
       throw new Error(`File not found: ${file.path}`);
     }
     await fs.remove(fullPath);
+    this.forgetFrontmatter(fullPath);
   }
 
   async exists(filePath: string): Promise<boolean> {
@@ -127,11 +136,74 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
   }
 
   getFrontmatter(file: IFile): IFrontmatter | null {
+    const fullPath = this.resolvePath(file.path);
+    const memo = this.snapshotMemo;
+    if (memo !== null && memo.has(fullPath)) {
+      return memo.get(fullPath) ?? null;
+    }
+    let frontmatter: IFrontmatter | null;
     try {
-      const content = fs.readFileSync(this.resolvePath(file.path), "utf-8");
-      return this.extractFrontmatter(content);
+      const content = fs.readFileSync(fullPath, "utf-8");
+      frontmatter = this.extractFrontmatter(content);
     } catch (error) {
-      return null;
+      frontmatter = null;
+    }
+    memo?.set(fullPath, frontmatter);
+    return frontmatter;
+  }
+
+  /**
+   * ems__Bug 67e9be8b — one disk read per file per vault walk.
+   *
+   * While `run` is pending, {@link getFrontmatter} answers each path from
+   * memory after its first read (a `null` answer included). The core converter
+   * runs `convertVaultWithValidation` inside this scope (optional capability on
+   * `IVaultFrontmatterManager`), because a walk asks for the frontmatter of the
+   * TARGET of every wikilink again: on a vault-exodev copy (66 244 files, CLI
+   * v17.20.0) one `create --validate` made 745 368 reads, a single target was
+   * read 43 743 times, and the walk took 105 s against 16 s without
+   * `--validate`.
+   *
+   * Why the memory is keyed by path alone, with no mtime/size check:
+   *  - It lives exactly as long as one walk. Outside the scope every call reads
+   *    the disk as before — callers that read a file right after writing it
+   *    (`apply`'s created-asset report) keep their freshness.
+   *  - The walk itself writes nothing. Writes made through THIS adapter while a
+   *    scope is open still drop the path (and `updateLinks`, which rewrites files
+   *    across the vault, drops everything), so they are read back fresh.
+   *  - A file changed by ANOTHER process mid-walk was a torn read before as well
+   *    (its own triples from one version, the references to it resolved from the
+   *    next); with the memory both come from the first read.
+   *
+   * ⛔ Within the scope the SAME object is handed to every caller asking for one
+   * path, so a caller that mutates it changes what the next caller sees. The
+   * converter and `discoverFileSpaceExclusions` only read it.
+   *
+   * Nested scopes share the outer memory; it is dropped when the outermost one
+   * settles, on success or failure alike.
+   */
+  async withFrontmatterSnapshot<T>(run: () => Promise<T>): Promise<T> {
+    if (this.snapshotDepth === 0) {
+      this.snapshotMemo = new Map();
+    }
+    this.snapshotDepth++;
+    try {
+      return await run();
+    } finally {
+      this.snapshotDepth--;
+      if (this.snapshotDepth === 0) {
+        this.snapshotMemo = null;
+      }
+    }
+  }
+
+  /** Drop one path (or, with no argument, everything) from an open snapshot. */
+  private forgetFrontmatter(fullPath?: string): void {
+    if (this.snapshotMemo === null) return;
+    if (fullPath === undefined) {
+      this.snapshotMemo.clear();
+    } else {
+      this.snapshotMemo.delete(fullPath);
     }
   }
 
@@ -290,6 +362,8 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
 
     await fs.ensureDir(path.dirname(newFullPath));
     await fs.move(oldFullPath, newFullPath);
+    this.forgetFrontmatter(oldFullPath);
+    this.forgetFrontmatter(newFullPath);
   }
 
   async createFolder(folderPath: string): Promise<void> {
@@ -485,6 +559,8 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     await rewriteInboundWikilinks(this.rootPath, oldBasename, newBasename, {
       excludeRelPath: oldPath,
     });
+    // Rewrites files across the vault, outside `modify` — forget them all.
+    this.forgetFrontmatter();
   }
 
   private resolvePath(filePath: string): string {

@@ -1,0 +1,107 @@
+{
+  "_doc": "Revert-verify mutants for ems__Bug 67e9be8b (create --validate re-read the frontmatter of every wikilink TARGET). SUBJECT: packages/cli/src/adapters/FileSystemVaultAdapter.ts — the frontmatter snapshot (withFrontmatterSnapshot + the memo read in getFrontmatter + forgetFrontmatter on every write path). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). One mutant per guard: the memo lookup, each write path's invalidation (§A6 — the shared helper is pinned branch by branch), the end-of-scope drop, nesting, the failure path. All mutants are TYPE-PRESERVING. `expect` filled ONLY from a completed driver run.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/adapters/FileSystemVaultAdapter.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js tests/unit/adapters/frontmatter-snapshot-67e9be8b.test.ts tests/unit/adapters/FileSystemVaultAdapter.test.ts 2>&1",
+  "env_var": "SUT",
+  "red_re": "› (R\\d+[a-z]?) ",
+  "mutants": {
+    "SM1_memo_never_consulted": {
+      "from": "    if (memo !== null && memo.has(fullPath)) {",
+      "to": "    if (false && memo !== null && memo.has(fullPath)) {",
+      "expect": ["R1", "R3", "R6a", "R6b"],
+      "_note": "The pre-fix read path: every getFrontmatter reads the disk even inside a snapshot (the memo is still written, never read)."
+    },
+    "SM2_memo_hit_answers_null": {
+      "from": "      return memo.get(fullPath) ?? null;",
+      "to": "      return null;",
+      "expect": ["R1", "R2"],
+      "_note": "A memo that answers the wrong value: the walk would lose every target it had already read. Pins R2 (snapshot changes no triple)."
+    },
+    "SM3_modify_keeps_stale": {
+      "from": "    await fs.writeFile(fullPath, newContent, \"utf-8\");\n    this.forgetFrontmatter(fullPath);",
+      "to": "    await fs.writeFile(fullPath, newContent, \"utf-8\");",
+      "expect": ["R4"],
+      "_note": "modify (and so updateFrontmatter / process) no longer drops the path."
+    },
+    "SM4_create_keeps_absence": {
+      "from": "    await fs.writeFile(fullPath, content, \"utf-8\");\n    this.forgetFrontmatter(fullPath);",
+      "to": "    await fs.writeFile(fullPath, content, \"utf-8\");",
+      "expect": ["R9"],
+      "_note": "create keeps a remembered null for a path it has just written."
+    },
+    "SM5_delete_keeps_ghost": {
+      "from": "    await fs.remove(fullPath);\n    this.forgetFrontmatter(fullPath);",
+      "to": "    await fs.remove(fullPath);",
+      "expect": ["R10"],
+      "_note": "delete keeps the frontmatter of a file that is gone."
+    },
+    "SM6_rename_keeps_old_path": {
+      "from": "    this.forgetFrontmatter(oldFullPath);\n",
+      "to": "",
+      "expect": ["R11a"],
+      "_note": "rename forgets only the new path."
+    },
+    "SM7_rename_keeps_new_absence": {
+      "from": "    this.forgetFrontmatter(newFullPath);\n",
+      "to": "",
+      "expect": ["R11b"],
+      "_note": "rename forgets only the old path."
+    },
+    "SM8_updateLinks_keeps_stale": {
+      "from": "    // Rewrites files across the vault, outside `modify` — forget them all.\n    this.forgetFrontmatter();\n",
+      "to": "",
+      "expect": ["R12"],
+      "_note": "updateLinks rewrites files through rewriteInboundWikilinks, not through modify."
+    },
+    "SM9_forget_path_is_noop": {
+      "from": "      this.snapshotMemo.delete(fullPath);",
+      "to": "      void fullPath;",
+      "expect": ["R10", "R11a", "R11b", "R4", "R9"],
+      "_note": "The helper itself: a per-path forget that forgets nothing — every per-path axis at once."
+    },
+    "SM10_forget_all_is_noop": {
+      "from": "      this.snapshotMemo.clear();",
+      "to": "      void 0;",
+      "expect": ["R12"],
+      "_note": "The helper's argument-less branch."
+    },
+    "SM11_memo_outlives_scope": {
+      "from": "      if (this.snapshotDepth === 0) {\n        this.snapshotMemo = null;\n      }\n",
+      "to": "",
+      "expect": ["R5", "R7"],
+      "_note": "The memory is never dropped — reads after the walk see what the walk saw."
+    },
+    "SM12_inner_scope_drops_memo": {
+      "from": "      if (this.snapshotDepth === 0) {\n        this.snapshotMemo = null;",
+      "to": "      if (this.snapshotDepth >= 0) {\n        this.snapshotMemo = null;",
+      "expect": ["R6b"],
+      "_note": "A nested scope's end drops the outer memory."
+    },
+    "SM13_inner_scope_restarts_memo": {
+      "from": "    if (this.snapshotDepth === 0) {\n      this.snapshotMemo = new Map();",
+      "to": "    if (this.snapshotDepth >= 0) {\n      this.snapshotMemo = new Map();",
+      "expect": ["R6a"],
+      "_note": "A nested scope's start replaces the outer memory."
+    },
+    "SM14_failure_keeps_scope_open": {
+      "from": "      return await run();\n    } finally {",
+      "to": "      return await run();\n    } catch (error) {\n      this.snapshotDepth++;\n      throw error;\n    } finally {",
+      "expect": ["R7"],
+      "_note": "A walk that throws leaves the depth at 1, so the memory is never dropped."
+    }
+  },
+  "_coverage": {
+    "_note_sets": "Measured, not predicted: every set comes from a completed driver run (control 0 red). R6 and R11 were split into a/b after the first run gave SM12/SM13 and SM6/SM7 identical sets (§A110/§A147) — each now reddens its own axis.",
+    "_note_shared_set": "SM8 and SM10 share R12 and that is ONE guard, not a vacuum: the argument-less branch of forgetFrontmatter has exactly one caller, updateLinks — SM8 removes the call, SM10 empties the branch, and both leave the same state.",
+    "_note_R2_R8": "R2 (the snapshot changes no triple) is pinned by SM2; R8 (outside a snapshot every read is fresh) has no mutant here because no line of the diff is on that path — it is the pre-fix behaviour kept, guarded against a future always-on memo."
+  }
+}

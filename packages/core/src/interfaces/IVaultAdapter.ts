@@ -82,6 +82,20 @@ export interface IVaultFrontmatterManager {
    */
   getFrontmatterWithFallback?(file: IFile): Promise<IFrontmatter | null>;
   /**
+   * Run `run` with {@link getFrontmatter} answering each file from memory after
+   * its first read, and drop that memory when `run` settles (ems__Bug
+   * 67e9be8b). `NoteToRDFConverter.convertVaultWithValidation` runs a whole
+   * vault walk inside it, because the walk asks again for the frontmatter of
+   * the target of every wikilink.
+   *
+   * OPTIONAL, like `getFrontmatterWithFallback`: only an adapter whose
+   * `getFrontmatter` READS THE DISK needs it — the CLI one. The plugin's
+   * adapter answers from Obsidian's `metadataCache`, which is already a memory,
+   * and the in-memory test adapters have no disk; without the capability the
+   * walk runs exactly as before.
+   */
+  withFrontmatterSnapshot?<T>(run: () => Promise<T>): Promise<T>;
+  /**
    * WHY `getFrontmatter` returned null — reported ONLY for the one cause that
    * is a defect.
    *

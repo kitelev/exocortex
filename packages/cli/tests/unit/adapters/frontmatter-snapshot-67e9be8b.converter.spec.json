@@ -1,0 +1,24 @@
+{
+  "_doc": "Revert-verify mutant for ems__Bug 67e9be8b. SUBJECT: packages/core/src/services/NoteToRDFConverter.ts — convertVaultWithValidation runs the walk inside the adapter's optional withFrontmatterSnapshot. The harness is the CLI suite (the CLI jest maps @kitelev/exocortex-core to core/src, so a mutated core source reaches it). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout. `expect` filled ONLY from a completed driver run.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/NoteToRDFConverter.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../cli\" && NODE_OPTIONS=--experimental-vm-modules node ../../node_modules/jest/bin/jest.js tests/unit/adapters/frontmatter-snapshot-67e9be8b.test.ts 2>&1",
+  "env_var": "SUT",
+  "red_re": "› (R\\d+[a-z]?) ",
+  "mutants": {
+    "CM1_walk_outside_snapshot": {
+      "from": "    return this.vault.withFrontmatterSnapshot\n      ? this.vault.withFrontmatterSnapshot(walk)\n      : walk();",
+      "to": "    return walk();",
+      "expect": ["R1", "R3"],
+      "_note": "The pre-fix converter: the walk ignores the capability, so every target is read once per reference."
+    }
+  }
+}

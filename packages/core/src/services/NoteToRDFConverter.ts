@@ -1074,6 +1074,27 @@ export class NoteToRDFConverter {
     summary: { total: number; indexed: number; skipped: number };
     fileSpaces: FileSpaceDiscoveryResult;
   }> {
+    // ems__Bug 67e9be8b — the walk reads each file for its own triples and then
+    // asks AGAIN for the frontmatter of the target of every wikilink
+    // (`targetFrontmatter`, `valueToClassURI`, the Exo 0.0.3 anchor lookup) and
+    // once more in `discoverFileSpaceExclusions`. On an adapter whose
+    // `getFrontmatter` reads the disk (the CLI one) that was one read per
+    // reference: 745 368 reads for 66 244 files of vault-exodev. The optional
+    // snapshot capability makes it one read per file for the duration of this
+    // walk; an adapter without it (the plugin's metadataCache, the in-memory
+    // doubles) runs the walk exactly as before.
+    const walk = () => this.walkVaultWithValidation(options);
+    return this.vault.withFrontmatterSnapshot
+      ? this.vault.withFrontmatterSnapshot(walk)
+      : walk();
+  }
+
+  /** The body of {@link convertVaultWithValidation}, run inside the snapshot. */
+  private async walkVaultWithValidation(
+    options: NonNullable<
+      Parameters<NoteToRDFConverter["convertVaultWithValidation"]>[0]
+    >,
+  ): ReturnType<NoteToRDFConverter["convertVaultWithValidation"]> {
     const allFiles = options.files ?? this.vault.getAllFiles();
     const allTriples: Triple[] = [];
     const skippedFiles: Array<{ path: string; reason: string }> = [];
