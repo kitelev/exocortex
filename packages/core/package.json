@@ -58,7 +58,7 @@
   "devDependencies": {
     "@kitelev/exocortex-test-utils": "*",
     "@types/jest": "^30.0.0",
-    "@types/node": "^22.20.1",
+    "@types/node": "^22.20.5",
     "@types/sparqljs": "^3.1.12",
     "@types/uuid": "^10.0.0",
     "eslint": "^9.38.0",
