@@ -61,8 +61,8 @@ export { canonicalYamlKey };
  *
  * ⛔ It does NOT make "a listed cliName exists in the user's vault" checkable in
  * CI: the command registry is split across assetspaces and exocortex pins only
- * `exoas-exocmd` — `archive`, `set-criticality-*`, `set-planned-*` live in the
- * UNPINNED `exoas-public`. Verifying existence needs the live vault, which the
+ * `exoas-exocmd` — `archive`, `set-planned-*` live in the UNPINNED `exoas-public`,
+ * `jedi2-zone-*` in the UNPINNED `exoas-jedi2`. Verifying existence needs the live vault, which the
  * commands do have at refusal time; that is a separate follow-up.
  */
 export interface GuardedRoute {
@@ -111,13 +111,21 @@ export const GUARDED_ROUTES: Record<string, GuardedRoute> = {
       "set-draft-status",
     ],
   },
-  // Criticality zone (not-a-prototype precondition guard).
+  // Criticality zone. ⛤ ems__Task_zone is DEPRECATED (2026-10-24, deprecatedBy
+  // jedi2__Task_zone), and the commands that wrote it (the criticality trio) were
+  // deprecated 2026-10-14 with no grounding — `apply` answers "Command … not found".
+  // Naming them sent users and bots into a loop (ems__Bug e5c05687): the zone is now
+  // set by the jedi2-zone-* commands (bound to jedi2__Task, verified 2026-11-19 by
+  // `apply … --dry-run` on a live jedi2__Task → precondition passed).
   ems__Task_zone: {
     commands: [
-      "set-criticality-high",
-      "set-criticality-medium",
-      "set-criticality-low",
+      "jedi2-zone-today",
+      "jedi2-zone-this-week",
+      "jedi2-zone-someday",
     ],
+    note:
+      "ems__Task_zone is deprecated in favour of jedi2__Task_zone; " +
+      "these set the zone of a jedi2__Task",
   },
   // Parent / label — dedicated guarded commands (#3779).
   ems__Effort_parent: {

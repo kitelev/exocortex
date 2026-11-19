@@ -301,7 +301,7 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
   });
 
   it.each([
-    ["ems__Task_zone", "[[zone-uid]]", /set-criticality/],
+    ["ems__Task_zone", "[[zone-uid]]", /jedi2-zone-today/],
     ["ems__Effort_parent", `[[${PARENT_UID}]]`, /set-parent/],
     ["exo__Asset_label", "New label", /set-label/],
     ["exo__Instance_class", `[[${PARENT_UID}]]`, /convert-to-task/],

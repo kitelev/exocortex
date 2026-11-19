@@ -16,8 +16,8 @@
  *
  * ⛔ WHY THESE AXES AND NOT "every cliName resolves in the registry": the
  * registry is SPLIT across assetspaces and exocortex pins only `exoas-exocmd`
- * (`archive`, `set-criticality-*`, `set-planned-*` live in the UNPINNED
- * `exoas-public`), so a CI-side existence check would cover a MINORITY and need
+ * (`archive`, `set-planned-*` live in the UNPINNED `exoas-public`, `jedi2-zone-*`
+ * in the UNPINNED `exoas-jedi2`), so a CI-side existence check would cover a MINORITY and need
  * an exempt-list for the rest. Existence needs the live vault — which the
  * commands DO have at refusal time; that is a separate follow-up. What IS
  * checkable here is that the sentence cannot name anything the machine-readable
@@ -43,6 +43,14 @@ const PHANTOM_NAMES = [
   "remove-start-timestamp",
   "remove-end-timestamp",
   "archive-completed",
+  // ⛤ Third cause, beside prose-drift and stale-pin rename: DEPRECATION without a
+  // grounding. The criticality trio still has assets with these cliNames, but they
+  // were deprecated 2026-10-14 (deprecatedBy jedi2-zone-today) with no grounding, so
+  // `apply` answers `Command with UID "…" not found` (rc 5) — measured 2026-11-19 on
+  // CLI 17.21.1. The ems__Task_zone refusal named them until ems__Bug e5c05687.
+  "set-criticality-high",
+  "set-criticality-medium",
+  "set-criticality-low",
 ];
 
 describe(`guard message is DERIVED from the routing table (bug 8f35fec0)`, () => {
