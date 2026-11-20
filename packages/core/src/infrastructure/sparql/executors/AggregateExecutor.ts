@@ -9,6 +9,9 @@ import type { GroupOperation, AggregateExpression, Expression, CustomAggregation
 import { SolutionMapping } from "../SolutionMapping";
 import { Literal } from "../../../domain/models/rdf/Literal";
 import { IRI } from "../../../domain/models/rdf/IRI";
+import { BlankNode } from "../../../domain/models/rdf/BlankNode";
+import { QuotedTriple } from "../../../domain/models/rdf/QuotedTriple";
+import type { Object as RDFObject } from "../../../domain/models/rdf/Triple";
 import { FilterExecutor } from "./FilterExecutor";
 import { CustomAggregateRegistry, type Term } from "../aggregates/CustomAggregateRegistry";
 import { BUILT_IN_AGGREGATES } from "../aggregates/BuiltInAggregates";
@@ -22,6 +25,16 @@ const XSD_STRING = new IRI("http://www.w3.org/2001/XMLSchema#string");
  */
 function isCustomAggregation(agg: StandardAggregation | CustomAggregation): agg is CustomAggregation {
   return typeof agg === "object" && agg.type === "custom";
+}
+
+/**
+ * One value of a MIN / MAX / SAMPLE argument: what the group holds (`term` — an RDF
+ * term, or the JS primitive a BIND / expression produced) and what MIN / MAX compare
+ * (`key` — the term's text; for a variable, the value the other aggregates read).
+ */
+interface GroupValue {
+  term: unknown;
+  key: unknown;
 }
 
 export class AggregateExecutorError extends Error {
@@ -137,14 +150,18 @@ export class AggregateExecutor {
   private computeAggregate(
     expr: AggregateExpression,
     solutions: SolutionMapping[]
-  ): Literal | undefined {
+  ): RDFObject | string | undefined {
     // Handle custom aggregates first
     if (isCustomAggregation(expr.aggregation)) {
       return this.computeCustomAggregate(expr, solutions);
     }
 
-    const values = this.extractValues(expr, solutions);
     const aggregation = expr.aggregation;
+    if (aggregation === "min" || aggregation === "max" || aggregation === "sample") {
+      return this.computeGroupTermAggregate(aggregation, this.extractGroupValues(expr, solutions));
+    }
+
+    const values = this.extractValues(expr, solutions);
 
     switch (aggregation) {
       case "count": {
@@ -162,44 +179,9 @@ export class AggregateExecutor {
         return new Literal(String(avg), XSD_DECIMAL);
       }
 
-      case "min": {
-        const min = this.computeMin(values);
-        if (min === undefined) {
-          // MIN of no values is unbound (SPARQL 1.1 §18.5.1.4). It used to build
-          // Literal(""), which throws "Literal value cannot be empty" and failed
-          // the whole query (ems__Bug 37c80e59).
-          return undefined;
-        }
-        return typeof min === "number"
-          ? new Literal(String(min), XSD_DECIMAL)
-          : new Literal(String(min), XSD_STRING);
-      }
-
-      case "max": {
-        const max = this.computeMax(values);
-        if (max === undefined) {
-          // MAX of no values is unbound — see MIN above (ems__Bug 37c80e59).
-          return undefined;
-        }
-        return typeof max === "number"
-          ? new Literal(String(max), XSD_DECIMAL)
-          : new Literal(String(max), XSD_STRING);
-      }
-
       case "group_concat": {
         const concat = this.computeGroupConcat(values, expr.separator || " ", expr.distinct);
         return new Literal(concat || " ", XSD_STRING);
-      }
-
-      case "sample": {
-        const sample = this.computeSample(values, expr.distinct);
-        if (sample === undefined) {
-          // Return space for unbound/empty SAMPLE result (Literal cannot be empty)
-          return new Literal(" ", XSD_STRING);
-        }
-        return typeof sample === "number"
-          ? new Literal(String(sample), XSD_DECIMAL)
-          : new Literal(String(sample), XSD_STRING);
       }
 
       default: {
@@ -208,6 +190,73 @@ export class AggregateExecutor {
         throw new AggregateExecutorError(`Unknown aggregation function: ${_exhaustiveCheck}`);
       }
     }
+  }
+
+  /**
+   * MIN / MAX / SAMPLE answer one of the group's values — the RDF term itself, with its
+   * datatype, language and IRI-ness (SPARQL 1.1 §18.5.1.5–§18.5.1.8). They used to build
+   * a NEW literal from the JS value: `"42"^^xsd:integer` came out as `"42"^^xsd:decimal`,
+   * an IRI or a date as an xsd:string, and SAMPLE ran parseFloat over text
+   * ("2026-10-06T09:35" → 2026) (ems__Bug 2e597cb5, ems__Bug 03904911).
+   *
+   * Which value MIN / MAX pick is unchanged for a variable or a JS value — the same
+   * comparison of its text as before; a term yielded by an expression (COALESCE(?n, 0))
+   * is now compared by its text too, not by its N-Triples string. The answer is the
+   * chosen value's own term. SAMPLE (with or without DISTINCT) answers the first value
+   * of the group; SPARQL allows any.
+   */
+  private computeGroupTermAggregate(
+    aggregation: "min" | "max" | "sample",
+    values: GroupValue[]
+  ): RDFObject | string | undefined {
+    const chosen = aggregation === "sample" ? values[0] : this.computeExtreme(values, aggregation);
+    // A group with no values has an unbound MIN / MAX / SAMPLE (SPARQL 1.1 §18.5.1).
+    // MIN / MAX used to build Literal(""), which throws and failed the whole query
+    // (ems__Bug 37c80e59); SAMPLE answered a lone space (ems__Bug 03904911).
+    if (chosen === undefined) return undefined;
+    return this.groupValueTerm(chosen.term);
+  }
+
+  /**
+   * The value MIN / MAX choose: the least / greatest `key` — compared as before. Equal
+   * keys from DIFFERENT terms (5 and "5", "42"^^xsd:integer and "42.0"^^xsd:decimal)
+   * are ordered by the term's N-Triples form, so the answer does not depend on the
+   * order the solutions arrive in (a pruned and a full store give the same term).
+   */
+  private computeExtreme(values: GroupValue[], aggregation: "min" | "max"): GroupValue | undefined {
+    if (values.length === 0) return undefined;
+    // Numeric comparison only when EVERY key is numeric — see asAllNumeric.
+    const nums = this.asAllNumeric(values.map((v) => v.key));
+    const keys = nums ?? values.map((v) => String(v.key));
+    const ties = values.map((v) => String(this.groupValueTerm(v.term) ?? ""));
+    let best = 0;
+    for (let i = 1; i < keys.length; i++) {
+      const order =
+        keys[i] < keys[best] ? -1 : keys[i] > keys[best] ? 1 : ties[i] < ties[best] ? -1 : ties[i] > ties[best] ? 1 : 0;
+      if (aggregation === "min" ? order < 0 : order > 0) best = i;
+    }
+    return values[best];
+  }
+
+  /**
+   * The term an aggregate answers for a group value: an RDF term as it is. A JS value
+   * (of a BIND or an expression) carries no RDF type the engine knows (ems__Bug
+   * 864dc82a), so it answers as before: a number as xsd:decimal, anything else as its
+   * text in xsd:string. ⛔ Not "the literal of its JS kind" (integer / boolean): a whole
+   * result of a division — ROUND(?marked * 1000 / ?days) / 10, xsd:decimal by SPARQL —
+   * would turn xsd:integer in stored queries that answer right today. The price: sameTerm
+   * applies the JS-kind rule, so HAVING (sameTerm(MAX(?n + 1), 43)) is false, as before.
+   * The empty string is a value the engine keeps as the JS string "" (Literal("") throws;
+   * BIND("") holds it the same way), so it answers "" — it used to fail the whole query.
+   */
+  private groupValueTerm(term: unknown): RDFObject | string | undefined {
+    if (term instanceof Literal || term instanceof IRI || term instanceof BlankNode || term instanceof QuotedTriple) {
+      return term;
+    }
+    if (typeof term === "number") return new Literal(String(term), XSD_DECIMAL);
+    const text = String(term);
+    if (text === "") return "";
+    return new Literal(text, XSD_STRING);
   }
 
   /**
@@ -296,6 +345,37 @@ export class AggregateExecutor {
   }
 
   /**
+   * The values of a MIN / MAX / SAMPLE argument, each with the term it came from.
+   * A variable gives its bound term; any other expression the value FilterExecutor
+   * evaluates it to — a term (COALESCE(?n, 0), "x"@en) or a JS primitive. `key` is the
+   * term's text — what evaluateExpression gives a variable — so MIN / MAX compare
+   * "42"^^xsd:integer as 42, not as its N-Triples string.
+   */
+  private extractGroupValues(expr: AggregateExpression, solutions: SolutionMapping[]): GroupValue[] {
+    const argument = expr.expression;
+    if (!argument) return solutions.map(() => ({ term: 1, key: 1 }));
+
+    const values: GroupValue[] = [];
+    for (const solution of solutions) {
+      let term: unknown;
+      if (argument.type === "variable") {
+        term = solution.get((argument as import("../algebra/AlgebraOperation").VariableExpression).name);
+      } else {
+        try {
+          term = this.filterExecutor.evaluateExpression(argument, solution);
+        } catch {
+          // An evaluation error leaves the value out (SPARQL 1.1 §18.5.1).
+          term = undefined;
+        }
+      }
+      if (term === undefined || term === null) continue;
+      const key = typeof term === "object" && "value" in term ? (term as { value: unknown }).value : term;
+      values.push({ term, key });
+    }
+    return values;
+  }
+
+  /**
    * Evaluate an expression against a solution mapping.
    * Supports all expression types including arithmetic, function calls, and BIND-computed values.
    *
@@ -370,7 +450,7 @@ export class AggregateExecutor {
   }
 
   /**
-   * Strict numeric coercion for MIN/MAX.
+   * Strict numeric coercion for MIN/MAX (computeExtreme).
    *
    * ⛔ `parseFloat` takes the NUMERIC PREFIX of a string, so every ISO-8601 timestamp
    *    parsed as its year and MIN/MAX silently answered `"2026"^^xsd:decimal` instead of
@@ -406,32 +486,6 @@ export class AggregateExecutor {
     return nums.length > 0 ? nums : null;
   }
 
-  private computeMin(values: unknown[]): unknown {
-    if (values.length === 0) return undefined;
-
-    const nums = this.asAllNumeric(values);
-    if (nums) {
-      return Math.min(...nums);
-    }
-
-    const strs = values.map((v) => String(v));
-    return strs.reduce((min, s) => (s < min ? s : min), strs[0]);
-  }
-
-  private computeMax(values: unknown[]): unknown {
-    if (values.length === 0) return undefined;
-
-    // ⛤ Same strict coercion as computeMin — see asAllNumeric. MIN and MAX are
-    //    byte-identical in shape, so fixing only one leaves the sibling broken.
-    const nums = this.asAllNumeric(values);
-    if (nums) {
-      return Math.max(...nums);
-    }
-
-    const strs = values.map((v) => String(v));
-    return strs.reduce((max, s) => (s > max ? s : max), strs[0]);
-  }
-
   private computeGroupConcat(values: unknown[], separator: string, distinct: boolean): string {
     let strs = values.map((v) => String(v));
 
@@ -440,31 +494,6 @@ export class AggregateExecutor {
     }
 
     return strs.join(separator);
-  }
-
-  /**
-   * SAMPLE aggregate function (SPARQL 1.1).
-   * Returns an arbitrary value from the group.
-   * Per spec, this returns any value - we choose the first non-null value.
-   */
-  private computeSample(values: unknown[], distinct: boolean): unknown {
-    if (values.length === 0) return undefined;
-
-    if (distinct) {
-      const uniqueValues = [...new Set(values.map((v) => String(v)))];
-      if (uniqueValues.length === 0) return undefined;
-
-      // Try to return numeric value if first unique value is numeric
-      const firstUnique = uniqueValues[0];
-      const num = parseFloat(firstUnique);
-      return !isNaN(num) ? num : firstUnique;
-    }
-
-    // Return first value - try to preserve type
-    const first = values[0];
-    if (typeof first === "number") return first;
-    const num = parseFloat(String(first));
-    return !isNaN(num) ? num : String(first);
   }
 
   private createEmptyAggregateResult(operation: GroupOperation): SolutionMapping | null {

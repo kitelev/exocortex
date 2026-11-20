@@ -1,0 +1,175 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 2e597cb5 (MIN / MAX / SAMPLE answer the group's RDF term, not a new xsd:decimal / xsd:string literal) and ems__Bug 03904911 (SAMPLE does not parseFloat text; SAMPLE of no values is unbound). Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct within the spec). `red_re` anchors on the jest failure header `● <suite> › <axis> `. Anchors are CODE lines only. `tree`/`subject` are placeholders — run the matrix on a copy with the paths substituted. Not mutated, on purpose: the QuotedTriple branch of groupValueTerm (no store carrier of an RDF-star term reaches an aggregate — the review found none either) and SAMPLE's \"first value\" (SPARQL allows any value; locking the first would over-constrain).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?) ",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/group-term-aggregates-2e597cb5.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/executors/AggregateExecutor.ts",
+  "mutants": {
+    "M1_answer_built_from_key": {
+      "_note": "The answer is rebuilt from the compared text instead of the chosen term — the pre-fix shape: datatype, language and IRI-ness are lost. G20 (added by the spec): the answer is a NEW literal, so a directional literal loses its base direction.",
+      "from": "    return this.groupValueTerm(chosen.term);",
+      "to": "    return this.groupValueTerm(chosen.key);",
+      "expect": [
+        "G1",
+        "G11",
+        "G12",
+        "G13",
+        "G14",
+        "G2",
+        "G20",
+        "G3",
+        "G4",
+        "G5",
+        "G7",
+        "G8"
+      ]
+    },
+    "M2_sample_empty_space": {
+      "_note": "SAMPLE of a group without values answers a lone space again (ems__Bug 03904911).",
+      "from": "    if (chosen === undefined) return undefined;",
+      "to": "    if (chosen === undefined) return aggregation === \"sample\" ? new Literal(\" \", XSD_STRING) : undefined;",
+      "expect": ["G6"]
+    },
+    "M3_primitive_number_by_js_kind": {
+      "_note": "A BIND / expression number answers as the literal of its JS kind (xsd:integer when whole) — the whole result of a division, xsd:decimal by SPARQL, turns xsd:integer in the stored \"share by month\" queries.",
+      "from": "    if (typeof term === \"number\") return new Literal(String(term), XSD_DECIMAL);",
+      "to": "    if (typeof term === \"number\") return new Literal(String(term), Number.isInteger(term) ? XSD_INTEGER : XSD_DECIMAL);",
+      "expect": ["K5"]
+    },
+    "M4_expression_text_not_term": {
+      "_note": "An expression argument goes through evaluateExpression, which hands a tagged literal over as its text: the tag is lost. G20 (added by the spec): its third form, SAMPLE(COALESCE(?nope, \"x\"@ar--rtl)), is an expression — through evaluateExpression the direction is lost with the tag.",
+      "from": "          term = this.filterExecutor.evaluateExpression(argument, solution);",
+      "to": "          term = this.evaluateExpression(argument, solution);",
+      "expect": ["G13", "G20"]
+    },
+    "M5_expression_key_serialized": {
+      "_note": "A term yielded by an expression is compared by its N-Triples string (the pre-fix key): MAX(COALESCE(?n, 0)) over 42 and 7 answers 7.",
+      "from": "      const key = typeof term === \"object\" && \"value\" in term ? (term as { value: unknown }).value : term;",
+      "to": "      const key = argument.type === \"variable\" && typeof term === \"object\" && \"value\" in term ? (term as { value: unknown }).value : term;",
+      "expect": ["G8"]
+    },
+    "M6_tie_break_dropped": {
+      "_note": "Equal keys of different terms keep the first one met — the answer depends on the order the store yields solutions in.",
+      "from": "        keys[i] < keys[best] ? -1 : keys[i] > keys[best] ? 1 : ties[i] < ties[best] ? -1 : ties[i] > ties[best] ? 1 : 0;",
+      "to": "        keys[i] < keys[best] ? -1 : keys[i] > keys[best] ? 1 : 0;",
+      "expect": ["G11", "K7"]
+    },
+    "M7_max_picks_least": {
+      "_note": "MAX keeps the least value — the direction of the extreme is not tied to the aggregation. K9 / K10 / K11 (added by the spec) lock WHICH value MIN / MAX pick — MAX taking the least swaps every pair they check. K12 / K13 / K14 (closure review): the same swap on stored pairs.",
+      "from": "      if (aggregation === \"min\" ? order < 0 : order > 0) best = i;",
+      "to": "      if (order < 0) best = i;",
+      "expect": [
+        "G1",
+        "G11",
+        "G12",
+        "G15",
+        "G19",
+        "G2",
+        "G3",
+        "G4",
+        "G8",
+        "K10",
+        "K11",
+        "K12",
+        "K13",
+        "K14",
+        "K3",
+        "K5",
+        "K6",
+        "K9"
+      ]
+    },
+    "M8_empty_text_literal": {
+      "_note": "The empty string answers unbound again (the first edition of the prototype) — inconsistent with BIND(\"\"), which holds \"\" as a value.",
+      "from": "    if (text === \"\") return \"\";",
+      "to": "    if (text === \"\") return undefined;",
+      "expect": ["G10"]
+    },
+    "M9_values_memo_across_groups": {
+      "_note": "Review finding F2 (candidate C2): the argument values are memoised per expression, so every group answers the first group's term.",
+      "from": "      return this.computeGroupTermAggregate(aggregation, this.extractGroupValues(expr, solutions));",
+      "to": "      const memo = ((this as unknown as { __m?: Map<unknown, GroupValue[]> }).__m ??= new Map()); if (!memo.has(expr)) memo.set(expr, this.extractGroupValues(expr, solutions)); return this.computeGroupTermAggregate(aggregation, memo.get(expr) ?? []);",
+      "expect": ["G14"]
+    },
+    "M10_numeric_choice_only_for_numeric_datatypes": {
+      "_note": "Review finding F3 (candidate C3): numeric comparison only when every value is a numeric-typed literal — \"more SPARQL\", but it changes which value is chosen: MAX(\"10\", \"9\") becomes \"9\".",
+      "from": "    const nums = this.asAllNumeric(values.map((v) => v.key));",
+      "to": "    const nums = values.every((v) => typeof v.term === \"number\" || (v.term instanceof Literal && /#(integer|decimal|double|float)$/.test(v.term.datatype?.value ?? \"\"))) ? this.asAllNumeric(values.map((v) => v.key)) : null;",
+      "expect": ["G15", "K6"]
+    },
+    "M11_evaluation_error_rethrown": {
+      "_note": "Review finding F5 (candidate C4): an evaluation error of the argument (?l + 1 over labels) fails the whole query instead of leaving the value out.",
+      "from": "        } catch {\n          // An evaluation error leaves the value out (SPARQL 1.1 §18.5.1).\n          term = undefined;\n        }",
+      "to": "        } catch (e) {\n          throw e;\n        }",
+      "expect": ["K8"]
+    },
+    "M12_blank_node_as_string": {
+      "_note": "Review finding F1 (candidate C7): a blank node answers as its text in xsd:string (the pre-fix answer) — isBlank is false and the join back finds nothing.",
+      "from": "    if (term instanceof Literal || term instanceof IRI || term instanceof BlankNode || term instanceof QuotedTriple) {",
+      "to": "    if (term instanceof Literal || term instanceof IRI || term instanceof QuotedTriple) {",
+      "expect": ["G16"]
+    },
+    "M13_ties_ordered_only_when_numeric": {
+      "_note": "Review finding F4 (candidate C10): equal keys are ordered by the term only in the numeric branch — equal TEXT of different terms (\"abc\", \"abc\"@ru) keeps the first met, and the answer depends on the solution order.",
+      "from": "    const ties = values.map((v) => String(this.groupValueTerm(v.term) ?? \"\"));",
+      "to": "    const ties = values.map((v) => (nums ? String(this.groupValueTerm(v.term) ?? \"\") : \"\"));",
+      "expect": ["K7"]
+    },
+    "M14_empty_string_excluded": {
+      "_note": "Review finding F6 (candidate C6): the empty string is left out of the group — MIN of {\"\", \"x\"} answers \"x\", MIN of {\"\"} is unbound.",
+      "from": "      if (term === undefined || term === null) continue;",
+      "to": "      if (term === undefined || term === null || term === \"\") continue;",
+      "expect": ["G10", "G19"]
+    },
+    "M15_numeric_by_parseFloat": {
+      "_note": "asAllNumeric reads text with parseFloat again (the ems__Bug 0c24668f regression). With the fix the dateTime suite of 0c24668f stays green — equal years tie and the tie-break picks the right term — so only text with a numeric prefix shows it: \"10 tasks\" / \"9 tasks\", a uid \"4ec049e2-…\", 3 against an xsd:date (spec review R1).",
+      "from": "      const n = Number(text);",
+      "to": "      const n = parseFloat(text);",
+      "expect": ["K9"]
+    },
+    "M16_lexical_by_ntriples": {
+      "_note": "The lexical choice compares the term's N-Triples form instead of its text: the closing quote swaps \"Task\" / \"Task!\" and \"abc\" / \"abc \", and a bare IRI sorts after a quoted literal (spec review R2). K13: the same swap on stored simple literals; K12: the opening quote of \"abc\" (0x22) sorts before the \"_:\" of a blank node, so MIN turns \"abc\".",
+      "from": "    const keys = nums ?? values.map((v) => String(v.key));",
+      "to": "    const keys = nums ?? values.map((v) => String(this.groupValueTerm(v.term) ?? \"\"));",
+      "expect": ["K10", "K12", "K13"]
+    },
+    "M17_lexical_by_locale": {
+      "_note": "The lexical choice uses localeCompare instead of UTF-16 code units: MIN of {\"apple\", \"Banana\"} turns \"apple\", MAX of {\"Сводка\", \"Zeta\", \"ёлка\"} turns \"Сводка\" (spec review R3). K14: the same swap on stored simple literals.",
+      "from": "        keys[i] < keys[best] ? -1 : keys[i] > keys[best] ? 1 : ties[i] < ties[best] ? -1 : ties[i] > ties[best] ? 1 : 0;",
+      "to": "        (typeof keys[i] === \"string\" ? String(keys[i]).localeCompare(String(keys[best])) : Number(keys[i]) - Number(keys[best])) || (ties[i] < ties[best] ? -1 : ties[i] > ties[best] ? 1 : 0);",
+      "expect": ["K11", "K14"]
+    },
+    "M18_direction_dropped": {
+      "_note": "A literal answered by the aggregate is rebuilt from value / datatype / language — the base direction is lost: \"x\"@ar--rtl comes out \"x\"@ar (spec review R4).",
+      "from": "      return term;\n    }\n    if (typeof term === \"number\")",
+      "to": "      return term instanceof Literal ? new Literal(term.value, term.datatype, term.language) : term;\n    }\n    if (typeof term === \"number\")",
+      "expect": ["G20"]
+    },
+    "M19_blank_node_key_undefined": {
+      "_note": "The comparison key is read as `.value` of ANY object: a blank node has none, its key turns \"undefined\" and sorts after every text — MIN / MAX of a blank node against \"abc\" swap (closure review N1).",
+      "from": "      const key = typeof term === \"object\" && \"value\" in term ? (term as { value: unknown }).value : term;",
+      "to": "      const key = typeof term === \"object\" ? (term as { value?: unknown }).value : term;",
+      "expect": ["K12"]
+    },
+    "M20_ntriples_for_simple_literals": {
+      "_note": "N-Triples comparison only for simple literals — exactly the form vault text is stored in; VALUES literals (xsd:string) keep passing K10 (closure review N2). K12: the stored \"abc\" is a simple literal, its N-Triples quote sorts before the blank node's \"_:\" — MIN turns \"abc\".",
+      "from": "    const keys = nums ?? values.map((v) => String(v.key));",
+      "to": "    const keys = nums ?? values.map((v) => (v.term instanceof Literal && !v.term.datatype && !v.term.language ? v.term.toString() : String(v.key)));",
+      "expect": ["K12", "K13"]
+    },
+    "M21_locale_for_simple_literals": {
+      "_note": "localeCompare only for simple literals — the stored form; VALUES literals keep passing K11 (closure review N2).",
+      "from": "        keys[i] < keys[best] ? -1 : keys[i] > keys[best] ? 1 : ties[i] < ties[best] ? -1 : ties[i] > ties[best] ? 1 : 0;",
+      "to": "        (typeof keys[i] === \"string\" && values[i].term instanceof Literal && !(values[i].term as Literal).datatype && !(values[i].term as Literal).language ? String(keys[i]).localeCompare(String(keys[best])) : keys[i] < keys[best] ? -1 : keys[i] > keys[best] ? 1 : 0) || (ties[i] < ties[best] ? -1 : ties[i] > ties[best] ? 1 : 0);",
+      "expect": ["K14"]
+    }
+  }
+}
