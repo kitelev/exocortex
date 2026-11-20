@@ -14,15 +14,15 @@
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/executors/AggregateExecutor.ts",
   "mutants": {
     "M7_max_empty_literal": {
-      "_note": "MAX of no values builds Literal(\"\") again — it throws \"Literal value cannot be empty\" and fails the query.",
-      "from": "          return undefined;\n        }\n        return typeof max === \"number\"",
-      "to": "          return new Literal(\"\", XSD_STRING);\n        }\n        return typeof max === \"number\"",
+      "_note": "MAX of no values builds Literal(\"\") again — it throws \"Literal value cannot be empty\" and fails the query. Re-anchored by ems__Bug 2e597cb5: MIN / MAX / SAMPLE share one guard for a group without values (AggregateExecutor.computeGroupTermAggregate).",
+      "from": "    if (chosen === undefined) return undefined;",
+      "to": "    if (chosen === undefined) return aggregation === \"max\" ? new Literal(\"\", XSD_STRING) : undefined;",
       "expect": ["U6"]
     },
     "M7m_min_empty_literal": {
-      "_note": "The MIN twin of M7.",
-      "from": "          return undefined;\n        }\n        return typeof min === \"number\"",
-      "to": "          return new Literal(\"\", XSD_STRING);\n        }\n        return typeof min === \"number\"",
+      "_note": "The MIN twin of M7 (re-anchored with it by ems__Bug 2e597cb5).",
+      "from": "    if (chosen === undefined) return undefined;",
+      "to": "    if (chosen === undefined) return aggregation === \"min\" ? new Literal(\"\", XSD_STRING) : undefined;",
       "expect": ["U6b"]
     },
     "M7b_unbound_aggregate_kept_in_row": {

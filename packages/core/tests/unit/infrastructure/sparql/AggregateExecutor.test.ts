@@ -345,15 +345,16 @@ describe("AggregateExecutor", () => {
       expect(getAggregateValue(results[0], "example")).toBe("Alice");
     });
 
-    it("should return space for empty group (unbound)", () => {
+    it("should leave SAMPLE of an empty group unbound", () => {
       const solutions: SolutionMapping[] = [];
 
       const operation = createGroupOperation([], [createSampleAggregate("example", "name")]);
       const results = executor.execute(operation, solutions);
 
       expect(results).toHaveLength(1);
-      // SAMPLE on empty group returns space (Literal cannot be empty string)
-      expect(getAggregateValue(results[0], "example")).toBe(" ");
+      // SAMPLE of no values is unbound (SPARQL 1.1 §18.5.1); it used to answer a lone
+      // space (ems__Bug 03904911).
+      expect(results[0].get("example")).toBeUndefined();
     });
 
     it("should work with numeric values", () => {
