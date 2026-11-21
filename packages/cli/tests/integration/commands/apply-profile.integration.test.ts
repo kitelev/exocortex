@@ -464,6 +464,10 @@ describe("CLI — central-registry profile resolution (Issue #3511)", () => {
   const AS_W3C = "01ef516e-c697-4988-b86c-472574e13cdc";
   const AS_REGISTRY = "effff928-67e9-44b7-927f-2cf7e222200a";
   const AS_PROFILES = "9edefb13-abd8-44ee-a478-754c035c8bc1";
+  // ems__Bug 8de172ca — the PRIVATE profiles catalog (personal/work/bot
+  // profiles moved out of the public repo on 2026-11-14). Same role as
+  // AS_PROFILES, different namespace.
+  const AS_PROFILES_PRIVATE = "e11dad30-2d09-4a1f-8e8c-7d75fa0d3c8e";
   const PROFILE_EXODEV = "62338881-a9ff-4b46-b56c-538a1deb2185";
 
   const SRC = {
@@ -474,6 +478,7 @@ describe("CLI — central-registry profile resolution (Issue #3511)", () => {
     exodev: "https://github.com/kitelev/exoas-exodev",
     registry: "https://github.com/kitelev/exoas-registry",
     profiles: "https://github.com/kitelev/exoas-profiles",
+    profilesPrivate: "https://github.com/kitelev/exoas-profiles-private",
   };
   const MOUNT = {
     exo: "assetspaces/kitelev/exoas-exo",
@@ -483,6 +488,7 @@ describe("CLI — central-registry profile resolution (Issue #3511)", () => {
     w3c: "assetspaces/kitelev/exoas-w3c-aggregated",
     registry: "assetspaces/kitelev/exoas-registry",
     profiles: "assetspaces/kitelev/exoas-profiles",
+    profilesPrivate: "assetspaces/kitelev/exoas-profiles-private",
   };
   // The registry repo mounts at MOUNT.registry; its descriptors live under a
   // `registry/` namespace subfolder (co-location invariant). ALL descriptors —
@@ -515,22 +521,48 @@ describe("CLI — central-registry profile resolution (Issue #3511)", () => {
     if (vaultRoot) await fs.remove(vaultRoot);
   });
 
-  async function makeRegistryVault(): Promise<void> {
+  /**
+   * @param privateCatalog ems__Bug 8de172ca production shape: the profile lives
+   *   in the PRIVATE catalog `exoas-profiles-private` (namespace
+   *   `profiles-private`), which is mounted alongside the public one and is
+   *   included by no profile — exactly the state after the 2026-11-14 move.
+   */
+  async function makeRegistryVault(
+    opts: { privateCatalog?: boolean } = {},
+  ): Promise<void> {
     vaultRoot = await fs.mkdtemp(path.join(os.tmpdir(), "exocortex-cli-reg-"));
     await fs.ensureDir(vaultRoot);
+    const profileHome = opts.privateCatalog
+      ? `${MOUNT.profilesPrivate}/profiles-private`
+      : `${MOUNT.profiles}/profiles`;
 
     // 18-descriptor-style central registry (trimmed to the relevant DAG).
     await writeAssets(vaultRoot, [
       regDescriptor(AS_EXO_EKA, SRC.exo, "exo", [AS_W3C]),
       regDescriptor(AS_W3C, SRC.w3c, "w3c-aggregated"),
       regDescriptor(AS_PUBLIC, SRC.public, "public", [AS_EXO_EKA]),
-      regDescriptor(AS_SHARED_PRIVATE, SRC.sharedPrivate, "shared-private", [AS_PUBLIC]),
+      regDescriptor(AS_SHARED_PRIVATE, SRC.sharedPrivate, "shared-private", [
+        AS_PUBLIC,
+      ]),
       regDescriptor(AS_EXODEV, SRC.exodev, "exodev", [AS_SHARED_PRIVATE]),
       regDescriptor(AS_REGISTRY, SRC.registry, "registry", [AS_EXO_EKA]),
-      regDescriptor(AS_PROFILES, SRC.profiles, "profiles", [AS_REGISTRY, AS_EXO_EKA]),
-      // Profile lives in the profiles repo; declares only the LEAF AssetSpace.
+      regDescriptor(AS_PROFILES, SRC.profiles, "profiles", [
+        AS_REGISTRY,
+        AS_EXO_EKA,
+      ]),
+      ...(opts.privateCatalog
+        ? [
+            regDescriptor(
+              AS_PROFILES_PRIVATE,
+              SRC.profilesPrivate,
+              "profiles-private",
+              [AS_PROFILES, AS_REGISTRY, AS_EXO_EKA],
+            ),
+          ]
+        : []),
+      // Profile lives in a profiles repo; declares only the LEAF AssetSpace.
       {
-        relPath: `${MOUNT.profiles}/profiles/${PROFILE_EXODEV}.md`,
+        relPath: `${profileHome}/${PROFILE_EXODEV}.md`,
         frontmatter: {
           exo__Asset_uid: PROFILE_EXODEV,
           exo__Asset_label: "$$kitelev-exodev",
@@ -540,20 +572,27 @@ describe("CLI — central-registry profile resolution (Issue #3511)", () => {
       },
     ]);
 
-    // Currently-mounted: exo + registry + profiles (post bootstrap + 2×add).
+    // Currently-mounted: exo + registry + profiles (post bootstrap + 2×add),
+    // plus the private catalog when requested.
     // The dependency repos (exodev/shared-private/public/w3c) are NOT mounted.
-    for (const m of [MOUNT.exo, MOUNT.registry, MOUNT.profiles]) {
+    const mounted: Array<[string, string]> = [
+      [MOUNT.exo, SRC.exo],
+      [MOUNT.registry, SRC.registry],
+      [MOUNT.profiles, SRC.profiles],
+      ...(opts.privateCatalog
+        ? ([[MOUNT.profilesPrivate, SRC.profilesPrivate]] as Array<
+            [string, string]
+          >)
+        : []),
+    ];
+    for (const [m] of mounted) {
       await fs.ensureDir(path.join(vaultRoot, m));
       await fs.writeFile(
         path.join(vaultRoot, m, ".mounted"),
         "placeholder so the folder exists on disk\n",
       );
     }
-    const gm = [
-      [MOUNT.exo, SRC.exo],
-      [MOUNT.registry, SRC.registry],
-      [MOUNT.profiles, SRC.profiles],
-    ]
+    const gm = mounted
       .map(([p, u]) => `[submodule "${p}"]\n\tpath = ${p}\n\turl = ${u}\n`)
       .join("");
     await fs.writeFile(path.join(vaultRoot, ".gitmodules"), gm, "utf-8");
@@ -607,6 +646,60 @@ describe("CLI — central-registry profile resolution (Issue #3511)", () => {
     // source of truth for any future profile switch (one-level self-brick).
     expect(existsSync(path.join(vaultRoot, MOUNT.registry))).toBe(true);
     expect(existsSync(path.join(vaultRoot, MOUNT.profiles))).toBe(true);
+  });
+
+  it("[revert-verify] ems__Bug 8de172ca: the PRIVATE profiles catalog (namespace `profiles-private`) survives a leaf-profile apply and still resolves the profile afterwards", async () => {
+    await makeRegistryVault({ privateCatalog: true });
+
+    const realMount = new BootstrapAssetSpaceService();
+    jest
+      .spyOn(realMount, "pullAssetSpace")
+      .mockImplementation(async (_url, _ref, targetDir) => {
+        mkdirSync(targetDir, { recursive: true });
+        writeFileSync(path.join(targetDir, "pulled.md"), "---\n---\n");
+        return { sha: "deadbeef", fileCount: 1 };
+      });
+    const factory = (_opts: unknown, vp: string): CliApplyProfileService =>
+      new CliApplyProfileService({ vaultPath: vp, mount: realMount });
+
+    const stderr: string[] = [];
+    const result = await runApplyProfile(
+      PROFILE_EXODEV,
+      { vault: vaultRoot, yes: true, verbose: false },
+      {
+        confirmGate: approvingGate,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        applyServiceFactory: factory as any,
+        out: () => {},
+        err: (m) => stderr.push(m),
+      },
+    );
+    expect(result.exitCode).toBe(ExitCodes.SUCCESS);
+
+    // The profile is included by no profile's closure; strict replace would
+    // tear its catalog down — the one-level self-brick CATALOG-KEEP prevents.
+    // PRE-FIX: the folder is gone (torn down or parked).
+    expect(
+      existsSync(
+        path.join(
+          vaultRoot,
+          MOUNT.profilesPrivate,
+          "profiles-private",
+          `${PROFILE_EXODEV}.md`,
+        ),
+      ),
+    ).toBe(true);
+    // Public catalogs keep surviving as before.
+    expect(existsSync(path.join(vaultRoot, MOUNT.registry))).toBe(true);
+    expect(existsSync(path.join(vaultRoot, MOUNT.profiles))).toBe(true);
+
+    // The point of the guard: the NEXT apply can still find the profile.
+    const { CliProfileResolver } =
+      await import("../../../src/services/CliProfileResolver.js");
+    const again = await new CliProfileResolver({
+      vaultPath: vaultRoot,
+    }).resolveFilter(PROFILE_EXODEV);
+    expect(again.outcome).toBe("engaged");
   });
 
   it("resolver returns `engaged` (not `degraded`) with the full dependsOn closure as declaredOntologies", async () => {

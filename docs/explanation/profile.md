@@ -486,6 +486,16 @@ profile, so their labels cannot be resolved at all. A forensic snapshot of the
 laptop in work context contains zero bytes of personal content. This is privacy
 beyond obfuscation — it is **absence**.
 
+**Exception — the catalogs.** The AssetSpaces that profile resolution reads from
+are kept mounted across every apply once they are on disk: the registry
+(`registry`), the public profiles (`profiles`) and the private profiles
+(`profiles-private`). Without that, the first apply would remove the profiles
+every later apply needs. The private catalog holds profile manifests and their
+descriptions — not notes — but it does stay on disk even when you apply `$$core`
+to clean a device, and the apply plan does not list it. Remove it deliberately
+with `exocortex-cli assetspace-remove` or the plugin command «Remove knowledge
+pack (advanced)».
+
 Compared to Obsidian Sync's at-rest encryption:
 
 | Property      | Obsidian Sync E2E encryption                                        | UID-canon obfuscation               |
