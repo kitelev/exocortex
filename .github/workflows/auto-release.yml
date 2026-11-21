@@ -387,12 +387,34 @@ jobs:
           "
           echo "Updated CLI package.json to version $NEW_VERSION"
 
+      # Trusted publishing (OIDC) instead of a long-lived NPM_TOKEN. NPM_TOKEN
+      # expired and v17.21.2 / v17.21.3 were tagged but never reached npm
+      # (runs 44553266554, 44769321132: "Publish CLI to npm" failed). Classic
+      # tokens were revoked by npm in Dec 2025, a granular write token lives
+      # at most 90 days, and token publishing goes away in Jan 2027.
+      #
+      # The trusted publisher is configured on npmjs.com for
+      # @kitelev/exocortex-cli: GitHub Actions, kitelev/exocortex, workflow
+      # file `auto-release.yml`. ⛔ The FILE NAME is part of the trust —
+      # renaming this workflow breaks publishing. The exchange of the GitHub
+      # OIDC token (`id-token: write` above) for a publish token needs
+      # npm >= 11.5.1, while Node 22 ships npm 10 ⇒ install npm explicitly,
+      # pinned to an exact version (never a floating tag).
+      - name: Upgrade npm for trusted publishing (OIDC)
+        if: steps.commits.outputs.has_commits == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        run: |
+          npm install -g npm@11.21.2
+          npm --version
+
       - name: Publish CLI to npm
         if: steps.commits.outputs.has_commits == 'true' && steps.check_tag.outputs.tag_exists == 'false'
         run: |
           cd packages/cli
           npm publish --access public
         env:
+          # Fallback only: npm tries OIDC first and uses the token only if the
+          # OIDC exchange is unavailable. Remove once trusted publishing has
+          # shipped a release.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Summary
