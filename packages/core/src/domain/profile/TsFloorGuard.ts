@@ -102,10 +102,22 @@ export const PLUGIN_UI_FLOOR: ReadonlyArray<FloorIdentity> = SDK_FLOOR;
  * to materialise (a bare/legacy vault without them is unaffected). This is the
  * catalog analogue of the TS-floor's "never destroy" guarantee. Matched by
  * `exo__AssetSpace_namespace` (fork-safe, owner-independent).
+ *
+ * `profiles-private` (ems__Bug 8de172ca): since 2026-11-14 the personal, work,
+ * bot and peer profiles live in a separate private catalog
+ * (`exoas-profiles-private`); only the minimal `$$core` stays public. No
+ * profile includes that catalog, so without this entry the first apply tore it
+ * down and every later apply could find no personal profile at all.
+ *
+ * Kept a literal allow-list on purpose: a content-derived rule ("keep any
+ * AssetSpace that holds an exo__Profile") would also keep a sensitive leaf that
+ * happened to contain a profile, weakening the privacy boundary strict replace
+ * provides.
  */
 export const CATALOG_KEEP_NAMESPACES: ReadonlySet<string> = new Set([
   "registry",
   "profiles",
+  "profiles-private",
 ]);
 
 /**
