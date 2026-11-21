@@ -113,6 +113,13 @@ export const PLUGIN_UI_FLOOR: ReadonlyArray<FloorIdentity> = SDK_FLOOR;
  * AssetSpace that holds an exo__Profile") would also keep a sensitive leaf that
  * happened to contain a profile, weakening the privacy boundary strict replace
  * provides.
+ *
+ * Privacy trade-off: a kept catalog survives EVERY apply, including `$$core`
+ * applied to clean a device — so the private catalog (profile manifests and
+ * their descriptions) stays on disk until removed deliberately with
+ * `assetspace-remove` (CLI) or «Remove knowledge pack (advanced)» (plugin).
+ * The apply plan does not list kept catalogs. See docs/explanation/profile.md
+ * §«Privacy through normalization — UID-canon framing».
  */
 export const CATALOG_KEEP_NAMESPACES: ReadonlySet<string> = new Set([
   "registry",
