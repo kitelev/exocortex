@@ -39,6 +39,7 @@ import { CliApplyProfileService } from "../../../src/services/CliApplyProfileSer
 import { BootstrapAssetSpaceService } from "../../../src/services/BootstrapAssetSpaceService.js";
 import { InvalidArgumentsError, VaultNotFoundError } from "../../../src/utils/errors/index.js";
 import { ExitCodes } from "../../../src/utils/ExitCodes.js";
+import { DEPENDENCY_KIND_REFERENCE_UID, PARKED_ROOT } from "@kitelev/exocortex-core";
 
 const TESTLIB_UID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const PROFILE_MINIMAL = "11111111-1111-1111-1111-111111111111"; // SDK floor + exocmd
@@ -239,9 +240,11 @@ describe("CLI — apply-profile real mount-state switch (Issue #3416)", () => {
     ): CliApplyProfileService => {
       const svc = new CliApplyProfileService({ vaultPath: vp });
       // Simulate the pre-fix scaffold: build a real plan but execute nothing.
+      // Result in the production shape (`parked` exists since req d4ccc901 /
+      // PR #4033; the command reads it for the summary — ems__Bug 0057f5c9).
       jest
         .spyOn(svc, "execute")
-        .mockResolvedValue({ destroyed: [], materialized: [] });
+        .mockResolvedValue({ destroyed: [], parked: [], materialized: [] });
       return svc;
     };
     const result = await runApplyProfile(
@@ -700,6 +703,93 @@ describe("CLI — central-registry profile resolution (Issue #3511)", () => {
       vaultPath: vaultRoot,
     }).resolveFilter(PROFILE_EXODEV);
     expect(again.outcome).toBe("engaged");
+  });
+
+  it("[revert-verify] ems__Bug 0057f5c9: a parks-only plan is executed (not reported as no-op) and the soft AssetSpace lands in .exocortex/parked/", async () => {
+    // Production shape: everything the target profile needs is already mounted
+    // (exo + its dependsOn w3c; the catalogs are kept), and one extra mounted
+    // AssetSpace is reachable only through a SOFT (`DependencyKindReference`)
+    // edge — so the plan is exactly one park: no destroy, no materialize.
+    const AS_SOFT = "5b0c9e7a-3d41-4f8e-a2b6-9c7d1e4f0a35";
+    const PROFILE_CORE = "4c5d9b62-1a3e-4f7b-9c2d-8e1f0a3b6c47";
+    const softSrc = "https://github.com/kitelev/exoas-soft";
+    const softMount = "assetspaces/kitelev/exoas-soft";
+    vaultRoot = await fs.mkdtemp(path.join(os.tmpdir(), "exocortex-cli-park-"));
+    const soft = regDescriptor(AS_SOFT, softSrc, "soft");
+    await writeAssets(vaultRoot, [
+      regDescriptor(AS_EXO_EKA, SRC.exo, "exo", [AS_W3C]),
+      regDescriptor(AS_W3C, SRC.w3c, "w3c-aggregated"),
+      regDescriptor(AS_REGISTRY, SRC.registry, "registry", [AS_EXO_EKA]),
+      regDescriptor(AS_PROFILES, SRC.profiles, "profiles", [AS_REGISTRY, AS_EXO_EKA]),
+      {
+        relPath: soft.relPath,
+        frontmatter: {
+          ...soft.frontmatter,
+          exo__AssetSpace_dependsOnKind: `[[${DEPENDENCY_KIND_REFERENCE_UID}]]`,
+        },
+      },
+      {
+        relPath: `${MOUNT.profiles}/profiles/${PROFILE_CORE}.md`,
+        frontmatter: {
+          exo__Asset_uid: PROFILE_CORE,
+          exo__Asset_label: "$$core-only",
+          exo__Instance_class: [`[[${PROFILE_CLASS_UID}|exo__Profile]]`],
+          exo__Profile_includes: [`[[${AS_EXO_EKA}]]`],
+        },
+      },
+    ]);
+    const mounted: Array<[string, string]> = [
+      [MOUNT.exo, SRC.exo],
+      [MOUNT.w3c, SRC.w3c],
+      [MOUNT.registry, SRC.registry],
+      [MOUNT.profiles, SRC.profiles],
+      [softMount, softSrc],
+    ];
+    for (const [m] of mounted) {
+      await fs.ensureDir(path.join(vaultRoot, m));
+      await fs.writeFile(path.join(vaultRoot, m, ".mounted"), "placeholder\n");
+    }
+    await fs.writeFile(
+      path.join(vaultRoot, ".gitmodules"),
+      mounted.map(([p, u]) => `[submodule "${p}"]\n\tpath = ${p}\n\turl = ${u}\n`).join(""),
+      "utf-8",
+    );
+
+    const realMount = new BootstrapAssetSpaceService();
+    const pullSpy = jest
+      .spyOn(realMount, "pullAssetSpace")
+      .mockImplementation(async () => {
+        throw new Error("a parks-only plan must not pull anything");
+      });
+    const factory = (_opts: unknown, vp: string): CliApplyProfileService =>
+      new CliApplyProfileService({ vaultPath: vp, mount: realMount });
+    const stdout: string[] = [];
+    const result = await runApplyProfile(
+      PROFILE_CORE,
+      { vault: vaultRoot, yes: true, verbose: false },
+      {
+        confirmGate: approvingGate,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        applyServiceFactory: factory as any,
+        out: (m) => stdout.push(m),
+        err: () => {},
+      },
+    );
+
+    expect(result.exitCode).toBe(ExitCodes.SUCCESS);
+    expect(pullSpy).not.toHaveBeenCalled();
+    // PRE-FIX: the early exit printed "Already in target mount-state … — no-op"
+    // and the park never ran — the folder stayed mounted.
+    expect(stdout.join("\n")).not.toContain("no-op");
+    expect(stdout.join("\n")).toContain("1 parked");
+    expect(existsSync(path.join(vaultRoot, softMount))).toBe(false);
+    expect(
+      existsSync(path.join(vaultRoot, PARKED_ROOT, "kitelev", "exoas-soft", ".mounted")),
+    ).toBe(true);
+    expect(readFileSync(path.join(vaultRoot, ".gitmodules"), "utf-8")).not.toContain(softMount);
+    // Everything the target needs is untouched.
+    expect(existsSync(path.join(vaultRoot, MOUNT.exo))).toBe(true);
+    expect(existsSync(path.join(vaultRoot, MOUNT.w3c))).toBe(true);
   });
 
   it("resolver returns `engaged` (not `degraded`) with the full dependsOn closure as declaredOntologies", async () => {
