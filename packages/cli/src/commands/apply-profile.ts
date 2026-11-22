@@ -212,7 +212,14 @@ export async function runApplyProfile(
   }
 
   // Idempotent no-op: target already in mount-state ⇒ nothing to mutate.
-  if (diff.toDestroy.length === 0 && diff.toMaterialize.length === 0) {
+  // ems__Bug 0057f5c9 — parking (req `d4ccc901`, PR #4033) is a mutation too: it
+  // moves the mount folder under `.exocortex/parked/`. A parks-only plan is NOT a
+  // no-op, so the check must see `toPark` (it predates parking and was not updated).
+  if (
+    diff.toDestroy.length === 0 &&
+    diff.toPark.length === 0 &&
+    diff.toMaterialize.length === 0
+  ) {
     out(
       `[apply-profile] Already in target mount-state for ${targetProfileLabel} — no-op.`,
     );
@@ -231,8 +238,12 @@ export async function runApplyProfile(
     return { exitCode: ExitCodes.OPERATION_FAILED, stdout, stderr };
   }
 
+  // Same shape as the plugin's summary: the parked count appears only when there
+  // is one, so outputs of plans without parks stay byte-identical.
+  const parkedSuffix =
+    execResult.parked.length > 0 ? `, ${execResult.parked.length} parked` : "";
   out(
-    `[apply-profile] Switched to ${targetProfileLabel}: ${execResult.destroyed.length} AssetSpace(s) torn down, ${execResult.materialized.length} materialized.`,
+    `[apply-profile] Switched to ${targetProfileLabel}: ${execResult.destroyed.length} AssetSpace(s) torn down${parkedSuffix}, ${execResult.materialized.length} materialized.`,
   );
   return { exitCode: ExitCodes.SUCCESS, stdout, stderr };
 }
