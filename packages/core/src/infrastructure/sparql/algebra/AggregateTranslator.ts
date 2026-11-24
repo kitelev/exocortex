@@ -18,6 +18,7 @@ import type {
 import { isVariableExpression, isFunctionCallExpression } from "../SparqljsTypes";
 import { CustomAggregateRegistry } from "../aggregates/CustomAggregateRegistry";
 import { BUILT_IN_AGGREGATES, EXO_AGGREGATE_NS } from "../aggregates/BuiltInAggregates";
+import { unaryArithmeticOperator, unaryToArithmetic } from "./ExpressionTranslator";
 
 /**
  * Translates SPARQL aggregate-related constructs from the sparqljs AST
@@ -164,6 +165,11 @@ export class AggregateTranslator {
           left: transformedArgs[0],
           right: transformedArgs[1],
         };
+      }
+
+      const unaryOperator = unaryArithmeticOperator(opExpr.operator);
+      if (unaryOperator !== undefined) {
+        return unaryToArithmetic(unaryOperator, transformedArgs[0]);
       }
 
       return {

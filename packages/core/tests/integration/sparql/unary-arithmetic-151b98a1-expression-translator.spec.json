@@ -1,0 +1,183 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 151b98a1, subject ExpressionTranslator.ts: SPARQL unary minus / plus (`-A`, `+A`) are translated as `0 - A` / `0 + A` by ONE helper used by BOTH operator tables. This spec covers the helper and the FILTER / BIND / ORDER BY / argument table (`translateOperationExpression`); the HAVING / SELECT-expression table is `unary-arithmetic-151b98a1-aggregate-translator.spec.json`. A8 (the algebra of `-A` equals that of `(0 - A)`) is a DESIGN lock, not a behaviour lock: M6 reddens only A8. Each mutant removes one guarantee and must redden exactly the axes in `expect` (pairwise distinct). `red_re` anchors on the jest failure header `● <suite> › <axis> `. `tree`/`subject` are placeholders — run on a copy with the paths substituted. The harness also runs the compliance test \"should support unary negation\" (un-skipped by the fix); W-mutants are plausible WRONG implementations from the independent review of the spec — each must turn exactly its review axis (A18–A24) red.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?(?= )|should support unary negation)",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/unary-arithmetic-151b98a1.test.ts tests/sparql/compliance/built-in-functions.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/algebra/ExpressionTranslator.ts",
+  "mutants": {
+    "M1_uminus_unrecognised": {
+      "_note": "`-A` falls through to a call of the unknown function `UMINUS` again (the defect itself, both tables). Review axes: A18/A19/A20/A22/A24 compare `-X` with `0 - X` where the binary side is BOUND (`0 - \"7\"` = -7 under the binary coercion, a duration under date arithmetic) and the unary side is now an unknown-function call; the compliance test projects `-?val`.",
+      "from": "  if (operator === \"UMINUS\") return \"-\";",
+      "to": "  if (operator === \"UMINUS_\") return \"-\";",
+      "expect": [
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A5",
+        "A6",
+        "A8",
+        "A9",
+        "A12",
+        "A13",
+        "A14",
+        "A15",
+        "A16",
+        "A17",
+        "A18",
+        "A19",
+        "A20",
+        "A22",
+        "A24",
+        "A11a",
+        "A11b",
+        "A11c",
+        "A11d",
+        "should support unary negation"
+      ]
+    },
+    "M2_uplus_unrecognised": {
+      "_note": "Unary plus only — `+A` is a call of the unknown function `UPLUS` again (the founder's scope: both signs). Review axes: A21/A23/A24 compare `+X` with `0 + X` on operands where the binary side is bound.",
+      "from": "  if (operator === \"UPLUS\") return \"+\";",
+      "to": "  if (operator === \"UPLUS_\") return \"+\";",
+      "expect": [
+        "A7",
+        "A8",
+        "A9",
+        "A12",
+        "A13",
+        "A14",
+        "A16",
+        "A17",
+        "A21",
+        "A23",
+        "A24",
+        "A11a",
+        "A11b",
+        "A11c"
+      ]
+    },
+    "M3_expression_table_skips_unary": {
+      "_note": "The groomer's 'only one copy' case inverted: the FILTER / BIND / ORDER BY / argument table no longer dispatches unary operators, the HAVING / SELECT-expression table still does. Review axes: A18/A20/A21 are the FIRST-table (BIND) parity axes; the second-table twins A19/A22/A23 stay green.",
+      "from": "    const unaryOperator = unaryArithmeticOperator(expr.operator);",
+      "to": "    const unaryOperator = unaryArithmeticOperator(\"\");",
+      "expect": [
+        "A1",
+        "A2",
+        "A3",
+        "A7",
+        "A8",
+        "A9",
+        "A12",
+        "A13",
+        "A14",
+        "A16",
+        "A17",
+        "A18",
+        "A20",
+        "A21",
+        "A11a",
+        "A11b",
+        "A11c",
+        "A11d"
+      ]
+    },
+    "M4_wrong_constant": {
+      "_note": "`-A` as `1 - A`: right shape, wrong value. Review axes: `c ∓ X` differs from `0 ∓ X` wherever X coerces to a value (A20–A24); A18/A19 stay green because `c - (c - A)` = `0 - (0 - A)`; the compliance test reads the negated value.",
+      "from": "    left: { type: \"literal\", value: 0, datatype: XSD_INTEGER },",
+      "to": "    left: { type: \"literal\", value: 1, datatype: XSD_INTEGER },",
+      "expect": [
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A5",
+        "A6",
+        "A7",
+        "A8",
+        "A9",
+        "A12",
+        "A13",
+        "A15",
+        "A16",
+        "A17",
+        "A20",
+        "A21",
+        "A22",
+        "A23",
+        "A24",
+        "A11a",
+        "A11b",
+        "A11c",
+        "A11d",
+        "should support unary negation"
+      ]
+    },
+    "M5_minus_as_identity": {
+      "_note": "Plausible wrong implementation 'unary is a no-op': `-A` as `0 + A` (= A for a number). Review axes: `-(D)` = D differs from `0 - D` (A20/A22), `-\"7\"` = \"7\" differs from `0 - \"7\"` = -7 (A24); A18/A19 stay green: identity twice equals the operand, and `0 - (0 - \"7\")` = 7 prints the same lexical form.",
+      "from": "    operator,\n    left: { type: \"literal\"",
+      "to": "    operator: \"+\",\n    left: { type: \"literal\"",
+      "expect": [
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A5",
+        "A6",
+        "A8",
+        "A9",
+        "A12",
+        "A13",
+        "A15",
+        "A16",
+        "A17",
+        "A20",
+        "A22",
+        "A24",
+        "A11a",
+        "A11b",
+        "A11c",
+        "A11d",
+        "should support unary negation"
+      ]
+    },
+    "M6_constant_untyped": {
+      "_note": "The constant loses `xsd:integer`: the evaluator answers the same (a JS number either way); only the algebra stops being the one the parser builds for `(0 - A)`.",
+      "from": "    left: { type: \"literal\", value: 0, datatype: XSD_INTEGER },",
+      "to": "    left: { type: \"literal\", value: 0 },",
+      "expect": ["A8"]
+    },
+    "M10_fold_literal_lexically": {
+      "_note": "Independent review of the plan, W2 — a plausible wrong fold of a numeric-literal operand: the sign is concatenated with the literal's lexical value, so `-(-5)` becomes the literal \"--5\" (NaN) instead of 5.",
+      "from": "      return unaryToArithmetic(unaryOperator, this.translateExpression(exprArgs[0]));",
+      "to": "      const operand = this.translateExpression(exprArgs[0]);\n      const lit = operand as unknown as { type: string; value?: unknown; datatype?: string };\n      if (lit.type === \"literal\" && typeof lit.value === \"number\" && lit.datatype) {\n        return this.translateTermExpression({ termType: \"Literal\", value: `${unaryOperator}${String(lit.value)}`, datatype: { termType: \"NamedNode\", value: lit.datatype } } as unknown as SparqljsTerm);\n      }\n      return unaryToArithmetic(unaryOperator, operand);",
+      "expect": ["A16"]
+    },
+    "W1_ET_double_negation": {
+      "_note": "Plausible wrong fold: a nested minus `-(-X)` returns X untouched. Numeric axes (A2 `-(-?o) = ?o`) stay green; on a non-numeric X SPARQL says type error, `0 - (0 - X)` gives it, the fold returns X bound.",
+      "from": "      return unaryToArithmetic(unaryOperator, this.translateExpression(exprArgs[0]));",
+      "to": "      const inner = exprArgs[0] as unknown as { type?: string; operator?: string; args?: SparqljsExpression[] };\n      if (unaryOperator === \"-\" && inner.type === \"operation\" && inner.operator === \"UMINUS\" && inner.args) {\n        return this.translateExpression(inner.args[0]);\n      }\n      return unaryToArithmetic(unaryOperator, this.translateExpression(exprArgs[0]));",
+      "expect": ["A18"]
+    },
+    "W2_ET_minus_over_subtraction_swaps": {
+      "_note": "Plausible wrong rewrite: `-(A - B)` → `(B - A)`. Equal on numbers; on date − date the swapped subtraction is a duration (-P9D), while `0 - (date - date)` is an error.",
+      "from": "      return unaryToArithmetic(unaryOperator, this.translateExpression(exprArgs[0]));",
+      "to": "      const operand = this.translateExpression(exprArgs[0]);\n      if (unaryOperator === \"-\" && operand.type === \"arithmetic\" && operand.operator === \"-\") {\n        return { type: \"arithmetic\", operator: \"-\", left: operand.right, right: operand.left };\n      }\n      return unaryToArithmetic(unaryOperator, operand);",
+      "expect": ["A20"]
+    },
+    "W3_ET_plus_over_arithmetic_is_identity": {
+      "_note": "Plausible wrong shortcut: `+` over arithmetic returns the arithmetic itself. Equal on numbers; on a date/duration result `0 + D` is an error, the shortcut returns D.",
+      "from": "      return unaryToArithmetic(unaryOperator, this.translateExpression(exprArgs[0]));",
+      "to": "      const operand = this.translateExpression(exprArgs[0]);\n      if (unaryOperator === \"+\" && operand.type === \"arithmetic\") return operand;\n      return unaryToArithmetic(unaryOperator, operand);",
+      "expect": ["A21"]
+    }
+  }
+}

@@ -1136,8 +1136,8 @@ describe("SPARQL 1.1 Compliance - Built-in Functions", () => {
       expect(result).toBe(10);
     });
 
-    it.skip("should support unary negation", async () => {
-      // Unary negation in SELECT expressions not producing expected results
+    it("should support unary negation", async () => {
+      // Unary minus is op:numeric-unary-minus (SPARQL 1.1 §17.3) — ems__Bug 151b98a1
       const query = `
         PREFIX ex: <http://example.org/>
         SELECT (-?val AS ?negVal) WHERE {

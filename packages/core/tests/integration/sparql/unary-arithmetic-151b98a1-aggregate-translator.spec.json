@@ -1,0 +1,87 @@
+{
+  "_doc": "Revert-verify mutants for vault-exodev ems__Bug 151b98a1, subject AggregateTranslator.ts: the HAVING / SELECT-expression operator table (`transformExpressionWithAggregateVars`) dispatches unary minus / plus to the shared helper with the ALREADY-TRANSFORMED operand (aggregate sub-expressions replaced by their variables). Each mutant removes one guarantee and must redden exactly the axes in `expect`. `tree`/`subject` are placeholders. The harness also runs the compliance test \"should support unary negation\" (un-skipped by the fix); W-mutants are plausible WRONG implementations from the independent review of the spec — each must turn exactly its review axis (A18–A24) red.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/services/node_modules"
+  ],
+  "red_re": "● .*› ([A-Z]\\d+[a-z]?(?= )|should support unary negation)",
+  "harness": "cd \"$(dirname {subject})/../../../../\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/sparql/unary-arithmetic-151b98a1.test.ts tests/sparql/compliance/built-in-functions.test.ts --verbose 2>&1",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/infrastructure/sparql/algebra/AggregateTranslator.ts",
+  "mutants": {
+    "M7_aggregate_table_skips_unary": {
+      "_note": "The groomer's measured case: only the expression table is fixed — HAVING and SELECT expressions stay broken. Review axes: A19/A22/A23/A24 are the SECOND-table parity axes; the compliance test is a SELECT expression.",
+      "from": "      const unaryOperator = unaryArithmeticOperator(opExpr.operator);",
+      "to": "      const unaryOperator = unaryArithmeticOperator(\"\");",
+      "expect": [
+        "A4",
+        "A5",
+        "A6",
+        "A7",
+        "A8",
+        "A15",
+        "A17",
+        "A19",
+        "A22",
+        "A23",
+        "A24",
+        "A11a",
+        "A11b",
+        "A11c",
+        "A11d",
+        "should support unary negation"
+      ]
+    },
+    "M8_raw_operand": {
+      "_note": "Plausible wrong implementation: the operand is re-translated from the raw AST instead of taken from `transformedArgs`, so an aggregate under the sign is not replaced by its variable. Review axes: `+SAMPLE(?l)` in HAVING: the raw operand keeps the aggregate untranslated, the ASK fails instead of false.",
+      "from": "        return unaryToArithmetic(unaryOperator, transformedArgs[0]);",
+      "to": "        return unaryToArithmetic(unaryOperator, this.translateExpressionFn(opExpr.args[0] as SparqljsExpression));",
+      "expect": [
+        "A5",
+        "A6",
+        "A7",
+        "A8",
+        "A15",
+        "A24",
+        "A11a",
+        "A11b",
+        "A11c",
+        "A11d"
+      ]
+    },
+    "M9_sign_only_over_a_bare_aggregate": {
+      "_note": "Independent review of the plan, W1 — a plausible wrong second table: the sign is handled only when its operand IS an aggregate; any other operand goes to the expression table, which does not know the aggregate variables (`-(SUM(?o) + 1)`, `-(-COUNT(*))` fail with «Unsupported expression structure»). Shares its anchor with M8 — the driver applies every mutant to a clean copy.",
+      "from": "        return unaryToArithmetic(unaryOperator, transformedArgs[0]);",
+      "to": "        if (aggregateVarMap.has(opExpr.args[0] as SparqljsExpression)) return unaryToArithmetic(unaryOperator, transformedArgs[0]);\n        return this.translateExpressionFn(expr);",
+      "expect": ["A15"]
+    },
+    "W1_AT_double_negation": {
+      "_note": "Plausible wrong fold: a nested minus `-(-X)` returns X untouched. Numeric axes (A2 `-(-?o) = ?o`) stay green; on a non-numeric X SPARQL says type error, `0 - (0 - X)` gives it, the fold returns X bound.",
+      "from": "        return unaryToArithmetic(unaryOperator, transformedArgs[0]);",
+      "to": "        const inner = opExpr.args[0] as unknown as { type?: string; operator?: string };\n        const t = transformedArgs[0];\n        if (unaryOperator === \"-\" && inner.type === \"operation\" && inner.operator === \"UMINUS\" && t.type === \"arithmetic\") {\n          return t.right;\n        }\n        return unaryToArithmetic(unaryOperator, transformedArgs[0]);",
+      "expect": ["A19"]
+    },
+    "W2_AT_minus_over_subtraction_swaps": {
+      "_note": "Plausible wrong rewrite: `-(A - B)` → `(B - A)`. Equal on numbers; on date − date the swapped subtraction is a duration (-P9D), while `0 - (date - date)` is an error.",
+      "from": "        return unaryToArithmetic(unaryOperator, transformedArgs[0]);",
+      "to": "        const t = transformedArgs[0];\n        if (unaryOperator === \"-\" && t.type === \"arithmetic\" && t.operator === \"-\") {\n          return { type: \"arithmetic\", operator: \"-\", left: t.right, right: t.left };\n        }\n        return unaryToArithmetic(unaryOperator, transformedArgs[0]);",
+      "expect": ["A22"]
+    },
+    "W3_AT_plus_over_arithmetic_is_identity": {
+      "_note": "Plausible wrong shortcut: `+` over arithmetic returns the arithmetic itself. Equal on numbers; on a date/duration result `0 + D` is an error, the shortcut returns D.",
+      "from": "        return unaryToArithmetic(unaryOperator, transformedArgs[0]);",
+      "to": "        if (unaryOperator === \"+\" && transformedArgs[0].type === \"arithmetic\") return transformedArgs[0];\n        return unaryToArithmetic(unaryOperator, transformedArgs[0]);",
+      "expect": ["A23"]
+    },
+    "W4_AT_plus_identity_except_aggregate": {
+      "_note": "The alternative the plan rejected: `+A` returns A unless A is an aggregate. C4 locks it for the FIRST table only; A24 is C4 + A13 for the second (`+?l` must stay unbound), A23 the composite case.",
+      "from": "        return unaryToArithmetic(unaryOperator, transformedArgs[0]);",
+      "to": "        if (unaryOperator === \"+\" && !aggregateVarMap.has(opExpr.args[0] as SparqljsExpression)) return transformedArgs[0];\n        return unaryToArithmetic(unaryOperator, transformedArgs[0]);",
+      "expect": ["A23", "A24"]
+    }
+  }
+}
