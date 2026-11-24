@@ -53,9 +53,9 @@
   "dependencies": {
     "commander": "^15.0.0",
     "fs-extra": "^11.4.1",
-    "glob": "^11.0.0",
+    "glob": "^14.0.3",
     "js-yaml": "^5.4.2",
-    "minimatch": "^10.2.6",
+    "minimatch": "^11.0.4",
     "nanotar": "0.3.0",
     "ora": "^9.4.1"
   },
