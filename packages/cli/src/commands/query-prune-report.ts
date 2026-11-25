@@ -96,7 +96,7 @@ export interface PruneReport {
 export async function analysisContext(
   store: InMemoryTripleStore,
   triples: readonly Triple[],
-): Promise<PredicateAnalysisContext> {
+): Promise<PredicateAnalysisContext & { storePredicates: ReadonlySet<string> }> {
   return {
     subPropertyIndex: await computeSubPropertyIndex(store),
     storePredicates: new Set(triples.map((t) => t.predicate.value)),
@@ -187,6 +187,81 @@ export function formatPruneReportText(report: PruneReport): string[] {
   }
   lines.push(`Triples: ${report.triplesCut} of ${report.triplesLoaded} loaded (${percent(report.share)})`);
   return lines;
+}
+
+/**
+ * Ticket c7a94d8e (RFC 308a52c3 Д4, phase 4) — the `query --stats` line of predicate
+ * pruning: the report above reduced to what the line prints. One implementation: the mode,
+ * the cut and the share are `pruneReport`'s (loader units), not a second count.
+ *
+ * ⛔ Wording: loading is unchanged until phase 3b — the FULL graph is loaded — so the
+ * line says what the query NEEDS of the loaded triples, not that only N were loaded.
+ *
+ * A result-cache hit loads nothing, so it prints the line the fresh run PRINTED, kept next
+ * to the cached answer as text: the recorded text is true of the run that produced that
+ * answer whatever a later CLI version would compute, and there are no numbers to disagree.
+ */
+export interface PruneStats {
+  mode: PruneReportMode;
+  /** The full-load reasons as the report prints them (empty for a prune). */
+  reasons: string[];
+  /** |P'| for a prune; every predicate of the loaded graph for a full load. */
+  predicates: number;
+  triplesCut: number;
+  triplesLoaded: number;
+  share: number;
+}
+
+/** Analyze a parsed query (the AST `query` executes) over the loaded graph. */
+export async function computePruneStats(
+  ast: { type: string },
+  store: InMemoryTripleStore,
+  triples: readonly Triple[],
+): Promise<PruneStats> {
+  const context = await analysisContext(store, triples);
+  const report = pruneReport(analyze(ast, context), triples);
+  return {
+    mode: report.mode,
+    reasons: report.reasons.map(reasonText),
+    predicates: report.mode === "full" ? context.storePredicates.size : report.predicates.length,
+    triplesCut: report.triplesCut,
+    triplesLoaded: report.triplesLoaded,
+    share: report.share,
+  };
+}
+
+const PRUNE_STATS_PREFIX = "Predicate pruning: ";
+
+/** The line of a fresh run. */
+export function formatPruneStatsLine(stats: PruneStats): string {
+  const head = stats.mode === "full" ? `full load (${stats.reasons.join(", ")})` : MODE_TEXT[stats.mode];
+  const predicates = stats.mode === "full" ? `all ${stats.predicates}` : String(stats.predicates);
+  return (
+    `${PRUNE_STATS_PREFIX}${head} — needs ${predicates} predicate(s), ` +
+    `${stats.triplesCut} of ${stats.triplesLoaded} loaded triples (${percent(stats.share)})`
+  );
+}
+
+/**
+ * What a hit prints when no line was recorded with the cached answer. ⛔ It names no cause:
+ * the code does not know it (no --stats, --output json, a batch write, an older CLI, a failed
+ * analysis, a damaged entry).
+ */
+export const PRUNE_STATS_NOT_RECORDED = `${PRUNE_STATS_PREFIX}not recorded with the cached answer (rerun with --no-cache to measure)`;
+
+/** Line breaks and every other control character (C0, DEL, C1, U+2028/2029): a recorded line must not break the block or the terminal. */
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+
+/**
+ * The line of a result-cache hit: the recorded line, marked; anything that is not one line
+ * of this kind — «not recorded». The CLI records only the line of a successful fresh run;
+ * text edited into the cache file by hand is the user's file, not a computation, and is
+ * printed as it is when it has this form.
+ */
+export function recordedPruneStatsLine(recorded: unknown): string {
+  return typeof recorded === "string" && recorded.startsWith(PRUNE_STATS_PREFIX) && !CONTROL_CHARACTER.test(recorded)
+    ? `${recorded} — recorded with the cached answer`
+    : PRUNE_STATS_NOT_RECORDED;
 }
 
 export interface PruneReportOptions {

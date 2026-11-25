@@ -280,6 +280,43 @@ export async function executeAlgebra(
   return { kind: "select", results: await executeWithTimeout(executor.executeAll(algebra), timeoutMs, startTime) };
 }
 
+/**
+ * Ticket c7a94d8e (RFC 308a52c3 Д4) — the `--stats` line of predicate pruning for a fresh
+ * run, and the text recorded with the cached answer (undefined when the line was not
+ * computed). The report module is loaded lazily, only under --stats, for the reason the
+ * prune report gives (two unit suites replace core with a hand-written factory —
+ * harness-invocation-surface §A146). Statistics never fail the answer: any error becomes
+ * the line «not computed», and nothing is recorded.
+ */
+async function pruneStatsFresh(
+  ast: { type: string },
+  store: InMemoryTripleStore,
+  triples: readonly Triple[],
+): Promise<{ line: string; recorded: string | undefined }> {
+  try {
+    const report = await import("./query-prune-report.js");
+    const line = report.formatPruneStatsLine(await report.computePruneStats(ast, store, triples));
+    return { line, recorded: line };
+  } catch (error) {
+    return { line: pruneStatsNotComputed(error), recorded: undefined };
+  }
+}
+
+/** The line of a result-cache hit: the line recorded with the cached answer, if any. */
+async function pruneStatsCached(recorded: unknown): Promise<string> {
+  try {
+    const report = await import("./query-prune-report.js");
+    return report.recordedPruneStatsLine(recorded);
+  } catch (error) {
+    return pruneStatsNotComputed(error);
+  }
+}
+
+function pruneStatsNotComputed(error: unknown): string {
+  const e = error as Error | undefined;
+  return `Predicate pruning: not computed — ${e?.name ?? "Error"}: ${e?.message ?? String(error)}`;
+}
+
 export function sparqlQueryCommand(): Command {
   return new Command("query")
     .description("Execute SPARQL query against Obsidian vault")
@@ -290,7 +327,7 @@ export function sparqlQueryCommand(): Command {
     .option("--timeout <duration>", "Query timeout (e.g., 30s, 5000ms)", "30s")
     .option("--dry-run", "Validate query syntax without executing (no vault loading)")
     .option("--explain", "Show optimized query plan")
-    .option("--stats", "Show execution statistics")
+    .option("--stats", "Show execution statistics, incl. the predicate-pruning line (also on a result-cache hit)")
     .option("--no-optimize", "Disable query optimization")
     .option("--use-cache", "Use persistent triple cache (faster vault loading)")
     .option("--cache-ttl <seconds>", "Query result cache TTL in seconds (default: 300)")
@@ -507,9 +544,10 @@ export function sparqlQueryCommand(): Command {
         // Check query result cache first (before vault loading)
         if (useQueryResultCache) {
           const queryResultCache = new QueryResultCache();
-          const cachedResult = await queryResultCache.get(cacheKeyQuery, cacheTtlSeconds, vaultSignature);
+          const cachedEntry = await queryResultCache.getEntry(cacheKeyQuery, cacheTtlSeconds, vaultSignature);
 
-          if (cachedResult !== null) {
+          if (cachedEntry !== null) {
+            const cachedResult = cachedEntry.result;
             const totalDuration = Date.now() - startTime;
 
             if (outputFormat === "json") {
@@ -531,6 +569,20 @@ export function sparqlQueryCommand(): Command {
               } else if (result.type === "construct" && result.triples) {
                 console.log(`✅ Generated ${result.triples.length} triple(s)\n`);
                 formatCachedConstructResults(result.triples, options.format);
+              }
+              // Ticket c7a94d8e — a hit used to print no statistics at all (RFC 308a52c3 Д4).
+              // Nothing was loaded or executed: only what the hit itself knows, and the
+              // pruning line recorded with the cached answer.
+              if (options.stats) {
+                console.log(`\n📊 Execution Statistics:`);
+                console.log(`  Total time: ${totalDuration}ms`);
+                if (result.type === "select" && result.bindings) {
+                  console.log(`  Results returned: ${result.bindings.length}`);
+                } else if (result.type === "construct" && result.triples) {
+                  console.log(`  Triples generated: ${result.triples.length}`);
+                }
+                console.log(`  ${await pruneStatsCached(cachedEntry.pruneStatsLine)}`);
+                console.log(`  Query result cache: HIT`);
               }
             }
             return;
@@ -662,6 +714,13 @@ export function sparqlQueryCommand(): Command {
 
         const ast = parser.parse(queryString);
 
+        // Ticket c7a94d8e (RFC 308a52c3 Д4) — the --stats line of predicate pruning, text mode
+        // only (the statistics block is text-only). One point for all three branches: the
+        // UPDATE branch below returns before the algebra is built.
+        const pruneStats = options.stats && outputFormat === "text"
+          ? await pruneStatsFresh(ast, tripleStore, triples)
+          : null;
+
         // Route UPDATE queries (INSERT DATA / DELETE DATA) directly to UpdateExecutor
         if (ast.type === "update") {
           if (outputFormat === "text") {
@@ -703,6 +762,7 @@ export function sparqlQueryCommand(): Command {
               console.log(`  Query execution: ${execDuration}ms`);
               console.log(`  Total time: ${totalDuration}ms`);
               console.log(`  Triples scanned: ${triples.length}`);
+              if (pruneStats) console.log(`  ${pruneStats.line}`);
             }
           }
           return;
@@ -767,7 +827,7 @@ export function sparqlQueryCommand(): Command {
               triples: JSON.parse(triplesFormatter.formatJson(resultTriples)),
             };
             const queryResultCache = new QueryResultCache();
-            await queryResultCache.set(cacheKeyQuery, cacheableResult, cacheTtlSeconds, vaultSignature);
+            await queryResultCache.set(cacheKeyQuery, cacheableResult, cacheTtlSeconds, vaultSignature, pruneStats?.recorded);
           }
 
           if (outputFormat === "json") {
@@ -806,6 +866,7 @@ export function sparqlQueryCommand(): Command {
               console.log(`  Total time: ${totalDuration}ms`);
               console.log(`  Triples scanned: ${triples.length}`);
               console.log(`  Triples generated: ${resultTriples.length}`);
+              if (pruneStats) console.log(`  ${pruneStats.line}`);
               if (options.useCache) {
                 console.log(`  Triple cache: ${cacheHit ? "HIT" : "MISS (rebuilt)"}`);
               }
@@ -830,7 +891,7 @@ export function sparqlQueryCommand(): Command {
               bindings,
             };
             const queryResultCache = new QueryResultCache();
-            await queryResultCache.set(cacheKeyQuery, cacheableResult, cacheTtlSeconds, vaultSignature);
+            await queryResultCache.set(cacheKeyQuery, cacheableResult, cacheTtlSeconds, vaultSignature, pruneStats?.recorded);
           }
 
           if (outputFormat === "json") {
@@ -868,6 +929,7 @@ export function sparqlQueryCommand(): Command {
               console.log(`  Total time: ${totalDuration}ms`);
               console.log(`  Triples scanned: ${triples.length}`);
               console.log(`  Results returned: ${results.length}`);
+              if (pruneStats) console.log(`  ${pruneStats.line}`);
               if (options.useCache) {
                 console.log(`  Triple cache: ${cacheHit ? "HIT" : "MISS (rebuilt)"}`);
               }

@@ -51,6 +51,21 @@ interface CachedData {
    * signature) → falls back to TTL-only invalidation (prior behaviour).
    */
   vaultSignature?: string;
+  /**
+   * Ticket c7a94d8e (RFC 308a52c3 Д4) — the predicate-pruning line `query --stats` printed
+   * when it computed this answer, so a cache hit prints the same line. Kept OUTSIDE
+   * `result`: `get` hands `result` out verbatim (the JSON `data` of a hit, a batch record),
+   * so it must not change shape. Absent ⇒ not recorded. Read back as `unknown`: the file is
+   * the only source, the reader validates it.
+   */
+  pruneStatsLine?: unknown;
+}
+
+/** An entry as {@link QueryResultCache.getEntry} returns it. */
+export interface QueryResultCacheEntry {
+  result: unknown;
+  /** Absent when no pruning line was recorded with the answer. */
+  pruneStatsLine?: unknown;
 }
 
 /**
@@ -142,6 +157,19 @@ export class QueryResultCache {
     ttlSeconds: number,
     vaultSignature?: string | null,
   ): Promise<unknown | null> {
+    const entry = await this.getEntry(query, ttlSeconds, vaultSignature);
+    return entry === null ? null : entry.result;
+  }
+
+  /**
+   * {@link QueryResultCache.get} plus what was stored next to the result (ticket
+   * c7a94d8e: the pruning statistics of `query --stats`). Same expiry and staleness rules.
+   */
+  async getEntry(
+    query: string,
+    ttlSeconds: number,
+    vaultSignature?: string | null,
+  ): Promise<QueryResultCacheEntry | null> {
     const cacheKey = this.getCacheKey(query);
     const cachePath = this.getCachePath(cacheKey);
 
@@ -175,7 +203,9 @@ export class QueryResultCache {
         return null;
       }
 
-      return cached.result;
+      return cached.pruneStatsLine === undefined
+        ? { result: cached.result }
+        : { result: cached.result, pruneStatsLine: cached.pruneStatsLine };
     } catch {
       // If any error occurs reading cache, treat as cache miss
       return null;
@@ -193,12 +223,15 @@ export class QueryResultCache {
    * @param vaultSignature - Optional coarse vault content signature (Issue #3983)
    *   captured at cache time, used by {@link QueryResultCache.get} to detect a
    *   vault change. Omit (or pass null) to store a TTL-only entry.
+   * @param pruneStatsLine - Optional predicate-pruning line of `query --stats` (ticket
+   *   c7a94d8e), stored next to the result and returned by {@link QueryResultCache.getEntry}.
    */
   async set(
     query: string,
     result: unknown,
     ttlSeconds: number,
     vaultSignature?: string | null,
+    pruneStatsLine?: string,
   ): Promise<void> {
     const cacheKey = this.getCacheKey(query);
     const cachePath = this.getCachePath(cacheKey);
@@ -210,6 +243,7 @@ export class QueryResultCache {
       timestamp: Date.now(),
       result,
       ...(vaultSignature ? { vaultSignature } : {}),
+      ...(pruneStatsLine === undefined ? {} : { pruneStatsLine }),
     };
 
     // Write atomically to prevent corruption

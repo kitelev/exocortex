@@ -1,0 +1,101 @@
+{
+  "_doc": "Revert-verify mutants for the `query --stats` pruning line in query-prune-report.ts (RFC 308a52c3 Д4, phase 4, vault-exodev task c7a94d8e): the stats record reuses pruneReport (loader units), the mode label, k of a full load (every predicate of the graph), the reasons as the report prints them, the «recorded» mark of a cache hit, the check of a recorded line (a string · starts with the prefix · no control character). Each mutant reddens exactly `expect` (mutant-driver, control 0; M11–M12 — found by the specification review, M13–M14 — by its closing round). `tree`/`subject` are placeholders (§A145).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› (S\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/query-prune-report.ts",
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/query-stats-prune-c7a94d8e.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_namespace_label_lost": {
+      "from": "  const head = stats.mode === \"full\" ? `full load (${stats.reasons.join(\", \")})` : MODE_TEXT[stats.mode];",
+      "to": "  const head = stats.mode === \"full\" ? `full load (${stats.reasons.join(\", \")})` : MODE_TEXT.prune;",
+      "expect": ["S2", "S4"],
+      "_note": "a namespace-filter prune is labelled «prune»: the VL-3 axis and the equality with --prune-report on the namespace form."
+    },
+    "M2_full_k_is_p_prime": {
+      "from": "    predicates: report.mode === \"full\" ? context.storePredicates.size : report.predicates.length,",
+      "to": "    predicates: report.predicates.length,",
+      "expect": ["S11", "S16", "S3"],
+      "_note": "a full load reports «all 0 predicate(s)» (P' is empty for a full load). S4 normalizes a full load's k (not a --prune-report field) and stays green — that separates M2 from M5."
+    },
+    "M3_reasons_kind_only": {
+      "from": "    reasons: report.reasons.map(reasonText),",
+      "to": "    reasons: report.reasons.map((r) => String(r.kind)),",
+      "expect": ["S16", "S3", "S4"],
+      "_note": "the reason loses its variable («variable-predicate» instead of «variable-predicate (?p)»); «update» has no variable, so S11 stays green."
+    },
+    "M4_cut_is_loaded": {
+      "from": "    triplesCut: report.triplesCut,",
+      "to": "    triplesCut: report.triplesLoaded,",
+      "expect": ["S1", "S10a", "S10b", "S13", "S2", "S4"],
+      "_note": "N = M for a prune; S5a/S5b compare the hit with ITS fresh line (both wrong alike), and on the empty graph (S18) N = M = 0 anyway — the exact numbers are pinned by S1, S2, S4, S10a, S10b, S13."
+    },
+    "M5_full_without_all": {
+      "from": "  const predicates = stats.mode === \"full\" ? `all ${stats.predicates}` : String(stats.predicates);",
+      "to": "  const predicates = String(stats.predicates);",
+      "expect": ["S11", "S16", "S3", "S4"],
+      "_note": "a full load's k loses «all»."
+    },
+    "M6_recorded_suffix_dropped": {
+      "from": "    ? `${recorded} — recorded with the cached answer`",
+      "to": "    ? recorded",
+      "expect": ["S10b", "S5b"],
+      "_note": "a hit prints the recorded line as if it were fresh: S5b and S10b pin the mark; S5a (the recorded line, not «not recorded») stays green — that separates M6 from M10."
+    },
+    "M7_check_skips_the_type": {
+      "from": "  return typeof recorded === \"string\" && recorded.startsWith(PRUNE_STATS_PREFIX) && !CONTROL_CHARACTER.test(recorded)",
+      "to": "  return (recorded as string).startsWith(PRUNE_STATS_PREFIX) && !CONTROL_CHARACTER.test(recorded as string)",
+      "expect": ["S12a", "S6", "S9"],
+      "_note": "a value that is not a string reaches startsWith and throws: the line becomes «not computed» instead of «not recorded» — nothing recorded (S6, the hit half of S9) and a recorded object (S12a)."
+    },
+    "M8_check_skips_the_prefix": {
+      "from": "recorded.startsWith(PRUNE_STATS_PREFIX) && !",
+      "to": "recorded.length >= 0 && !",
+      "expect": ["S12b", "S12e"],
+      "_note": "any string without a control character is printed as the recorded line."
+    },
+    "M9_check_skips_control_characters": {
+      "from": " && !CONTROL_CHARACTER.test(recorded)\n",
+      "to": " && recorded.length >= 0\n",
+      "expect": ["S12c", "S12d"],
+      "_note": "a recorded line with a line break or a terminal control sequence is printed: it breaks the statistics block or the terminal."
+    },
+    "M10_check_rejects_valid": {
+      "from": "typeof recorded === \"string\" && recorded",
+      "to": "typeof recorded === \"symbol\" && recorded",
+      "expect": ["S10b", "S5a", "S5b"],
+      "_note": "every recorded line is refused: a hit after a --stats run says «not recorded». Same set as the wiring's W7 and the cache's C2 — links of one chain (stored → handed out → checked)."
+    },
+    "M11_one_reason_of_several": {
+      "from": "`full load (${stats.reasons.join(\", \")})`",
+      "to": "`full load (${stats.reasons.slice(0, 1).join(\", \")})`",
+      "expect": ["S16"],
+      "_note": "a full load with several reasons names only the first (found by the independent review of the specification)."
+    },
+    "M12_share_recomputed": {
+      "from": "    share: report.share,",
+      "to": "    share: report.triplesCut / report.triplesLoaded,",
+      "expect": ["S18"],
+      "_note": "the share is recomputed instead of taken from pruneReport: NaN on an empty graph (found by the independent review)."
+    },
+    "M13_prefix_anywhere": {
+      "from": "recorded.startsWith(PRUNE_STATS_PREFIX)",
+      "to": "recorded.includes(PRUNE_STATS_PREFIX)",
+      "expect": ["S12e"],
+      "_note": "the prefix is accepted anywhere in the string, not at its start (found by the closing review round)."
+    },
+    "M14_line_breaks_only": {
+      "from": "const CONTROL_CHARACTER = /[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]/;",
+      "to": "const CONTROL_CHARACTER = /[\\r\\n]/;",
+      "expect": ["S12d"],
+      "_note": "the check narrowed to line breaks lets a terminal control sequence through (found by the closing review round)."
+    }
+  }
+}
