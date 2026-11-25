@@ -29,7 +29,7 @@
         "S5b",
         "S9"
       ],
-      "_note": "the SELECT block prints no line: every fresh SELECT axis; the hit axes still read what was recorded (S6, S12a–c green). S21 (bug 685d5ffe) reddens too: it reads the «not computed» line of the SELECT block."
+      "_note": "the SELECT block prints no line: every fresh SELECT axis; the hit axes still read what was recorded (S6, S12a–i green). S21 (bug 685d5ffe) reddens too: it reads the «not computed» line of the SELECT block."
     },
     "W2_construct_line_dropped": {
       "from": "              console.log(`  Triples generated: ${resultTriples.length}`);\n              if (pruneStats) console.log(`  ${pruneStats.line}`);",
@@ -54,10 +54,12 @@
         "S12e",
         "S12f",
         "S12g",
+        "S12h",
+        "S12i",
         "S5a",
         "S5b"
       ],
-      "_note": "a SELECT answer is cached without its line: its hit says «not recorded» (S5a/S5b), and the damaged-record axes find no recorded line to damage. S12f, S12g (bug 685d5ffe) redden too: like S12a–e they first assert that the fresh run recorded the line."
+      "_note": "a SELECT answer is cached without its line: its hit says «not recorded» (S5a/S5b), and the damaged-record axes find no recorded line to damage. S12f–S12i (bug 685d5ffe) redden too: like S12a–e they first assert that the fresh run recorded the line."
     },
     "W5_construct_not_recorded": {
       "from": "              triples: JSON.parse(triplesFormatter.formatJson(resultTriples)),\n            };\n            const queryResultCache = new QueryResultCache();\n            await queryResultCache.set(cacheKeyQuery, cacheableResult, cacheTtlSeconds, vaultSignature, pruneStats?.recorded);",
@@ -77,12 +79,14 @@
         "S12e",
         "S12f",
         "S12g",
+        "S12h",
+        "S12i",
         "S5a",
         "S5b",
         "S6",
         "S9"
       ],
-      "_note": "the pre-fix behaviour of a hit (the `return` without statistics, RFC Д4): every hit axis under --stats. S12f, S12g (bug 685d5ffe) redden too: like S12a–e they read the line of the hit."
+      "_note": "the pre-fix behaviour of a hit (the `return` without statistics, RFC Д4): every hit axis under --stats. S12f–S12i (bug 685d5ffe) redden too: like S12a–e they read the line of the hit."
     },
     "W7_hit_ignores_recorded": {
       "from": "                console.log(`  ${await pruneStatsCached(cachedEntry.pruneStatsLine)}`);",
@@ -125,6 +129,12 @@
       "to": ";",
       "expect": ["S21"],
       "_note": "Bug 685d5ffe (LOW-3): the «not computed» line keeps the line breaks of the error message."
+    },
+    "W14_not_computed_only_newlines": {
+      "from": ".replace(/[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+/g, \" \");",
+      "to": ".replace(/\\n/g, \" \");",
+      "expect": ["S21"],
+      "_note": "Bug 685d5ffe, closing review (P3): only \\n collapsed — \\r and U+2028 stay in the line."
     }
   }
 }

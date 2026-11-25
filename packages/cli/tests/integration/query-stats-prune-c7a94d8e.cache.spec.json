@@ -25,10 +25,12 @@
         "S12e",
         "S12f",
         "S12g",
+        "S12h",
+        "S12i",
         "S5a",
         "S5b"
       ],
-      "_note": "nothing is written next to the answer: every hit after a --stats run says «not recorded»; no recorded line to damage. S12f, S12g (bug 685d5ffe) redden too: like S12a–e they first assert that the fresh run recorded the line, which this mutant breaks."
+      "_note": "nothing is written next to the answer: every hit after a --stats run says «not recorded»; no recorded line to damage. S12f–S12i (bug 685d5ffe) redden too: like S12a–e they first assert that the fresh run recorded the line, which this mutant breaks."
     },
     "C2_getEntry_drops_the_line": {
       "from": "      return cached.pruneStatsLine === undefined\n        ? { result: cached.result }\n        : { result: cached.result, pruneStatsLine: cached.pruneStatsLine };",
@@ -48,11 +50,13 @@
         "S12e",
         "S12f",
         "S12g",
+        "S12h",
+        "S12i",
         "S5a",
         "S5b",
         "S8"
       ],
-      "_note": "the line rides inside the answer: a JSON hit's data grows a `pruneStatsLine` key (S8), and no top-level line is recorded. S12f, S12g (bug 685d5ffe) redden too: like S12a–e they first assert that the fresh run recorded the line, which this mutant breaks."
+      "_note": "the line rides inside the answer: a JSON hit's data grows a `pruneStatsLine` key (S8), and no top-level line is recorded. S12f–S12i (bug 685d5ffe) redden too: like S12a–e they first assert that the fresh run recorded the line, which this mutant breaks."
     },
     "C4_get_returns_the_entry": {
       "from": "    return entry === null ? null : entry.result;",
@@ -63,8 +67,14 @@
     "C5_null_result_is_a_hit": {
       "from": "      if (cached.result === null || cached.result === undefined) {\n        return null;\n      }\n",
       "to": "",
-      "expect": ["S20"],
-      "_note": "Bug 685d5ffe (LOW-2): an entry without an answer is served as a hit and the command fails on the null result."
+      "expect": ["S20", "S20b"],
+      "_note": "Bug 685d5ffe (LOW-2): an entry without an answer is served as a hit and the command fails on the null result. S20b reddens too: the guard is gone for the missing key as well."
+    },
+    "C6_only_null_is_a_miss": {
+      "from": "      if (cached.result === null || cached.result === undefined) {",
+      "to": "      if (cached.result === null) {",
+      "expect": ["S20b"],
+      "_note": "Bug 685d5ffe, closing review (P2): an entry without the `result` key is served as a hit."
     }
   }
 }
