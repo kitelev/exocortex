@@ -203,6 +203,12 @@ export class QueryResultCache {
         return null;
       }
 
+      // A hand-corrupted entry without an answer is a miss, as `get` always treated it
+      // (bug 685d5ffe: the hit path would otherwise read a null result and fail the command).
+      if (cached.result === null || cached.result === undefined) {
+        return null;
+      }
+
       return cached.pruneStatsLine === undefined
         ? { result: cached.result }
         : { result: cached.result, pruneStatsLine: cached.pruneStatsLine };

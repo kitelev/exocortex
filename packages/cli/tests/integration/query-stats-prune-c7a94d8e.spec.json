@@ -64,8 +64,8 @@
     "M9_check_skips_control_characters": {
       "from": " && !CONTROL_CHARACTER.test(recorded)\n",
       "to": " && recorded.length >= 0\n",
-      "expect": ["S12c", "S12d"],
-      "_note": "a recorded line with a line break or a terminal control sequence is printed: it breaks the statistics block or the terminal."
+      "expect": ["S12c", "S12d", "S12f", "S12g", "S12h", "S12i"],
+      "_note": "a recorded line with a line break or a terminal control sequence is printed: it breaks the statistics block or the terminal. S12f–S12i (bug 685d5ffe) redden too: the whole control-character check is gone."
     },
     "M10_check_rejects_valid": {
       "from": "typeof recorded === \"string\" && recorded",
@@ -94,8 +94,32 @@
     "M14_line_breaks_only": {
       "from": "const CONTROL_CHARACTER = /[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]/;",
       "to": "const CONTROL_CHARACTER = /[\\r\\n]/;",
-      "expect": ["S12d"],
-      "_note": "the check narrowed to line breaks lets a terminal control sequence through (found by the closing review round)."
+      "expect": ["S12d", "S12f", "S12g", "S12h", "S12i"],
+      "_note": "the check narrowed to line breaks lets a terminal control sequence through (found by the closing review round). S12f–S12i (bug 685d5ffe) redden too: NEL and U+2028 are not \\r/\\n."
+    },
+    "M15_check_c0_only": {
+      "from": "const CONTROL_CHARACTER = /[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]/;",
+      "to": "const CONTROL_CHARACTER = /[\\u0000-\\u001f]/;",
+      "expect": ["S12f", "S12g", "S12h", "S12i"],
+      "_note": "Bug 685d5ffe (review of PR #4625, LOW-1): C0 only — C1 and the Unicode line separators pass."
+    },
+    "M16_check_without_c1": {
+      "from": "const CONTROL_CHARACTER = /[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]/;",
+      "to": "const CONTROL_CHARACTER = /[\\u0000-\\u001f\\u007f\\u2028\\u2029]/;",
+      "expect": ["S12f", "S12h"],
+      "_note": "Bug 685d5ffe: C1 (U+0080–U+009F) not rejected."
+    },
+    "M17_check_without_line_separators": {
+      "from": "const CONTROL_CHARACTER = /[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]/;",
+      "to": "const CONTROL_CHARACTER = /[\\u0000-\\u001f\\u007f-\\u009f]/;",
+      "expect": ["S12g", "S12i"],
+      "_note": "Bug 685d5ffe: U+2028/U+2029 not rejected."
+    },
+    "M18_check_nel_and_ls_only": {
+      "from": "const CONTROL_CHARACTER = /[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]/;",
+      "to": "const CONTROL_CHARACTER = /[\\u0000-\\u001f\\u007f\\u0085\\u2028]/;",
+      "expect": ["S12h", "S12i"],
+      "_note": "Bug 685d5ffe, closing review (P1): only NEL and LS instead of all C1 and both separators — CSI and PS pass."
     }
   }
 }

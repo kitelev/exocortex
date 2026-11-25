@@ -28,8 +28,9 @@
  *   S10a CONSTRUCT: the line in its block; S10b — its hit prints «Triples generated» and the
  *       recorded line.
  *   S11 UPDATE: «full load (update)».
- *   S12a–S12e a recorded value that is not one pruning line (not a string · another line ·
- *       two lines · a control sequence · the prefix mid-string) is «not recorded», not printed.
+ *   S12a–S12i a recorded value that is not one pruning line (not a string · another line ·
+ *       two lines · a control sequence · the prefix mid-string · a C1 character · a C1 CSI · a Unicode
+ *       line or paragraph separator) is «not recorded», not printed.
  *   S13 `--use-cache`: the same line on a triple-cache rebuild and on a triple-cache hit.
  *   S14a no analysis without --stats (canary: it runs under --stats); S14b — none under
  *       --stats --output json (the statistics block is text-only).
@@ -41,6 +42,9 @@
  * but plausible implementations passed S1–S13 (analysis on every query, in JSON mode; one
  * reason of several; NaN on an empty graph). S12d, S12e, S19 — by its closing round (a
  * weakened check of the recorded line; statistics printed into a JSON hit).
+ *   S20, S20b a cache entry without an answer (`result: null` · no `result` key) is a miss, as `get` always treated it.
+ *   S21 a multi-line analysis error gives one «not computed» line.
+ * S12f–S12i, S20, S20b, S21 — bug 685d5ffe (the independent review of the implementation, PR #4625).
  */
 import { jest, describe, it, expect, beforeAll, afterAll } from "@jest/globals";
 import * as fs from "fs";
@@ -351,6 +355,49 @@ describe("query --stats: the predicate-pruning line (ticket c7a94d8e, RFC 308a52
     });
   });
 
+  it("S20 @req:9f8c6fd2-3450-49a0-ba17-1f0a90acd15a a cache entry without an answer (`result: null`) is a miss: the query runs, the command does not fail", async () => {
+    await withHome("s20", async (dir) => {
+      await command([Q.constant, "--stats"]);
+      const [file] = cacheFiles(dir);
+      const entry = JSON.parse(fs.readFileSync(file, "utf-8")) as Rec;
+      entry.result = null;
+      fs.writeFileSync(file, JSON.stringify(entry));
+      const again = await command([Q.constant, "--stats"]);
+      expect(again.exitError).toBeNull();
+      expect(again.log.join("\n")).not.toContain("(cached)");
+      expect(again.log.join("\n")).toContain("✅ Found 2 result(s)");
+    });
+  });
+
+  it("S20b @req:9f8c6fd2-3450-49a0-ba17-1f0a90acd15a a cache entry WITHOUT the `result` key is a miss too, also under --output json", async () => {
+    await withHome("s20b", async (dir) => {
+      await command([Q.constant, "--stats", "--output", "json"]);
+      const [file] = cacheFiles(dir);
+      const entry = JSON.parse(fs.readFileSync(file, "utf-8")) as Rec;
+      delete entry.result;
+      fs.writeFileSync(file, JSON.stringify(entry));
+      const again = await command([Q.constant, "--stats", "--output", "json"]);
+      expect(again.exitError).toBeNull();
+      expect([...again.log, ...again.out].join("\n")).toContain('"bindings"');
+      expect(again.log.join("\n")).not.toContain("(cached)");
+    });
+  });
+
+  it("S21 @req:9f8c6fd2-3450-49a0-ba17-1f0a90acd15a a multi-line analysis error gives ONE «not computed» line", async () => {
+    await withHome("s21", async () => {
+      const count = jest.spyOn(core.InMemoryTripleStore.prototype, "count").mockRejectedValueOnce(new Error("first line\r\nsecond line\u2028third"));
+      let failed: Awaited<ReturnType<typeof command>>;
+      try {
+        failed = await command([Q.constant, "--stats"]);
+      } finally {
+        count.mockRestore();
+      }
+      expect(failed.exitError).toBeNull();
+      expect(pruneLine(failed.log)).toBe("Predicate pruning: not computed — Error: first line second line third");
+      expect(failed.log.some((l) => l.trim() === "second line")).toBe(false);
+    });
+  });
+
   const constructLine = (): string => {
     const cut = rawCount(["https://exocortex.my/ontology/ems#Effort_status"]);
     return `Predicate pruning: prune — needs 1 predicate(s), ${cut} of ${M()} loaded triples (${pct(cut, M())})`;
@@ -390,6 +437,11 @@ describe("query --stats: the predicate-pruning line (ticket c7a94d8e, RFC 308a52
     ["S12c", "a pruning line spanning two lines", "Predicate pruning: prune — needs 1 predicate(s)\nQuery result cache: MISS"],
     ["S12d", "a terminal control sequence", "Predicate pruning: prune — needs 1 predicate(s)\u001b[2K"],
     ["S12e", "the prefix in the middle of the string", "Results returned: 2 Predicate pruning: prune — needs 1 predicate(s)"],
+    // Bug 685d5ffe: the check rejects C1 and the Unicode line separators too, not only C0.
+    ["S12f", "a C1 control character (NEL)", "Predicate pruning: prune — needs 1 predicate(s)\u0085Query result cache: MISS"],
+    ["S12g", "a Unicode line separator", "Predicate pruning: prune — needs 1 predicate(s)\u2028Query result cache: MISS"],
+    ["S12h", "a C1 CSI (U+009B, a terminal control sequence)", "Predicate pruning: prune — needs 1 predicate(s)\u009b2J"],
+    ["S12i", "a Unicode paragraph separator", "Predicate pruning: prune — needs 1 predicate(s)\u2029x"],
   ];
   for (const [axis, what, bad] of BAD) {
     it(`${axis} @req:9f8c6fd2-3450-49a0-ba17-1f0a90acd15a a recorded value with ${what} is «not recorded», never printed`, async () => {

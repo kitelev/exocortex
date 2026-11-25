@@ -314,7 +314,9 @@ async function pruneStatsCached(recorded: unknown): Promise<string> {
 
 function pruneStatsNotComputed(error: unknown): string {
   const e = error as Error | undefined;
-  return `Predicate pruning: not computed — ${e?.name ?? "Error"}: ${e?.message ?? String(error)}`;
+  // One line, like the recorded line (bug 685d5ffe): a multi-line message would split the statistics block.
+  const text = `${e?.name ?? "Error"}: ${e?.message ?? String(error)}`.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ");
+  return `Predicate pruning: not computed — ${text}`;
 }
 
 export function sparqlQueryCommand(): Command {
