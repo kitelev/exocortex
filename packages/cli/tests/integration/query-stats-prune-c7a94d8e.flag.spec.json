@@ -1,0 +1,111 @@
+{
+  "_doc": "Revert-verify mutants for the WIRING of the `query --stats` pruning line in sparql-query.ts (RFC 308a52c3 Д4, phase 4, vault-exodev task c7a94d8e): computed only under --stats in text mode, printed in the SELECT / CONSTRUCT / UPDATE blocks, recorded with the cached answer, printed on a result-cache hit, never failing the answer. Each mutant reddens exactly `expect` (mutant-driver, control 0; W10–W11 — found by the specification review, W12 — by its closing round). `tree`/`subject` are placeholders (§A145).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› (S\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/sparql-query.ts",
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/query-stats-prune-c7a94d8e.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "W1_select_line_dropped": {
+      "from": "              console.log(`  Results returned: ${results.length}`);\n              if (pruneStats) console.log(`  ${pruneStats.line}`);",
+      "to": "              console.log(`  Results returned: ${results.length}`);",
+      "expect": [
+        "S1",
+        "S13",
+        "S16",
+        "S18",
+        "S2",
+        "S3",
+        "S4",
+        "S5a",
+        "S5b",
+        "S9"
+      ],
+      "_note": "the SELECT block prints no line: every fresh SELECT axis; the hit axes still read what was recorded (S6, S12a–c green)."
+    },
+    "W2_construct_line_dropped": {
+      "from": "              console.log(`  Triples generated: ${resultTriples.length}`);\n              if (pruneStats) console.log(`  ${pruneStats.line}`);",
+      "to": "              console.log(`  Triples generated: ${resultTriples.length}`);",
+      "expect": ["S10a"],
+      "_note": "the CONSTRUCT block prints no line (S10a); its hit still reads the recorded line (S10b green) — that separates W2 from W5."
+    },
+    "W3_update_line_dropped": {
+      "from": "              console.log(`  Triples scanned: ${triples.length}`);\n              if (pruneStats) console.log(`  ${pruneStats.line}`);\n            }\n          }\n          return;",
+      "to": "              console.log(`  Triples scanned: ${triples.length}`);\n            }\n          }\n          return;",
+      "expect": ["S11"],
+      "_note": "the UPDATE block prints no line."
+    },
+    "W4_select_not_recorded": {
+      "from": "              bindings,\n            };\n            const queryResultCache = new QueryResultCache();\n            await queryResultCache.set(cacheKeyQuery, cacheableResult, cacheTtlSeconds, vaultSignature, pruneStats?.recorded);",
+      "to": "              bindings,\n            };\n            const queryResultCache = new QueryResultCache();\n            await queryResultCache.set(cacheKeyQuery, cacheableResult, cacheTtlSeconds, vaultSignature);",
+      "expect": ["S12a", "S12b", "S12c", "S12d", "S12e", "S5a", "S5b"],
+      "_note": "a SELECT answer is cached without its line: its hit says «not recorded» (S5a/S5b), and the damaged-record axes find no recorded line to damage."
+    },
+    "W5_construct_not_recorded": {
+      "from": "              triples: JSON.parse(triplesFormatter.formatJson(resultTriples)),\n            };\n            const queryResultCache = new QueryResultCache();\n            await queryResultCache.set(cacheKeyQuery, cacheableResult, cacheTtlSeconds, vaultSignature, pruneStats?.recorded);",
+      "to": "              triples: JSON.parse(triplesFormatter.formatJson(resultTriples)),\n            };\n            const queryResultCache = new QueryResultCache();\n            await queryResultCache.set(cacheKeyQuery, cacheableResult, cacheTtlSeconds, vaultSignature);",
+      "expect": ["S10b"],
+      "_note": "a CONSTRUCT answer is cached without its line: its hit says «not recorded» (S10b); the fresh line is printed (S10a green)."
+    },
+    "W6_hit_prints_no_statistics": {
+      "from": "              if (options.stats) {\n                console.log(`\\n📊 Execution Statistics:`);\n                console.log(`  Total time: ${totalDuration}ms`);",
+      "to": "              if (options.stats && options.batch === \"\\u0000\") {\n                console.log(`\\n📊 Execution Statistics:`);\n                console.log(`  Total time: ${totalDuration}ms`);",
+      "expect": [
+        "S10b",
+        "S12a",
+        "S12b",
+        "S12c",
+        "S12d",
+        "S12e",
+        "S5a",
+        "S5b",
+        "S6",
+        "S9"
+      ],
+      "_note": "the pre-fix behaviour of a hit (the `return` without statistics, RFC Д4): every hit axis under --stats."
+    },
+    "W7_hit_ignores_recorded": {
+      "from": "                console.log(`  ${await pruneStatsCached(cachedEntry.pruneStatsLine)}`);",
+      "to": "                console.log(`  ${await pruneStatsCached(undefined)}`);",
+      "expect": ["S10b", "S5a", "S5b"],
+      "_note": "a hit never reads what was recorded: «not recorded» after a --stats run. Same set as the module's M10 and the cache's C2 — links of one chain (stored → handed out → checked)."
+    },
+    "W8_computed_without_stats": {
+      "from": "        const pruneStats = options.stats && outputFormat === \"text\"",
+      "to": "        const pruneStats = outputFormat === \"text\"",
+      "expect": ["S14a", "S6"],
+      "_note": "the analysis runs on every text query (S14a) and its line is recorded: a hit on a plain run's answer says «recorded» instead of «not recorded» (S6); nothing is printed without --stats, so S7 stays green."
+    },
+    "W9_failure_fails_the_answer": {
+      "from": "    return { line: pruneStatsNotComputed(error), recorded: undefined };",
+      "to": "    throw error;",
+      "expect": ["S9"],
+      "_note": "an analysis failure aborts the query instead of becoming the «not computed» line."
+    },
+    "W10_json_runs_the_analysis": {
+      "from": "        const pruneStats = options.stats && outputFormat === \"text\"",
+      "to": "        const pruneStats = options.stats && (outputFormat === \"text\" || outputFormat === \"json\")",
+      "expect": ["S14b"],
+      "_note": "--stats --output json pays for an analysis it never prints (found by the independent review of the specification)."
+    },
+    "W11_analysis_on_every_query": {
+      "from": "  const pruneStats = options.stats && outputFormat === \"text\"\n          ? await pruneStatsFresh(ast, tripleStore, triples)\n          : null;",
+      "to": "  const pruneStatsAlways = await pruneStatsFresh(ast, tripleStore, triples);\n        const pruneStats = options.stats && outputFormat === \"text\"\n          ? pruneStatsAlways\n          : null;",
+      "expect": ["S14a", "S14b"],
+      "_note": "the analysis runs on every query, printed and recorded only under --stats: 0.2–0.3 s per query on vault-exodev (review measurement) for nothing (found by the independent review)."
+    },
+    "W12_json_hit_prints_statistics": {
+      "from": "              console.log(JSON.stringify(response, null, 2));\n            } else {\n              // Text mode: show cached indicator and results",
+      "to": "              console.log(JSON.stringify(response, null, 2));\n              if (options.stats) console.log(`\\n📊 Execution Statistics:`);\n            } else {\n              // Text mode: show cached indicator and results",
+      "expect": ["S19"],
+      "_note": "a JSON hit under --stats prints the statistics block after the document: stdout is no longer one JSON document (found by the closing review round)."
+    }
+  }
+}

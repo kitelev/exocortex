@@ -207,7 +207,7 @@ npx @kitelev/exocortex-cli query "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 10" -
 | `--timeout <duration>`  | `30s`   | Query timeout (e.g. `30s`, `5000ms`); env fallback `EXOCORTEX_SPARQL_TIMEOUT`                |
 | `--dry-run`             | off     | Validate query syntax without executing (no vault loading)                                   |
 | `--explain`             | off     | Show the optimized query plan                                                                |
-| `--stats`               | off     | Show execution statistics                                                                    |
+| `--stats`               | off     | Show execution statistics, incl. the predicate-pruning line (also on a result-cache hit)     |
 | `--no-optimize`         | —       | Disable query optimization                                                                   |
 | `--use-cache`           | off     | Use the persistent triple cache (faster vault loading)                                       |
 | `--cache-ttl <seconds>` | `300`   | Query result cache TTL in seconds                                                            |

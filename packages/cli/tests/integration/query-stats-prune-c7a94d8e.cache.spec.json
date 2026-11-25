@@ -1,0 +1,51 @@
+{
+  "_doc": "Revert-verify mutants for the pruning line kept next to a cached answer in QueryResultCache.ts (RFC 308a52c3 Д4, phase 4, vault-exodev task c7a94d8e): written by set, returned by getEntry, kept OUTSIDE `result` so `get` (the JSON data of a hit, a batch record) is unchanged. Each mutant reddens exactly `expect` (mutant-driver, control 0). `tree`/`subject` are placeholders (§A145).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› (S\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/cache/QueryResultCache.ts",
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/query-stats-prune-c7a94d8e.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "C1_set_drops_the_line": {
+      "from": "      ...(pruneStatsLine === undefined ? {} : { pruneStatsLine }),",
+      "to": "      ...(pruneStatsLine === undefined ? {} : {}),",
+      "expect": ["S10b", "S12a", "S12b", "S12c", "S12d", "S12e", "S5a", "S5b"],
+      "_note": "nothing is written next to the answer: every hit after a --stats run says «not recorded»; no recorded line to damage."
+    },
+    "C2_getEntry_drops_the_line": {
+      "from": "      return cached.pruneStatsLine === undefined\n        ? { result: cached.result }\n        : { result: cached.result, pruneStatsLine: cached.pruneStatsLine };",
+      "to": "      return { result: cached.result };",
+      "expect": ["S10b", "S5a", "S5b"],
+      "_note": "the line is written but never handed out: a hit says «not recorded»; the damaged-record axes still see «not recorded» (green). Same set as the module's M10 and the wiring's W7 — one chain."
+    },
+    "C3_line_inside_result": {
+      "from": "      result,\n      ...(vaultSignature ? { vaultSignature } : {}),\n      ...(pruneStatsLine === undefined ? {} : { pruneStatsLine }),",
+      "to": "      result: pruneStatsLine === undefined ? result : { ...(result as object), pruneStatsLine },\n      ...(vaultSignature ? { vaultSignature } : {}),",
+      "expect": [
+        "S10b",
+        "S12a",
+        "S12b",
+        "S12c",
+        "S12d",
+        "S12e",
+        "S5a",
+        "S5b",
+        "S8"
+      ],
+      "_note": "the line rides inside the answer: a JSON hit's data grows a `pruneStatsLine` key (S8), and no top-level line is recorded."
+    },
+    "C4_get_returns_the_entry": {
+      "from": "    return entry === null ? null : entry.result;",
+      "to": "    return entry;",
+      "expect": ["S8"],
+      "_note": "`get` hands out the entry instead of the answer: a batch hit answers no bindings (the single query reads getEntry and is unaffected)."
+    }
+  }
+}
