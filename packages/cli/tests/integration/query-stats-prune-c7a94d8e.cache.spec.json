@@ -16,8 +16,19 @@
     "C1_set_drops_the_line": {
       "from": "      ...(pruneStatsLine === undefined ? {} : { pruneStatsLine }),",
       "to": "      ...(pruneStatsLine === undefined ? {} : {}),",
-      "expect": ["S10b", "S12a", "S12b", "S12c", "S12d", "S12e", "S5a", "S5b"],
-      "_note": "nothing is written next to the answer: every hit after a --stats run says «not recorded»; no recorded line to damage."
+      "expect": [
+        "S10b",
+        "S12a",
+        "S12b",
+        "S12c",
+        "S12d",
+        "S12e",
+        "S12f",
+        "S12g",
+        "S5a",
+        "S5b"
+      ],
+      "_note": "nothing is written next to the answer: every hit after a --stats run says «not recorded»; no recorded line to damage. S12f, S12g (bug 685d5ffe) redden too: like S12a–e they first assert that the fresh run recorded the line, which this mutant breaks."
     },
     "C2_getEntry_drops_the_line": {
       "from": "      return cached.pruneStatsLine === undefined\n        ? { result: cached.result }\n        : { result: cached.result, pruneStatsLine: cached.pruneStatsLine };",
@@ -35,17 +46,25 @@
         "S12c",
         "S12d",
         "S12e",
+        "S12f",
+        "S12g",
         "S5a",
         "S5b",
         "S8"
       ],
-      "_note": "the line rides inside the answer: a JSON hit's data grows a `pruneStatsLine` key (S8), and no top-level line is recorded."
+      "_note": "the line rides inside the answer: a JSON hit's data grows a `pruneStatsLine` key (S8), and no top-level line is recorded. S12f, S12g (bug 685d5ffe) redden too: like S12a–e they first assert that the fresh run recorded the line, which this mutant breaks."
     },
     "C4_get_returns_the_entry": {
       "from": "    return entry === null ? null : entry.result;",
       "to": "    return entry;",
       "expect": ["S8"],
       "_note": "`get` hands out the entry instead of the answer: a batch hit answers no bindings (the single query reads getEntry and is unaffected)."
+    },
+    "C5_null_result_is_a_hit": {
+      "from": "      if (cached.result === null || cached.result === undefined) {\n        return null;\n      }\n",
+      "to": "",
+      "expect": ["S20"],
+      "_note": "Bug 685d5ffe (LOW-2): an entry without an answer is served as a hit and the command fails on the null result."
     }
   }
 }

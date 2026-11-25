@@ -22,13 +22,14 @@
         "S16",
         "S18",
         "S2",
+        "S21",
         "S3",
         "S4",
         "S5a",
         "S5b",
         "S9"
       ],
-      "_note": "the SELECT block prints no line: every fresh SELECT axis; the hit axes still read what was recorded (S6, S12a–c green)."
+      "_note": "the SELECT block prints no line: every fresh SELECT axis; the hit axes still read what was recorded (S6, S12a–c green). S21 (bug 685d5ffe) reddens too: it reads the «not computed» line of the SELECT block."
     },
     "W2_construct_line_dropped": {
       "from": "              console.log(`  Triples generated: ${resultTriples.length}`);\n              if (pruneStats) console.log(`  ${pruneStats.line}`);",
@@ -45,8 +46,18 @@
     "W4_select_not_recorded": {
       "from": "              bindings,\n            };\n            const queryResultCache = new QueryResultCache();\n            await queryResultCache.set(cacheKeyQuery, cacheableResult, cacheTtlSeconds, vaultSignature, pruneStats?.recorded);",
       "to": "              bindings,\n            };\n            const queryResultCache = new QueryResultCache();\n            await queryResultCache.set(cacheKeyQuery, cacheableResult, cacheTtlSeconds, vaultSignature);",
-      "expect": ["S12a", "S12b", "S12c", "S12d", "S12e", "S5a", "S5b"],
-      "_note": "a SELECT answer is cached without its line: its hit says «not recorded» (S5a/S5b), and the damaged-record axes find no recorded line to damage."
+      "expect": [
+        "S12a",
+        "S12b",
+        "S12c",
+        "S12d",
+        "S12e",
+        "S12f",
+        "S12g",
+        "S5a",
+        "S5b"
+      ],
+      "_note": "a SELECT answer is cached without its line: its hit says «not recorded» (S5a/S5b), and the damaged-record axes find no recorded line to damage. S12f, S12g (bug 685d5ffe) redden too: like S12a–e they first assert that the fresh run recorded the line."
     },
     "W5_construct_not_recorded": {
       "from": "              triples: JSON.parse(triplesFormatter.formatJson(resultTriples)),\n            };\n            const queryResultCache = new QueryResultCache();\n            await queryResultCache.set(cacheKeyQuery, cacheableResult, cacheTtlSeconds, vaultSignature, pruneStats?.recorded);",
@@ -64,12 +75,14 @@
         "S12c",
         "S12d",
         "S12e",
+        "S12f",
+        "S12g",
         "S5a",
         "S5b",
         "S6",
         "S9"
       ],
-      "_note": "the pre-fix behaviour of a hit (the `return` without statistics, RFC Д4): every hit axis under --stats."
+      "_note": "the pre-fix behaviour of a hit (the `return` without statistics, RFC Д4): every hit axis under --stats. S12f, S12g (bug 685d5ffe) redden too: like S12a–e they read the line of the hit."
     },
     "W7_hit_ignores_recorded": {
       "from": "                console.log(`  ${await pruneStatsCached(cachedEntry.pruneStatsLine)}`);",
@@ -86,8 +99,8 @@
     "W9_failure_fails_the_answer": {
       "from": "    return { line: pruneStatsNotComputed(error), recorded: undefined };",
       "to": "    throw error;",
-      "expect": ["S9"],
-      "_note": "an analysis failure aborts the query instead of becoming the «not computed» line."
+      "expect": ["S21", "S9"],
+      "_note": "an analysis failure aborts the query instead of becoming the «not computed» line. S21 (bug 685d5ffe) reddens too: it also asserts that the answer survives a failed analysis."
     },
     "W10_json_runs_the_analysis": {
       "from": "        const pruneStats = options.stats && outputFormat === \"text\"",
@@ -106,6 +119,12 @@
       "to": "              console.log(JSON.stringify(response, null, 2));\n              if (options.stats) console.log(`\\n📊 Execution Statistics:`);\n            } else {\n              // Text mode: show cached indicator and results",
       "expect": ["S19"],
       "_note": "a JSON hit under --stats prints the statistics block after the document: stdout is no longer one JSON document (found by the closing review round)."
+    },
+    "W13_not_computed_keeps_line_breaks": {
+      "from": ".replace(/[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+/g, \" \");",
+      "to": ";",
+      "expect": ["S21"],
+      "_note": "Bug 685d5ffe (LOW-3): the «not computed» line keeps the line breaks of the error message."
     }
   }
 }
