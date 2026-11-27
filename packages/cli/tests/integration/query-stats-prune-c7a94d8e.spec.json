@@ -95,7 +95,7 @@
       "from": "const CONTROL_CHARACTER = /[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]/;",
       "to": "const CONTROL_CHARACTER = /[\\r\\n]/;",
       "expect": ["S12d", "S12f", "S12g", "S12h", "S12i"],
-      "_note": "the check narrowed to line breaks lets a terminal control sequence through (found by the closing review round). S12f–S12i (bug 685d5ffe) redden too: NEL and U+2028 are not \\r/\\n."
+      "_note": "the check narrowed to line breaks lets a terminal control sequence through (found by the closing review round). S12f–S12i (bug 685d5ffe) redden too: NEL, U+2028, CSI (U+009B) and U+2029 are not \\r/\\n."
     },
     "M15_check_c0_only": {
       "from": "const CONTROL_CHARACTER = /[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]/;",
