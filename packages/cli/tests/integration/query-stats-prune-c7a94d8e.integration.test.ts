@@ -43,7 +43,7 @@
  * reason of several; NaN on an empty graph). S12d, S12e, S19 — by its closing round (a
  * weakened check of the recorded line; statistics printed into a JSON hit).
  *   S20, S20b a cache entry without an answer (`result: null` · no `result` key) is a miss, as `get` always treated it.
- *   S21 a multi-line analysis error gives one «not computed» line.
+ *   S21 a multi-line analysis error gives one «not computed» line (CR LF, U+2028, U+2029, ESC, C1 CSI — bug 01f1e76a).
  * S12f–S12i, S20, S20b, S21 — bug 685d5ffe (the independent review of the implementation, PR #4625).
  */
 import { jest, describe, it, expect, beforeAll, afterAll } from "@jest/globals";
@@ -378,14 +378,20 @@ describe("query --stats: the predicate-pruning line (ticket c7a94d8e, RFC 308a52
       fs.writeFileSync(file, JSON.stringify(entry));
       const again = await command([Q.constant, "--stats", "--output", "json"]);
       expect(again.exitError).toBeNull();
-      expect([...again.log, ...again.out].join("\n")).toContain('"bindings"');
-      expect(again.log.join("\n")).not.toContain("(cached)");
+      const all = (r: { log: string[]; out: string[] }) => [...r.log, ...r.out].join("\n");
+      const HIT = /"queryResultCacheHit":\s*true/;
+      expect(all(again)).toContain('"bindings"');
+      // Bug 01f1e76a: under --output json the hit path prints no «(cached)» marker, so that check was vacuous —
+      // judge by the JSON field instead, and prove the field is live on the genuine hit that follows.
+      expect(all(again)).not.toMatch(HIT);
+      const hit = await command([Q.constant, "--stats", "--output", "json"]);
+      expect(all(hit)).toMatch(HIT);
     });
   });
 
   it("S21 @req:9f8c6fd2-3450-49a0-ba17-1f0a90acd15a a multi-line analysis error gives ONE «not computed» line", async () => {
     await withHome("s21", async () => {
-      const count = jest.spyOn(core.InMemoryTripleStore.prototype, "count").mockRejectedValueOnce(new Error("first line\r\nsecond line\u2028third"));
+      const count = jest.spyOn(core.InMemoryTripleStore.prototype, "count").mockRejectedValueOnce(new Error("first line\r\nsecond line\u2028third\u2029fourth\u001b[2Kfifth\u009bsixth"));
       let failed: Awaited<ReturnType<typeof command>>;
       try {
         failed = await command([Q.constant, "--stats"]);
@@ -393,7 +399,7 @@ describe("query --stats: the predicate-pruning line (ticket c7a94d8e, RFC 308a52
         count.mockRestore();
       }
       expect(failed.exitError).toBeNull();
-      expect(pruneLine(failed.log)).toBe("Predicate pruning: not computed — Error: first line second line third");
+      expect(pruneLine(failed.log)).toBe("Predicate pruning: not computed — Error: first line second line third fourth [2Kfifth sixth");
       expect(failed.log.some((l) => l.trim() === "second line")).toBe(false);
     });
   });
