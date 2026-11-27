@@ -36,6 +36,7 @@ import { NTriplesFormatter } from "../utils/NTriplesFormatter.js";
 import { scanVaultNamespaces } from "../utils/VaultNamespaceScanner.js";
 import { injectExocortexPrefixes, transformShorthandNotation, filterOntologyPrefixes } from "../utils/QueryPrefixInjector.js";
 import { runSparqlBatch } from "./query-batch.js";
+import { collapseControlCharacters } from "../utils/controlCharacters.js";
 
 export interface SparqlQueryOptions {
   vault: string;
@@ -315,7 +316,7 @@ async function pruneStatsCached(recorded: unknown): Promise<string> {
 function pruneStatsNotComputed(error: unknown): string {
   const e = error as Error | undefined;
   // One line, like the recorded line (bug 685d5ffe): a multi-line message would split the statistics block.
-  const text = `${e?.name ?? "Error"}: ${e?.message ?? String(error)}`.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ");
+  const text = collapseControlCharacters(`${e?.name ?? "Error"}: ${e?.message ?? String(error)}`);
   return `Predicate pruning: not computed — ${text}`;
 }
 
