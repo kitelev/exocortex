@@ -75,6 +75,7 @@ import {
   type SparqlBatchEntry,
 } from "./query-batch.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
+import { CONTROL_CHARACTER } from "../utils/controlCharacters.js";
 
 export type PruneReportMode = "prune" | "prune-namespace" | "full";
 
@@ -250,7 +251,6 @@ export function formatPruneStatsLine(stats: PruneStats): string {
 export const PRUNE_STATS_NOT_RECORDED = `${PRUNE_STATS_PREFIX}not recorded with the cached answer (rerun with --no-cache to measure)`;
 
 /** Line breaks and every other control character (C0, DEL, C1, U+2028/2029): a recorded line must not break the block or the terminal. */
-const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 
 /**
  * The line of a result-cache hit: the recorded line, marked; anything that is not one line

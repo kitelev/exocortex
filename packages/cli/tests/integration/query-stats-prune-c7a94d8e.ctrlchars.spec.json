@@ -1,0 +1,59 @@
+{
+  "_doc": "Bug 01f1e76a p.4: the control-character class has one carrier (utils/controlCharacters.ts), read by the recorded-line check and by the «not computed» collapse. Mutants of the class are moved here from query-prune-report.spec (M14–M18 → X14–X18) and the flag spec (W14–W17 are now covered by X15–X18); each reddens both consumers’ axes.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "● .*› (S\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/utils/controlCharacters.ts",
+  "harness": "cd \"$(dirname {subject})/../..\" && CI=true node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config jest.config.js tests/integration/query-stats-prune-c7a94d8e.integration.test.ts --verbose 2>&1",
+  "mutants": {
+    "X14_line_breaks_only": {
+      "from": "export const CONTROL_CHARACTER = /[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]/;",
+      "to": "export const CONTROL_CHARACTER = /[\\r\\n]/;",
+      "expect": ["S12d", "S12f", "S12g", "S12h", "S12i", "S21"],
+      "_note": "the check narrowed to line breaks lets a terminal control sequence through (found by the closing review round). S12f–S12i (bug 685d5ffe) redden too: NEL, U+2028, CSI (U+009B) and U+2029 are not \\r/\\n. Moved from query-prune-report.ts (bug 01f1e76a p.4): the class now has ONE carrier, so the mutant also reddens S21 (the «not computed» collapse reads the same class)."
+    },
+    "X15_check_c0_only": {
+      "from": "export const CONTROL_CHARACTER = /[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]/;",
+      "to": "export const CONTROL_CHARACTER = /[\\u0000-\\u001f]/;",
+      "expect": ["S12f", "S12g", "S12h", "S12i", "S21"],
+      "_note": "Bug 685d5ffe (review of PR #4625, LOW-1): C0 only — C1 and the Unicode line separators pass. Moved from query-prune-report.ts (bug 01f1e76a p.4): the class now has ONE carrier, so the mutant also reddens S21 (the «not computed» collapse reads the same class)."
+    },
+    "X16_check_without_c1": {
+      "from": "export const CONTROL_CHARACTER = /[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]/;",
+      "to": "export const CONTROL_CHARACTER = /[\\u0000-\\u001f\\u007f\\u2028\\u2029]/;",
+      "expect": ["S12f", "S12h", "S21"],
+      "_note": "Bug 685d5ffe: C1 (U+0080–U+009F) not rejected. Moved from query-prune-report.ts (bug 01f1e76a p.4): the class now has ONE carrier, so the mutant also reddens S21 (the «not computed» collapse reads the same class)."
+    },
+    "X17_check_without_line_separators": {
+      "from": "export const CONTROL_CHARACTER = /[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]/;",
+      "to": "export const CONTROL_CHARACTER = /[\\u0000-\\u001f\\u007f-\\u009f]/;",
+      "expect": ["S12g", "S12i", "S21"],
+      "_note": "Bug 685d5ffe: U+2028/U+2029 not rejected. Moved from query-prune-report.ts (bug 01f1e76a p.4): the class now has ONE carrier, so the mutant also reddens S21 (the «not computed» collapse reads the same class)."
+    },
+    "X18_check_nel_and_ls_only": {
+      "from": "export const CONTROL_CHARACTER = /[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]/;",
+      "to": "export const CONTROL_CHARACTER = /[\\u0000-\\u001f\\u007f\\u0085\\u2028]/;",
+      "expect": ["S12h", "S12i", "S21"],
+      "_note": "Bug 685d5ffe, closing review (P1): only NEL and LS instead of all C1 and both separators — CSI and PS pass. Moved from query-prune-report.ts (bug 01f1e76a p.4): the class now has ONE carrier, so the mutant also reddens S21 (the «not computed» collapse reads the same class)."
+    },
+    "X19_run_not_collapsed": {
+      "from": "const CONTROL_CHARACTER_RUN = new RegExp(`${CONTROL_CHARACTER.source}+`, \"g\");",
+      "to": "const CONTROL_CHARACTER_RUN = new RegExp(CONTROL_CHARACTER.source, \"g\");",
+      "expect": ["S21"],
+      "_note": "Each control character becomes its own space: CR LF gives two spaces."
+    },
+    "X20_first_run_only": {
+      "from": "const CONTROL_CHARACTER_RUN = new RegExp(`${CONTROL_CHARACTER.source}+`, \"g\");",
+      "to": "const CONTROL_CHARACTER_RUN = new RegExp(`${CONTROL_CHARACTER.source}+`);",
+      "expect": ["S21"],
+      "_note": "Only the first run is collapsed."
+    }
+  }
+}

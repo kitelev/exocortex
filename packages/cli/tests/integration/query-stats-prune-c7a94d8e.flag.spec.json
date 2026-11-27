@@ -125,34 +125,10 @@
       "_note": "a JSON hit under --stats prints the statistics block after the document: stdout is no longer one JSON document (found by the closing review round)."
     },
     "W13_not_computed_keeps_line_breaks": {
-      "from": ".replace(/[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+/g, \" \");",
-      "to": ";",
+      "from": "const text = collapseControlCharacters(`${e?.name ?? \"Error\"}: ${e?.message ?? String(error)}`);",
+      "to": "const text = `${e?.name ?? \"Error\"}: ${e?.message ?? String(error)}`;",
       "expect": ["S21"],
       "_note": "Bug 685d5ffe (LOW-3): the «not computed» line keeps the line breaks of the error message."
-    },
-    "W14_not_computed_only_newlines": {
-      "from": ".replace(/[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+/g, \" \");",
-      "to": ".replace(/\\n/g, \" \");",
-      "expect": ["S21"],
-      "_note": "Bug 685d5ffe, closing review (P3): only \\n collapsed — \\r and U+2028 stay in the line."
-    },
-    "W15_not_computed_without_c1": {
-      "from": ".replace(/[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+/g, \" \");",
-      "to": ".replace(/[\\u0000-\\u001f\\u2028\\u2029]+/g, \" \");",
-      "expect": ["S21"],
-      "_note": "Bug 01f1e76a: C1 (CSI U+009B) stays in the «not computed» line."
-    },
-    "W16_not_computed_without_ps": {
-      "from": ".replace(/[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+/g, \" \");",
-      "to": ".replace(/[\\u0000-\\u001f\\u007f-\\u009f\\u2028]+/g, \" \");",
-      "expect": ["S21"],
-      "_note": "Bug 01f1e76a: U+2029 stays in the «not computed» line."
-    },
-    "W17_not_computed_crlf_ls_only": {
-      "from": ".replace(/[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+/g, \" \");",
-      "to": ".replace(/[\\r\\n\\u2028]+/g, \" \");",
-      "expect": ["S21"],
-      "_note": "Bug 01f1e76a (review X): only CR, LF, LS collapsed — ESC, CSI and PS stay."
     }
   }
 }
